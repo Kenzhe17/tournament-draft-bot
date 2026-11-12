@@ -631,7 +631,9 @@ async def build_setup_embed(
 ) -> discord.Embed:
     """Embed настройки турнира."""
     status_emoji = "" if tournament.registration == RegistrationState.OPEN else ""
-    formation_text = "Skill" if tournament.formation_mode == FormationMode.SKILL else "ELO" if tournament.formation_mode == FormationMode.ELO else "RANDOM"
+    # Отображаем фактический режим из состояния турнира —
+    # без fallback на RANDOM для draft/balanced-sr.
+    formation_text = tournament.formation_mode.value.upper()
     if tournament.registration == RegistrationState.ISOLATED:
         status_text = "Изолирован"
     else:

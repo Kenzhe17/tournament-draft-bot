@@ -163,7 +163,7 @@ class Tournament:
     # Настройка
     size: TournamentSize = TournamentSize.EIGHT
     registration: RegistrationState = RegistrationState.CLOSED
-    formation_mode: FormationMode = FormationMode.ELO
+    formation_mode: FormationMode = FormationMode.DRAFT
     captains: list[str] = field(default_factory=list)  # Display names
     circle1: list[str] = field(default_factory=list)  # Captain circle (display names)
     circle2: list[str] = field(default_factory=list)
@@ -1671,6 +1671,8 @@ class Tournament:
             message_id=data.get("message_id", 0),
             size=TournamentSize(data.get("size", "8")),
             registration=RegistrationState(data.get("registration", "closed")),
+            # Старые сохранения без ключа — турниры эпохи ELO;
+            # не меняем их режим. Новые турниры всегда пишут ключ.
             formation_mode=FormationMode(data.get("formation_mode", "elo")),
             captains=data.get("captains", []),
             circle1=data.get("circle1", []),

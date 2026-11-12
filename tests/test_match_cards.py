@@ -24,11 +24,13 @@ class _Msg:
         self._channel = channel
         self.edits = []
         self.deleted = False
+        self.embed = None
 
     async def edit(self, content=None, view=None, embed=None,
                    embeds=None, allowed_mentions=None, **kw):
+        self.embed = embed
         self.edits.append({
-            "content": content, "view": view,
+            "content": content, "view": view, "embed": embed,
             "allowed_mentions": allowed_mentions,
         })
 
@@ -50,6 +52,7 @@ class _Chan:
         msg = _Msg(channel=self)
         msg.content = content
         msg.view = view
+        msg.embed = embed
         msg.allowed_mentions = allowed_mentions
         self.sent.append(msg)
         self._by_id[msg.id] = msg
@@ -162,12 +165,17 @@ class TestAnnounceCreatesCards:
 
         await ma.announce_phase_matches(tournament, guild, bot=None)
 
-        # Публичная карточка — в канале турнира.
+        # Публичная карточка — в канале турнира (embed, без пингов).
         assert len(tchan.sent) == 1
         pub = tchan.sent[0]
-        assert "Полуфинал #1" in pub.content or "Отборочный #1" in pub.content
-        assert "CapA" in pub.content and "CapB" in pub.content
-        assert "Ожидание результатов" in pub.content
+        assert pub.embed is not None
+        assert "#1" in (pub.embed.title or "")
+        assert "CapA" in (pub.embed.description or "")
+        assert "CapB" in (pub.embed.description or "")
+        assert any(
+            "Ожидание результатов" in (f.value or "")
+            for f in pub.embed.fields
+        )
         assert pub.allowed_mentions is not None
         # Рабочее сообщение — в OCR-канале.
         assert len(ochan.sent) == 1
@@ -216,7 +224,10 @@ class TestPublicCardUpdates:
             guild, tournament, "qualifier", 0
         )
         pub = tchan.sent[0]
-        assert "Ожидание результатов" in pub.content
+        assert any(
+            "Ожидание результатов" in (f.value or "")
+            for f in pub.embed.fields
+        )
         entry = tournament.match_cards["qualifier_0"]
 
         # processing: активная сессия
@@ -228,7 +239,11 @@ class TestPublicCardUpdates:
             guild, tournament, "qualifier", 0
         )
         assert len(pub.edits) == 1
-        assert "Проверка результатов" in pub.edits[0]["content"]
+        e1 = pub.edits[0]["embed"]
+        assert any(
+            "Проверка результатов" in (f.value or "")
+            for f in e1.fields
+        )
 
         # Повтор без изменений — edit не вызывается (sig-дедуп).
         await ma.update_public_match_card(
@@ -246,9 +261,11 @@ class TestPublicCardUpdates:
             guild, tournament, "qualifier", 0
         )
         assert len(pub.edits) == 2
-        done_text = pub.edits[1]["content"]
-        assert "Победитель:" in done_text
-        assert "Завершён" in done_text
+        done_embed = pub.edits[1]["embed"]
+        assert any(
+            "Победитель" in (f.name or "") for f in done_embed.fields
+        )
+        assert "ЗАВЕРШ" in (done_embed.title or "")
 
     @pytest.mark.asyncio
     async def test_deleted_message_recreated(self):
@@ -357,8 +374,8 @@ class TestControlMessage:
             guild, tournament, "qualifier", 0
         )
         work = ochan.sent[0]
-        assert "Завершён" in work.content
-        # finished → view без кнопки загрузки
+        assert "подтвержд" in work.content.lower()
+        # finished → view без кнопки загрузки, есть «📊 Статистика»
         assert all(
             getattr(c, "label", "") != "📸 Загрузить скриншоты"
             for c in (work.view.children if work.view else [])
@@ -400,6 +417,117 @@ class TestSessionReusesControlMessage:
         assert session["progress_message_id"] == wid
         assert session["progress_channel_id"] == OCR_MAPPING_CHANNEL_ID
         assert session["ocr_channel_id"] == OCR_MAPPING_CHANNEL_ID
+
+
+class TestRoomsCleanup:
+    """cleanup_rooms_ocr_messages: удаляются только технические
+    сообщения своего матча; итоговая карточка сохраняется;
+    идемпотентно."""
+
+    def _session(self, **kw):
+        base = {
+            "mode": "rooms",
+            "status": "completed",
+            "ocr_channel_id": OCR_MAPPING_CHANNEL_ID,
+            "progress_channel_id": OCR_MAPPING_CHANNEL_ID,
+            "progress_message_id": 9001,
+            "confirm_message_id": 9002,
+            "rooms": [
+                {
+                    "room_index": 1,
+                    "message_id": 9003,
+                    "message_ids": [9004, 9005],
+                    "collect_message_id": 9006,
+                    "shot_message_ids": [9007],
+                    "pending": [{"shot_message_id": 9008}],
+                }
+            ],
+        }
+        base.update(kw)
+        return base
+
+    @pytest.mark.asyncio
+    async def test_cleanup_deletes_only_technical(self):
+        import cogs.ocr_upload as up
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        sess = self._session()
+        tournament.ocr_sessions["qualifier_0"] = sess
+
+        # Сообщения «существуют» в OCR-канале.
+        for mid in (9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008):
+            ochan._by_id[mid] = _Msg(mid=mid, channel=ochan)
+
+        ok = await up.cleanup_rooms_ocr_messages(
+            guild, tournament, "qualifier", 0, sess
+        )
+        assert ok is True
+        assert sess["cleanup_done"] is True
+        # Технические удалены (delete() убирает из _by_id).
+        for mid in (9002, 9003, 9004, 9005, 9006, 9007, 9008):
+            assert mid not in ochan._by_id
+        # Итоговая карточка (progress) сохранена.
+        assert 9001 in ochan._by_id
+        assert not ochan._by_id[9001].deleted
+
+    @pytest.mark.asyncio
+    async def test_cleanup_idempotent(self):
+        import cogs.ocr_upload as up
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        sess = self._session()
+        tournament.ocr_sessions["qualifier_0"] = sess
+        for mid in (9001, 9003):
+            ochan._by_id[mid] = _Msg(mid=mid, channel=ochan)
+
+        await up.cleanup_rooms_ocr_messages(
+            guild, tournament, "qualifier", 0, sess
+        )
+        # Повторный вызов — мгновенный выход, без fetch/delete.
+        before = dict(ochan._by_id)
+        ok = await up.cleanup_rooms_ocr_messages(
+            guild, tournament, "qualifier", 0, sess
+        )
+        assert ok is True
+        assert ochan._by_id == before
+
+    @pytest.mark.asyncio
+    async def test_cleanup_isolated_per_match(self):
+        """Очистка qualifier_0 не трогает сообщения qualifier_1."""
+        import cogs.ocr_upload as up
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        sess0 = self._session()
+        sess1 = self._session(
+            progress_message_id=9101,
+            confirm_message_id=9102,
+            rooms=[{
+                "room_index": 1, "message_id": 9103,
+                "message_ids": [], "collect_message_id": 9104,
+                "shot_message_ids": [], "pending": [],
+            }],
+        )
+        tournament.ocr_sessions["qualifier_0"] = sess0
+        tournament.ocr_sessions["qualifier_1"] = sess1
+        for mid in (9001, 9003, 9101, 9103):
+            ochan._by_id[mid] = _Msg(mid=mid, channel=ochan)
+
+        await up.cleanup_rooms_ocr_messages(
+            guild, tournament, "qualifier", 0, sess0
+        )
+        # Сообщения второго матча нетронуты.
+        assert 9101 in ochan._by_id
+        assert 9103 in ochan._by_id
+        assert not sess1.get("cleanup_done")
 
 
 class TestSerialization:

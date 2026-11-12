@@ -349,6 +349,24 @@ async def update_match_card(
         logger.warning("Match card update failed: %s", exc)
 
 
+_CARD_LOCKS: dict[str, "asyncio.Lock"] = {}
+_CARD_LOCKS_MAX = 200
+
+
+def _card_lock(key: str) -> "asyncio.Lock":
+    """Per-match asyncio.Lock — сериализует fetch+send карточки,
+    чтобы два параллельных апдейта не создали дубликат."""
+    import asyncio
+
+    lock = _CARD_LOCKS.get(key)
+    if lock is None:
+        if len(_CARD_LOCKS) >= _CARD_LOCKS_MAX:
+            _CARD_LOCKS.pop(next(iter(_CARD_LOCKS)))
+        lock = asyncio.Lock()
+        _CARD_LOCKS[key] = lock
+    return lock
+
+
 def _mc_key(match_type: str, match_index: int) -> str:
     return f"{match_type}_{match_index}"
 
@@ -410,48 +428,80 @@ def _public_match_state(
     return "active"
 
 
-def _public_match_text(
+def _public_match_embed(
     tournament: Tournament, match_type: str, match_index: int
-) -> str:
-    """Текст публичной карточки матча (обычные турниры, без пингов)."""
+) -> discord.Embed:
+    """Embed публичной карточки матча (стиль r!z3, без пингов).
+
+    Составы не дублируются — они доступны через кнопки матчей
+    в основном сообщении турнира; карточка показывает команды,
+    статус и итог.
+    """
     from cogs.ocr_upload import _captain_name, _match_label
     from views.ocr_match_view import _match_tuple
 
     t1, t2 = _match_tuple(tournament, match_type, match_index)
     name_a = _captain_name(tournament, t1)
     name_b = _captain_name(tournament, t2)
-    label = _match_label(match_type, match_index)
+    label = _match_label(match_type, match_index).upper()
     state = _public_match_state(tournament, match_type, match_index)
 
-    lines = [
-        f"**{label} — {name_a} vs {name_b}**",
-        "",
-        f"**{name_a}**",
-        _roster_names(tournament, t1),
-        "",
-        f"**{name_b}**",
-        _roster_names(tournament, t2),
-    ]
+    embed = discord.Embed(
+        title=f"⚔️ {label}",
+        description=f"**{name_a} vs {name_b}**",
+        color=discord.Color.blurple(),
+    )
     if state == "done":
         winner = _bracket_winner_index(tournament, match_type, match_index)
         wname = (
             _captain_name(tournament, winner)
             if winner is not None else "—"
         )
-        lines += [
-            "",
-            f"**Победитель:** {wname}",
-            f"**Комнат сыграно:** {_rooms_played(tournament, match_type, match_index)}",
-            "**Статус:** Завершён",
-        ]
+        embed.title = f"✅ {label} — ЗАВЕРШЁН"
+        embed.color = discord.Color.dark_green()
+        embed.add_field(
+            name="Победитель", value=wname, inline=True
+        )
+        embed.add_field(
+            name="Комнат сыграно",
+            value=str(
+                _rooms_played(tournament, match_type, match_index)
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="Статус", value="Результат подтверждён", inline=True
+        )
     elif state == "processing":
-        lines += ["", "**Статус:** Проверка результатов"]
+        embed.add_field(
+            name="Статус", value="Проверка результатов", inline=False
+        )
     else:
-        lines += ["", "**Статус:** Ожидание результатов"]
-    return "\n".join(lines)
+        embed.add_field(
+            name="Статус", value="Ожидание результатов", inline=False
+        )
+    return embed
 
 
 async def update_public_match_card(
+    guild: discord.Guild,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+) -> None:
+    """Публичная карточка матча под per-match lock — защита от
+    конкурентного создания дубликата одним матчем."""
+    if getattr(tournament, "mm_search_channel_id", 0):
+        return
+    key = _mc_key(match_type, match_index)
+    lock_key = f"{getattr(tournament, 'id', '?')}:{key}"
+    async with _card_lock(lock_key):
+        await _update_public_match_card_impl(
+            guild, tournament, match_type, match_index
+        )
+
+
+async def _update_public_match_card_impl(
     guild: discord.Guild,
     tournament: Tournament,
     match_type: str,
@@ -481,13 +531,18 @@ async def update_public_match_card(
             pass
     entry = mcards.setdefault(key, {})
     try:
-        text = _public_match_text(tournament, match_type, match_index)
+        embed = _public_match_embed(tournament, match_type, match_index)
     except Exception as exc:
-        logger.warning("public match card text failed: %s", exc)
+        logger.warning("public match card embed failed: %s", exc)
         return
     import hashlib
 
-    sig = hashlib.sha1(text.encode()).hexdigest()[:16]
+    sig_src = (
+        embed.title or ""
+    ) + "|" + (embed.description or "") + "|" + "|".join(
+        f"{f.name}:{f.value}" for f in embed.fields
+    )
+    sig = hashlib.sha1(sig_src.encode()).hexdigest()[:16]
     mid = entry.get("public_message_id")
     msg = None
     if mid:
@@ -499,7 +554,7 @@ async def update_public_match_card(
     if msg is None:
         try:
             msg = await channel.send(
-                content=replace_emojis_safe(text),
+                embed=embed,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
             entry["public_message_id"] = msg.id
@@ -510,9 +565,7 @@ async def update_public_match_card(
             return
     if not created and entry.get("sig") != sig:
         try:
-            await msg.edit(
-                content=replace_emojis_safe(text), view=None
-            )
+            await msg.edit(embed=embed, view=None)
         except Exception as exc:
             logger.warning("public match card edit failed: %s", exc)
     entry["sig"] = sig
@@ -551,7 +604,7 @@ def _control_content(
         _mc_key(match_type, match_index)
     )
     if finished:
-        status = "Завершён"
+        status = "Результаты подтверждены"
         rooms_str = str(_rooms_played(tournament, match_type, match_index))
     elif session and session.get("rooms_expected"):
         done = sum(
@@ -599,12 +652,20 @@ def match_control_view(
     finished: bool = False,
 ):
     """Persistent view рабочего сообщения: кнопка «Загрузить
-    скриншоты» (MatchScreenshotButton → RoomStartModal)."""
+    скриншоты» (MatchScreenshotButton → RoomStartModal); для
+    завершённого матча — «📊 Статистика» (ephemeral)."""
     from discord.ui import View
     from views.ocr_match_view import MatchScreenshotButton
 
     view = View(timeout=None)
-    if not finished:
+    if finished:
+        view.add_item(
+            MatchStatsButton(
+                guild_id, channel_id, tournament,
+                match_type, match_index,
+            )
+        )
+    else:
         view.add_item(
             MatchScreenshotButton(
                 guild_id, channel_id, tournament,
@@ -613,6 +674,72 @@ def match_control_view(
             )
         )
     return view
+
+
+class MatchStatsButton(discord.ui.Button):
+    """«📊 Статистика» на итоговой рабочей карточке — ephemeral
+    K/D/A/Damage по обеим командам из сохранённой сессии."""
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int,
+    ):
+        super().__init__(
+            label="📊 Статистика",
+            style=discord.ButtonStyle.secondary,
+            custom_id=(
+                f"match_stats:{guild_id}:{channel_id}:"
+                f"{match_type}:{match_index}"
+            ),
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from storage.json_store import store
+        from views.ocr_match_view import (
+            _match_tuple, _rooms_aggregate_stats,
+            _team_display_name, team_roster,
+        )
+
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Турнир не найден.", ephemeral=True
+            )
+            return
+        key = f"{self.match_type}_{self.match_index}"
+        session = (tournament.ocr_sessions or {}).get(key) or {}
+        if not session.get("rooms"):
+            await interaction.response.send_message(
+                "ℹ️ Статистика недоступна.", ephemeral=True
+            )
+            return
+        try:
+            t1, t2 = _match_tuple(
+                tournament, self.match_type, self.match_index
+            )
+            stats = _rooms_aggregate_stats(
+                session, tournament, t1, t2
+            ) or {}
+        except Exception:
+            stats = {}
+        lines = []
+        for tidx in (t1, t2):
+            lines.append(f"**{_team_display_name(tournament, tidx)}**")
+            for name in team_roster(tournament, tidx):
+                s = stats.get(name) or {}
+                lines.append(
+                    f"{name} — {s.get('kills', '—')}/"
+                    f"{s.get('deaths', '—')}/{s.get('assists', '—')} — "
+                    f"{s.get('dmg', '—')}"
+                )
+            lines.append("")
+        await interaction.response.send_message(
+            "\n".join(lines)[:1900], ephemeral=True
+        )
 
 
 async def _ocr_work_channel(guild: discord.Guild):

@@ -729,6 +729,39 @@ class TournamentBot(commands.Bot):
                         tournament.id, e,
                     )
 
+            # Восстановление очистки OCR после рестарта: rooms-сессии
+            # со статусом completed, но без cleanup_done — продолжаем
+            # удаление технических сообщений. Идемпотентно.
+            try:
+                from cogs.ocr_upload import cleanup_rooms_ocr_messages
+
+                guild_obj = self.get_guild(tournament.guild_id)
+                if guild_obj is not None:
+                    for _ck, _sess in (tournament.ocr_sessions or {}).items():
+                        if (
+                            _sess.get("mode") == "rooms"
+                            and _sess.get("status") == "completed"
+                            and not _sess.get("cleanup_done")
+                        ):
+                            try:
+                                _mt, _mi_s = _ck.split("_", 1)
+                                asyncio.create_task(
+                                    cleanup_rooms_ocr_messages(
+                                        guild_obj, tournament,
+                                        _mt, int(_mi_s), _sess,
+                                    )
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    "Rooms cleanup recovery failed "
+                                    "for %s: %s", _ck, e,
+                                )
+            except Exception as e:
+                logger.warning(
+                    "Rooms cleanup recovery setup failed for %s: %s",
+                    tournament.id, e,
+                )
+
             # Карточки «🔓 Комната открыта» с card_pending —
             # безопасная переотправка после рестарта: при живом
             # card_message_id только снимается флаг, дублей нет.
@@ -942,7 +975,10 @@ class TournamentBot(commands.Bot):
 
                 if message is not None:
                     try:
-                        await message.edit(view=payload)
+                        await message.edit(
+                            view=payload,
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
                     except discord.NotFound:
                         # Сообщение удалили между кэшем и правкой —
                         # инвалидируем кэш, следующий апдейт сделает

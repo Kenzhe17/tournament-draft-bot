@@ -210,8 +210,13 @@ class TournamentCog(commands.Cog):
             ephemeral=True
         )
 
-        # Send main tournament message through channel.send to unbind it
-        message = await interaction.channel.send( view=_composed if _composed is not None else compose(embed, view))
+        # Send main tournament message through channel.send to unbind it.
+        # allowed_mentions=none: embed содержит <@id> капитанов/игроков
+        # для кликабельности, но уведомления не рассылаются.
+        message = await interaction.channel.send(
+            view=_composed if _composed is not None else compose(embed, view),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
         tournament.message_id = message.id
         store.set(tournament)

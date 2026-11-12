@@ -3444,6 +3444,79 @@ async def finalize_room_collect(
     return "ok" if ok or room.get("message_id") else "publish_fail"
 
 
+async def cleanup_rooms_ocr_messages(
+    guild: discord.Guild,
+    tournament,
+    match_type: str,
+    match_index: int,
+    session: dict | None = None,
+) -> bool:
+    """Удалить технические OCR-сообщения завершённого rooms-матча.
+
+    Удаляются ТОЛЬКО сообщения, привязанные к этому матчу:
+    карточки комнат (скриншоты+кнопки сопоставления), сообщение
+    подтверждения, collect-сообщения, shot-остатки. Рабочее
+    сообщение (progress/control) и публичная карточка НЕ
+    трогаются. Идемпотентно: флаг cleanup_done в сессии.
+    """
+    key = _session_key(match_type, match_index)
+    sess = session or (tournament.ocr_sessions or {}).get(key)
+    if not sess or sess.get("mode") != "rooms":
+        return False
+    if sess.get("cleanup_done"):
+        return True
+    channel = await _stats_channel_for(guild, sess)
+    if channel is None:
+        return False
+    mids: list[int] = []
+    for r in sess.get("rooms") or []:
+        mids.extend(r.get("message_ids") or [])
+        if r.get("message_id"):
+            mids.append(int(r["message_id"]))
+        if r.get("collect_message_id"):
+            mids.append(int(r["collect_message_id"]))
+        for p in r.get("pending") or []:
+            if p.get("shot_message_id"):
+                mids.append(int(p["shot_message_id"]))
+        for sid in r.get("shot_message_ids") or []:
+            mids.append(int(sid))
+    # shot_message_ids уже заархивированы/удалены при публикации
+    # карточки — удаление по NotFound безопасно.
+    if sess.get("confirm_message_id"):
+        mids.append(int(sess["confirm_message_id"]))
+    # Прогресс/рабочее сообщение НЕ удаляем — это итоговая
+    # карточка матча.
+    keep = {
+        int(sess.get("progress_message_id") or 0),
+    }
+    deleted = 0
+    for mid in dict.fromkeys(mids):
+        if mid in keep or not mid:
+            continue
+        try:
+            msg = await channel.fetch_message(mid)
+            await msg.delete()
+            deleted += 1
+        except discord.NotFound:
+            pass
+        except discord.Forbidden:
+            logger.warning(
+                "rooms cleanup forbidden mid=%s match=%s",
+                mid, key,
+            )
+        except Exception:
+            logger.debug("rooms cleanup delete failed mid=%s", mid)
+    sess["cleanup_done"] = True
+    try:
+        store.set(tournament)
+    except Exception:
+        pass
+    logger.info(
+        "rooms OCR cleanup done: match=%s deleted=%d", key, deleted
+    )
+    return True
+
+
 async def _stats_channel_for(guild, session):
     """Канал прогресса/результатов комнаты.
 

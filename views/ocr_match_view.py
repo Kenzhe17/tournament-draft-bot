@@ -4646,6 +4646,21 @@ async def _finalize_ocr_match_impl(
     else:
         await _strip_buttons(session.get("message_id"))
 
+    # Очистка технических OCR-сообщений (rooms-режим): после
+    # фиксации результата удаляем карточки комнат, collect и
+    # confirm-сообщения. Прогресс/рабочая карточка остаётся
+    # итоговым сообщением. Идемпотентно, cleanup_done в сессии.
+    if is_rooms:
+        try:
+            from cogs.ocr_upload import cleanup_rooms_ocr_messages
+
+            await cleanup_rooms_ocr_messages(
+                interaction.guild, tournament,
+                match_type, match_index, session,
+            )
+        except Exception as e:
+            logger.warning("rooms OCR cleanup failed: %s", e)
+
     # Уведомление о победителе — только тому, кто подтвердил результат
     try:
         await interaction.followup.send(
