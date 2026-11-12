@@ -1,10 +1,10 @@
 """Components V2 статистика Free Fire для /ff stats.
 
 LayoutView с вкладками всех режимов (BR Карьера/Обычные/Рейтинг,
-CS Карьера/Рейтинг). Данные каждого режима запрашиваются у API
-лениво при первом открытии вкладки и кэшируются в состоянии View —
-повторные переключения бесплатны. Кнопка «Обновить» перезапрашивает
-текущий режим с cooldown.
+CS Карьера/Рейтинг) и кнопкой «✕», удаляющей сообщение. Данные
+каждого режима запрашиваются у API лениво при первом открытии
+вкладки и кэшируются в состоянии View — повторные переключения
+бесплатны.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ from utils.design.containers import chunk_text
 
 logger = logging.getLogger(__name__)
 
-REFRESH_COOLDOWN = 30.0
 VIEW_TIMEOUT = 300.0
 
 FetchFn = Callable[[str], Awaitable[dict[str, Any]]]
@@ -70,7 +69,6 @@ class FreeFireStatsView(discord.ui.LayoutView):
         self._cache: dict[str, dict[str, Any]] = {}
         self._loading: set[str] = set()
         self._fetch_lock = asyncio.Lock()
-        self._last_refresh = 0.0
         self.bound_message: discord.Message | None = None
         if data is not None:
             self._cache[self.mode] = {"ok": True, "data": data}
@@ -94,14 +92,14 @@ class FreeFireStatsView(discord.ui.LayoutView):
             btn.callback = self._on_button
             row.add_item(btn)
         row2 = discord.ui.ActionRow()
-        refresh = discord.ui.Button(
-            label="Обновить",
-            style=discord.ButtonStyle.success,
-            custom_id="ffs:refresh",
-            disabled=disabled or self._fetch is None,
+        close = discord.ui.Button(
+            label="✕",
+            style=discord.ButtonStyle.danger,
+            custom_id="ffs:close",
+            disabled=disabled,
         )
-        refresh.callback = self._on_button
-        row2.add_item(refresh)
+        close.callback = self._on_button
+        row2.add_item(close)
         return [row, row2]
 
     def _fit(self, items: list[discord.ui.Item]) -> list[discord.ui.Item]:
@@ -193,14 +191,15 @@ class FreeFireStatsView(discord.ui.LayoutView):
             return
 
         custom_id = str(interaction.data.get("custom_id") or "")
-        if custom_id.startswith("ffs:") and custom_id != "ffs:refresh":
+        if custom_id == "ffs:close":
+            await self._do_close(interaction)
+            return
+        if custom_id.startswith("ffs:") and custom_id != "ffs:close":
             mode = custom_id.split(":", 1)[1]
             if mode in sfmt.MODE_BY_KEY:
                 self._notice = ""
                 await self._switch_mode(interaction, mode)
             return
-        if custom_id == "ffs:refresh":
-            await self._do_refresh(interaction)
 
     async def _switch_mode(
         self, interaction: discord.Interaction, mode: str
@@ -259,40 +258,22 @@ class FreeFireStatsView(discord.ui.LayoutView):
             except Exception:
                 logger.exception("FF stats followup edit failed")
 
-    async def _do_refresh(self, interaction: discord.Interaction) -> None:
-        if self._fetch is None:
-            await interaction.response.send_message(
-                "Обновление недоступно.", ephemeral=True
-            )
-            return
-        await interaction.response.defer()
-        async with self._fetch_lock:
-            remaining = REFRESH_COOLDOWN - (time.monotonic() - self._last_refresh)
-            if remaining > 0:
-                await interaction.followup.send(
-                    f"Обновление доступно через {int(remaining) + 1} сек.",
-                    ephemeral=True,
+    async def _do_close(self, interaction: discord.Interaction) -> None:
+        """Удалить сообщение со статистикой."""
+        message = getattr(interaction, "message", None) or self.bound_message
+        try:
+            if message is not None:
+                await message.delete()
+            else:
+                await interaction.delete_original_response()
+        except Exception:
+            logger.debug("FF stats close failed", exc_info=True)
+            try:
+                await interaction.response.send_message(
+                    "Не удалось удалить сообщение.", ephemeral=True
                 )
-                return
-            self._last_refresh = time.monotonic()
-            self._loading.add(self.mode)
-            try:
-                data = await self._fetch(self.mode)
-                self._cache[self.mode] = {"ok": True, "data": data}
-                self._notice = ""
-            except FreeFireError as exc:
-                logger.warning("FF stats refresh failed: %s", exc)
-                self._notice = f"обновление не удалось: {exc}"
             except Exception:
-                logger.exception("FF stats refresh unexpected error")
-                self._notice = "обновление не удалось: внутренняя ошибка"
-            finally:
-                self._loading.discard(self.mode)
-            self._render()
-            try:
-                await interaction.edit_original_response(view=self)
-            except Exception:
-                logger.exception("FF stats refresh edit failed")
+                logger.debug("FF stats close fallback failed", exc_info=True)
 
     async def on_timeout(self) -> None:
         expired = FreeFireStatsView(

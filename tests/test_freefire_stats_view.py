@@ -75,6 +75,7 @@ def _interaction(user_id=OWNER_ID, custom_id="ffs:br_career"):
             defer=AsyncMock(),
         ),
         edit_original_response=AsyncMock(),
+        delete_original_response=AsyncMock(),
         followup=SimpleNamespace(
             send=AsyncMock(), edit_message=AsyncMock()
         ),
@@ -219,37 +220,40 @@ async def test_stats_fetch_error_cached_and_shown():
 
 
 @pytest.mark.asyncio
-async def test_stats_refresh_updates_current_mode():
-    fetch = AsyncMock(return_value=SAMPLE_CS)
-    view = _make_view(fetch=fetch)
-    _, interaction, coro = _press(view, "ffs:refresh")
+async def test_stats_close_deletes_message():
+    view = _make_view()
+    message = SimpleNamespace(delete=AsyncMock())
+    view.bound_message = message
+    _, _, coro = _press(view, "ffs:close")
     await coro
-    fetch.assert_awaited_once_with("br_career")
-    interaction.edit_original_response.assert_awaited_once()
+    message.delete.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_stats_refresh_cooldown_and_error_keeps_data():
-    fetch = AsyncMock(side_effect=FreeFireError("429", "RATE_LIMIT"))
-    view = _make_view(fetch=fetch)
-    old_entry = view._cache["br_career"]
-    _, _, coro = _press(view, "ffs:refresh")
+async def test_stats_close_without_bound_message_uses_interaction():
+    view = _make_view()
+    _, interaction, coro = _press(view, "ffs:close")
     await coro
-    assert view._cache["br_career"] is old_entry  # старые данные целы
-    assert "429" in view._notice
-    # cooldown: второй refresh сразу — ephemeral followup после defer
-    _, i2, coro2 = _press(view, "ffs:refresh")
-    await coro2
-    i2.response.defer.assert_awaited_once()
-    i2.followup.send.assert_awaited_once()
-    assert i2.followup.send.await_args.kwargs.get("ephemeral")
-    assert fetch.await_count == 1
+    interaction.delete_original_response.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_stats_close_failure_falls_back_to_ephemeral():
+    view = _make_view()
+    message = SimpleNamespace(delete=AsyncMock(side_effect=RuntimeError("x")))
+    view.bound_message = message
+    _, interaction, coro = _press(view, "ffs:close")
+    await coro
+    interaction.response.send_message.assert_awaited_once()
+    assert interaction.response.send_message.await_args.kwargs.get(
+        "ephemeral"
+    )
 
 
 @pytest.mark.asyncio
 async def test_stats_non_owner_denied():
     view = _make_view()
-    for cid in ("ffs:br_career", "ffs:cs_ranked", "ffs:refresh"):
+    for cid in ("ffs:br_career", "ffs:cs_ranked", "ffs:close"):
         _, interaction, coro = _press(view, cid, user_id=999)
         await coro
         interaction.response.send_message.assert_awaited_once()
