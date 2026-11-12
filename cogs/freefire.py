@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 import discord
@@ -13,8 +14,11 @@ from discord.ext import commands
 from config import get_emoji, replace_emojis
 from services import ff_catalog
 from services.freefire_service import FreeFireError, freefire_service
+from storage.ff_cooldowns import ff_info_cooldowns
 from utils.design import compose
+from utils.ff_stats_formatter import MODE_BY_KEY
 from views.freefire_profile_view import FreeFireProfileView
+from views.freefire_stats_view import FreeFireStatsView
 
 logger = logging.getLogger(__name__)
 
@@ -36,136 +40,11 @@ REGION_CHOICES = [
 
 _UID_PATTERN = re.compile(r"^\d{5,15}$")
 
-COLOR_MAIN = discord.Color.from_rgb(69, 69, 69)
 FOOTER = "DISCORD SERVER r1z3"
 
 
 def _check_uid(uid: str) -> bool:
     return bool(_UID_PATTERN.match(uid.strip()))
-
-
-def _prettify_key(key: str) -> str:
-    spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", key)
-    return spaced.replace("_", " ").strip().title()
-
-
-def _fmt_value(value: Any) -> str:
-    if value is None:
-        return "—"
-    if isinstance(value, float):
-        return f"{value:,.1f}"
-    if isinstance(value, int):
-        return f"{value:,}"
-    return str(value)
-
-
-def _scalar_items(data: dict[str, Any], limit: int = 15) -> list[tuple[str, Any]]:
-    items = []
-    for key, value in data.items():
-        if isinstance(value, (dict, list)):
-            continue
-        items.append((_prettify_key(key), value))
-        if len(items) >= limit:
-            break
-    return items
-
-
-_BR_MODES = {"solostats": "Соло", "duostats": "Дуо", "quadstats": "Сквад"}
-
-
-def _kd(kills: Any, deaths: Any) -> str:
-    try:
-        k, d = float(kills or 0), float(deaths or 0)
-    except (TypeError, ValueError):
-        return "—"
-    return f"{k / d:,.2f}" if d else "—"
-
-
-def _fmt_hours(seconds: Any) -> str:
-    try:
-        return f"{int(seconds) / 3600:,.1f} ч"
-    except (TypeError, ValueError):
-        return "—"
-
-
-def _fmt_km(meters: Any) -> str:
-    try:
-        return f"{int(meters) / 1000:,.0f} км"
-    except (TypeError, ValueError):
-        return "—"
-
-
-def _get(d: dict[str, Any], *keys: str) -> Any:
-    cur: Any = d
-    for key in keys:
-        if not isinstance(cur, dict):
-            return None
-        cur = cur.get(key)
-    return cur
-
-
-def _stat_lines(block: dict[str, Any], br: bool) -> list[str]:
-    """Строки статистики для одного блока (solo/duo/quad/cs)."""
-    det = block.get("detailedstats") or {}
-    kills = _get(block, "kills") or 0
-    deaths = _get(det, "deaths") or _get(det, "knockdowns")
-    games = _get(block, "gamesplayed")
-    wins = _get(block, "wins")
-
-    lines = [
-        f"• Игр: **{_fmt_value(games)}** • Побед: **{_fmt_value(wins)}**",
-        f"• Убийств: **{_fmt_value(kills)}** • Смертей: **{_fmt_value(deaths)}** • K/D: **{_kd(kills, deaths)}**",
-    ]
-    if br:
-        lines += [
-            f"• Топ: **{_fmt_value(_get(det, 'topntimes'))}** • Выживание: **{_fmt_hours(_get(det, 'survivaltime'))}**",
-            f"• Урон: **{_fmt_value(_get(det, 'damage'))}** • Хедшоты: **{_fmt_value(_get(det, 'headshotkills'))}**",
-            f"• Макс. киллов за матч: **{_fmt_value(_get(det, 'highestkills'))}** • Дистанция: **{_fmt_km(_get(det, 'distancetravelled'))}**",
-        ]
-        extra = []
-        if _get(det, "revives"):
-            extra.append(f"Ревайвы: {_fmt_value(_get(det, 'revives'))}")
-        if _get(det, "knockdown"):
-            extra.append(f"Нокдауны: {_fmt_value(_get(det, 'knockdown'))}")
-        if _get(det, "roadkills"):
-            extra.append(f"Убийства с транспорта: {_fmt_value(_get(det, 'roadkills'))}")
-        if extra:
-            lines.append("• " + " • ".join(extra))
-    else:
-        lines += [
-            f"• Урон: **{_fmt_value(_get(det, 'damage'))}** • Хедшоты: **{_fmt_value(_get(det, 'headshotkills'))}**",
-            f"• Ассисты: **{_fmt_value(_get(det, 'assists'))}** • MVP: **{_fmt_value(_get(det, 'mvpcount'))}**",
-        ]
-        multi = []
-        for key, label in (("doublekills", "дабл"), ("triplekills", "трипл"), ("fourkills", "квадра")):
-            val = _get(det, key)
-            if val:
-                multi.append(f"{label}: {_fmt_value(val)}")
-        if multi:
-            lines.append("• " + " • ".join(multi))
-    return lines
-
-
-def _stats_embed_text(stats: dict[str, Any]) -> str:
-    """Форматирует stats из /freefireinfo/stats в текст для embed."""
-    sections: list[str] = []
-    is_cs = "csstats" in stats
-
-    if is_cs:
-        cs = stats.get("csstats") or {}
-        sections.append("**Clash Squad**\n" + "\n".join(_stat_lines(cs, br=False)))
-    else:
-        for key, label in _BR_MODES.items():
-            block = stats.get(key)
-            if isinstance(block, dict) and block:
-                sections.append(f"**{label}**\n" + "\n".join(_stat_lines(block, br=True)))
-
-    if not sections:
-        # Fallback: скалярные поля верхнего уровня
-        lines = [f"• **{k}** — {_fmt_value(v)}" for k, v in _scalar_items(stats, limit=20)]
-        return "\n".join(lines) if lines else "Данные отсутствуют."
-
-    return "\n\n".join(sections)[:3900]
 
 
 def _error_embed(exc: FreeFireError) -> discord.Embed:
@@ -226,11 +105,21 @@ async def ff_info(
     if not await _check_and_key(interaction, uid):
         return
 
+    remaining = ff_info_cooldowns.seconds_left(interaction.user.id)
+    if remaining > 0:
+        ready_at = int(time.time()) + remaining
+        await interaction.response.send_message(
+            f"⏳ `/ff info` доступна через <t:{ready_at}:R>.",
+            ephemeral=True,
+        )
+        return
+
     await interaction.response.defer()
     result = await _safe_call(freefire_service.get_info(region.value, uid))
     if isinstance(result, FreeFireError):
         await interaction.followup.send( view=compose(_error_embed(result)))
         return
+    ff_info_cooldowns.mark_used(interaction.user.id)
 
     async def _fetch() -> dict[str, Any]:
         res = await _safe_call(freefire_service.get_info(region.value, uid))
@@ -250,23 +139,11 @@ async def ff_info(
 
 # ----------------------------------------------------------------- /ff stats
 @ff_group.command(name="stats", description="Статистика игрока Free Fire")
-@app_commands.describe(
-    uid="ID игрока (5-15 цифр)", region="Регион аккаунта", mode="Режим/матчмод"
-)
-@app_commands.choices(
-    mode=[
-        app_commands.Choice(name="BR — Карьера", value="br_career"),
-        app_commands.Choice(name="BR — Обычные", value="br_normal"),
-        app_commands.Choice(name="BR — Рейтинг", value="br_ranked"),
-        app_commands.Choice(name="CS — Карьера", value="cs_career"),
-        app_commands.Choice(name="CS — Рейтинг", value="cs_ranked"),
-    ],
-    region=REGION_CHOICES,
-)
+@app_commands.describe(uid="ID игрока (5-15 цифр)", region="Регион аккаунта")
+@app_commands.choices(region=REGION_CHOICES)
 async def ff_stats(
     interaction: discord.Interaction,
     uid: str,
-    mode: app_commands.Choice[str],
     region: app_commands.Choice[str] = None,
 ) -> None:
     uid = uid.strip()
@@ -274,28 +151,35 @@ async def ff_stats(
     if not await _check_and_key(interaction, uid):
         return
 
-    gamemode, matchmode = mode.value.split("_", 1)
+    async def _fetch(mode: str) -> dict[str, Any]:
+        gamemode, matchmode, _ = MODE_BY_KEY[mode]
+        res = await _safe_call(
+            freefire_service.get_stats(
+                region.value, uid, gamemode=gamemode, matchmode=matchmode
+            )
+        )
+        if isinstance(res, FreeFireError):
+            raise res
+        return res
+
     await interaction.response.defer()
     result = await _safe_call(
         freefire_service.get_stats(
-            region.value, uid, gamemode=gamemode, matchmode=matchmode.upper()
+            region.value, uid, gamemode="br", matchmode="CAREER"
         )
     )
     if isinstance(result, FreeFireError):
         await interaction.followup.send( view=compose(_error_embed(result)))
         return
 
-    stats = result.get("stats") or result
-
-    embed = discord.Embed(
-        title=replace_emojis(f"{get_emoji('stats')} FREE FIRE | Статистика"),
-        description=(
-            f"ID `{uid}` • режим: **{mode.name}**\n\n{_stats_embed_text(stats)}"
-        ),
-        color=COLOR_MAIN,
+    view = FreeFireStatsView(
+        uid=uid,
+        region=region.value,
+        owner_id=interaction.user.id,
+        data=result,
+        fetch=_fetch,
     )
-    embed.set_footer(text=FOOTER)
-    await interaction.followup.send( view=compose(embed))
+    view.bound_message = await interaction.followup.send(view=view)
 
 
 # ----------------------------------------------------------------- /ff item
