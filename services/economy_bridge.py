@@ -179,12 +179,20 @@ async def escrow(request: web.Request) -> web.Response:
     await _ensure_schema(pool)
 
     async with pool.acquire() as conn:
-        existing = await conn.fetchrow("SELECT state, entries FROM arcade_escrow WHERE op_id = $1", op_id)
-        if existing is not None:
-            # Idempotent replay: return the recorded outcome, never re-debit.
-            return web.json_response({"ok": existing["state"] == "reserved", "op_id": op_id, "state": existing["state"], "replayed": True})
         try:
             async with conn.transaction():
+                # Serialize every operation on this op_id: concurrent escrow /
+                # settle / refund calls queue here instead of racing on state.
+                await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", op_id)
+                existing = await conn.fetchrow("SELECT state, entries FROM arcade_escrow WHERE op_id = $1", op_id)
+                if existing is not None:
+                    # Idempotent replay only for the identical stake set; a
+                    # different roster under the same op_id is a conflict.
+                    stored = sorted(json.loads(existing["entries"]), key=lambda s: s["user_id"])
+                    if stored != sorted(stakes, key=lambda s: s["user_id"]):
+                        return web.json_response({"error": "op_conflict"}, status=409)
+                    # Return the recorded outcome, never re-debit.
+                    return web.json_response({"ok": existing["state"] == "reserved", "op_id": op_id, "state": existing["state"], "replayed": True})
                 # Wallets are created lazily with the bot's default balance of
                 # 100, exactly like the first wallet operation in the bot.
                 for stake in stakes:
@@ -209,7 +217,7 @@ async def escrow(request: web.Request) -> web.Response:
                     )
                 await conn.execute(
                     "INSERT INTO arcade_escrow (op_id, guild_id, entries, state) VALUES ($1,$2,$3::jsonb,'reserved')",
-                    op_id, guild_id, json.dumps(stakes),
+                    op_id, guild_id, json.dumps(sorted(stakes, key=lambda s: s["user_id"])),
                 )
         except _Insufficient as exc:
             return web.json_response({"ok": False, "error": "insufficient", "user_id": str(exc.user_id)}, status=409)
@@ -228,10 +236,6 @@ async def _body(request: web.Request) -> dict | None:
     except Exception:
         return None
     return body if isinstance(body, dict) else None
-
-
-async def _escrow_row(conn, op_id: str, guild_id: int):
-    return await conn.fetchrow("SELECT * FROM arcade_escrow WHERE op_id = $1 AND guild_id = $2", op_id, guild_id)
 
 
 async def settle(request: web.Request) -> web.Response:
@@ -262,44 +266,59 @@ async def settle(request: web.Request) -> web.Response:
     pool = await get_pool()
     await _ensure_schema(pool)
     async with pool.acquire() as conn:
-        escrow_row = await _escrow_row(conn, op_id, guild_id)
-        if escrow_row is None:
-            return web.json_response({"error": "not_found"}, status=404)
-        if escrow_row["state"] == "settled":
-            return web.json_response({"ok": True, "op_id": op_id, "state": "settled", "replayed": True})
-        if escrow_row["state"] != "reserved":
-            return web.json_response({"error": "conflict", "state": escrow_row["state"]}, status=409)
-        held = sum(int(e["amount"]) for e in json.loads(escrow_row["entries"]))
-        paid = sum(p["amount"] for p in clean)
-        if paid > held:
-            return web.json_response({"error": "payout_exceeds_pool"}, status=400)
-        results: list[dict] = []
         try:
             async with conn.transaction():
+                # Row lock + state recheck inside the transaction: concurrent
+                # settle/settle, settle/refund and refund/refund serialize on
+                # the escrow row, so balances can never be credited twice.
+                await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", op_id)
+                escrow_row = await conn.fetchrow(
+                    "SELECT * FROM arcade_escrow WHERE op_id = $1 AND guild_id = $2 FOR UPDATE",
+                    op_id, guild_id,
+                )
+                if escrow_row is None:
+                    return web.json_response({"error": "not_found"}, status=404)
+                if escrow_row["state"] == "settled":
+                    return web.json_response({"ok": True, "op_id": op_id, "state": "settled", "replayed": True})
+                if escrow_row["state"] != "reserved":
+                    return web.json_response({"error": "conflict", "state": escrow_row["state"]}, status=409)
+                held = sum(int(e["amount"]) for e in json.loads(escrow_row["entries"]))
+                paid = sum(p["amount"] for p in clean)
+                if paid > held:
+                    return web.json_response({"error": "payout_exceeds_pool"}, status=400)
+                results: list[dict] = []
                 for payout in clean:
                     await conn.execute(
                         "INSERT INTO user_balance (guild_id, user_id, balance) VALUES ($1, $2, 100) ON CONFLICT (guild_id, user_id) DO NOTHING",
                         guild_id, payout["user_id"],
                     )
                     before_row = await conn.fetchrow(
-                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2",
+                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
                         guild_id, payout["user_id"],
                     )
                     before = int(before_row["balance"])
-                    after_row = await conn.fetchrow(
-                        "UPDATE user_balance SET balance = LEAST(balance + $3, $4) WHERE guild_id = $1 AND user_id = $2 RETURNING balance",
-                        guild_id, payout["user_id"], payout["amount"], _MAX_BALANCE,
+                    # Winnings are clamped at MAX_BALANCE; the clamped remainder
+                    # is ledgered as payout_overflow — reported, never destroyed.
+                    after = min(before + payout["amount"], _MAX_BALANCE)
+                    await conn.execute(
+                        "UPDATE user_balance SET balance = $3 WHERE guild_id = $1 AND user_id = $2",
+                        guild_id, payout["user_id"], after,
                     )
-                    after = int(after_row["balance"])
                     actual = max(0, after - before)
+                    overflow = payout["amount"] - actual
                     await conn.execute(
                         "INSERT INTO arcade_ledger (op_id, guild_id, user_id, kind, amount, balance_after) VALUES ($1,$2,$3,'payout',$4,$5)",
                         op_id, guild_id, payout["user_id"], actual, after,
                     )
-                    results.append({"user_id": str(payout["user_id"]), "requested": payout["amount"], "credited": actual, "overflow": payout["amount"] - actual})
+                    if overflow > 0:
+                        await conn.execute(
+                            "INSERT INTO arcade_ledger (op_id, guild_id, user_id, kind, amount, balance_after) VALUES ($1,$2,$3,'payout_overflow',$4,$5)",
+                            op_id, guild_id, payout["user_id"], overflow, after,
+                        )
+                    results.append({"user_id": str(payout["user_id"]), "requested": payout["amount"], "credited": actual, "overflow": overflow})
                 await conn.execute(
                     "UPDATE arcade_escrow SET state = 'settled', payouts = $2::jsonb, settled_at = now() WHERE op_id = $1",
-                    op_id, json.dumps(clean),
+                    op_id, json.dumps(results),
                 )
         except Exception:
             logger.exception("Arcade settle failed for op %s", op_id)
@@ -321,15 +340,19 @@ async def refund(request: web.Request) -> web.Response:
     pool = await get_pool()
     await _ensure_schema(pool)
     async with pool.acquire() as conn:
-        escrow_row = await _escrow_row(conn, op_id, guild_id)
-        if escrow_row is None:
-            return web.json_response({"error": "not_found"}, status=404)
-        if escrow_row["state"] == "refunded":
-            return web.json_response({"ok": True, "op_id": op_id, "state": "refunded", "replayed": True})
-        if escrow_row["state"] != "reserved":
-            return web.json_response({"error": "conflict", "state": escrow_row["state"]}, status=409)
         try:
             async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", op_id)
+                escrow_row = await conn.fetchrow(
+                    "SELECT * FROM arcade_escrow WHERE op_id = $1 AND guild_id = $2 FOR UPDATE",
+                    op_id, guild_id,
+                )
+                if escrow_row is None:
+                    return web.json_response({"error": "not_found"}, status=404)
+                if escrow_row["state"] == "refunded":
+                    return web.json_response({"ok": True, "op_id": op_id, "state": "refunded", "replayed": True})
+                if escrow_row["state"] != "reserved":
+                    return web.json_response({"error": "conflict", "state": escrow_row["state"]}, status=409)
                 for entry in json.loads(escrow_row["entries"]):
                     user_id, amount = int(entry["user_id"]), int(entry["amount"])
                     await conn.execute(
@@ -337,24 +360,45 @@ async def refund(request: web.Request) -> web.Response:
                         guild_id, user_id,
                     )
                     before_row = await conn.fetchrow(
-                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2",
+                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
                         guild_id, user_id,
                     )
                     before = int(before_row["balance"])
-                    after_row = await conn.fetchrow(
-                        "UPDATE user_balance SET balance = LEAST(balance + $3, $4) WHERE guild_id = $1 AND user_id = $2 RETURNING balance",
-                        guild_id, user_id, amount, _MAX_BALANCE,
+                    # Refunds are restitution, not winnings: the full held
+                    # amount is always recoverable, even at the balance cap.
+                    after = before + amount
+                    await conn.execute(
+                        "UPDATE user_balance SET balance = $3 WHERE guild_id = $1 AND user_id = $2",
+                        guild_id, user_id, after,
                     )
-                    after = int(after_row["balance"])
                     await conn.execute(
                         "INSERT INTO arcade_ledger (op_id, guild_id, user_id, kind, amount, balance_after) VALUES ($1,$2,$3,'refund',$4,$5)",
-                        op_id, guild_id, user_id, max(0, after - before), after,
+                        op_id, guild_id, user_id, amount, after,
                     )
                 await conn.execute("UPDATE arcade_escrow SET state = 'refunded', settled_at = now() WHERE op_id = $1", op_id)
         except Exception:
             logger.exception("Arcade refund failed for op %s", op_id)
             return web.json_response({"error": "refund_failed"}, status=500)
     return web.json_response({"ok": True, "op_id": op_id, "state": "refunded", "replayed": False})
+
+
+async def escrows(request: web.Request) -> web.Response:
+    """Reserved escrows for Arcade-side orphan reconciliation (read-only)."""
+    denied = _authorized(request)
+    if denied is not None:
+        return denied
+    guild_id = _snowflake(request.query.get("guild_id"))
+    if guild_id is None:
+        return web.json_response({"error": "invalid_parameters"}, status=400)
+    from storage.db import get_pool
+    pool = await get_pool()
+    await _ensure_schema(pool)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT op_id, created_at FROM arcade_escrow WHERE guild_id = $1 AND state = 'reserved' ORDER BY created_at",
+            guild_id,
+        )
+    return web.json_response({"escrows": [{"op_id": r["op_id"], "created_at": r["created_at"].isoformat()} for r in rows]})
 
 
 async def start_bridge() -> web.AppRunner | None:
@@ -371,6 +415,7 @@ async def start_bridge() -> web.AppRunner | None:
     app.router.add_post("/internal/economy/escrow", escrow)
     app.router.add_post("/internal/economy/settle", settle)
     app.router.add_post("/internal/economy/refund", refund)
+    app.router.add_get("/internal/economy/escrows", escrows)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, host, port).start()
