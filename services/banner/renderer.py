@@ -41,7 +41,7 @@ NICK_X, NICK_TOP = 992, 480                      # верх текста ник�
 NICK_FONT = 44
 NICK_MAX_W = 500                                  # до правого края карточки
 SUBTITLE_X, SUBTITLE_TOP, SUBTITLE_FONT = 998, 542, 27
-VOICE_X, VOICE_TOP, STAT_FONT = 920, 652, 42
+VOICE_X, VOICE_TOP, STAT_FONT = 920, 647, 40
 MATCHES_X, MATCHES_TOP = 1232, 634
 
 RENDER_TIMEOUT = 20
