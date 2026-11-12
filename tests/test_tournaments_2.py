@@ -822,3 +822,162 @@ class TestLockEvictionAsync:
             assert sorted(done) == ["A", "B"]
         finally:
             _ROOM_LOCKS.clear()
+
+
+# ---------------------------------------------------------------------------
+# P0: _respond не передаёт files=None/view=None; admin-call с ролью+MM каналом
+# ---------------------------------------------------------------------------
+
+class _FakeResponse:
+    def __init__(self, done):
+        self._done = done
+        self.sent = []
+
+    def is_done(self):
+        return self._done
+
+    async def send_message(self, **kw):
+        self.sent.append(kw)
+
+
+class _FakeFollowup:
+    def __init__(self):
+        self.sent = []
+
+    async def send(self, **kw):
+        self.sent.append(kw)
+
+
+class _FakeIX:
+    def __init__(self, done=False):
+        self.response = _FakeResponse(done)
+        self.followup = _FakeFollowup()
+
+
+class TestRespondKwargs:
+    """Регрессия Railway: files=None/view=None → TypeError в discord.py."""
+
+    @pytest.mark.asyncio
+    async def test_respond_no_none_kwargs_not_deferred(self):
+        import views.ocr_match_view as om
+        ix = _FakeIX(done=False)
+        await om._respond(ix, content="hello")
+        kw = ix.response.sent[0]
+        assert kw["content"] == "hello"
+        assert "view" not in kw and "files" not in kw
+        assert kw["ephemeral"] is True
+
+    @pytest.mark.asyncio
+    async def test_respond_no_none_kwargs_deferred(self):
+        import views.ocr_match_view as om
+        ix = _FakeIX(done=True)
+        await om._respond(ix, content="hello")
+        kw = ix.followup.sent[0]
+        assert "view" not in kw and "files" not in kw
+
+    @pytest.mark.asyncio
+    async def test_respond_with_view_and_files(self):
+        import discord
+        import views.ocr_match_view as om
+        ix = _FakeIX(done=True)
+        view = discord.ui.View()
+        await om._respond(ix, content="x", view=view, files=["f"])
+        kw = ix.followup.sent[0]
+        assert kw["view"] is view and kw["files"] == ["f"]
+
+
+class _NotifyChan:
+    def __init__(self, cid):
+        self.id = cid
+        self.sent = []
+
+    async def send(self, content=None, **kw):
+        self.sent.append((content, kw))
+
+
+class _NotifyGuild:
+    def __init__(self, channels):
+        self._channels = channels
+
+    def get_channel(self, cid):
+        return self._channels.get(cid)
+
+    async def fetch_channel(self, cid):
+        return self._channels.get(cid)
+
+
+class _NotifyBot:
+    def __init__(self, channels):
+        self._channels = channels
+
+    def get_channel(self, cid):
+        return self._channels.get(cid)
+
+    async def fetch_channel(self, cid):
+        return self._channels.get(cid)
+
+
+class _NotifyUser:
+    def __init__(self, uid, name="nota17"):
+        self.id = uid
+        self.mention = f"<@{uid}>"
+        self.display_name = name
+
+    def __str__(self):
+        return self.mention
+
+
+def _notify_ix(guild, bot, uid=42):
+    return SimpleNamespace(
+        user=_NotifyUser(uid),
+        guild=guild,
+        client=bot,
+        data={},
+    )
+
+
+class TestAdminCallNotify:
+    """📣 вызов админа: роль 1563168378196197397 + канал матча для MM."""
+
+    @pytest.mark.asyncio
+    async def test_mm_match_posts_to_match_channel_with_role(self, monkeypatch):
+        import views.ocr_match_view as om
+        monkeypatch.setattr(om, "OCR_STATS_CHANNEL_ID", 500)
+        stats = _NotifyChan(500)
+        match_ch = _NotifyChan(900)
+        guild = _NotifyGuild({500: stats})
+        bot = _NotifyBot({900: match_ch, 500: stats})
+        t = SimpleNamespace(
+            mm_search_channel_id=555,
+            match_channels={
+                "900": {
+                    "match_type": "final",
+                    "match_index": 0,
+                    "matches": [["final", 0]],
+                }
+            },
+        )
+        ix = _notify_ix(guild, bot)
+        await om._notify_admin_call(ix, t, "final", 0)
+        # stats-канал + канал матча
+        assert len(stats.sent) == 1
+        assert len(match_ch.sent) == 1
+        text = match_ch.sent[0][0]
+        assert "nota17" in text or "<@42>" in text
+        assert "<@&1563168378196197397>" in text
+        assert "Финал" in text
+
+    @pytest.mark.asyncio
+    async def test_regular_tournament_stats_channel_only(self, monkeypatch):
+        import views.ocr_match_view as om
+        monkeypatch.setattr(om, "OCR_STATS_CHANNEL_ID", 500)
+        stats = _NotifyChan(500)
+        guild = _NotifyGuild({500: stats})
+        bot = _NotifyBot({500: stats})
+        t = SimpleNamespace(mm_search_channel_id=0, match_channels={})
+        ix = _notify_ix(guild, bot)
+        await om._notify_admin_call(ix, t, "semifinal", 1, room_index=2)
+        assert len(stats.sent) == 1
+        text = stats.sent[0][0]
+        assert "<@&1563168378196197397>" in text
+        assert "Полуфинал #2" in text and "комната 2" in text

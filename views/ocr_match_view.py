@@ -166,15 +166,17 @@ async def _respond(
         done = interaction.response.is_done()
     except Exception:
         done = False
+    # kwargs собираем динамически: files=None/view=None нельзя
+    # передавать в discord.py — TypeError ('NoneType' is not
+    # iterable / expected View). Добавляем только непустые.
+    kwargs: dict = {"content": content, "ephemeral": ephemeral}
+    if view is not None:
+        kwargs["view"] = view
+    if files is not None:
+        kwargs["files"] = files
     if done:
-        return await interaction.followup.send(
-            content=content, view=view, files=files,
-            ephemeral=ephemeral,
-        )
-    return await interaction.response.send_message(
-        content=content, view=view, files=files,
-        ephemeral=ephemeral,
-    )
+        return await interaction.followup.send(**kwargs)
+    return await interaction.response.send_message(**kwargs)
 
 
 def _log_mapping(stage: str, **ctx) -> None:
@@ -352,6 +354,54 @@ def _match_label(match_type: str, match_index: int) -> str:
     if match_type == "semifinal":
         return f"Полуфинал #{match_index + 1}"
     return f"Отборочный #{match_index + 1}"
+
+
+async def _notify_admin_call(
+    interaction: discord.Interaction,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+    room_index: int | None = None,
+) -> None:
+    """📣 Вызов администратора: сообщение с пингом роли в канал
+    статистики OCR + (для MM-матчей) в канал матча."""
+    suffix = f", комната {room_index}" if room_index is not None else ""
+    text = (
+        f"📣 **{interaction.user}** вызвал администратора "
+        f"<@&{ADMIN_HELP_ROLE_ID}> — матч "
+        f"**{_match_label(match_type, match_index)}**{suffix}."
+    )
+    mentions = discord.AllowedMentions(
+        roles=True, users=True, everyone=False
+    )
+    guild = interaction.guild
+    targets = []
+    try:
+        ch = guild.get_channel(OCR_STATS_CHANNEL_ID)
+        if ch is None:
+            ch = await guild.fetch_channel(OCR_STATS_CHANNEL_ID)
+        if ch is not None:
+            targets.append(ch)
+    except Exception as exc:
+        logger.warning("admin call stats channel failed: %s", exc)
+    # MM-матч: дублируем вызов в канал матча — там капитаны.
+    if getattr(tournament, "mm_search_channel_id", 0):
+        try:
+            from views.room_modal import _resolve_mm_match_channel
+            mch = await _resolve_mm_match_channel(
+                interaction.client, tournament, match_type, match_index
+            )
+            if mch is not None and all(
+                getattr(c, "id", None) != mch.id for c in targets
+            ):
+                targets.append(mch)
+        except Exception as exc:
+            logger.warning("admin call match channel failed: %s", exc)
+    for ch in targets:
+        try:
+            await ch.send(text, allowed_mentions=mentions)
+        except Exception as exc:
+            logger.warning("admin call notify failed: %s", exc)
 
 
 def _captain_mentions(tournament: Tournament, team_indexes: list[int]) -> str:
@@ -1784,7 +1834,7 @@ class ScreenshotUploadModal(Modal):
             )
 
 
-ADMIN_HELP_ROLE_ID = _CFG_OCR_ADMIN_ROLE_ID
+ADMIN_HELP_ROLE_ID = _CFG_OCR_ADMIN_ROLE_ID or 1563168378196197397
 
 
 class AdminCallConfirmView(View):
@@ -5238,19 +5288,10 @@ class RoomView(View):
                 interaction, content=replace_emojis("❌ Турнир не найден.")
             )
             return
-        try:
-            ch = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
-            if ch is None:
-                ch = await interaction.guild.fetch_channel(OCR_STATS_CHANNEL_ID)
-            await ch.send(
-                replace_emojis(
-                    f"📣 **{interaction.user}** вызвал администратора "
-                    f"— матч **{_match_label(self.match_type, self.match_index)}**, "
-                    f"комната {self.room_index}."
-                )
-            )
-        except Exception as e:
-            logger.warning("room call-admin failed: %s", e)
+        await _notify_admin_call(
+            interaction, tournament,
+            self.match_type, self.match_index, self.room_index,
+        )
         await _respond(
             interaction,
             content=replace_emojis("📣 Администратор уведомлён."),
@@ -6308,17 +6349,10 @@ class RoomsConfirmView(View):
         tournament = await self._fresh()
         if not tournament:
             return
-        try:
-            ch = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID) \
-                or await interaction.guild.fetch_channel(OCR_STATS_CHANNEL_ID)
-            await ch.send(
-                replace_emojis(
-                    f"📣 **{interaction.user}** вызвал администратора — "
-                    f"**{_match_label(self.match_type, self.match_index)}**."
-                )
-            )
-        except Exception as e:
-            logger.warning("rooms confirm call-admin failed: %s", e)
+        await _notify_admin_call(
+            interaction, tournament,
+            self.match_type, self.match_index,
+        )
         await interaction.response.send_message(
             replace_emojis("📣 Администратор уведомлён."), ephemeral=True
         )
