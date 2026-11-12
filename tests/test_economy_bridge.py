@@ -146,6 +146,7 @@ class FakeRequest:
 @pytest.fixture
 def env(monkeypatch):
     monkeypatch.setenv("ECONOMY_BRIDGE_TOKEN", "tok")
+    monkeypatch.setenv("ECONOMY_BRIDGE_WRITES_ENABLED", "true")
     db = FakeDB()
     import services.economy_bridge as bridge
     import storage.db as storage_db
@@ -346,3 +347,30 @@ async def test_pending_credit_claim_pays_when_balance_has_room(env):
     assert data2["claimed"][0]["credited"] == 500
     assert env.balances[(GUILD, int(U1))] == 90_500
     assert env.pending == []
+
+
+async def test_writes_disabled_blocks_all_mutations(env, monkeypatch):
+    """ECONOMY_BRIDGE_WRITES_ENABLED=false: reads work, every financial write
+    is rejected before touching balances — even with a valid token."""
+    import services.economy_bridge as bridge
+
+    monkeypatch.setenv("ECONOMY_BRIDGE_WRITES_ENABLED", "false")
+    env.balances[(GUILD, int(U1))] = 1_000
+    before = dict(env.balances)
+
+    r = await bridge.escrow(FakeRequest(_stakes_payload(), {"guild_id": str(GUILD)}))
+    assert r.status == 503 and json.loads(r.text)["error"] == "writes_disabled"
+    r = await bridge.settle(FakeRequest({"op_id": "op1", "payouts": [{"user_id": U1, "amount": 200}]}, {"guild_id": str(GUILD)}))
+    assert r.status == 503
+    r = await bridge.refund(FakeRequest({"op_id": "op1"}, {"guild_id": str(GUILD)}))
+    assert r.status == 503
+    r = await bridge.claim_pending(FakeRequest({"op_id": "op1"}, {"guild_id": str(GUILD)}))
+    assert r.status == 503
+    assert env.balances == before
+    assert env.escrows == {} and env.pending == [] and env.ledger == []
+
+    # Read-only endpoints are unaffected by the write flag.
+    r = await bridge.balance(FakeRequest(query={"guild_id": str(GUILD), "user_id": U1}))
+    assert r.status == 200
+    r = await bridge.escrows(FakeRequest(query={"guild_id": str(GUILD)}))
+    assert r.status == 200

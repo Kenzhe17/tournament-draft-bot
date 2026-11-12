@@ -77,6 +77,7 @@ async def bridge_env(monkeypatch):
     import storage.db as storage_db
 
     monkeypatch.setenv("ECONOMY_BRIDGE_TOKEN", "tok")
+    monkeypatch.setenv("ECONOMY_BRIDGE_WRITES_ENABLED", "true")
     schema = "bridge_test_" + uuid.uuid4().hex[:12]
     admin = await asyncpg.connect(DSN)
     await admin.execute(f'CREATE SCHEMA "{schema}"')
@@ -261,3 +262,25 @@ async def test_pending_credit_concurrent_claims_and_partial_crash_retry(bridge_e
     assert json.loads(again.text)["claimed"] == []
     ledger_sum = await _fetchval(pool, "SELECT COALESCE(sum(amount),0) FROM arcade_ledger WHERE op_id=$1 AND kind='pending_credit'", op)
     assert ledger_sum == 500  # no duplicate credit entries
+
+
+async def test_writes_disabled_blocks_mutations_on_real_db(bridge_env, monkeypatch):
+    bridge, pool, _admin, _schema = bridge_env
+    monkeypatch.setenv("ECONOMY_BRIDGE_WRITES_ENABLED", "false")
+    await _reset(pool, "pg-writes")
+    await _fund(pool, 1_000)
+    op = "pg-writes-1"
+    r = await bridge.escrow(Req({"op_id": op, "stakes": _stakes()}, _q()))
+    assert r.status == 503
+    r = await bridge.settle(Req({"op_id": op, "payouts": [{"user_id": str(USERS[0]), "amount": 200}]}, _q()))
+    assert r.status == 503
+    r = await bridge.refund(Req({"op_id": op}, _q()))
+    assert r.status == 503
+    r = await bridge.claim_pending(Req({"op_id": op}, _q()))
+    assert r.status == 503
+    assert await _balance(pool, USERS[0]) == 1_000
+    assert await _balance(pool, USERS[1]) == 1_000
+    assert await _fetchval(pool, "SELECT count(*) FROM arcade_escrow",) == 0
+    # Read path still works with writes disabled.
+    r = await bridge.balance(Req(query={"guild_id": str(GUILD), "user_id": str(USERS[0])}))
+    assert r.status == 200 and json.loads(r.text)["balance"] == 1_000

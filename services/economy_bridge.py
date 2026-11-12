@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 _TOKEN_ENV = "ECONOMY_BRIDGE_TOKEN"
 _HOST_ENV = "ECONOMY_BRIDGE_HOST"
 _PORT_ENV = "ECONOMY_BRIDGE_PORT"
+# Financial writes stay disabled until explicitly enabled; read-only
+# endpoints (balance, escrows listing) work regardless.
+_WRITES_ENV = "ECONOMY_BRIDGE_WRITES_ENABLED"
 
 _RATE_LIMIT_ENV = "ECONOMY_BRIDGE_RATE_LIMIT"
 _RATE_LIMIT_DEFAULT = 600     # requests per IP per window; all Arcade calls
@@ -125,6 +128,16 @@ CREATE INDEX IF NOT EXISTS arcade_pending_credit_op_idx ON arcade_pending_credit
 """
 
 
+def _writes_enabled() -> bool:
+    return os.getenv(_WRITES_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _writes_denied() -> web.Response | None:
+    if _writes_enabled():
+        return None
+    return web.json_response({"error": "writes_disabled"}, status=503)
+
+
 def _authorized(request: web.Request) -> web.Response | None:
     token = os.getenv(_TOKEN_ENV, "")
     if not token:
@@ -178,6 +191,9 @@ async def _ensure_schema(pool) -> None:
 
 async def escrow(request: web.Request) -> web.Response:
     denied = _authorized(request)
+    if denied is not None:
+        return denied
+    denied = _writes_denied()
     if denied is not None:
         return denied
     parsed = await _stakes_payload(request)
@@ -251,6 +267,9 @@ async def _body(request: web.Request) -> dict | None:
 
 async def settle(request: web.Request) -> web.Response:
     denied = _authorized(request)
+    if denied is not None:
+        return denied
+    denied = _writes_denied()
     if denied is not None:
         return denied
     guild_id = _snowflake(request.query.get("guild_id"))
@@ -353,6 +372,9 @@ async def refund(request: web.Request) -> web.Response:
     denied = _authorized(request)
     if denied is not None:
         return denied
+    denied = _writes_denied()
+    if denied is not None:
+        return denied
     guild_id = _snowflake(request.query.get("guild_id"))
     body = await _body(request)
     if guild_id is None or body is None or not isinstance(body.get("op_id"), str):
@@ -429,6 +451,9 @@ async def claim_pending(request: web.Request) -> web.Response:
     idempotent: each call pays out whatever still fits, the remainder stays
     pending until a later claim succeeds."""
     denied = _authorized(request)
+    if denied is not None:
+        return denied
+    denied = _writes_denied()
     if denied is not None:
         return denied
     guild_id = _snowflake(request.query.get("guild_id"))
