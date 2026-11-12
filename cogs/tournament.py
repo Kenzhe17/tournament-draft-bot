@@ -1614,10 +1614,22 @@ class TournamentCog(commands.Cog):
             description=f" {interaction.user.mention}\n\n{replace_emojis('•')} **Текущий статус:**\n Уровень: Level {stats.level}\n Ранг: {rank_title}\n\n{replace_emojis('•')} **Прогресс опыта:**\n Прогресс: `{progress_bar}` ({progress_percent}%)\n До след. уровня: {xp_remaining:,} XP\n\n{replace_emojis('a_dot_smaller')} Накопить XP можно через участие в турнирах и победы",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        # Эмблема текущего подранга вместо аватара; fallback — аватар
+        from utils.ranks import rank_badge_path
+
+        badge_path = rank_badge_path(stats.level)
+        files = []
+        if badge_path is not None:
+            embed.set_thumbnail(url=f"attachment://{badge_path.name}")
+            files.append(
+                discord.File(str(badge_path), filename=badge_path.name)
+            )
+        else:
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         await interaction.response.send_message(
             view=compose(embed),
+            files=files or None,
             allowed_mentions=discord.AllowedMentions.none())
 
     @economy_group.command(name="bet", description="Показать вашу статистику ставок")
