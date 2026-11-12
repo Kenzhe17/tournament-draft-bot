@@ -719,6 +719,26 @@ def _rooms_unresolved_conflicts(session: dict) -> list[tuple[int, dict]]:
     return out
 
 
+def _room_aux_review_pending(room: dict) -> int:
+    """Число элементов aux_review комнаты без подтверждения админа."""
+    if room.get("aux_review_confirmed"):
+        return 0
+    return len(room.get("aux_review") or [])
+
+
+def _rooms_aux_review_pending(session: dict) -> int:
+    """Всего неподтверждённых элементов aux_review по комнатам."""
+    return sum(
+        _room_aux_review_pending(r) for r in session.get("rooms") or []
+    )
+
+
+def _can_resolve_conflicts(user) -> bool:
+    """Выбор источника конфликта / игнор aux_review — ТОЛЬКО
+    Discord server administrator (или владелец бота)."""
+    return _is_server_admin(user)
+
+
 def _rooms_stats_complete(session: dict) -> bool:
     """Все привязанные строки всех комнат имеют K/D/A/DMG.
 
@@ -767,6 +787,10 @@ def check_ocr_session_ready(
     # администратор на этапе проверки итогов.
     if _rooms_unresolved_conflicts(session):
         return False, "conflicts_unresolved", ""
+    # Смешанная комната с непроверенными aux-данными не финализируется,
+    # пока администратор не подтвердит их игнорирование.
+    if _rooms_aux_review_pending(session):
+        return False, "aux_review_pending", ""
     if not _rooms_all_mapped(session, t1, t2):
         return False, "unmapped", ""
     if not _rooms_stats_complete(session):
@@ -884,6 +908,10 @@ def _rooms_ready_reason_text(reason: str, detail: str = "") -> str:
         return ("⚠️ Есть неразрешённые расхождения между полным "
                 "скриншотом и скриншотом отряда — администратор "
                 "выбирает источник кнопкой «Конфликты».")
+    if reason == "aux_review_pending":
+        return ("⚠️ Есть неподтверждённые дополнительные данные "
+                "скриншота отряда — администратор подтверждает "
+                "игнорирование кнопкой «Игнорировать доп. данные».")
     if reason == "unmapped":
         return ("⚠️ Не все комнаты сопоставлены — проверьте "
                 "сообщения комнат.")
@@ -5520,17 +5548,16 @@ def _rooms_confirm_channel(guild: discord.Guild, session: dict):
     return None
 
 
-async def _rooms_send_confirmation(
-    interaction: discord.Interaction,
-    tournament: Tournament,
-    match_type: str,
-    match_index: int,
-) -> None:
-    """Все комнаты сопоставлены → embed подтверждения + кнопки."""
-    key = _session_key(match_type, match_index)
-    session = tournament.ocr_sessions.get(key)
-    if not session:
-        return
+def _build_rooms_confirm_embed(
+    tournament: Tournament, session: dict,
+    match_type: str, match_index: int,
+) -> tuple:
+    """Embed подтверждения + счётчики блокеров.
+
+    Возвращает (embed, n_conflicts, n_aux_pending) — счётчики
+    нужны для кнопок RoomsConfirmView и обновления сообщения
+    после разрешения конфликтов/aux_review.
+    """
     t1, t2 = _match_tuple(tournament, match_type, match_index)
     winner = _rooms_confirmed_winner(tournament, session, t1, t2)
     wname = (
@@ -5570,6 +5597,13 @@ async def _rooms_send_confirmation(
             "подтверждение заблокировано до выбора источника "
             "администратором (кнопка «Конфликты»)."
         )
+    n_aux = _rooms_aux_review_pending(session)
+    if n_aux:
+        embed.description += (
+            f"\n\n⚠️ **{n_aux}** неподтверждённых доп. данных "
+            "скриншота отряда — подтверждение заблокировано до "
+            "«Игнорировать доп. данные» (только администратор)."
+        )
     for team_index in (t1, t2):
         tname = _team_display_name(tournament, team_index)
         lines = []
@@ -5590,14 +5624,61 @@ async def _rooms_send_confirmation(
             value="\n".join(lines) or "—",
             inline=False,
         )
+    return embed, n_conflicts, n_aux
 
+
+async def _refresh_rooms_confirm_message(
+    guild: discord.Guild, tournament: Tournament,
+    session: dict, match_type: str, match_index: int,
+) -> None:
+    """Обновить основное сообщение подтверждения после разрешения
+    конфликтов/aux_review — устаревшие предупреждения и кнопки
+    исчезают, счётчики актуальны."""
+    mid = session.get("confirm_message_id")
+    if not mid:
+        return
+    channel = _rooms_confirm_channel(guild, session)
+    if channel is None:
+        return
+    try:
+        msg = await channel.fetch_message(int(mid))
+    except Exception:
+        return
+    embed, n_conflicts, n_aux = _build_rooms_confirm_embed(
+        tournament, session, match_type, match_index
+    )
+    view = RoomsConfirmView(
+        tournament.guild_id, tournament.channel_id, tournament,
+        match_type, match_index,
+        conflicts_count=n_conflicts, aux_review_count=n_aux,
+    )
+    try:
+        await msg.edit(embed=embed, view=view)
+    except Exception as e:
+        logger.warning("rooms confirm refresh failed: %s", e)
+
+
+async def _rooms_send_confirmation(
+    interaction: discord.Interaction,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+) -> None:
+    """Все комнаты сопоставлены → embed подтверждения + кнопки."""
+    key = _session_key(match_type, match_index)
+    session = tournament.ocr_sessions.get(key)
+    if not session:
+        return
+    embed, n_conflicts, n_aux = _build_rooms_confirm_embed(
+        tournament, session, match_type, match_index
+    )
     channel = _rooms_confirm_channel(interaction.guild, session)
     if channel is None:
         channel = interaction.channel
     view = RoomsConfirmView(
         tournament.guild_id, tournament.channel_id, tournament,
         match_type, match_index,
-        conflicts_count=n_conflicts,
+        conflicts_count=n_conflicts, aux_review_count=n_aux,
     )
     msg = await channel.send(
         content=replace_emojis(
@@ -5627,7 +5708,7 @@ class RoomsConfirmView(View):
     def __init__(
         self, guild_id: int, channel_id: int, tournament,
         match_type: str, match_index: int,
-        conflicts_count: int = 0,
+        conflicts_count: int = 0, aux_review_count: int = 0,
     ):
         super().__init__(timeout=None)
         self.guild_id = guild_id
@@ -5645,6 +5726,11 @@ class RoomsConfirmView(View):
                 f"⚠️ Конфликты ({conflicts_count})",
                 discord.ButtonStyle.danger, "conflicts",
             ))
+        if aux_review_count:
+            specs.append((
+                f"🗑 Игнорировать доп. данные ({aux_review_count})",
+                discord.ButtonStyle.danger, "aux_review",
+            ))
         for label, style, suffix in specs:
             b = Button(
                 label=label, style=style,
@@ -5661,12 +5747,15 @@ class RoomsConfirmView(View):
                 await self._on_edit(interaction)
             elif suffix == "conflicts":
                 await self._on_conflicts(interaction)
+            elif suffix == "aux_review":
+                await self._on_aux_review(interaction)
             else:
                 await self._on_admin(interaction)
         return _cb
 
     async def _on_conflicts(self, interaction: discord.Interaction) -> None:
-        """Открыть разрешение конфликтов classic/squad (admin/org)."""
+        """Открыть разрешение конфликтов classic/squad (только
+        Discord server administrator)."""
         tournament = await self._fresh()
         if not tournament:
             await interaction.response.send_message(
@@ -5676,13 +5765,9 @@ class RoomsConfirmView(View):
         session = tournament.ocr_sessions.get(
             _session_key(self.match_type, self.match_index)
         )
-        # Выбор источника значения — только администратор сервера
-        # или организатор: обычным игрокам менять числа нельзя.
-        allowed = session and (
-            _is_server_admin(interaction.user)
-            or is_org_check(interaction.user, interaction.guild)
-        )
-        if not allowed:
+        # Выбор источника значения — ТОЛЬКО server administrator:
+        # обычным игрокам и организаторам менять числа нельзя.
+        if not _can_resolve_conflicts(interaction.user):
             await interaction.response.send_message(
                 replace_emojis("❌ Нет прав на выбор источника."),
                 ephemeral=True,
@@ -5704,6 +5789,46 @@ class RoomsConfirmView(View):
                 "выберите источник: полный экран (Classic) или "
                 "скриншот отряда (Squad). Решение фиксируется "
                 "с вашим ID и временем."
+            ),
+            view=view, ephemeral=True,
+        )
+
+    async def _on_aux_review(self, interaction: discord.Interaction) -> None:
+        """Подтверждение игнорирования aux_review (только admin)."""
+        tournament = await self._fresh()
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        session = tournament.ocr_sessions.get(
+            _session_key(self.match_type, self.match_index)
+        )
+        if not _can_resolve_conflicts(interaction.user):
+            await interaction.response.send_message(
+                replace_emojis("❌ Нет прав на игнорирование "
+                               "доп. данных."),
+                ephemeral=True,
+            )
+            return
+        n = _rooms_aux_review_pending(session or {})
+        if not n:
+            await interaction.response.send_message(
+                replace_emojis("✅ Все доп. данные уже подтверждены."),
+                ephemeral=True,
+            )
+            return
+        view = AuxReviewConfirmView(
+            tournament.guild_id, tournament.channel_id, tournament,
+            self.match_type, self.match_index, count=n,
+        )
+        await interaction.response.send_message(
+            content=replace_emojis(
+                f"⚠️ **Игнорировать {n} доп. данных скриншота "
+                "отряда?** Они не совпали с полным экраном и не "
+                "будут учтены в статистике. Действие фиксируется "
+                "с вашим ID и временем и снимает блокировку "
+                "финализации для этой комнаты."
             ),
             view=view, ephemeral=True,
         )
@@ -5965,6 +6090,130 @@ async def resolve_room_conflict(
         return "ok"
 
 
+async def confirm_rooms_aux_review(
+    guild_id: int,
+    channel_id: int,
+    match_type: str,
+    match_index: int,
+    user,
+) -> str:
+    """Админ подтверждает игнорирование aux_review всех комнат.
+
+    Под _mapping_lock: каждой комнате с aux_review без подтверждения
+    ставится aux_review_confirmed = {by, by_name, at, count}.
+    Идемпотентно: повторный вызов → "confirmed". Коды:
+    "ok" | "confirmed" | "none" | "closed".
+    """
+    key = _session_key(match_type, match_index)
+    async with _mapping_lock(key):
+        tournament = store.get(guild_id, channel_id)
+        session = (
+            tournament.ocr_sessions.get(key) if tournament else None
+        )
+        if (
+            not session
+            or session.get("mode") != "rooms"
+            or session.get("status") in ("completed", "cancelled",
+                                         "finalizing")
+        ):
+            return "closed"
+        pending = [
+            r for r in session.get("rooms") or []
+            if _room_aux_review_pending(r)
+        ]
+        if not pending:
+            return "confirmed" if any(
+                r.get("aux_review_confirmed")
+                for r in session.get("rooms") or []
+            ) else "none"
+        rec = {
+            "by": int(getattr(user, "id", 0) or 0),
+            "by_name": str(
+                getattr(user, "display_name", None)
+                or getattr(user, "name", "")
+                or getattr(user, "id", "")
+            ),
+            "at": datetime.now().isoformat(),
+        }
+        for r in pending:
+            r["aux_review_confirmed"] = {
+                **rec, "count": len(r.get("aux_review") or [])
+            }
+        store.set(tournament)
+        return "ok"
+
+
+class AuxReviewConfirmView(View):
+    """Однокнопочное подтверждение игнорирования aux_review."""
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int, count: int,
+    ):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.count = count
+        b = Button(
+            label="✅ Подтвердить игнорирование",
+            style=discord.ButtonStyle.danger,
+            custom_id=(
+                f"aux_review_ok:{guild_id}:{channel_id}:"
+                f"{match_type}:{match_index}"
+            ),
+        )
+        b.callback = self._on_ok
+        self.add_item(b)
+
+    async def _on_ok(self, interaction: discord.Interaction) -> None:
+        if not _can_resolve_conflicts(interaction.user):
+            await interaction.response.send_message(
+                replace_emojis("❌ Нет прав на игнорирование "
+                               "доп. данных."),
+                ephemeral=True,
+            )
+            return
+        res = await confirm_rooms_aux_review(
+            self.guild_id, self.channel_id,
+            self.match_type, self.match_index, interaction.user,
+        )
+        if res == "closed":
+            await interaction.response.edit_message(
+                content=replace_emojis(
+                    "⚠️ Сессия уже завершена/отменена."
+                ),
+                view=None,
+            )
+            return
+        # Обновляем основное сообщение подтверждения — блокировка
+        # и предупреждение исчезают.
+        tournament = store.get(self.guild_id, self.channel_id)
+        session = (
+            tournament.ocr_sessions.get(
+                _session_key(self.match_type, self.match_index)
+            ) if tournament else None
+        )
+        if tournament and session:
+            try:
+                await _refresh_rooms_confirm_message(
+                    interaction.guild, tournament, session,
+                    self.match_type, self.match_index,
+                )
+            except Exception:
+                logger.debug("aux confirm refresh failed", exc_info=True)
+        await interaction.response.edit_message(
+            content=replace_emojis(
+                "✅ Доп. данные скриншота отряда проигнорированы — "
+                "блокировка финализации снята."
+                if res == "ok" else
+                "ℹ️ Все доп. данные уже были подтверждены."
+            ),
+            view=None,
+        )
+
+
 class RoomConflictsView(View):
     """Постраничный выбор источника для конфликтов classic/squad.
 
@@ -6110,13 +6359,9 @@ class RoomConflictsView(View):
                 _session_key(self.match_type, self.match_index)
             ) if tournament else None
         ) or {}
-        # Те же права, что при открытии: admin/org — обычным
-        # игрокам выбор источника недоступен.
-        allowed = (
-            _is_server_admin(interaction.user)
-            or is_org_check(interaction.user, interaction.guild)
-        )
-        if not allowed:
+        # Права — только Discord server administrator (как при
+        # открытии view): org/игрокам выбор источника недоступен.
+        if not _can_resolve_conflicts(interaction.user):
             await interaction.response.send_message(
                 replace_emojis("❌ Нет прав на выбор источника."),
                 ephemeral=True,
@@ -6128,6 +6373,23 @@ class RoomConflictsView(View):
             room_index, conflict_index, source, interaction.user,
         )
         if res == "ok":
+            # Обновляем основное сообщение подтверждения — счётчик
+            # конфликтов и предупреждения не должны устаревать.
+            try:
+                fresh_t = store.get(self.guild_id, self.channel_id)
+                fresh_s = (
+                    fresh_t.ocr_sessions.get(
+                        _session_key(self.match_type, self.match_index)
+                    ) if fresh_t else None
+                )
+                if fresh_t and fresh_s:
+                    await _refresh_rooms_confirm_message(
+                        interaction.guild, fresh_t, fresh_s,
+                        self.match_type, self.match_index,
+                    )
+            except Exception:
+                logger.debug("conflict confirm refresh failed",
+                             exc_info=True)
             # Следующий неразрешённый конфликт на этой же странице
             # или конец списка.
             _, session = self._session()

@@ -399,3 +399,118 @@ class TestSafeAuxFill:
         up._reconcile_mixed_squad(room)
         assert not room.get("stat_conflicts")
         assert room["panels"]["left"]["rows"][0]["dmg"] == 100
+
+
+# ---------------------------------------------------------------------------
+# P0 — aux_review: блок до админ-подтверждения, admin-only, гонки
+# ---------------------------------------------------------------------------
+
+
+def _aux_item(name="X1", reason="no_unique_match"):
+    return {
+        "name": name, "reason": reason,
+        "squad": {"kills": 1, "deaths": 1, "assists": 1, "dmg": 10},
+        "candidates": [],
+    }
+
+
+class TestAuxReviewGate:
+    def test_pending_aux_review_blocks_ready(self):
+        room = _room(1, aux_review=[_aux_item()])
+        session = _session([room])
+        t = _tournament(session)
+        ready, reason, _ = omv.check_ocr_session_ready(t, session, 0, 1)
+        assert not ready
+        assert reason == "aux_review_pending"
+
+    @pytest.mark.asyncio
+    async def test_confirm_aux_review_records_admin(self, store_env):
+        room = _room(1, aux_review=[_aux_item("X1"), _aux_item("X2")])
+        session = _session([room])
+        t = _tournament(session)
+        store_env["t"] = t
+
+        user = SimpleNamespace(id=777, display_name="Root",
+                               name="root")
+        res = await omv.confirm_rooms_aux_review(
+            1, 1, "qualifier", 0, user)
+        assert res == "ok"
+
+        rec = room["aux_review_confirmed"]
+        assert rec["by"] == 777
+        assert rec["by_name"] == "Root"
+        assert rec["at"]
+        assert rec["count"] == 2
+
+        ready, reason, _ = omv.check_ocr_session_ready(t, session, 0, 1)
+        assert ready, reason
+
+    @pytest.mark.asyncio
+    async def test_confirm_idempotent_and_two_admins(self, store_env):
+        """Два «одновременных» админа: лок сериализует — второй
+        получает 'confirmed', запись одна."""
+        room = _room(1, aux_review=[_aux_item()])
+        session = _session([room])
+        t = _tournament(session)
+        store_env["t"] = t
+
+        u1 = SimpleNamespace(id=1, display_name="A1", name="a1")
+        u2 = SimpleNamespace(id=2, display_name="A2", name="a2")
+        r1, r2 = await __import__("asyncio").gather(
+            omv.confirm_rooms_aux_review(1, 1, "qualifier", 0, u1),
+            omv.confirm_rooms_aux_review(1, 1, "qualifier", 0, u2),
+        )
+        assert sorted([r1, r2]) == ["confirmed", "ok"]
+        rec = room["aux_review_confirmed"]
+        assert rec["by"] in (1, 2)  # победил один из них
+        # Повторный вызов — confirmed, перезаписи нет
+        rec_by = rec["by"]
+        r3 = await omv.confirm_rooms_aux_review(
+            1, 1, "qualifier", 0, u1)
+        assert r3 == "confirmed"
+        assert room["aux_review_confirmed"]["by"] == rec_by
+
+
+class TestAdminOnlyResolution:
+    def _user(self, admin=False, owner=False):
+        from config import BOT_OWNER_ID
+        return SimpleNamespace(
+            id=BOT_OWNER_ID if owner else (555 if admin else 42),
+            display_name="U", name="u",
+            guild_permissions=SimpleNamespace(administrator=admin),
+        )
+
+    def test_server_admin_allowed_org_denied(self):
+        assert omv._can_resolve_conflicts(self._user(admin=True))
+        assert omv._can_resolve_conflicts(self._user(owner=True))
+        assert not omv._can_resolve_conflicts(self._user(admin=False))
+
+    @pytest.mark.asyncio
+    async def test_two_admins_same_conflict_no_race(self, store_env):
+        """Два админа выбирают источник одного конфликта
+        одновременно: ровно один 'ok', значение не смешивается."""
+        rows = {"left": _panel_rows([("A1", 5, 2, 1, 100)]),
+                "right": _panel_rows([("B1", 1, 1, 1, 10)])}
+        room = _room(1, panel_rows=rows, conflicts=[
+            _conflict(field="dmg", classic=100, squad=3200,
+                      name="A1")])
+        session = _session([room])
+        t = _tournament(session)
+        store_env["t"] = t
+
+        u1 = SimpleNamespace(id=1, display_name="A1", name="a1")
+        u2 = SimpleNamespace(id=2, display_name="A2", name="a2")
+        import asyncio
+        r1, r2 = await asyncio.gather(
+            omv.resolve_room_conflict(
+                1, 1, "qualifier", 0, 1, 0, "classic", u1),
+            omv.resolve_room_conflict(
+                1, 1, "qualifier", 0, 1, 0, "squad", u2),
+        )
+        assert sorted([r1, r2]) == ["ok", "resolved"]
+        c = room["stat_conflicts"][0]
+        assert c["resolved"] is True
+        # Значение — строго один источник, не смесь
+        assert room["panels"]["left"]["rows"][0]["dmg"] in (100, 3200)
+        assert room["panels"]["left"]["rows"][0]["dmg"] == c["value"]
+        assert c["source"] in ("classic", "squad")
