@@ -109,7 +109,6 @@ def pick_env(monkeypatch):
     env = SimpleNamespace(tournament=None, saves=0, updates=0)
 
     import views.draft_view as dv
-    import storage.json_store as js
 
     monkeypatch.setattr(dv.store, "get", lambda g, c: env.tournament)
     monkeypatch.setattr(
@@ -217,3 +216,167 @@ class TestDraftPickCallback:
         assert len(t.teams) == 4
         for team in t.teams:
             assert len(team["players"]) == 4
+
+
+class _ChanCounted(_Chan):
+    """Канал с подсчётом Discord API-вызовов."""
+
+    def __init__(self):
+        super().__init__()
+        self.bulk_deletes = []
+        self.fetches = 0
+        self.sends = 0
+
+    async def delete_messages(self, messages, **kw):
+        self.bulk_deletes.extend(list(messages))
+
+    async def fetch_message(self, mid):
+        self.fetches += 1
+        return await super().fetch_message(mid)
+
+    async def send(self, content=None, **kw):
+        self.sends += 1
+        return await super().send(content, **kw)
+
+
+class _RespTimer(_Resp):
+    """defer() с побочным эффектом — имитация таймера, успевшего
+    сделать случайный выбор пока interaction подтверждался."""
+
+    def __init__(self, ix, on_defer):
+        super().__init__(ix)
+        self._on_defer = on_defer
+
+    async def defer(self, **kw):
+        self.deferred = True
+        if self._on_defer is not None:
+            self._on_defer()
+            self._on_defer = None
+
+
+def _ix_with(chan, bot, on_defer=None):
+    ix = _Ix(chan, bot)
+    if on_defer is not None:
+        ix.response = _RespTimer(ix, on_defer)
+    return ix
+
+
+class TestDraftPickConcurrency:
+    @pytest.mark.asyncio
+    async def test_concurrent_double_click_single_pick(self, pick_env):
+        """Два одновременных callback на один выбор: lock + ревалидация
+        → ровно один pick, второй получает ephemeral-отказ."""
+        import asyncio
+
+        t = _mk()
+        pick_env.tournament = t
+        key = str(t.current_circle)
+        player = t.available[key][0]
+        avail_snapshot = list(t.available[key])
+
+        chan = _ChanCounted()
+
+        class _SlowBot:
+            async def update_tournament_message(self, guild, tt, **kw):
+                pick_env.updates += 1
+                await asyncio.sleep(0.01)  # окно для гонки
+
+        ix1 = _ix_with(chan, _SlowBot())
+        ix2 = _ix_with(chan, _SlowBot())
+        sel1 = DraftView(t.guild_id, t.channel_id, avail_snapshot)
+        sel2 = DraftView(t.guild_id, t.channel_id, avail_snapshot)
+        s1 = next(c for c in sel1.children if isinstance(c, PlayerSelect))
+        s2 = next(c for c in sel2.children if isinstance(c, PlayerSelect))
+        s1._values = [player]
+        s2._values = [player]
+
+        await asyncio.gather(s1.callback(ix1), s2.callback(ix2))
+
+        # Ровно один выбор зафиксирован за ход (по всем кругам)
+        picked = [
+            pick
+            for pos_picks in t.picks.values()
+            for pick in pos_picks.values()
+        ]
+        assert picked.count(player) == 1
+        # Проигравший получил отказ — до defer (messages) или после (followups)
+        replies = (
+            ix1.messages + ix1.followups + ix2.messages + ix2.followups
+        )
+        assert any(
+            "выбран" in f or "ходит" in f or "выбирает" in f
+            for f in replies
+        ), replies
+
+    @pytest.mark.asyncio
+    async def test_timer_pick_during_defer_rejects_stale(self, pick_env):
+        """Таймер сделал random pick пока interaction подтверждался —
+        callback не должен применять устаревший выбор."""
+        t = _mk()
+        pick_env.tournament = t
+        key = str(t.current_circle)
+        player = t.available[key][0]
+
+        def _timer_fires():
+            # Имитация ветки истечения таймера: авто-выбор успел
+            # зафиксировать того же игрока, пока interaction ackался.
+            pos = t.current_picker_position()
+            if pos is not None:
+                t.pick_player(pos, player)
+                t.advance_after_pick()
+                pick_env.tournament = t
+
+        sel = _select_for(t)
+        sel._values = [player]
+        ix = _ix_with(pick_env.channel, pick_env.ix.client,
+                      on_defer=_timer_fires)
+        before_picks = sum(
+            len(v) for v in t.picks.values()
+        )
+        await sel.callback(ix)
+
+        after_picks = sum(len(v) for v in t.picks.values())
+        # Только random pick таймера — устаревший выбор не применился
+        assert after_picks == before_picks + 1
+        assert any("уже выбран" in f or "ходит" in f
+                   for f in ix.followups)
+
+    @pytest.mark.asyncio
+    async def test_single_bulk_delete_no_fetch(self, pick_env):
+        """Удаление старого пинг-сообщения — один delete_messages,
+        без fetch_message."""
+        t = _mk()
+        t.draft_message_id = 555
+        pick_env.tournament = t
+        sel = _select_for(t)
+        sel._values = [t.available[str(t.current_circle)][0]]
+
+        chan = _ChanCounted()
+        bot = pick_env.ix.client
+        ix = _Ix(chan, bot)
+        await sel.callback(ix)
+
+        assert chan.bulk_deletes == [555]
+        assert chan.fetches == 0  # fetch+delete заменён bulk-delete
+        assert chan.sends == 1    # ровно один новый пинг
+        assert pick_env.updates == 1  # ровно один edit главного embed
+
+    @pytest.mark.asyncio
+    async def test_metrics_recorded(self, pick_env, monkeypatch):
+        """perf_metrics получает draft_pick_* durations."""
+        from utils import perf_metrics
+
+        recorded = {}
+        monkeypatch.setattr(
+            perf_metrics, "record",
+            lambda name, value: recorded.setdefault(name, []).append(value),
+        )
+        t = _mk()
+        pick_env.tournament = t
+        sel = _select_for(t)
+        sel._values = [t.available[str(t.current_circle)][0]]
+        await sel.callback(pick_env.ix)
+
+        assert "draft_pick_total_ms" in recorded
+        assert "draft_pick_save_ms" in recorded
+        assert recorded["draft_pick_total_ms"][0] >= 0

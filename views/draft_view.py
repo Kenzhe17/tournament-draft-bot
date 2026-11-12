@@ -3,37 +3,35 @@
 from __future__ import annotations
 
 import asyncio
-import time
-
-from config import replace_emojis
-
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import discord
 
+from config import replace_emojis
 from models.tournament import Tournament, TournamentPhase
 from storage.json_store import store
-from utils.embeds import build_embed_for_phase
-from utils import perf_metrics
 
 if TYPE_CHECKING:
     from bot import TournamentBot
 
 logger = logging.getLogger(__name__)
 
+# Сериализация выборов внутри одного турнира: два быстрых select-callback
+# (двойной клик, два окна) не должны пройти валидацию до того, как первый
+# зафиксировал pick. Таймер драфта мутирует состояние синхронно — гонка
+# с ним отсекается повторной валидацией внутри lock.
+_PICK_LOCKS: dict[tuple[int, int], asyncio.Lock] = {}
 
-async def _save_tournament(tournament: Tournament) -> None:
-    """store.set — синхронная запись на диск; выносим из event loop."""
-    await asyncio.to_thread(store.set, tournament)
 
-
-async def _clean_member_nick(member, cleaned: str) -> None:
-    """Косметическая правка никнейма — фоново, не блокирует pick."""
-    try:
-        await member.edit(nick=cleaned)
-    except Exception:
-        pass
+def _pick_lock(guild_id: int, channel_id: int) -> asyncio.Lock:
+    key = (guild_id, channel_id)
+    lock = _PICK_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _PICK_LOCKS[key] = lock
+    return lock
 
 
 class PlayerSelect(discord.ui.Select):
@@ -50,164 +48,221 @@ class PlayerSelect(discord.ui.Select):
         self.guild_id = guild_id
         self.channel_id = channel_id
 
+    @staticmethod
+    def _captain_name(tournament: Tournament) -> str | None:
+        """Имя капитана, который сейчас должен выбирать."""
+        picker_pos = tournament.current_picker_position()
+        if picker_pos is None:
+            return None
+        return tournament.captains[tournament.captain_order[picker_pos]]
+
+    @staticmethod
+    def _turn_owner_ok(tournament: Tournament, user_name: str) -> bool:
+        """Проверка «сейчас выбирает этот пользователь» (по нику)."""
+        expected = PlayerSelect._captain_name(tournament)
+        if expected is None:
+            return False
+        if tournament.is_test:
+            return True
+        from utils.cosmetics import clean_nickname
+
+        return clean_nickname(user_name) == clean_nickname(expected)
+
+    async def _ephemeral(self, interaction: discord.Interaction,
+                         text: str) -> None:
+        """Ответ-ошибка: до defer — response.send_message, после — followup."""
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    replace_emojis(text), ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    replace_emojis(text), ephemeral=True
+                )
+        except discord.NotFound:
+            pass
+
     async def callback(self, interaction: discord.Interaction) -> None:
-        t_start = time.perf_counter()
+        from utils import perf_metrics
+
+        t0 = time.perf_counter()
+        marks: dict[str, float] = {}
+
+        def mark(name: str) -> None:
+            marks[name] = (time.perf_counter() - t0) * 1000.0
+
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."),
-                ephemeral=True,
-            )
+            await self._ephemeral(interaction, "❌ Турнир не найден.")
             return
 
         if tournament.phase != TournamentPhase.DRAFT:
-            await interaction.response.send_message(
-                replace_emojis("❌ Драфт не активен."),
-                ephemeral=True,
-            )
+            await self._ephemeral(interaction, "❌ Драфт не активен.")
             return
 
         picker_pos = tournament.current_picker_position()
         if picker_pos is None:
-            await interaction.response.send_message(
-                replace_emojis("❌ Сейчас не ваш ход."),
-                ephemeral=True,
-            )
+            await self._ephemeral(interaction, "❌ Сейчас не ваш ход.")
             return
 
-        # Check if it's the captain's turn (by nickname)
-        expected_captain_name = tournament.captains[tournament.captain_order[picker_pos]]
+        expected_captain_name = tournament.captains[
+            tournament.captain_order[picker_pos]
+        ]
         user_name = interaction.user.display_name
         from utils.cosmetics import clean_nickname
+
         cleaned_name = clean_nickname(user_name)
         cleaned_captain_name = clean_nickname(expected_captain_name)
 
         # In test mode, allow anyone to pick
         if not tournament.is_test and cleaned_name != cleaned_captain_name:
-            await interaction.response.send_message(
-                replace_emojis(f"❌ Сейчас выбирает {expected_captain_name}"),
-                ephemeral=True,
+            await self._ephemeral(
+                interaction, f"❌ Сейчас выбирает {expected_captain_name}"
             )
             return
 
         player = self.values[0]
         key = str(tournament.current_circle)
         if player not in tournament.available.get(key, []):
-            await interaction.response.send_message(
-                replace_emojis("❌ Этот игрок уже выбран."),
-                ephemeral=True,
-            )
+            await self._ephemeral(interaction, "❌ Этот игрок уже выбран.")
             return
 
-        # Атомарная секция без await: проверка + pick + advance.
-        # Параллельный interaction не может вклиниться — двойной
-        # выбор/пропуск очереди исключены.
-        tournament.pick_player(picker_pos, player)
-        draft_complete = tournament.advance_after_pick()
-        perf_metrics.record(
-            "draft_pick_validate_ms",
-            (time.perf_counter() - t_start) * 1000,
-        )
+        mark("validation")
 
-        # Discord ack сразу — до любых I/O. Успешный выбор не
-        # создаёт ephemeral-сообщений; ошибки ниже — через followup.
+        # Быстрый ack: DEFERRED_MESSAGE_UPDATE (type 6) — Discord получает
+        # подтверждение до любой Discord API работы (edit nick, правка
+        # сообщения, отправка пинга). Эфемерных сообщений при успехе нет.
         try:
             await interaction.response.defer()
         except discord.NotFound:
-            pass
-
-        # Правка никнейма (убрать эмодзи) — косметика, в фоне.
-        if cleaned_name != user_name:
-            asyncio.create_task(
-                _clean_member_nick(interaction.user, cleaned_name)
-            )
-
-        t_save = time.perf_counter()
-        # Критичное сохранение выбора — надёжно, но вне event loop
-        # (store.set делает синхронный файловый I/O).
-        await _save_tournament(tournament)
-        perf_metrics.record(
-            "draft_pick_save_ms",
-            (time.perf_counter() - t_save) * 1000,
-        )
-
-        bot: TournamentBot = interaction.client  # type: ignore[assignment]
-        t_ui = time.perf_counter()
-        # Главное embed + ping следующего капитана + удаление
-        # старого сообщения очереди — независимые Discord-вызовы,
-        # выполняем параллельно.
-        old_message_id = tournament.draft_message_id
-
-        async def _delete_old() -> None:
-            if old_message_id <= 0:
-                return
-            try:
-                old_message = await interaction.channel.fetch_message(
-                    old_message_id
-                )
-                await old_message.delete()
-            except Exception:
-                pass  # Message might not exist or already deleted
-
-        async def _send_ping() -> discord.Message | None:
-            if draft_complete:
-                return None
-            next_picker_pos = tournament.current_picker_position()
-            if next_picker_pos is None:
-                return None
-            next_captain_name = tournament.captains[
-                tournament.captain_order[next_picker_pos]
-            ]
-            next_captain_id = tournament.player_user_ids.get(
-                next_captain_name, 0
-            )
-            if next_captain_id > 0:
-                return await interaction.channel.send(
-                    f" <@{next_captain_id}> - ваша очередь выбирать!"
-                )
-            return await interaction.channel.send(
-                f" {next_captain_name} - ваша очередь выбирать!"
-            )
-
-        send_task = asyncio.ensure_future(_send_ping())
-        results = await asyncio.gather(
-            bot.update_tournament_message(interaction.guild, tournament),
-            _delete_old(),
-            send_task,
-            return_exceptions=True,
-        )
-        for r in results:
-            if isinstance(r, Exception):
-                logger.warning("draft pick ui step failed: %s", r)
-        try:
-            new_message = send_task.result()
-        except Exception:
-            new_message = None
-        perf_metrics.record(
-            "draft_pick_ui_ms",
-            (time.perf_counter() - t_ui) * 1000,
-        )
-        perf_metrics.record(
-            "draft_pick_total_ms",
-            (time.perf_counter() - t_start) * 1000,
-        )
-
-        if draft_complete:
-            try:
-                await interaction.followup.send(
-                    replace_emojis("✅ Драфт завершён!"),
-                    ephemeral=True,
-                )
-            except discord.NotFound:
-                pass
             return
 
-        # Сохраняем id нового сообщения очереди — только если оно
-        # реально отправлено и id изменился (второй store.set
-        # не нужен при совпадении/ошибке отправки).
-        if new_message is not None and new_message.id != old_message_id:
-            tournament.draft_message_id = new_message.id
-            await _save_tournament(tournament)
+        lock = _pick_lock(self.guild_id, self.channel_id)
+        async with lock:
+            lock_wait_ms = (time.perf_counter() - t0) * 1000.0 - marks["validation"]
+
+            # Повторная валидация: за время defer/ожидания lock таймер
+            # мог сделать случайный выбор или ход мог перейти дальше.
+            tournament = store.get(self.guild_id, self.channel_id)
+            stale = None
+            if tournament is None or tournament.phase != TournamentPhase.DRAFT:
+                stale = "Драфт уже завершён."
+            else:
+                pos = tournament.current_picker_position()
+                if pos is None:
+                    stale = "Сейчас не ваш ход."
+                else:
+                    expected = tournament.captains[
+                        tournament.captain_order[pos]
+                    ]
+                    if not tournament.is_test and (
+                        clean_nickname(interaction.user.display_name)
+                        != clean_nickname(expected)
+                    ):
+                        stale = f"Сейчас выбирает {expected}"
+                    elif player not in tournament.available.get(
+                        str(tournament.current_circle), []
+                    ):
+                        stale = "Этот игрок уже выбран."
+            if stale is not None:
+                await self._ephemeral(interaction, f"❌ {stale}")
+                return
+            picker_pos = tournament.current_picker_position()
+
+            # Автоочистка ника от эмодзи — косметика, после ack и вне
+            # критического пути (ошибка не должна ломать выбор).
+            if cleaned_name != user_name:
+                try:
+                    await interaction.user.edit(nick=cleaned_name)
+                except Exception as exc:  # noqa: BLE001 - косметика
+                    logger.debug("Nick cleanup failed: %s", exc)
+
+            tournament.pick_player(picker_pos, player)
+            draft_complete = tournament.advance_after_pick()
+            mark("state_update")
+
+            # Критическое сохранение выбора — до Discord-обновлений.
+            store.set(tournament)
+            mark("database_save")
+
+            bot: TournamentBot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+            mark("message_update")
+
+            # Housekeeping пинг-сообщения капитана: одно bulk-delete
+            # вместо fetch+delete, затем новый пинг и сохранение id.
+            try:
+                if tournament.draft_message_id > 0:
+                    try:
+                        await interaction.channel.delete_messages(
+                            [tournament.draft_message_id]
+                        )
+                    except Exception:  # noqa: BLE001 - fallback ниже
+                        try:
+                            old_message = await interaction.channel.fetch_message(
+                                tournament.draft_message_id
+                            )
+                            await old_message.delete()
+                        except Exception as exc:  # noqa: BLE001
+                            # Message might not exist or already deleted
+                            logger.debug(
+                                "Old draft ping delete failed: %s", exc
+                            )
+
+                if not draft_complete:
+                    next_picker_pos = tournament.current_picker_position()
+                    if next_picker_pos is not None:
+                        next_captain_name = tournament.captains[
+                            tournament.captain_order[next_picker_pos]
+                        ]
+                        next_captain_id = tournament.player_user_ids.get(
+                            next_captain_name, 0
+                        )
+                        if next_captain_id > 0:
+                            new_message = await interaction.channel.send(
+                                f" <@{next_captain_id}> - ваша очередь выбирать!"
+                            )
+                        else:
+                            new_message = await interaction.channel.send(
+                                f" {next_captain_name} - ваша очередь выбирать!"
+                            )
+                        tournament.draft_message_id = new_message.id
+                        store.set(tournament)
+            except Exception:
+                logger.warning(
+                    "Draft ping housekeeping failed guild=%s channel=%s",
+                    self.guild_id, self.channel_id, exc_info=True,
+                )
+            mark("ping_housekeeping")
+
+        total_ms = (time.perf_counter() - t0) * 1000.0
+        stage_ms = {k: round(v, 1) for k, v in marks.items()}
+        logger.info(
+            "[DRAFT PERF] guild=%s channel=%s validation=%.1fms "
+            "lock_wait=%.1fms state=%.1fms save=%.1fms "
+            "message=%.1fms ping=%.1fms total=%.1fms complete=%s stages=%s",
+            self.guild_id, self.channel_id,
+            marks.get("validation", 0.0), lock_wait_ms,
+            marks.get("state_update", 0.0) - marks.get("validation", 0.0),
+            marks.get("database_save", 0.0) - marks.get("state_update", 0.0),
+            marks.get("message_update", 0.0) - marks.get("database_save", 0.0),
+            marks.get("ping_housekeeping", 0.0)
+            - marks.get("message_update", 0.0),
+            total_ms, draft_complete, stage_ms,
+        )
+        for name, value in (
+            ("draft_pick_validation_ms", marks.get("validation", 0.0)),
+            ("draft_pick_save_ms",
+             marks.get("database_save", 0.0) - marks.get("state_update", 0.0)),
+            ("draft_pick_message_ms",
+             marks.get("message_update", 0.0) - marks.get("database_save", 0.0)),
+            ("draft_pick_total_ms", total_ms),
+        ):
+            perf_metrics.record(name, value)
+
+        if draft_complete:
+            await self._ephemeral(interaction, "✅ Драфт завершён!")
 
 
 class DraftView(discord.ui.View):
