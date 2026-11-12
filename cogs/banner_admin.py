@@ -68,17 +68,20 @@ class BannerAdminCog(commands.Cog):
 
     @banner_group.command(name="update", description="Вручную обновить Server Banner за вчера")
     @is_admin()
-    async def banner_update(self, interaction: discord.Interaction) -> None:
+    async def banner_update(
+        self, interaction: discord.Interaction, force: bool = False
+    ) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
         guild = interaction.guild
         day = yesterday_almaty()
-        result = await publish_day_banner(guild, day)
+        result = await publish_day_banner(guild, day, force=force)
         status = result.get("status")
         if status == "published":
             msg = (f"Баннер обновлён за {_day_str(day)}. "
                    f"Участник дня: **{result.get('winner_name') or '—'}**")
         elif status == "already_published":
-            msg = f"Баннер за {_day_str(day)} уже был опубликован."
+            msg = (f"Баннер за {_day_str(day)} уже был опубликован. "
+                   "Используй `force: true` для повторной публикации.")
         else:
             msg = f"Не удалось обновить баннер: {result.get('reason', status)}"
         await interaction.followup.send(msg, ephemeral=True)

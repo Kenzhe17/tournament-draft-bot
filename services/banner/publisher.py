@@ -83,15 +83,24 @@ async def build_banner_for_day(
     return png, info
 
 
-async def publish_day_banner(guild: discord.Guild, day: date) -> dict:
+async def publish_day_banner(
+    guild: discord.Guild, day: date, *, force: bool = False
+) -> dict:
     """Полный цикл обновления Server Banner за день.
 
     Возвращает dict со статусом. Никогда не бросает наружу —
     ошибки логируются и фиксируются в banner_updates.
     """
     # 1. Идемпотентность: уже опубликовано?
+    #    Если баннер удалили вручную в настройках сервера — считаем,
+    #    что публикации нет, и обновляем повторно.
     existing = await banner_store.get_update(guild.id, day)
-    if existing and existing.get("status") == "published":
+    if (
+        not force
+        and existing
+        and existing.get("status") == "published"
+        and guild.banner is not None
+    ):
         logger.info("banner: %s day %s already published, skip", guild.id, day)
         return {"status": "already_published", "day": day.isoformat()}
 
