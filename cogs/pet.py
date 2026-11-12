@@ -20,6 +20,10 @@ from models.pets_catalog import PETS_CATALOG
 
 logger = logging.getLogger(__name__)
 
+# Профиль питомца показывает <@id> опекунов — упоминания
+# отображаются как имена, но БЕЗ уведомлений (ping).
+_PET_NO_MENTIONS = discord.AllowedMentions.none()
+
 
 async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[discord.Embed, Optional[discord.File]]:
     """Формирует компактный профиль питомца с аватаркой в правом верхнем углу (thumbnail)."""
@@ -623,9 +627,15 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     # Создать View с кнопками
     view = PetProfileView(pet, pet_dict, interaction)
     if file:
-        await interaction.response.send_message( view=compose(embed, view), file=file)
+        await interaction.response.send_message(
+            view=compose(embed, view), file=file,
+            allowed_mentions=_PET_NO_MENTIONS,
+        )
     else:
-        await interaction.response.send_message( view=compose(embed, view))
+        await interaction.response.send_message(
+            view=compose(embed, view),
+            allowed_mentions=_PET_NO_MENTIONS,
+        )
 
     # Получаем исходное сообщение для редактирования
     msg = await interaction.original_response()
@@ -666,7 +676,10 @@ class PetProfileView(discord.ui.View):
     async def on_timeout(self) -> None:
         """Remove buttons on timeout."""
         if self.message:
-            await self.message.edit(view=smart_view(self.message, None))
+            await self.message.edit(
+                view=smart_view(self.message, None),
+                allowed_mentions=_PET_NO_MENTIONS,
+            )
 
 
 class FeedPetButton(discord.ui.Button):
@@ -762,7 +775,11 @@ class FeedPetButton(discord.ui.Button):
 
                     attachments = [new_file] if new_file else []
 
-                    await self.message.edit( view=compose(new_embed, new_view), attachments=attachments)
+                    await self.message.edit(
+                        view=compose(new_embed, new_view),
+                        attachments=attachments,
+                        allowed_mentions=_PET_NO_MENTIONS,
+                    )
                 except Exception as e:
                     logger.error(f"Failed to edit pet profile message after feeding: {e}")
                     logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
@@ -885,9 +902,16 @@ class SafeModal(discord.ui.Modal):
                         item.pet_dict = self.pet_dict
                 
                 if new_file:
-                    await message.edit( view=compose(new_embed, new_view), attachments=[new_file])
+                    await message.edit(
+                        view=compose(new_embed, new_view),
+                        attachments=[new_file],
+                        allowed_mentions=_PET_NO_MENTIONS,
+                    )
                 else:
-                    await message.edit( view=compose(new_embed, new_view))
+                    await message.edit(
+                        view=compose(new_embed, new_view),
+                        allowed_mentions=_PET_NO_MENTIONS,
+                    )
             except Exception as e:
                 logger.error(f"Error updating pet profile after safe change: {e}")
 
@@ -981,7 +1005,11 @@ class RenamePetModal(discord.ui.Modal):
 
                 attachments = [new_file] if new_file else []
 
-                await self.message.edit( view=compose(new_embed, new_view), attachments=attachments)
+                await self.message.edit(
+                    view=compose(new_embed, new_view),
+                    attachments=attachments,
+                    allowed_mentions=_PET_NO_MENTIONS,
+                )
             except Exception as e:
                 logger.error(f"Failed to edit pet profile message: {e}")
                 logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
