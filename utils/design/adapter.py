@@ -59,6 +59,13 @@ _COLOR_MAP = {
 
 _DEFAULT_ACCENT = colors.NEUTRAL
 
+# Имена, принадлежащие самому LayoutView/View: их нельзя проксировать
+# на delegate — иначе сломается жизненный цикл LayoutView'а.
+_VIEW_ATTR_NAMES = frozenset(dir(discord.ui.View)) | frozenset(
+    dir(discord.ui.LayoutView)
+)
+
+
 class _ComposedLayoutView(discord.ui.LayoutView):
     """LayoutView-обёртка с делегированием к исходному View.
 
@@ -66,6 +73,12 @@ class _ComposedLayoutView(discord.ui.LayoutView):
     но обработчики уровня View (interaction_check, on_timeout,
     on_error, is_finished) должны сохраниться — поэтому LayoutView
     проксирует их на исходный view-объект.
+
+    Кроме того, item.view кнопок внутри LayoutView указывает на эту
+    обёртку, а не на исходный View. Чтобы callback'и могли работать
+    с состоянием (current_page, refresh_buttons и т.п.) через
+    self.view, чтение и запись «пользовательских» атрибутов
+    проксируются на delegate (source_view).
     """
 
     def __init__(self, delegate=None, **kwargs):
@@ -76,6 +89,34 @@ class _ComposedLayoutView(discord.ui.LayoutView):
     def source_view(self):
         """Исходный discord.ui.View, переданный в compose() (если был)."""
         return self._delegate
+
+    def __getattr__(self, name: str):
+        # Проксируем только публичные атрибуты: внутренние _-имена
+        # принадлежат механике LayoutView и не должны утекать в delegate.
+        if name.startswith("_"):
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute {name!r}"
+            )
+        delegate = self.__dict__.get("_delegate")
+        if delegate is not None:
+            try:
+                return getattr(delegate, name)
+            except AttributeError:
+                pass
+        raise AttributeError(
+            f"{type(self).__name__!r} object has no attribute {name!r}"
+        )
+
+    def __setattr__(self, name: str, value) -> None:
+        delegate = self.__dict__.get("_delegate")
+        if (
+            delegate is not None
+            and not name.startswith("_")
+            and name not in _VIEW_ATTR_NAMES
+        ):
+            setattr(delegate, name, value)
+            return
+        super().__setattr__(name, value)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         delegate = self._delegate
@@ -571,6 +612,13 @@ def compose(
     - view (LayoutView/DesignView) -> используется как есть, embed
       добавляется отдельным Container сверху (редкий случай)
     """
+    if isinstance(view, _ComposedLayoutView):
+        # Обёртка от предыдущего compose(): пересобираем из исходного
+        # View, чтобы подхватить обновлённые кнопки/состояние
+        # (refresh_buttons и т.п.). Без source_view — как есть.
+        source = view.source_view
+        if source is not None:
+            view = source
     if isinstance(view, discord.ui.LayoutView):
         # Уже V2 — возвращаем как есть (embed игнорируем: V2 не может
         # содержать embed; вызывающий код должен мигрировать view)
@@ -662,13 +710,16 @@ def swap_view(
     layout = discord.ui.LayoutView.from_message(message)
     if not isinstance(layout, _ComposedLayoutView):
         # from_message возвращает чистый LayoutView — оборачиваем,
-        # чтобы сохранить делегирование interactive-логики
-        delegate = (
-            view
-            if isinstance(view, discord.ui.View)
-            and not isinstance(view, discord.ui.LayoutView)
-            else None
-        )
+        # чтобы сохранить делегирование interactive-логики.
+        # Если передали _ComposedLayoutView (например, self.view из
+        # callback'а), сохраняем его source_view как delegate —
+        # иначе состояние исходного View теряется после правки.
+        if isinstance(view, _ComposedLayoutView):
+            delegate = view.source_view
+        elif isinstance(view, discord.ui.View):
+            delegate = view
+        else:
+            delegate = None
         wrapped = _ComposedLayoutView(
             delegate=delegate, timeout=layout.timeout
         )

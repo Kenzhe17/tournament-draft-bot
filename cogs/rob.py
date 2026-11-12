@@ -738,9 +738,16 @@ class RobGroupView(discord.ui.View):
         self.start_time = datetime.now()
         self.message_id = 0
         self.original_message = None
+        # Сериализует проверки+вступление: параллельные join'ы не должны
+        # превысить лимит в 6 участников.
+        self.join_lock = asyncio.Lock()
+        # Лобби завершено (штурм/отмена/таймаут) — блокирует повторный
+        # запуск и поздние join'ы, чтобы баланс не списался дважды.
+        self.finished = False
 
     async def on_timeout(self) -> None:
         """Обработать таймаут лобби."""
+        self.finished = True
         if self.message_id in _robgroup_lobbies:
             del _robgroup_lobbies[self.message_id]
         
@@ -829,48 +836,60 @@ class RobGroupJoinButton(discord.ui.Button):
                         )
                         return
 
-            # Проверка: уже в банде
-            if user_id in self.game_view.members:
-                await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Вы уже в банде!",
-                    ephemeral=True
-                )
-                return
+            # Проверки и вступление — под локом лобби: параллельные
+            # join'ы разных игроков не должны превысить лимит 6.
+            async with self.game_view.join_lock:
+                # Лобби уже завершено/идёт штурм — join запрещён
+                if self.game_view.finished:
+                    await interaction.response.send_message(
+                        f"{replace_emojis('❌')} Лобби уже завершено!",
+                        ephemeral=True
+                    )
+                    return
 
-            # Проверка: нельзя участвовать в ограблении себя
-            if user_id == self.game_view.victim_id:
-                await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Нельзя участвовать в ограблении самого себя!",
-                    ephemeral=True
-                )
-                return
+                # Проверка: уже в банде
+                if user_id in self.game_view.members:
+                    await interaction.response.send_message(
+                        f"{replace_emojis('❌')} Вы уже в банде!",
+                        ephemeral=True
+                    )
+                    return
 
-            # Проверка: лимит участников
-            if len(self.game_view.members) >= 6:
-                await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Банда полна (максимум 6 участников)!",
-                    ephemeral=True
-                )
-                return
+                # Проверка: нельзя участвовать в ограблении себя
+                if user_id == self.game_view.victim_id:
+                    await interaction.response.send_message(
+                        f"{replace_emojis('❌')} Нельзя участвовать в ограблении самого себя!",
+                        ephemeral=True
+                    )
+                    return
 
-            # Проверка: входной барьер (30% от баланса лидера)
-            leader_balance = await user_balance_store.get_balance(self.guild_id, self.game_view.leader_id)
-            user_balance = await user_balance_store.get_balance(self.guild_id, user_id)
-            required_balance = int(leader_balance * 0.3)
+                # Проверка: лимит участников
+                if len(self.game_view.members) >= 6:
+                    await interaction.response.send_message(
+                        f"{replace_emojis('❌')} Банда полна (максимум 6 участников)!",
+                        ephemeral=True
+                    )
+                    return
 
-            if user_balance < required_balance:
-                await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Недостаточно {get_emoji('money')}! Требуется минимум {required_balance} (30% от баланса лидера).",
-                    ephemeral=True
-                )
-                return
+                # Проверка: входной барьер (30% от баланса лидера)
+                leader_balance = await user_balance_store.get_balance(self.guild_id, self.game_view.leader_id)
+                user_balance = await user_balance_store.get_balance(self.guild_id, user_id)
+                required_balance = int(leader_balance * 0.3)
 
-            # Добавить в банду
-            self.game_view.members.add(user_id)
+                if user_balance < required_balance:
+                    await interaction.response.send_message(
+                        f"{replace_emojis('❌')} Недостаточно {get_emoji('money')}! Требуется минимум {required_balance} (30% от баланса лидера).",
+                        ephemeral=True
+                    )
+                    return
 
-            # Обновить embed
+                # Добавить в банду
+                self.game_view.members.add(user_id)
+
+            # Обновить embed; view обязателен — иначе кнопки лобби
+            # пропадут (compose без view не переносит интерактив).
             embed = await self.game_view.build_embed_async()
-            await interaction.response.edit_message( view=compose(embed))
+            await interaction.response.edit_message( view=compose(embed, self.game_view))
 
 
 class RobGroupStartButton(discord.ui.Button):
@@ -924,6 +943,13 @@ class RobGroupStartButton(discord.ui.Button):
 
     async def execute_robbery(self, interaction: discord.Interaction) -> None:
         """Выполнить групповое ограбление."""
+        # Идемпотентность: штурм запускается один раз — повторный клик
+        # (или гонка двух кликов) не должен списать баланс дважды.
+        if self.game_view.finished:
+            await interaction.response.defer()
+            return
+        self.game_view.finished = True
+
         guild_id = self.game_view.guild_id
         victim_id = self.game_view.victim_id
         members = list(self.game_view.members)
@@ -1285,6 +1311,7 @@ class RobGroupCancelButton(discord.ui.Button):
             return
 
         # Удалить лобби
+        self.game_view.finished = True
         if self.game_view.message_id in _robgroup_lobbies:
             del _robgroup_lobbies[self.game_view.message_id]
 

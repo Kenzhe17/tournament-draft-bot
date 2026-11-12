@@ -307,3 +307,97 @@ async def test_parse_cs_fast_disabled_env(monkeypatch):
     import cogs.ocr_upload as ou
 
     assert await ou._fast_parse_cs(b"fake") is None
+
+
+# ---------------------------------------------------------------------------
+# Разделение ника и второй строки (клан/гильдия)
+# ---------------------------------------------------------------------------
+
+
+def _ni(cx, cy, text, h=30):
+    return {
+        "cx": float(cx), "cy": float(cy),
+        "y0": cy - h / 2, "y1": cy + h / 2,
+        "text": text, "score": 0.9,
+    }
+
+
+def test_name_lines_two_rows():
+    """Ник сверху, клан-тег снизу → разделены."""
+    items = [
+        _ni(100, 580, "gek4t44dope"),
+        _ni(105, 620, "VILLIANSSS", h=24),
+    ]
+    name, sec = fco._cluster_name_lines(items, pitch=100, row_cy=600)
+    assert name == "gek4t44dope"
+    assert sec == "VILLIANSSS"
+
+
+def test_name_lines_single_row():
+    items = [_ni(100, 585, "7ckngmad"), _ni(140, 588, "pro", h=28)]
+    name, sec = fco._cluster_name_lines(items, pitch=100, row_cy=600)
+    assert name == "7ckngmad pro"
+    assert sec == ""
+
+
+def test_name_lines_numeric_secondary():
+    """Чистое число — допустимый тег второй строки, но не ник."""
+    items = [
+        _ni(100, 580, "tabyn221337"),
+        _ni(110, 620, "1337", h=22),
+    ]
+    name, sec = fco._cluster_name_lines(items, pitch=100, row_cy=600)
+    assert name == "tabyn221337"
+    assert sec == "1337"
+
+
+def test_name_lines_number_cannot_be_nick():
+    """Строка только из чисел не становится ником."""
+    items = [
+        _ni(100, 585, "1337"),
+        _ni(100, 625, "realname"),
+    ]
+    name, sec = fco._cluster_name_lines(items, pitch=100, row_cy=600)
+    assert name == "realname"
+
+
+def test_name_lines_unicode_and_spaces():
+    items = [
+        _ni(100, 580, "ASIKPC爱"),
+        _ni(160, 582, "DX Karim", h=34),
+        _ni(105, 622, "GOATS", h=26),
+    ]
+    name, sec = fco._cluster_name_lines(items, pitch=100, row_cy=600)
+    assert "ASIKPC爱" in name and "DX Karim" in name
+    assert sec == "GOATS"
+
+
+def test_name_lines_neighbor_row_not_mixed():
+    """Ник соседней строки (выше, у границы полосы) не попадает
+    в ник и не становится secondary."""
+    items = [
+        _ni(100, 480, "NEIGHBOR"),   # предыдущая строка (−1.2·pitch)
+        _ni(100, 582, "myname"),
+        _ni(105, 620, "TAG"),
+    ]
+    name, sec = fco._cluster_name_lines(items, pitch=100, row_cy=600)
+    assert name == "myname"
+    assert sec == "TAG"
+
+
+def test_name_lines_skip_words_dropped():
+    """Водяной знак r!z3 и заголовки не попадают в вывод."""
+    items = [
+        _ni(100, 582, "@player"),
+        _ni(105, 620, "r!z3", h=20),
+    ]
+    name, sec = fco._cluster_name_lines(items, pitch=100, row_cy=600)
+    assert name == "@player"
+    assert sec == ""
+
+
+def test_name_lines_long_nick_truncated():
+    long_nick = "A" * 40
+    items = [_ni(100, 582, long_nick)]
+    name, _ = fco._cluster_name_lines(items, pitch=100, row_cy=600)
+    assert len(name) <= 32

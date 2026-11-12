@@ -1119,6 +1119,7 @@ class OCRUploadCog(commands.Cog):
                     "rows": [
                         {
                             "name": p["name"],
+                            "secondary_text": p.get("secondary_text"),
                             "kills": p["kills"],
                             "deaths": p["deaths"],
                             "assists": p["assists"],
@@ -1887,6 +1888,7 @@ async def _classic_pipeline(
             "rows": [
                 {
                     "name": p["name"],
+                    "secondary_text": p.get("secondary_text"),
                     "kills": p["kills"],
                     "deaths": p["deaths"],
                     "assists": p["assists"],

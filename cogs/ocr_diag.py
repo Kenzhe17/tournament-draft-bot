@@ -71,6 +71,9 @@ def _verify_image(data: bytes) -> tuple[int, int] | None:
 
 def _row_view(p: dict) -> str:
     name = p.get("name") or "?"
+    sec = p.get("secondary_text")
+    if sec:
+        name = f"{name} _[{sec}]_"
     k, d, a = p.get("kills"), p.get("deaths"), p.get("assists")
     dmg = p.get("dmg")
     kda = f"{k}/{d}/{a}" if None not in (k, d, a) else "?/?/?"
@@ -124,6 +127,7 @@ def _fast_to_summary(parsed: dict | None) -> dict | None:
             "rows": [
                 {
                     "name": p.get("name"),
+                    "secondary_text": p.get("secondary_text"),
                     "kills": p.get("kills"),
                     "deaths": p.get("deaths"),
                     "assists": p.get("assists"),
@@ -158,7 +162,7 @@ def _diff_results(fast: dict | None, full: dict | None) -> list[str]:
             if fr is None or gr is None:
                 diffs.append(f"{side}[{i}]: fast={'нет' if fr is None else 'есть'} full={'нет' if gr is None else 'есть'}")
                 continue
-            for f in ("name", "kills", "deaths", "assists", "dmg"):
+            for f in ("name", "secondary_text", "kills", "deaths", "assists", "dmg"):
                 if fr.get(f) != gr.get(f):
                     diffs.append(
                         f"{side}[{i}].{f}: fast={fr.get(f)!r} full={gr.get(f)!r}"

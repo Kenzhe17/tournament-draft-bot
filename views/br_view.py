@@ -1093,7 +1093,10 @@ class RemoveBRPlayerSelect(Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
 
-            await message.edit( view=compose(embed))
+            # Регистрационное сообщение изначально отправлено с
+            # BRRegistrationView — без view кнопки регистрации пропадут.
+            reg_view = BRRegistrationView(self.guild_id, self.channel_id, tournament)
+            await message.edit( view=compose(embed, reg_view))
             await interaction.response.send_message(
                 "✅ Игрок удален.",
                 ephemeral=True

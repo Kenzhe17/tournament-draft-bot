@@ -162,7 +162,12 @@ class UltimatumCog(commands.Cog):
                 if msg.author == interaction.client.user and msg.embeds:
                     # Check if this is the tournament embed
                     if tournament.name in msg.embeds[0].title or "УЛЬТИМАТУМ СОЛО" in msg.embeds[0].title:
-                        await msg.edit( view=compose(embed))
+                        # Сообщение отправлено с setup-view — без view
+                        # кнопка регистрации пропадёт.
+                        setup_view = await build_ultimatum_setup_view(
+                            interaction.guild_id, interaction.channel_id, tournament
+                        )
+                        await msg.edit( view=compose(embed, setup_view))
                         break
         except Exception as e:
             logger.error(f"Error updating tournament message after test fill: {e}")

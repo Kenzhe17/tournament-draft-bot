@@ -182,6 +182,69 @@ class TestRoomsHelpers:
         assert stats["P2"]["kills"] == 4
         assert stats["P5"]["kills"] == 6  # 4 + 2 по двум комнатам
 
+    def test_aggregate_three_rooms_sums_per_discord_id(self):
+        """3 комнаты: сумма K/D/A/DMG по discord_id, ник не ключ."""
+        from views.ocr_match_view import _rooms_aggregate_stats
+
+        def room_rows(k, d, a, dmg, nick):
+            return [
+                _bound_row("P1", nick, k, d, a, dmg, 1),
+                _bound_row("P2", "N2", 1, 1, 1, 10, 2),
+                _bound_row("P3", "N3", 1, 1, 1, 10, 3),
+                _bound_row("P4", "N4", 1, 1, 1, 10, 4),
+            ]
+
+        rooms = [
+            _room(i,
+                  rows_a=room_rows(k, d, a, dmg, f"Nick{i}")[:1]
+                  + room_rows(1, 1, 1, 10, "N2")[1:],
+                  rows_b=[_bound_row(f"P{j}", "NB", 1, 1, 1, 10, j)
+                          for j in (5, 6, 7, 8)])
+            for i, (k, d, a, dmg) in enumerate(
+                [(5, 2, 1, 100), (3, 4, 0, 200), (7, 1, 3, 300)], start=1
+            )
+        ]
+        t = _tournament()
+        stats = _rooms_aggregate_stats(_session(rooms), t, 0, 1)
+        # P1: (5+3+7)=15 k, (2+4+1)=7 d, (1+0+3)=4 a, dmg 600
+        assert stats["P1"]["kills"] == 15
+        assert stats["P1"]["deaths"] == 7
+        assert stats["P1"]["assists"] == 4
+        assert stats["P1"]["damage"] == 600
+        # Все три разных OCR-ника собраны в ocr_name, идентичность —
+        # по ростеру/discord_id, не по нику.
+        for nick in ("Nick1", "Nick2", "Nick3"):
+            assert nick in stats["P1"]["ocr_name"]
+
+    def test_aggregate_same_id_different_nick_is_one_player(self):
+        """Один discord_id с разными никами в комнатах — один игрок,
+        статистика суммируется; два разных игрока не сливаются."""
+        from views.ocr_match_view import _rooms_aggregate_stats
+
+        rooms = [
+            _room(1,
+                  rows_a=[_bound_row("P1", "gek4t44dope", 5, 2, 1, 100, 1),
+                          _bound_row("P2", "NickB", 1, 1, 1, 10, 2),
+                          _bound_row("P3", "N3", 1, 1, 1, 10, 3),
+                          _bound_row("P4", "N4", 1, 1, 1, 10, 4)],
+                  rows_b=[_bound_row(f"P{i}", "NB", 1, 1, 1, 10, i)
+                          for i in (5, 6, 7, 8)]),
+            _room(2,
+                  rows_a=[_bound_row("P1", "gek4t44 dope", 2, 3, 0, 50, 1),
+                          _bound_row("P2", "NickB", 4, 0, 2, 90, 2),
+                          _bound_row("P3", "N3", 1, 1, 1, 10, 3),
+                          _bound_row("P4", "N4", 1, 1, 1, 10, 4)],
+                  rows_b=[_bound_row(f"P{i}", "NB", 1, 1, 1, 10, i)
+                          for i in (5, 6, 7, 8)]),
+        ]
+        stats = _rooms_aggregate_stats(_session(rooms), _tournament(), 0, 1)
+        # P1 — один игрок несмотря на 'gek4t44dope' vs 'gek4t44 dope'
+        assert stats["P1"]["kills"] == 7
+        assert stats["P1"]["deaths"] == 5
+        # P2 — отдельный игрок, не слит с P1 по похожему нику
+        assert stats["P2"]["kills"] == 5
+        assert "P1" in stats and "P2" in stats
+
     def test_aggregate_rejects_duplicate_discord_id_in_room(self):
         from views.ocr_match_view import _rooms_aggregate_stats
 

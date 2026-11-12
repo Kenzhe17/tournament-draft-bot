@@ -783,15 +783,168 @@ def _parse_name_cell(items: list[tuple[str, float]]) -> str:
     seen = set()
     for _x, (text, _score) in sorted(items):
         t = (text or "").strip()
-        if not t or not _has_name_chars(t) or len(t) < 2:
-            continue
-        if t.lower() in SKIP_WORDS or NUM_RE.match(t):
+        if not _name_text_ok(t):
             continue
         if t not in seen:
             seen.add(t)
             parts.append(t)
     name = " ".join(parts)
     return name[:32] if name else ""
+
+
+def _name_text_ok(t: str) -> bool:
+    t = (t or "").strip()
+    return bool(
+        t and _has_name_chars(t) and len(t) >= 2
+        and t.lower() not in SKIP_WORDS and not NUM_RE.match(t)
+    )
+
+
+def _cluster_name_lines(
+    items: list[dict], pitch: float, row_cy: float
+) -> tuple[str, str]:
+    """Разделить name-ячейку на строки по cy → (ник, secondary).
+
+    items: [{cx, cy, y0, y1, text, score}]. Ник — кластер, ближайший
+    к строке ника (~row_cy − 0.2·pitch); secondary — кластеры НИЖЕ
+    ника (клан/гильдия/водяной знак). Кластеры выше ника — вероятная
+    утечка соседней строки, отбрасываются.
+    """
+    def _cluster_ok(t: str) -> bool:
+        # Чистые числа («1337», «444») — допустимый клан-тег второй
+        # строки, но никогда не ник.
+        t = (t or "").strip()
+        return bool(
+            (len(t) >= 3 if NUM_RE.match(t) else len(t) >= 2)
+            and t.lower() not in SKIP_WORDS
+            and (_has_name_chars(t) or NUM_RE.match(t))
+        )
+
+    valid = [it for it in items if _cluster_ok(it.get("text"))]
+    if not valid:
+        return "", ""
+    valid.sort(key=lambda it: it["cy"])
+    gap = max(14.0, 0.24 * pitch)
+    clusters: list[list[dict]] = []
+    for it in valid:
+        if clusters and it["cy"] - max(c["cy"] for c in clusters[-1]) <= gap:
+            clusters[-1].append(it)
+        else:
+            clusters.append([it])
+    lines = []
+    for cl in clusters:
+        cl.sort(key=lambda it: it["cx"])
+        seen: set[str] = set()
+        parts = []
+        for c in cl:
+            t = (c["text"] or "").strip()
+            if t and t not in seen:
+                seen.add(t)
+                parts.append(t)
+        text = " ".join(parts)
+        if not text:
+            continue
+        lines.append({
+            "cy": sum(c["cy"] for c in cl) / len(cl),
+            "text": text[:48],
+            # Ник = все части строки, если в ней есть буквенный
+            # фрагмент («nurss 444», «uluking 1337» — число может
+            # быть частью ника). Числа не могут ОБРАЗОВАТЬ ник.
+            "nick_text": (
+                " ".join(parts)[:32]
+                if any(_name_text_ok(p) for p in parts) else ""
+            ),
+        })
+    if not lines:
+        return "", ""
+    # Ник — ближайший к ожидаемой позиции строки ника; кластер без
+    # валидного ник-текста (только числа/мусор) ником быть не может.
+    nick_y = row_cy - 0.2 * pitch
+    cands = [i for i, l in enumerate(lines) if l["nick_text"]]
+    if not cands:
+        return "", ""
+    nick_i = min(cands, key=lambda i: abs(lines[i]["cy"] - nick_y))
+    name = lines[nick_i]["nick_text"]
+    sec_parts = [
+        l["text"] for l in lines[nick_i + 1:]
+        if l["cy"] > lines[nick_i]["cy"] + 0.5 * gap
+    ]
+    secondary = " ".join(sec_parts)[:48] if sec_parts else ""
+    return name, secondary
+
+
+def _split_merged_name_boxes(
+    eng, img: np.ndarray, jobs: list[tuple]
+) -> dict[int, list[dict]]:
+    """Разрезать высокие name-боксы (2 строки в одном det) и rec.
+
+    jobs: [(box_idx, box)] — box в координатах исходного кадра.
+    Возвращает box_idx → два pseudo-item с cy верх/низ половины.
+    Один batch text_rec на все разрезанные половины.
+    """
+    import cv2
+
+    halves: list[tuple[int, float, np.ndarray]] = []
+    h_img, w_img = img.shape[:2]
+    for bidx, b in jobs:
+        x0 = max(0, int(b["x0"]))
+        y0 = max(0, int(b["y0"]))
+        x1 = min(w_img, int(b["x1"]))
+        y1 = min(h_img, int(b["y1"]))
+        if x1 - x0 < 8 or y1 - y0 < 12:
+            continue
+        crop = img[y0:y1, x0:x1]
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        ink = (gray > 120).sum(axis=1)
+        # Полосы чернил по Y: >=2 отдельных полосы = реально две
+        # строки текста. Одна полоса (высокий бокс с паддингом) —
+        # резать нельзя, целиковый rec уже в кэше.
+        peak = int(ink.max()) if ink.size else 0
+        if peak < 4:
+            continue
+        thr = max(3, peak // 8)
+        bands: list[list[int]] = []
+        for yi, v in enumerate(ink):
+            if v >= thr:
+                if bands and yi - bands[-1][1] <= 4:
+                    bands[-1][1] = yi
+                else:
+                    bands.append([yi, yi])
+        if len(bands) < 2:
+            continue
+        # Разрез — середина самого широкого межполосного зазора.
+        gaps = [
+            (bands[i + 1][0] - bands[i][1],
+             (bands[i][1] + bands[i + 1][0]) // 2)
+            for i in range(len(bands) - 1)
+        ]
+        split = max(gaps)[1]
+        top = crop[:split]
+        bot = crop[split:]
+        if top.shape[0] < 8 or bot.shape[0] < 8:
+            continue
+        halves.append((bidx, (b["cy"] - (b["y1"] - b["y0"]) * 0.25), top))
+        halves.append((bidx, (b["cy"] + (b["y1"] - b["y0"]) * 0.25), bot))
+    if not halves:
+        return {}
+    crops = _cap_crop_ratios([np.ascontiguousarray(h[2]) for h in halves])
+    try:
+        res, _ = eng.text_rec(crops)
+    except Exception:
+        return {}
+    out: dict[int, list[dict]] = {}
+    for (bidx, cy, _c), r in zip(halves, res or []):
+        try:
+            text, score = str(r[0]).strip(), float(r[1])
+        except (TypeError, IndexError):
+            text, score = "", 0.0
+        if not text:
+            continue
+        out.setdefault(bidx, []).append({
+            "cx": 0.0, "cy": cy, "y0": 0.0, "y1": 0.0,
+            "text": text, "score": score,
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -901,10 +1054,12 @@ def _extract_parsed(
                     if not (cx0 - 2 <= b["cx"] <= cx1 + 2):
                         continue
                     if col == "name":
-                        # Имя — та же текстовая линия, что и K/D/A:
-                        # жёсткая y-полоса вокруг cy строки, чтобы не
-                        # захватить вторую строку доп. текста и аватар.
-                        if abs(b["cy"] - row_cy) > 0.42 * pitch:
+                        # Имя + возможная вторая строка (клан/гильдия)
+                        # лежат вокруг линии K/D/A: ник ~−0.2·pitch,
+                        # тег ~+0.15–0.4·pitch. Полоса ±0.5·pitch
+                        # захватывает обе, но не соседние строки
+                        # (±1.0·pitch). Разделение — по cy-кластерам.
+                        if abs(b["cy"] - row_cy) > 0.50 * pitch:
                             continue
                     elif not (y_lo - 2 <= b["cy"] <= y_hi + 2):
                         continue
@@ -1050,6 +1205,18 @@ def _extract_parsed(
     timings["score_ms"] = (time.perf_counter() - t_score) * 1000
 
     # --- Этап 8: сборка players ---
+    # Предпроход: name-боксы выше ~0.6·pitch содержат две строки
+    # (ник + клан/гильдия в одном det) — разрезаем и rec отдельно,
+    # иначе rec склеивает их в одну строку.
+    max_pitch = max(g["pitch"] for g in geoms)
+    merged_jobs = []
+    for (pi, ri, col), members in cell_members.items():
+        if col != "name":
+            continue
+        for b in members:
+            if (b["y1"] - b["y0"]) > 0.68 * max_pitch:
+                merged_jobs.append((b["idx"], b))
+    merged_texts = _split_merged_name_boxes(eng, img, merged_jobs)
     box_by_idx = {b["idx"]: b for b in boxes}
 
     def _rec_text_for(b: dict) -> tuple[str, float]:
@@ -1124,20 +1291,33 @@ def _extract_parsed(
             if dmg is not None:
                 n_dmg += 1
 
-            # Name
+            # Name: разделение строк по cy — верхняя = ник,
+            # нижняя = клан/гильдия/водяной знак (secondary_text).
             name_items = []
             for b in cell_members[(pi, ri, "name")]:
-                name_items.append((b["cx"], _rec_text_for(b)))
-            name = _parse_name_cell(name_items)
+                if b["idx"] in merged_texts:
+                    for it in merged_texts[b["idx"]]:
+                        it = dict(it)
+                        it["cx"] = b["cx"]
+                        name_items.append(it)
+                    continue
+                t, s = _rec_text_for(b)
+                name_items.append({
+                    "cx": b["cx"], "cy": b["cy"], "y0": b["y0"],
+                    "y1": b["y1"], "text": t, "score": s,
+                })
+            name, secondary = _cluster_name_lines(name_items, pitch, row_cy)
             if not name:
                 t, _s = rect_results.get((pi, ri, "name"), ("", 0.0))
                 name = _parse_name_cell([(0.0, (t, _s))])
+                secondary = ""
             if name:
                 n_names += 1
 
             players[side].append(
                 {
                     "name": name or "???",
+                    "secondary_text": secondary or None,
                     "kills": kda[0] if kda else None,
                     "deaths": kda[1] if kda else None,
                     "assists": kda[2] if kda else None,

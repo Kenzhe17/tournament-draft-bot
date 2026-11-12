@@ -417,7 +417,12 @@ class UltimatumOrgMenuView(discord.ui.View):
                 if channel:
                     async for msg in channel.history(limit=10):
                         if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
-                            await msg.edit( view=compose(new_embed))
+                            # Сообщение отправлено с setup-view — без view
+                            # кнопки регистрации пропадут.
+                            new_view = await build_ultimatum_setup_view(
+                                self.guild_id, self.channel_id, self.tournament
+                            )
+                            await msg.edit( view=compose(new_embed, new_view))
                             break
         except Exception as e:
             logger.error(f"Error updating tournament message after toggle: {e}", exc_info=True)

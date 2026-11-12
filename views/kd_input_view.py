@@ -64,6 +64,11 @@ class TeamKDButton(discord.ui.Button):
         
         # Store the view reference in the modal so it can update buttons
         view = self.view
+        # В Components V2 self.view — _ComposedLayoutView-обёртка;
+        # исходный View берём через source_view.
+        source = getattr(view, "source_view", None)
+        if source is not None:
+            view = source
         if isinstance(view, KDInputView):
             modal.parent_view = view
             modal.interaction = interaction  # Store interaction for editing
