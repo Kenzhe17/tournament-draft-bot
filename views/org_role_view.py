@@ -7,11 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
+
 from utils.design import compose, smart_view
-
-from discord.ext import commands
-
-from config import replace_emojis, ORG_ROLE_MAP, TOURNAMENT_CHANNELS
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -28,6 +25,12 @@ ORG_BANNER_PATH = (
     Path(__file__).resolve().parent.parent / "assets" / "queue_banner.png"
 )
 ORG_BANNER_MEDIA = "attachment://queue_banner.png"
+
+
+def _org_banner_file() -> discord.File:
+    """Файл баннера для edit-операций: V2-edit не сохраняет
+    attachment:// автоматически — баннер пересылается каждый раз."""
+    return discord.File(ORG_BANNER_PATH, filename="queue_banner.png")
 
 
 class OrgSlotState:
@@ -49,7 +52,7 @@ class OrgSlotState:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "OrgSlotState":
+    def from_dict(cls, data: dict) -> OrgSlotState:
         state = cls()
         state.role_holders = {int(k): v for k, v in data.get("role_holders", {}).items()}
         state.guild_id = data.get("guild_id", 0)
@@ -170,7 +173,10 @@ class TakeRoleButton(discord.ui.Button):
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message( view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA))
+            await interaction.response.edit_message(
+                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA),
+                attachments=[_org_banner_file()],
+            )
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -179,7 +185,7 @@ class TakeRoleButton(discord.ui.Button):
             )
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка: {str(e)}",
+                f"❌ Ошибка: {e!s}",
                 ephemeral=True
             )
 
@@ -246,7 +252,10 @@ class ReleaseRoleButton(discord.ui.Button):
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message( view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA))
+            await interaction.response.edit_message(
+                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA),
+                attachments=[_org_banner_file()],
+            )
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -255,7 +264,7 @@ class ReleaseRoleButton(discord.ui.Button):
             )
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка: {str(e)}",
+                f"❌ Ошибка: {e!s}",
                 ephemeral=True
             )
 
@@ -274,7 +283,10 @@ class BackButton(discord.ui.Button):
         state = load_state()
         view = OrgRoleView(state)
         new_embed = build_org_role_embed(interaction.guild, state)
-        await interaction.response.edit_message( view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA))
+        await interaction.response.edit_message(
+            view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA),
+            attachments=[_org_banner_file()],
+        )
 
 
 class ResetButton(discord.ui.Button):
@@ -318,7 +330,10 @@ class ResetButton(discord.ui.Button):
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message( view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA))
+            await interaction.response.edit_message(
+                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA),
+                attachments=[_org_banner_file()],
+            )
 
             await interaction.followup.send(
                 "✅ Все роли организаторов сброшены для всех пользователей",
@@ -332,7 +347,7 @@ class ResetButton(discord.ui.Button):
             )
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка: {str(e)}",
+                f"❌ Ошибка: {e!s}",
                 ephemeral=True
             )
 
@@ -362,7 +377,10 @@ class RoleSelectionButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         state = load_state()
         view = RoleSelectionView(state, interaction.guild, interaction.user.id)
-        await interaction.response.edit_message(view=smart_view(interaction.message, view))
+        await interaction.response.edit_message(
+            view=smart_view(interaction.message, view),
+            attachments=[_org_banner_file()],
+        )
 
 
 class RoleSelectionView(discord.ui.View):
@@ -440,7 +458,7 @@ def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.E
     )
 
     embed = discord.Embed(
-        title=f" Панель Организатора ",
+        title=" Панель Организатора ",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )

@@ -6,10 +6,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import discord
 
 from services.social.common import (
-    BANNER_MARRIAGES, banner_file, social_view,
+    BANNER_MARRIAGES,
+    banner_file,
 )
 
 PAGE_SIZE = 5
@@ -23,10 +26,10 @@ def _days_together(married_at) -> int | None:
     """Дней в браке на текущий момент."""
     if not married_at:
         return None
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
+    from datetime import datetime
+    now = datetime.now(UTC)
     if married_at.tzinfo is None:
-        married_at = married_at.replace(tzinfo=timezone.utc)
+        married_at = married_at.replace(tzinfo=UTC)
     return max(0, (now - married_at).days)
 
 
@@ -48,7 +51,7 @@ def _build_view(
     page: int,
     invoker_id: int,
     guild_id: int,
-) -> "MarriagesView":
+) -> MarriagesView:
     total_pages = max(1, (len(entries) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = max(0, min(page, total_pages - 1))
     view = MarriagesView(
@@ -152,14 +155,21 @@ class MarriagesView(discord.ui.LayoutView):
             invoker_id=self.invoker_id, guild_id=self.guild_id,
         )
         try:
+            # V2-edit не сохраняет attachment:// автоматически —
+            # баннер нужно переслать файлом (как в proposal._refresh).
             await interaction.response.edit_message(
                 view=new_view,
-                attachments=list(interaction.message.attachments),
+                attachments=[marriages_file()],
                 allowed_mentions=discord.AllowedMentions.none(),
             )
         except Exception:
             import logging
             logging.getLogger(__name__).exception("marriages page edit failed")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "Не удалось обновить страницу. Попробуйте ещё раз.",
+                    ephemeral=True,
+                )
 
     async def _on_prev(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, self.page - 1)
