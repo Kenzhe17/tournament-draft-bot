@@ -1978,6 +1978,12 @@ async def _publish_room_message(
         f"**Комната {room['room_index']}**\n"
         f"Распознано игроков: {players_n}"
     )
+    if room.get("stat_conflicts"):
+        text += (
+            "\n⚠️ Скриншот отряда расходится с полным экраном — "
+            "статистика взята с полного экрана. Проверьте значения "
+            "на этапе итогов."
+        )
     bot_msg = await stats_channel.send(
         content=replace_emojis(text), view=view, files=files
     )
@@ -2187,6 +2193,113 @@ def _all_room_shas(session: dict) -> set[str]:
     return out
 
 
+def _drop_empty_room(rooms: list, room: dict | None) -> None:
+    """Убрать комнату без panels после отклонённой загрузки.
+
+    Пустая запись не должна оставаться в session["rooms"]:
+    иначе она выглядит как «комната в работе» и засоряет
+    republish/next-index логику.
+    """
+    if room is None or _room_has_panels(room):
+        return
+    rooms[:] = [r for r in rooms if r is not room]
+
+
+def _squad_player_rows(squad: dict) -> list[dict]:
+    """Строки игроков squad-панели (имя + K/D/A/DMG + extras)."""
+    from views.ocr_match_view import EXTRA_STAT_KEYS
+
+    rows = []
+    for p in squad.get("players") or []:
+        row = {
+            "name": (p.get("name") or "???")[:32],
+            "kills": p.get("kills"),
+            "deaths": p.get("deaths"),
+            "assists": p.get("assists"),
+            "dmg": p.get("dmg"),
+        }
+        for k in EXTRA_STAT_KEYS:
+            if p.get(k) is not None:
+                row[k] = p[k]
+        rows.append(row)
+    return rows
+
+
+def _squad_aux_entry(squad: dict, sha: str) -> dict:
+    """Aux-запись squad-скриншота для смешанной комнаты."""
+    return {
+        "sha": sha,
+        "players": _squad_player_rows(squad),
+        "banner": squad.get("banner"),
+    }
+
+
+def _norm_player_key(name) -> str:
+    """Ключ сопоставления игрока между classic и squad скриншотами."""
+    import re
+    import unicodedata
+
+    s = unicodedata.normalize("NFKC", str(name or "")).lower()
+    return re.sub(r"[^0-9a-zа-яё一-鿿]", "", s)
+
+
+def _reconcile_mixed_squad(room: dict) -> None:
+    """Сверка squad-aux скриншота с classic-панелями смешанной комнаты.
+
+    Classic — единственный источник статистики (ничего не суммируем).
+    Squad-скриншот используется только для:
+    - заполнения None-полей classic-строки при УНИКАЛЬНОМ совпадении
+      имени игрока (безопасное сопоставление);
+    - фиксации расхождений непустых значений в room["stat_conflicts"]
+      + флаг stat_conflict на строке — решение принимает этап
+      проверки итогов (ручная правка/админ-откат), автоматического
+      выбора источника нет.
+    """
+    panels = room.get("panels") or {}
+    index: dict[str, list] = {}
+    for side in ("left", "right"):
+        for i, r in enumerate(
+            (panels.get(side) or {}).get("rows") or []
+        ):
+            key = _norm_player_key(r.get("name"))
+            if key:
+                index.setdefault(key, []).append((side, i, r))
+
+    conflicts = room.setdefault("stat_conflicts", [])
+    filled = room.setdefault("aux_filled", [])
+    unmatched = room.setdefault("aux_unmatched", [])
+    for aux in room.get("aux_squads") or []:
+        for p in aux.get("players") or []:
+            key = _norm_player_key(p.get("name"))
+            matches = index.get(key) or []
+            if len(matches) != 1:
+                unmatched.append(p.get("name"))
+                continue
+            side, i, row = matches[0]
+            for f in ("kills", "deaths", "assists", "dmg"):
+                sv = p.get(f)
+                if sv is None:
+                    continue
+                cv = row.get(f)
+                if cv is None:
+                    row[f] = sv
+                    filled.append({
+                        "side": side, "row": i,
+                        "name": row.get("name"), "field": f,
+                        "value": sv, "source": "squad",
+                    })
+                elif cv != sv:
+                    row["stat_conflict"] = True
+                    conflicts.append({
+                        "side": side, "row": i,
+                        "name": row.get("name"), "field": f,
+                        "classic": cv, "squad": sv,
+                    })
+    for k in ("stat_conflicts", "aux_filled", "aux_unmatched"):
+        if not room.get(k):
+            room.pop(k, None)
+
+
 async def process_room_bundle(
     guild: discord.Guild,
     channel,
@@ -2256,6 +2369,7 @@ async def process_room_bundle(
     if room.get("sha"):
         known.discard(room["sha"])
     if any(s in known for s in shas):
+        _drop_empty_room(rooms, room)
         return "dup"
 
     if needs_republish:
@@ -2263,10 +2377,6 @@ async def process_room_bundle(
             guild, channel, tournament, key, session, stats_channel,
             room_index, items, match_type, match_index, shas,
         )
-
-    # Файлы приняты в обработку — сразу прячем «Отправить результат»
-    # в карточке матча, не дожидаясь завершения OCR.
-    await _ensure_processing_card(guild, tournament, match_type, match_index)
 
     gen = session.get("gen", 1)
     pipes = []
@@ -2276,6 +2386,7 @@ async def process_room_bundle(
             pipes.append(pipe)
     except Exception:
         logger.exception("Room bundle OCR pipeline failed")
+        _drop_empty_room(rooms, room)
         return "error"
 
     # Сессия могла быть отменена/пересоздана пока шёл OCR
@@ -2289,28 +2400,47 @@ async def process_room_bundle(
         return "cancelled"
 
     if any(p is None for p in pipes):
+        _drop_empty_room(rooms, room)
         return "parse_fail"
 
     kinds = ["squad" if p.get("squad") is not None else "classic"
              for p in pipes]
-    if len(items) == 2 and kinds != ["squad", "squad"]:
-        # Два файла в комнате — только два squad-скриншота команд
+    if len(items) == 2 and kinds == ["classic", "classic"]:
+        # Два полных экрана в одной комнате — недопустимо.
+        # classic+squad — поддерживаемая смешанная загрузка.
+        _drop_empty_room(rooms, room)
         return "invalid_mix"
     if len(items) == 1 and kinds[0] not in ("classic", "squad"):
+        _drop_empty_room(rooms, room)
         return "invalid"
 
     # --- Сборка panels комнаты ---
     from views.ocr_match_view import EXTRA_STAT_KEYS
 
-    if kinds[0] == "classic":
-        pipe = pipes[0]
+    classic_idx = next(
+        (i for i, p in enumerate(pipes) if p.get("squad") is None), None
+    )
+    if classic_idx is not None:
+        # Classic — основной источник статистики обеих команд.
+        # Смешанная загрузка (classic + squad): squad-скриншот
+        # сохраняется как aux для сверки/заполнения пропусков,
+        # статистику повторно НЕ суммирует.
+        pipe = pipes[classic_idx]
         room["panels"].update(pipe["panels"])
-        room["kind"] = "classic"
+        room["kind"] = "classic" if len(items) == 1 else "mixed"
         room["winner_side"] = pipe.get("winner_side")
         room["banner"] = pipe.get("banner")
         room["score"] = pipe.get("score")
         room["top5"] = pipe.get("top5", False)
-        room["sha"] = shas[0]
+        room["sha"] = shas[classic_idx]
+        for i, (p, sha) in enumerate(zip(pipes, shas)):
+            if p.get("squad") is None:
+                continue
+            room.setdefault("aux_squads", []).append(
+                _squad_aux_entry(p["squad"], sha)
+            )
+            room.setdefault("shas", []).append(sha)
+        _reconcile_mixed_squad(room)
     else:
         room["kind"] = "squad"
         panels = room.setdefault("panels", {})
@@ -2320,19 +2450,7 @@ async def process_room_bundle(
             pkey = "squad" if "squad" not in panels else "squad2"
             if pkey in panels:
                 return "invalid"  # не должно случиться при max 2 squad
-            rows = []
-            for p in squad.get("players") or []:
-                row = {
-                    "name": (p.get("name") or "???")[:32],
-                    "kills": p.get("kills"),
-                    "deaths": p.get("deaths"),
-                    "assists": p.get("assists"),
-                    "dmg": p.get("dmg"),
-                }
-                for k in EXTRA_STAT_KEYS:
-                    if p.get(k) is not None:
-                        row[k] = p[k]
-                rows.append(row)
+            rows = _squad_player_rows(squad)
             panels[pkey] = {"name": "Отряд", "rows": rows}
             banners[pkey] = squad.get("banner")
             room.setdefault("shas", []).append(sha)
@@ -2343,6 +2461,12 @@ async def process_room_bundle(
 
     session["rooms_received"] = _rooms_completed_count(session)
     store.set(tournament)
+
+    # Файлы приняты и распознаны — прячем «Отправить результат»
+    # в карточке матча. Вызываем только на успешном пути: при
+    # отклонённом комплекте (invalid/parse_fail/invalid_mix)
+    # кнопка и кнопки комнат не должны блокироваться.
+    await _ensure_processing_card(guild, tournament, match_type, match_index)
 
     # Сообщение комнаты: все её скриншоты + кнопки маппинга.
     # Публикация обязательна: без сообщения с кнопками комплект
@@ -2924,6 +3048,11 @@ async def _rooms_claim_bundle(
         if not _rooms_file_submit_allowed(fresh, s, user):
             return "forbidden", fresh, s
         s["winner_pending"] = False
+        # Запоминаем инициатора комплекта: если ЕГО первый файл будет
+        # отклонён (invalid/parse_fail), claim откатывается и права
+        # возвращаются исходному состоянию.
+        s.setdefault("creator_id", s.get("uploaded_by"))
+        s.setdefault("creator_name", s.get("uploaded_by_name"))
         s["uploaded_by"] = int(getattr(user, "id", 0) or 0)
         s["uploaded_by_name"] = (
             getattr(user, "display_name", None)
@@ -2943,6 +3072,53 @@ async def _rooms_claim_bundle(
             s["winning_team_index"] = int(winner)
         store.set(fresh)
         return "ok", fresh, s
+
+
+# Коды process_room_bundle, при которых файл НЕ принят: если это
+# был первый файл незанятого комплекта, claim откатывается —
+# отправитель не должен навсегда занять комплект и закрепить за
+# собой команду-победителя, а карточка матча не должна терять
+# кнопку отправки.
+_BUNDLE_REJECT_CODES = frozenset(
+    {"invalid", "invalid_mix", "parse_fail", "error", "dup"}
+)
+
+
+async def _rooms_release_claim(
+    guild: discord.Guild,
+    channel_id: int,
+    key: str,
+    session: dict,
+) -> None:
+    """Откат фиксации комплекта после отклонённой первой загрузки.
+
+    Срабатывает только если в сессии всё ещё нет ни одной комнаты
+    с panels — иначе комплект уже легитимно занят ранее принятым
+    файлом и трогать его нельзя.
+    """
+    async with _room_lock(key):
+        fresh = store.get(guild.id, channel_id)
+        s = (fresh.ocr_sessions.get(key) if fresh else None)
+        if (
+            not s
+            or s.get("mode") != "rooms"
+            or s.get("status") != "collecting"
+            or int(s.get("gen", 0)) != int(session.get("gen", 0))
+        ):
+            return
+        rooms = s.get("rooms") or []
+        if any(_room_has_panels(r) for r in rooms):
+            return
+        # Убираем пустые комнаты-огрызки отклонённых попыток.
+        s["rooms"] = [r for r in rooms if _room_has_panels(r)]
+        s["rooms_received"] = _rooms_completed_count(s)
+        s["winner_pending"] = True
+        s["winning_team_index"] = None
+        s["uploaded_by"] = s.get("creator_id", s.get("uploaded_by"))
+        s["uploaded_by_name"] = s.get(
+            "creator_name", s.get("uploaded_by_name")
+        )
+        store.set(fresh)
 
 
 async def cancel_rooms_session(
@@ -3241,6 +3417,7 @@ class RoomUploadModal(Modal):
         # Первый принятый файл фиксирует отправителя и его команду
         # как победителя (Ranked MM); у занятого комплекта права
         # перепроверяются под _room_lock — гонка двух капитанов.
+        was_unclaimed = not _rooms_bundle_claimed(session)
         status, tournament, session = await _rooms_claim_bundle(
             interaction.guild, tournament, key, session, interaction.user
         )
@@ -3278,6 +3455,14 @@ class RoomUploadModal(Modal):
             room_index=self.room_index,
             items=items,
         )
+        # Отклонённый ПЕРВЫЙ файл не должен навсегда занимать
+        # комплект: откатываем claim (победитель/права) и убираем
+        # пустую комнату — кнопка «Отправить результат» и загрузка
+        # остаются доступными.
+        if res in _BUNDLE_REJECT_CODES and was_unclaimed:
+            await _rooms_release_claim(
+                interaction.guild, self.channel_id, key, session
+            )
         messages = {
             "ok": (
                 f"✅ Комната {self.room_index} обработана. "
@@ -3289,10 +3474,10 @@ class RoomUploadModal(Modal):
                 "1–2 скриншота отрядов (максимум 2 файла)."
             ),
             "invalid_mix": (
-                "❌ Смешанная загрузка не принимается: полный экран "
-                "вместе со скриншотом отряда в одной комнате. "
-                "Загрузите либо один полный скриншот, либо два "
-                "скриншота отрядов."
+                "❌ Два полных скриншота в одной комнате не "
+                "принимаются. Варианты: 1 полный скриншот "
+                "(+ опционально 1 скриншот отряда для сверки) "
+                "или 1–2 скриншота отрядов."
             ),
             "room_done": (
                 f"ℹ️ Комната {self.room_index} уже заполнена — "

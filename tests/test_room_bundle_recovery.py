@@ -48,7 +48,9 @@ class _Chan:
         if self.fail_times > 0:
             self.fail_times -= 1
             raise RuntimeError("discord send failed")
-        msg = SimpleNamespace(id=1000 + len(self.sent), view=view)
+        msg = SimpleNamespace(
+            id=1000 + len(self.sent), view=view, content=content
+        )
         self.sent.append(msg)
         return msg
 
@@ -463,3 +465,305 @@ class TestRoomRecoveryUI:
         assert room["message_ids"] == [555]
         assert len(stats.sent) == 0  # дубль не отправлен
         assert len(env.pipe_calls) == 1  # OCR не повторялся
+
+
+# ---------------------------------------------------------------------------
+# Смешанная загрузка комнаты: classic + squad
+# ---------------------------------------------------------------------------
+
+
+def _classic_pipe(rows_a, rows_b, team_a="TA", team_b="TB"):
+    return {
+        "panels": {
+            "left": {"name": team_a, "rows": rows_a},
+            "right": {"name": team_b, "rows": rows_b},
+        },
+        "score": None,
+        "banner": None,
+        "top5": False,
+        "winner_side": "left",
+    }
+
+
+def _squad_pipe(players, banner="win"):
+    return {"squad": {"players": players, "banner": banner}}
+
+
+def _prow(name, k=1, d=1, a=1, dmg=100):
+    return {"name": name, "kills": k, "deaths": d, "assists": a,
+            "dmg": dmg}
+
+
+@pytest.fixture
+def mixed_env(monkeypatch):
+    """env + pipeline, диспетчеризующий classic/squad по содержимому."""
+    session = {
+        "mode": "rooms",
+        "status": "collecting",
+        "gen": 1,
+        "rooms_expected": 2,
+        "rooms": [],
+        "rooms_received": 0,
+        "winner_pending": True,
+        "winning_team_index": None,
+        "uploaded_by": 7,
+        "uploaded_by_name": "creator",
+        "teams": [0, 1],
+        "maps": {},
+        "panel_picks": {},
+    }
+    tournament = SimpleNamespace(
+        channel_id=1,
+        ocr_sessions={"qualifier_0": session},
+        teams=[{"players": []}, {"players": []}],
+        player_user_ids={},
+        mm_search_channel_id=None,
+    )
+    guild = SimpleNamespace(id=1)
+    channel = SimpleNamespace(guild=guild)
+
+    monkeypatch.setattr(up.store, "get", lambda gid, cid: tournament)
+    monkeypatch.setattr(up.store, "set", lambda t: None)
+
+    card_calls = []
+
+    async def fake_card(*a, **kw):
+        card_calls.append(a)
+
+    monkeypatch.setattr(up, "_ensure_processing_card", fake_card)
+
+    pipes = []
+    pipe_calls = []
+
+    async def fake_pipeline(data, need_score=True):
+        pipe_calls.append(data)
+        pipe = pipes.pop(0) if pipes else _pipe()
+        return pipe
+
+    monkeypatch.setattr(up, "_classic_pipeline", fake_pipeline)
+
+    return SimpleNamespace(
+        session=session, tournament=tournament, guild=guild,
+        channel=channel, pipe_calls=pipe_calls, pipes=pipes,
+        card_calls=card_calls,
+    )
+
+
+def _mixed_items():
+    return [
+        {"filename": "full.png", "data": b"FULL-SCREEN"},
+        {"filename": "squad.png", "data": b"SQUAD-SHOT"},
+    ]
+
+
+async def _bundle_items(e, room_index: int, items, stats_channel):
+    return await up.process_room_bundle(
+        guild=e.guild,
+        channel=stats_channel,
+        user=SimpleNamespace(id=42),
+        tournament=e.tournament,
+        match_type="qualifier",
+        match_index=0,
+        key="qualifier_0",
+        session=e.session,
+        stats_channel=stats_channel,
+        room_index=room_index,
+        items=items,
+    )
+
+
+class TestMixedRoomBundle:
+    @pytest.mark.asyncio
+    async def test_classic_plus_squad_accepted(self, mixed_env):
+        """classic + squad: panels — только от classic, squad уходит
+        в aux_squads, оба sha сохранены, статистика не дублируется."""
+        e = mixed_env
+        rows_a = [_prow("A1", dmg=500), _prow("A2")]
+        rows_b = [_prow("B1"), _prow("B2")]
+        e.pipes.extend([
+            _classic_pipe(rows_a, rows_b),
+            _squad_pipe([_prow("A1", dmg=500)]),
+        ])
+        stats = _Chan()
+        r = await _bundle_items(e, 1, _mixed_items(), stats)
+        assert r == "ok"
+
+        room = e.session["rooms"][0]
+        assert room["kind"] == "mixed"
+        # Только classic-панели: squad НЕ добавляет вторую команду
+        assert set(room["panels"]) == {"left", "right"}
+        assert len(room["panels"]["left"]["rows"]) == 2
+        # SHA обоих файлов сохранены
+        assert room["sha"] == up._sha256_bytes(b"FULL-SCREEN")
+        assert up._sha256_bytes(b"SQUAD-SHOT") in room["shas"]
+        assert len(room["aux_squads"]) == 1
+        assert room["aux_squads"][0]["players"][0]["name"] == "A1"
+        assert e.session["rooms_received"] == 1
+        assert len(stats.sent) == 1
+        # Карточка обработки — только на успешном пути
+        assert len(e.card_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_squad_plus_classic_order(self, mixed_env):
+        """squad + classic (обратный порядок) — тот же результат."""
+        e = mixed_env
+        e.pipes.extend([
+            _squad_pipe([_prow("B1", dmg=50)]),
+            _classic_pipe([_prow("A1")], [_prow("B1", dmg=50)]),
+        ])
+        items = list(reversed(_mixed_items()))
+        stats = _Chan()
+        r = await _bundle_items(e, 1, items, stats)
+        assert r == "ok"
+        room = e.session["rooms"][0]
+        assert room["kind"] == "mixed"
+        assert room["sha"] == up._sha256_bytes(b"FULL-SCREEN")
+        assert up._sha256_bytes(b"SQUAD-SHOT") in room["shas"]
+
+    @pytest.mark.asyncio
+    async def test_squad_fills_missing_classic_stats(self, mixed_env):
+        """None-поле classic-строки заполняется из squad при
+        уникальном совпадении имени — без суммирования."""
+        e = mixed_env
+        e.pipes.extend([
+            _classic_pipe(
+                [_prow("UniqName", dmg=None), _prow("A2")],
+                [_prow("B1")],
+            ),
+            _squad_pipe([_prow("Uniq Name!", dmg=777)]),
+        ])
+        stats = _Chan()
+        assert await _bundle_items(e, 1, _mixed_items(), stats) == "ok"
+        row = e.session["rooms"][0]["panels"]["left"]["rows"][0]
+        assert row["dmg"] == 777  # пробел/пунктуация не мешают match
+        room = e.session["rooms"][0]
+        assert room.get("aux_filled")
+        assert not room.get("stat_conflicts")
+
+    @pytest.mark.asyncio
+    async def test_squad_conflict_no_autosum(self, mixed_env):
+        """Расхождение значений: classic сохраняется, конфликт
+        фиксируется для этапа проверки итогов — без автосуммы."""
+        e = mixed_env
+        e.pipes.extend([
+            _classic_pipe([_prow("A1", dmg=100)], [_prow("B1")]),
+            _squad_pipe([_prow("a1", dmg=200)]),
+        ])
+        stats = _Chan()
+        assert await _bundle_items(e, 1, _mixed_items(), stats) == "ok"
+        room = e.session["rooms"][0]
+        row = room["panels"]["left"]["rows"][0]
+        assert row["dmg"] == 100  # НЕ 300 и НЕ 200
+        assert row["stat_conflict"] is True
+        assert room["stat_conflicts"] == [
+            {"side": "left", "row": 0, "name": "A1", "field": "dmg",
+             "classic": 100, "squad": 200}
+        ]
+        # Предупреждение в сообщении комнаты
+        assert "расходится" in stats.sent[0].content
+
+    @pytest.mark.asyncio
+    async def test_two_classics_still_invalid_mix(self, mixed_env):
+        """classic + classic — по-прежнему invalid_mix; пустая
+        комната удаляется, карточка обработки НЕ трогается."""
+        e = mixed_env
+        e.pipes.extend([_pipe(), _pipe()])
+        items = [
+            {"filename": "a.png", "data": b"FULL-A"},
+            {"filename": "b.png", "data": b"FULL-B"},
+        ]
+        stats = _Chan()
+        r = await _bundle_items(e, 1, items, stats)
+        assert r == "invalid_mix"
+        assert e.session["rooms"] == []
+        assert e.card_calls == []  # processing card не включалась
+        assert len(stats.sent) == 0
+
+    @pytest.mark.asyncio
+    async def test_mixed_republish_sha_any_order(self, mixed_env):
+        """publish_fail смешанной комнаты → republish тех же двух
+        файлов в любом порядке без повторного OCR."""
+        e = mixed_env
+        e.pipes.extend([
+            _classic_pipe([_prow("A1")], [_prow("B1")]),
+            _squad_pipe([_prow("A1")]),
+        ])
+        stats = _Chan(fail_times=10)
+        assert await _bundle_items(e, 1, _mixed_items(), stats) == "publish_fail"
+        n_pipes = len(e.pipe_calls)
+        room = e.session["rooms"][0]
+        assert room["message_id"] is None
+
+        stats.fail_times = 0
+        items = list(reversed(_mixed_items()))
+        r = await _bundle_items(e, 1, items, stats)
+        assert r == "ok"
+        assert room["message_id"] is not None
+        assert len(e.pipe_calls) == n_pipes  # OCR не повторялся
+        assert len(stats.sent) == 1
+
+    @pytest.mark.asyncio
+    async def test_mixed_reupload_room_done(self, mixed_env):
+        """Повторная загрузка заполненной смешанной комнаты —
+        room_done, без OCR и без дублей."""
+        e = mixed_env
+        e.pipes.extend([
+            _classic_pipe([_prow("A1")], [_prow("B1")]),
+            _squad_pipe([_prow("A1")]),
+        ])
+        stats = _Chan()
+        assert await _bundle_items(e, 1, _mixed_items(), stats) == "ok"
+        n_pipes = len(e.pipe_calls)
+        r = await _bundle_items(e, 1, _mixed_items(), stats)
+        assert r in ("room_done", "dup")
+        assert len(e.pipe_calls) == n_pipes
+        assert e.session["rooms_received"] == 1
+
+
+class TestBundleClaimRelease:
+    @pytest.mark.asyncio
+    async def test_rejected_first_file_releases_claim(
+        self, mixed_env, monkeypatch
+    ):
+        """Первый файл отклонён (parse_fail) → claim откатывается:
+        winner_pending/команда-победитель/uploaded_by восстанавливаются,
+        пустая комната удаляется, карточка не блокируется."""
+        e = mixed_env
+        e.pipes.append(None)  # pipeline → parse_fail
+
+        async def fake_stats_channel(interaction, tournament):
+            return _Chan()
+        monkeypatch.setattr(up, "_stats_channel", fake_stats_channel)
+
+        modal = _modal_for(e, 1, [_fake_file("bad.png", b"NOT-A-RESULT")])
+        ix = _IXUI(user_id=42)
+        await modal.on_submit(ix)
+
+        s = e.session
+        assert s["winner_pending"] is True
+        assert s["winning_team_index"] is None
+        assert s["uploaded_by"] == 7  # creator, не отправитель файла
+        assert s["rooms"] == []
+        assert s["rooms_received"] == 0
+        assert any("Не удалось распознать" in (m or "")
+                   for m in ix.followup.sent)
+
+    @pytest.mark.asyncio
+    async def test_accepted_first_file_keeps_claim(self, mixed_env, monkeypatch):
+        """Принятый первый файл — claim сохраняется."""
+        e = mixed_env
+        e.pipes.append(_pipe())
+
+        async def fake_stats_channel(interaction, tournament):
+            return _Chan()
+        monkeypatch.setattr(up, "_stats_channel", fake_stats_channel)
+
+        modal = _modal_for(e, 1, [_fake_file("ok.png", b"img-ok")])
+        ix = _IXUI(user_id=42)
+        await modal.on_submit(ix)
+
+        s = e.session
+        assert s["winner_pending"] is False
+        assert s["uploaded_by"] == 42
+        assert len(s["rooms"]) == 1
+        assert s["rooms"][0]["panels"]
