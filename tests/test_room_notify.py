@@ -33,6 +33,11 @@ def _tournament(mm: bool = True):
         team_names={},
         mm_search_channel_id=555 if mm else 0,
         mm_preset_channel_id=0,
+        guild_id=1,
+        channel_id=2,
+        qualifier_rooms={},
+        semifinal_rooms={},
+        final_room=None,
         match_channels={
             "900": {
                 "match_type": "qualifier",
@@ -93,13 +98,18 @@ async def test_mm_room_notify_goes_to_match_channel():
         bot, t, "qualifier", 0, 0, 1, "38765135", "11"
     )
 
-    # В канал матча: карточка + 2 сообщения с данными
-    assert len(match_ch.sent) == 3
-    card_view = match_ch.sent[0][1].get("view")
-    assert card_view is not None
-    # ID и пароль — отдельные обычные сообщения (без код-блоков)
-    assert match_ch.sent[1][0][0] == "38765135"
-    assert match_ch.sent[2][0][0] == "11"
+    # В канал матча: ОДНО embed-сообщение с кнопками данных
+    assert len(match_ch.sent) == 1
+    kw = match_ch.sent[0][1]
+    emb = kw.get("embed")
+    assert emb is not None and "Комната открыта" in emb.title
+    view = kw.get("view")
+    assert view is not None
+    ids = [getattr(c, "custom_id", "") for c in view.children]
+    assert any(i.endswith(":id") for i in ids)
+    assert any(i.endswith(":pass") for i in ids)
+    # ID/пароль НЕ отправляются сырым текстом
+    assert len(match_ch.sent) == 1
     # Общий канал и канал данных НЕ используются для MM
     assert general.sent == []
     assert data_ch.sent == []
@@ -119,8 +129,11 @@ async def test_tournament_room_notify_two_places():
         bot, t, "qualifier", 0, 0, 1, "37736674", "11"
     )
 
-    # Канал данных: карточка + 2 сообщения
-    assert len(data_ch.sent) == 3
+    # Канал данных: ОДНО embed-сообщение с кнопками данных
+    assert len(data_ch.sent) == 1
+    kw = data_ch.sent[0][1]
+    assert kw.get("embed") is not None
+    assert kw.get("view") is not None
     # Канал уведомлений: 1 сообщение, role mention в content
     assert len(general.sent) == 1
     content = general.sent[0][1].get("content") or (
@@ -129,13 +142,113 @@ async def test_tournament_room_notify_two_places():
     assert content and "<@&" in str(content)
 
 
-def test_room_card_text_format():
+def test_room_card_embed_format():
     t = _tournament(mm=True)
     t1 = t.teams[0]
     t2 = t.teams[1]
-    text = rm._room_card_text(t, t1, t2, "CapA", "CapB")
-    assert "КОМНАТА ОТКРЫТА" in text
-    assert "Матч:" in text
-    assert "<@111>" in text  # упоминания игроков внутри карточки
-    assert "<@222>" in text
-    assert text.rstrip().endswith("**Данные:**")
+    emb = rm._room_card_embed(t, t1, t2, "CapA", "CapB")
+    assert emb.title == "🔓 Комната открыта"
+    values = "\n".join(f.value for f in emb.fields)
+    assert "CapA" in values and "CapB" in values
+    assert "<@111>" in values  # упоминания игроков внутри embed
+    assert "<@222>" in values
+    assert "кнопке ниже" in values
+
+
+# ---------------------------------------------------------------------------
+# Кнопки «Получить ID / Получить пароль» — права и ephemeral-ответы
+# ---------------------------------------------------------------------------
+
+class _FakeResponse:
+    def __init__(self):
+        self.messages = []
+
+    async def send_message(self, content=None, **kw):
+        self.messages.append((content, kw))
+
+
+class _FakeInteraction:
+    def __init__(self, custom_id, user, guild=None):
+        self.data = {"custom_id": custom_id}
+        self.user = user
+        self.guild = guild
+        self.response = _FakeResponse()
+
+
+def _user(uid, admin=False, name="user"):
+    return SimpleNamespace(
+        id=uid, display_name=name,
+        guild_permissions=SimpleNamespace(administrator=admin),
+    )
+
+
+def _guild():
+    return SimpleNamespace(
+        roles=[],
+        get_role=lambda rid: None,
+    )
+
+
+def _room_custom_id(what="id", gid=1, cid=2, mtype="qualifier",
+                    midx=0, t1=0, t2=1):
+    return f"rd:{gid}:{cid}:{mtype}:{midx}:{t1}:{t2}:{what}"
+
+
+@pytest.fixture
+def _store_tournament():
+    from storage.json_store import store
+    t = _tournament(mm=False)
+    t.qualifier_rooms[0] = {"id": "38765135", "password": "11"}
+    key = (t.guild_id, t.channel_id)
+    store._tournaments[key] = t
+    yield t
+    store._tournaments.pop(key, None)
+
+
+@pytest.mark.asyncio
+async def test_room_data_captain_a_gets_id(_store_tournament):
+    ix = _FakeInteraction(_room_custom_id("id"), _user(111), _guild())
+    await rm._room_data_press(ix)
+    assert ix.response.messages
+    content = ix.response.messages[0][0]
+    assert "38765135" in content and ix.response.messages[0][1].get("ephemeral")
+
+
+@pytest.mark.asyncio
+async def test_room_data_captain_b_gets_password(_store_tournament):
+    ix = _FakeInteraction(_room_custom_id("pass"), _user(222), _guild())
+    await rm._room_data_press(ix)
+    content = ix.response.messages[0][0]
+    assert "Пароль" in content and "`11`" in content
+
+
+@pytest.mark.asyncio
+async def test_room_data_admin_allowed(_store_tournament):
+    ix = _FakeInteraction(_room_custom_id("id"), _user(9999, admin=True), _guild())
+    await rm._room_data_press(ix)
+    assert "38765135" in ix.response.messages[0][0]
+
+
+@pytest.mark.asyncio
+async def test_room_data_regular_player_denied(_store_tournament):
+    ix = _FakeInteraction(_room_custom_id("id"), _user(113), _guild())
+    await rm._room_data_press(ix)
+    content = ix.response.messages[0][0]
+    assert "капитаны, организаторы или администраторы" in content
+    assert "38765135" not in content
+
+
+@pytest.mark.asyncio
+async def test_room_data_org_without_admin_denied(_store_tournament):
+    ix = _FakeInteraction(
+        _room_custom_id("pass"), _user(555, admin=False, name="org"), _guild()
+    )
+    await rm._room_data_press(ix)
+    assert "администраторы" in ix.response.messages[0][0]
+
+
+@pytest.mark.asyncio
+async def test_room_data_missing_room(_store_tournament):
+    ix = _FakeInteraction(_room_custom_id("id", midx=3), _user(111), _guild())
+    await rm._room_data_press(ix)
+    assert "не найдены" in ix.response.messages[0][0]

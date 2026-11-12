@@ -4,7 +4,7 @@ from config import NOTIFICATION_CHANNEL_ID, ROOM_DATA_CHANNEL_ID, replace_emojis
 import logging
 import time
 import discord
-from utils.design import compose, text_card
+from utils.design import text_card
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
@@ -206,30 +206,225 @@ async def _resolve_mm_match_channel(
     return None
 
 
-def _room_card_text(
+# ---------------------------------------------------------------------------
+# «🔓 Комната открыта»: embed + ephemeral-кнопки данных комнаты.
+# ID/пароль НЕ выводятся сырым текстом — только по кнопке и только
+# капитанам команд матча, организаторам и администраторам.
+# ---------------------------------------------------------------------------
+
+_ROOM_DATA_TEMPLATE = (
+    r"rd:(?P<gid>\d+):(?P<cid>\d+):(?P<mtype>qualifier|semifinal|final):"
+    r"(?P<midx>\d+):(?P<t1>-?\d+):(?P<t2>-?\d+):(?P<what>id|pass)"
+)
+
+_ROOM_DATA_DENIED = (
+    "❌ Получить данные комнаты могут только капитаны, "
+    "организаторы или администраторы."
+)
+
+
+class _RoomDataButton(discord.ui.Button):
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await _room_data_press(interaction)
+
+
+class RoomDataDynamicItem(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=_ROOM_DATA_TEMPLATE,
+):
+    """Persistent-шаблон кнопок данных комнаты: custom_id кодирует
+    guild/channel/match/команды — состояние не хранится в виде."""
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        what = match.group("what")
+        label = (
+            "📋 Получить ID" if what == "id" else "🔑 Получить пароль"
+        )
+        concrete = getattr(item, "custom_id", None) or str(
+            interaction.data.get("custom_id") or ""
+        )
+        btn = _RoomDataButton(
+            style=discord.ButtonStyle.secondary,
+            label=label,
+            custom_id=concrete,
+        )
+        return cls(btn)
+
+
+class RoomDataTemplateView(discord.ui.View):
+    """Регистрируется один раз в bot.setup_hook — dispatch по шаблону."""
+
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+        self.add_item(
+            RoomDataDynamicItem(
+                _RoomDataButton(
+                    style=discord.ButtonStyle.secondary,
+                    label="📦 Данные комнаты",
+                    custom_id="rd:0:0:qualifier:0:0:0:id",
+                )
+            )
+        )
+
+
+def _room_data_view(
+    guild_id: int,
+    channel_id: int,
+    match_type: str,
+    match_index: int,
+    team1_index: int,
+    team2_index: int,
+) -> discord.ui.View:
+    """Две кнопки на карточке «Комната открыта»."""
+    view = discord.ui.View(timeout=None)
+    base = (
+        f"rd:{guild_id}:{channel_id}:{match_type}:{match_index}:"
+        f"{team1_index}:{team2_index}"
+    )
+    view.add_item(
+        discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            label="📋 Получить ID",
+            custom_id=f"{base}:id",
+        )
+    )
+    view.add_item(
+        discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            label="🔑 Получить пароль",
+            custom_id=f"{base}:pass",
+        )
+    )
+    return view
+
+
+def _room_card_embed(
     tournament: Any,
     team1_data: dict,
     team2_data: dict,
     name1: str,
     name2: str,
-) -> str:
-    """Текст карточки «КОМНАТА ОТКРЫТА» (V2 — упоминания пингуют)."""
-    line1 = f"**{name1}**\n{_room_mentions(tournament, team1_data)}"
-    line2 = f"**{name2}**\n{_room_mentions(tournament, team2_data)}"
-    return (
-        "**КОМНАТА ОТКРЫТА**\n\n"
-        f"**Матч:** {name1} vs {name2}\n\n"
-        f"{line1}\n\n{line2}\n\n"
-        "**Данные:**"
+) -> discord.Embed:
+    """Embed «🔓 Комната открыта» — без сырых ID/пароля."""
+    emb = discord.Embed(title="🔓 Комната открыта", color=0x5865F2)
+    emb.add_field(
+        name="⚔️ Матч",
+        value=f"**{name1}** vs **{name2}**",
+        inline=False,
     )
+    emb.add_field(
+        name=name1,
+        value=_room_mentions(tournament, team1_data) or "—",
+        inline=False,
+    )
+    emb.add_field(
+        name=name2,
+        value=_room_mentions(tournament, team2_data) or "—",
+        inline=False,
+    )
+    emb.add_field(
+        name="Данные комнаты",
+        value="Данные комнаты доступны по кнопке ниже.",
+        inline=False,
+    )
+    return emb
 
 
-async def _send_room_data(
-    channel: Any, room_id: str, room_password: str
-) -> None:
-    """ID и пароль — двумя отдельными обычными сообщениями."""
-    await channel.send(room_id)
-    await channel.send(room_password)
+async def _room_data_press(interaction: discord.Interaction) -> None:
+    """Callback кнопок «Получить ID/пароль» — ephemeral-ответ."""
+    import re
+
+    custom_id = str(interaction.data.get("custom_id") or "")
+    m = re.match(_ROOM_DATA_TEMPLATE, custom_id)
+    if not m:
+        await interaction.response.send_message(
+            "⚠️ Кнопка устарела — данные комнаты недоступны.",
+            ephemeral=True,
+        )
+        return
+
+    gid = int(m.group("gid"))
+    cid = int(m.group("cid"))
+    match_type = m.group("mtype")
+    match_index = int(m.group("midx"))
+    enc_t1, enc_t2 = int(m.group("t1")), int(m.group("t2"))
+    what = m.group("what")
+
+    from storage.json_store import store
+    tournament = store.get(gid, cid)
+    if tournament is None:
+        await interaction.response.send_message(
+            "⚠️ Турнир не найден — данные комнаты недоступны.",
+            ephemeral=True,
+        )
+        return
+
+    # Данные комнаты из АКТУАЛЬНОГО состояния турнира.
+    if match_type == "qualifier":
+        room_data = (tournament.qualifier_rooms or {}).get(match_index)
+    elif match_type == "semifinal":
+        room_data = (tournament.semifinal_rooms or {}).get(match_index)
+    else:
+        room_data = tournament.final_room
+    if not room_data:
+        await interaction.response.send_message(
+            "⚠️ Данные комнаты не найдены или уже удалены.",
+            ephemeral=True,
+        )
+        return
+
+    user = interaction.user
+    uid = getattr(user, "id", 0)
+    allowed = False
+
+    # Администратор сервера — по реальным Discord-правам.
+    perms = getattr(user, "guild_permissions", None)
+    if perms is not None and getattr(perms, "administrator", False):
+        allowed = True
+
+    # Организатор (org-роли/админы проекта) — через is_org_check.
+    if not allowed and interaction.guild is not None:
+        try:
+            from utils.permissions import is_org_check
+            allowed = bool(is_org_check(user, interaction.guild))
+        except Exception:
+            allowed = False
+
+    # Капитаны команд матча — по Discord ID, свежая пара из
+    # resolve_match_context; при неудаче — индексы из custom_id.
+    if not allowed:
+        try:
+            from models.tournament import resolve_match_context
+            ctx = resolve_match_context(tournament, match_type, match_index)
+            team_ids = [ctx.team_a_index, ctx.team_b_index]
+        except Exception:
+            team_ids = [enc_t1, enc_t2]
+        try:
+            from views.ocr_match_view import _uploaded_by_is_captain_of
+            allowed = any(
+                _uploaded_by_is_captain_of(tournament, i, uid)
+                for i in team_ids
+            )
+        except Exception:
+            allowed = False
+
+    if not allowed:
+        await interaction.response.send_message(
+            replace_emojis(_ROOM_DATA_DENIED), ephemeral=True
+        )
+        return
+
+    if what == "id":
+        await interaction.response.send_message(
+            f"**ID комнаты**\n`{room_data.get('id', '')}`",
+            ephemeral=True,
+        )
+    else:
+        await interaction.response.send_message(
+            f"**Пароль комнаты**\n`{room_data.get('password', '')}`",
+            ephemeral=True,
+        )
 
 
 async def send_room_dm_notifications(
@@ -256,8 +451,14 @@ async def send_room_dm_notifications(
     name1 = team1_data.get("captain", f"Team {team1_index}")
     name2 = team2_data.get("captain", f"Team {team2_index}")
 
-    line1 = f"**{name1}**\n{_room_mentions(tournament, team1_data)}"
-    line2 = f"**{name2}**\n{_room_mentions(tournament, team2_data)}"
+    embed = _room_card_embed(
+        tournament, team1_data, team2_data, name1, name2
+    )
+    mentions = discord.AllowedMentions(users=True, roles=False, everyone=False)
+    view = _room_data_view(
+        tournament.guild_id, tournament.channel_id,
+        match_type, match_index, team1_index, team2_index,
+    )
 
     if getattr(tournament, "mm_search_channel_id", 0):
         channel = await _resolve_mm_match_channel(
@@ -271,18 +472,13 @@ async def send_room_dm_notifications(
             )
             return
         await channel.send(
-            view=text_card(_room_card_text(
-                tournament, team1_data, team2_data, name1, name2
-            )),
-            allowed_mentions=discord.AllowedMentions(
-                users=True, roles=False, everyone=False
-            ),
+            embed=embed, view=view, allowed_mentions=mentions
         )
-        await _send_room_data(channel, room_id, room_password)
         return
 
-    # Обычный турнир: данные — в канал результатов, анонс — в канал
-    # уведомлений с пингом роли (mention в content, не внутри embed)
+    # Обычный турнир: карточка с кнопками — в канал результатов,
+    # анонс — в канал уведомлений с пингом роли (mention в content,
+    # не внутри embed)
     data_channel = bot.get_channel(ROOM_DATA_CHANNEL_ID)
     if data_channel is None:
         try:
@@ -291,14 +487,8 @@ async def send_room_dm_notifications(
             data_channel = None
     if data_channel is not None:
         await data_channel.send(
-            view=text_card(_room_card_text(
-                tournament, team1_data, team2_data, name1, name2
-            )),
-            allowed_mentions=discord.AllowedMentions(
-                users=True, roles=False, everyone=False
-            ),
+            embed=embed, view=view, allowed_mentions=mentions
         )
-        await _send_room_data(data_channel, room_id, room_password)
 
     from config import NOTIFICATION_ROLE_ID
     general_channel = bot.get_channel(NOTIFICATION_CHANNEL_ID)

@@ -686,6 +686,15 @@ class TournamentBot(commands.Bot):
         except Exception as exc:
             logger.warning("Rules button view registration failed: %s", exc)
 
+        # «🔓 Комната открыта» — кнопки «Получить ID/пароль»:
+        # persistent DynamicItem-шаблон, custom_id кодирует контекст.
+        try:
+            from views.room_modal import RoomDataTemplateView
+
+            self.add_view(RoomDataTemplateView())
+        except Exception as exc:
+            logger.warning("Room data buttons registration failed: %s", exc)
+
         # Set up error handler for app commands
         self.tree.on_error = self.on_app_command_error
 
