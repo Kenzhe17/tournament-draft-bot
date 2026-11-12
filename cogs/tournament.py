@@ -444,8 +444,8 @@ class TournamentCog(commands.Cog):
             tournament.captains = []
             tournament.player_user_ids = {}
 
-        if tournament.formation_mode == FormationMode.RANDOM:
-            # RANDOM mode: fill players_pool
+        if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
+            # RANDOM/BALANCED_SR modes: fill players_pool
             if keep_players:
                 # Keep existing real players, add bots to fill remaining slots
                 current_players = len(tournament.players_pool)

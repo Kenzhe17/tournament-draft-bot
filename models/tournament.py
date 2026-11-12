@@ -413,8 +413,8 @@ class Tournament:
             if not name:
                 continue
 
-            # For RANDOM mode, add to players_pool instead of circles
-            if self.formation_mode == FormationMode.RANDOM:
+            # For RANDOM/BALANCED_SR modes, add to players_pool instead of circles
+            if self.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
                 if name in self.players_pool:
                     rejected.append(name)
                     continue
@@ -843,12 +843,11 @@ class Tournament:
         import logging
         logger = logging.getLogger(__name__)
 
-        # Все игроки из кругов (как в distribute_by_skill_rating)
-        all_players: list[tuple[str, int]] = []
-        for circle in range(1, 5):
-            for player_name in self.circle_list(circle):
-                user_id = self.player_user_ids.get(player_name, 0)
-                all_players.append((player_name, user_id))
+        # Все игроки из общего пула регистрации (без кругов)
+        all_players: list[tuple[str, int]] = [
+            (player_name, self.player_user_ids.get(player_name, 0))
+            for player_name in self.players_pool
+        ]
 
         if not all_players:
             return "❌ Нет игроков для распределения."

@@ -224,16 +224,12 @@ class TestBalancedSRTournament:
         return sr_map
 
     def _fill(self, t: Tournament) -> None:
-        n = t.captain_count
-        idx = 0
-        for circle in range(1, 5):
-            players = []
-            for _ in range(n):
-                name = f"P{idx}"
-                players.append(name)
-                t.player_user_ids[name] = 2000 + idx
-                idx += 1
-            t.set_circle_list(circle, players)
+        """Balanced SR: регистрация через общий пул (без кругов)."""
+        n = int(t.size.value)
+        for i in range(n):
+            name = f"P{i}"
+            t.players_pool.append(name)
+            t.player_user_ids[name] = 2000 + i
 
     @pytest.mark.asyncio
     async def test_16_balanced_sr_teams_and_bracket(self, stats_store):
@@ -249,8 +245,9 @@ class TestBalancedSRTournament:
             assert len(team["players"]) == 4
         assert t.phase == TournamentPhase.SEMIFINALS
         assert len(t.semifinal_matches) == 2
-        assert t.circle1 == [] and t.circle4 == []
+        # Пул очищен, круги не использовались
         assert t.players_pool == []
+        assert t.circle1 == [] and t.circle4 == []
 
     @pytest.mark.asyncio
     async def test_32_balanced_sr_teams_and_bracket(self, stats_store):
@@ -276,6 +273,18 @@ class TestBalancedSRTournament:
         err = await t.distribute_balanced_sr(1)
         assert err is not None
         assert t.teams == []
+
+    @pytest.mark.asyncio
+    async def test_circles_not_required(self, stats_store):
+        """Balanced SR не требует заполнения circle1-4."""
+        t = _mk_tournament(TournamentSize.SIXTEEN, FormationMode.BALANCED_SR)
+        self._fill(t)
+        for i in range(16):
+            stats_store[2000 + i] = float(i + 1)
+        assert not t.is_setup_complete  # круги пусты — готовность по пулу
+        err = await t.distribute_balanced_sr(1)
+        assert err is None
+        assert len(t.teams) == 4
 
 
 # ---------------------------------------------------------------------------
@@ -365,3 +374,48 @@ class TestSerialization:
         assert t2.id == f"{t2.guild_id}_{t2.creation_time}"
         assert t2.formation_mode == FormationMode.ELO
         assert t2.match_openers == {}
+
+    def test_restart_during_match_with_ocr(self):
+        """Рестарт в середине матча: OCR-сессия, комнаты, pending winners."""
+        t = _mk_tournament(TournamentSize.SIXTEEN, FormationMode.BALANCED_SR)
+        t.phase = TournamentPhase.QUALIFIERS
+        t.teams = [
+            {"captain": f"C{i}", "players": [f"C{i}", f"P{i}a", f"P{i}b", f"P{i}c"],
+             "circle1": f"C{i}", "circle2": f"P{i}a", "circle3": f"P{i}b", "circle4": f"P{i}c"}
+            for i in range(4)
+        ]
+        t.qualifier_matches = [(0, 1), (2, 3)]
+        t.qualifier_winners = [0, None]
+        t.ocr_sessions = {
+            "qualifier_0": {"status": "awaiting_mapping", "rooms": [{"panels": {}}]},
+        }
+        t.match_channels = {"12345": {"match_type": "qualifier", "match_index": 0}}
+        t.temp_match_stats = {"qualifier_0": {"P0a": {"kills": 5, "deaths": 2}}}
+        t.processed_elo_matches = {"qualifier_0"}
+        t.player_user_ids = {f"C{i}": 3000 + i for i in range(4)}
+        t.eliminated_teams = {3}
+        t.winner_team_index = None
+
+        t2 = Tournament.from_dict(t.to_dict())
+        assert t2.id == t.id
+        assert t2.phase == TournamentPhase.QUALIFIERS
+        assert t2.ocr_sessions == t.ocr_sessions
+        assert t2.match_channels == t.match_channels
+        assert t2.temp_match_stats == t.temp_match_stats
+        assert t2.processed_elo_matches == {"qualifier_0"}
+        assert t2.eliminated_teams == {3}
+        assert t2.qualifier_winners == [0, None]
+        assert t2.player_user_ids == t.player_user_ids
+
+    def test_restart_preserves_pool_registration(self):
+        """Регистрация в Balanced SR (pool) переживает рестарт."""
+        t = _mk_tournament(TournamentSize.SIXTEEN, FormationMode.BALANCED_SR)
+        t.players_pool = [f"P{i}" for i in range(16)]
+        t.player_user_ids = {f"P{i}": 4000 + i for i in range(16)}
+        t.registration = __import__("models.tournament", fromlist=["RegistrationState"]).RegistrationState.OPEN
+
+        t2 = Tournament.from_dict(t.to_dict())
+        assert t2.players_pool == t.players_pool
+        assert t2.player_user_ids == t.player_user_ids
+        assert t2.formation_mode == FormationMode.BALANCED_SR
+        assert t2.id == t.id

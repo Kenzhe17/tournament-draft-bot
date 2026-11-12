@@ -531,7 +531,7 @@ class ExitButton(discord.ui.Button):
         logger.info(f"ExitButton: user '{user_name}' (id={user_id}) attempting to exit tournament {tournament.id} in channel {interaction.channel_id}")
 
         # Handle different modes
-        if tournament.formation_mode == FormationMode.RANDOM:
+        if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
             # RANDOM mode: check players_pool
             if user_name not in tournament.players_pool:
                 try:
@@ -625,7 +625,7 @@ class DeletePlayerButton(discord.ui.Button):
             return
 
         # Get list of all players
-        if tournament.formation_mode == FormationMode.RANDOM:
+        if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
             players = list(tournament.players_pool)
         else:
             players = list(tournament.all_players)
@@ -664,7 +664,7 @@ class DeletePlayerButton(discord.ui.Button):
                     pass
                 return
 
-            if tournament.formation_mode == FormationMode.RANDOM:
+            if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
                 if player_name not in tournament.players_pool:
                     try:
                         await interaction.followup.send(
@@ -740,7 +740,7 @@ class SwapPlayersButton(discord.ui.Button):
             return
 
         # Get list of all players
-        if tournament.formation_mode == FormationMode.RANDOM:
+        if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
             players = list(tournament.players_pool)
         else:
             players = list(tournament.all_players)
@@ -883,7 +883,7 @@ class MovePlayerButton(discord.ui.Button):
             return
 
         # Get list of all players
-        if tournament.formation_mode == FormationMode.RANDOM:
+        if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
             players = list(tournament.players_pool)
         else:
             players = list(tournament.all_players)
@@ -1239,7 +1239,7 @@ class StartTournamentButton(discord.ui.Button):
                 return
 
         # Check if tournament is ready to start based on formation mode
-        if tournament.formation_mode == FormationMode.RANDOM:
+        if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
             # RANDOM mode: check if players_pool has enough players
             required_players = int(tournament.size.value)
             current_players = len(tournament.players_pool)
@@ -1269,17 +1269,6 @@ class StartTournamentButton(discord.ui.Button):
         # строятся сразу, драфт пропускается
         if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
             if tournament.formation_mode == FormationMode.BALANCED_SR:
-                # Проверка готовности по кругам (как у ELO/SKILL)
-                if not tournament.is_setup_complete:
-                    captain_count = tournament.captain_count
-                    try:
-                        await interaction.response.send_message(
-                            f"{replace_emojis('❌')} Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитан, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4.",
-                            ephemeral=True
-                        )
-                    except discord.NotFound:
-                        pass
-                    return
                 error = await tournament.distribute_balanced_sr(self.guild_id)
                 if error:
                     try:
@@ -1499,7 +1488,7 @@ class SetupView(discord.ui.View):
         self.registration_state = tournament.registration
 
         # Show different buttons based on formation mode
-        if tournament.formation_mode == FormationMode.RANDOM:
+        if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
             # RANDOM mode: single join button with counter
             current = len(tournament.players_pool)
             limit = int(tournament.size.value)
@@ -1712,7 +1701,7 @@ class NotifyButton(discord.ui.Button):
         total_needed = int(tournament.size.value)
 
         # For ELO/SKILL modes, count players in circles instead of pool
-        if tournament.formation_mode in [FormationMode.ELO, FormationMode.SKILL]:
+        if tournament.formation_mode in [FormationMode.ELO, FormationMode.SKILL, FormationMode.DRAFT]:
             total_players = 0
             for circle_num in range(1, 5):
                 circle_data = getattr(tournament, f"circle{circle_num}", [])
@@ -1728,7 +1717,7 @@ class NotifyButton(discord.ui.Button):
             description += f"**Не хватает:** {missing} игроков\n"
 
         # Add circle-specific info for ELO/SKILL modes
-        if tournament.formation_mode in [FormationMode.ELO, FormationMode.SKILL]:
+        if tournament.formation_mode in [FormationMode.ELO, FormationMode.SKILL, FormationMode.DRAFT]:
             size_value = int(tournament.size.value)
             circle_limits_map = {
                 8: {1: 2, 2: 2, 3: 2, 4: 2},
