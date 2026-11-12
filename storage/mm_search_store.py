@@ -52,7 +52,12 @@ class MMSearchStore:
                 rows = await conn.fetch(
                     "SELECT guild_id, channel_id, message_id, format, state,"
                     " players, player_user_ids, aliases, created_at,"
-                    " timer_started, tournament_channel_id, match_num"
+                    " timer_started, tournament_channel_id, match_num,"
+                    " session_started_at, effective_limit_seconds,"
+                    " first_notification_status, first_notification_sent_at,"
+                    " first_notification_message_id,"
+                    " second_notification_status, second_notification_sent_at,"
+                    " second_notification_message_id, notify_suppressed_until"
                     " FROM mm_queues WHERE queue_type = 'normal'"
                 )
             self._searches = {}
@@ -121,8 +126,14 @@ class MMSearchStore:
                     (guild_id, channel_id, message_id, format, state,
                      players, player_user_ids, aliases, created_at,
                      timer_started, tournament_channel_id, match_num,
+                     session_started_at, effective_limit_seconds,
+                     first_notification_status, first_notification_sent_at,
+                     first_notification_message_id,
+                     second_notification_status, second_notification_sent_at,
+                     second_notification_message_id, notify_suppressed_until,
                      queue_type)
-                VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10,$11,$12,'normal')
+                VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10,$11,$12,
+                        $13,$14,$15,$16,$17,$18,$19,$20,$21,'normal')
                 ON CONFLICT (guild_id, channel_id, queue_type) DO UPDATE SET
                     message_id = EXCLUDED.message_id,
                     format = EXCLUDED.format,
@@ -132,7 +143,16 @@ class MMSearchStore:
                     aliases = EXCLUDED.aliases,
                     timer_started = EXCLUDED.timer_started,
                     tournament_channel_id = EXCLUDED.tournament_channel_id,
-                    match_num = EXCLUDED.match_num
+                    match_num = EXCLUDED.match_num,
+                    session_started_at = EXCLUDED.session_started_at,
+                    effective_limit_seconds = EXCLUDED.effective_limit_seconds,
+                    first_notification_status = EXCLUDED.first_notification_status,
+                    first_notification_sent_at = EXCLUDED.first_notification_sent_at,
+                    first_notification_message_id = EXCLUDED.first_notification_message_id,
+                    second_notification_status = EXCLUDED.second_notification_status,
+                    second_notification_sent_at = EXCLUDED.second_notification_sent_at,
+                    second_notification_message_id = EXCLUDED.second_notification_message_id,
+                    notify_suppressed_until = EXCLUDED.notify_suppressed_until
                 """,
                 search.guild_id, search.channel_id, search.message_id,
                 search.format.value, search.state,
@@ -144,6 +164,14 @@ class MMSearchStore:
                 json.dumps(search.aliases, ensure_ascii=False),
                 search.created_at, search.timer_started,
                 search.tournament_channel_id, search.match_num,
+                search.session_started_at, search.effective_limit_seconds,
+                search.first_notification_status,
+                search.first_notification_sent_at,
+                search.first_notification_message_id,
+                search.second_notification_status,
+                search.second_notification_sent_at,
+                search.second_notification_message_id,
+                search.notify_suppressed_until,
             )
 
     async def _persist_pg_delete(self, guild_id: int, channel_id: int) -> None:

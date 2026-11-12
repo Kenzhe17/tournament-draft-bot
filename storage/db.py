@@ -854,6 +854,43 @@ async def init_db() -> None:
             ALTER TABLE mm_queues
             ADD COLUMN IF NOT EXISTS aliases JSONB NOT NULL DEFAULT '{}'::jsonb
         """)
+        # Динамический таймер очереди + состояния уведомлений
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS session_started_at DOUBLE PRECISION NOT NULL DEFAULT 0
+        """)
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS effective_limit_seconds INTEGER NOT NULL DEFAULT 0
+        """)
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS first_notification_status TEXT NOT NULL DEFAULT 'pending'
+        """)
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS first_notification_sent_at DOUBLE PRECISION NOT NULL DEFAULT 0
+        """)
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS first_notification_message_id BIGINT NOT NULL DEFAULT 0
+        """)
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS second_notification_status TEXT NOT NULL DEFAULT 'pending'
+        """)
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS second_notification_sent_at DOUBLE PRECISION NOT NULL DEFAULT 0
+        """)
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS second_notification_message_id BIGINT NOT NULL DEFAULT 0
+        """)
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS notify_suppressed_until DOUBLE PRECISION NOT NULL DEFAULT 0
+        """)
         await conn.execute("ALTER TABLE mm_queues DROP CONSTRAINT IF EXISTS mm_queues_pkey")
         await conn.execute("""
             DO $$

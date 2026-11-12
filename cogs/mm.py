@@ -397,8 +397,12 @@ class MMCog(commands.Cog):
 
         # Таймер поиска — как при обычном входе первого игрока
         if not search.timer_started:
+            search.start_new_session(time.time())
             search.timer_started = True
             self._start_search_timer(search.guild_id, search.channel_id)
+        else:
+            # Дозаполнение в активной сессии — лимит только растёт
+            search.update_effective_limit()
         mm_search_store.set(search)
 
         # Обновить панель очереди
@@ -512,8 +516,65 @@ class MMCog(commands.Cog):
         # Таймер НЕ запускаем при создании — только когда в поиске
         # появится хотя бы один игрок (handle_queue_join).
 
-    async def _notify_search_started(self, guild_id: int, channel_id: int) -> None:
-        """Embed-уведомление о поиске в канал уведомлений с пингом роли."""
+    # ------------------------------------------------------------------
+    # Уведомления о поиске (максимум 2 с пингом роли за сессию)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _notification_due(search: MMSearch, kind: str, now: float) -> bool:
+        """Условия отправки уведомления kind ('first'|'second')."""
+        if search.is_locked or not search.timer_started:
+            return False
+        count = len(search.players)
+        required = search.required_players
+        if not (1 <= count < required):
+            return False
+        elapsed = now - (search.session_started_at or 0.0)
+        if kind == "first":
+            return elapsed >= 60
+        # second: >=5 минут И >=5 игроков (но < required)
+        return elapsed >= 300 and count >= 5
+
+    def _claim_notification(self, search: MMSearch, kind: str) -> bool:
+        """Атомарно (под _queue_lock) зарезервировать отправку.
+
+        pending -> sending. При suppress-cooldown статус становится
+        'suppressed' (терминальный, без повторов).
+        """
+        attr = f"{kind}_notification_status"
+        status = getattr(search, attr)
+        if status != "pending":
+            return False
+        if time.time() < (search.notify_suppressed_until or 0.0):
+            setattr(search, attr, "suppressed")
+            mm_search_store.set(search)
+            return False
+        setattr(search, attr, "sending")
+        mm_search_store.set(search)
+        return True
+
+    def _finish_notification(
+        self, search: MMSearch, kind: str, message_id: int
+    ) -> None:
+        """Зафиксировать результат отправки (sent/failed)."""
+        attr = f"{kind}_notification_status"
+        if getattr(search, attr) != "sending":
+            return
+        if message_id:
+            setattr(search, attr, "sent")
+            setattr(search, f"{kind}_notification_sent_at", time.time())
+            setattr(search, f"{kind}_notification_message_id", message_id)
+        else:
+            # Неопределённый результат — не рискуем повторным пингом
+            # роли: failed терминален для этой сессии.
+            setattr(search, attr, "failed")
+        mm_search_store.set(search)
+
+    async def _send_queue_notification(
+        self, search: MMSearch, kind: str
+    ) -> None:
+        """Отправить embed-уведомление с пингом роли в канал
+        уведомлений. Вызывать ТОЛЬКО после _claim_notification."""
         try:
             from config import NOTIFICATION_CHANNEL_ID, NOTIFICATION_ROLE_ID
             notification_channel = self.bot.get_channel(NOTIFICATION_CHANNEL_ID)
@@ -524,72 +585,171 @@ class MMCog(commands.Cog):
                 except Exception as e:
                     logger.warning(
                         "MM notify: fetch notification channel failed: %s", e)
-            search_channel = self.bot.get_channel(channel_id)
+            search_channel = self.bot.get_channel(search.channel_id)
             if search_channel is None:
                 try:
-                    search_channel = await self.bot.fetch_channel(channel_id)
+                    search_channel = await self.bot.fetch_channel(
+                        search.channel_id)
                 except Exception as e:
                     logger.warning("MM notify: fetch search channel failed: %s", e)
             if not notification_channel or not search_channel:
                 logger.warning(
                     "MM notify skipped: notify_ch=%s search_ch=%s",
                     notification_channel, search_channel)
+                self._finish_notification(search, kind, 0)
                 return
-            guild_obj = self.bot.get_guild(guild_id)
+            guild_obj = self.bot.get_guild(search.guild_id)
             role = guild_obj.get_role(NOTIFICATION_ROLE_ID) if guild_obj else None
             role_mention = role.mention if role else ""
 
+            count = len(search.players)
+            required = search.required_players
+            free = max(0, required - count)
+            if kind == "first":
+                desc = (
+                    "Начался поиск игроков CS 4×4.\n\n"
+                    f"Участников: {count}/{required}\n"
+                    f"Свободных мест: {free}\n\n"
+                    "Присоединяйтесь к поиску!\n"
+                    f"{search_channel.mention}"
+                )
+            else:
+                # «Матч почти собран» — текст по числу свободных мест
+                if free <= 1:
+                    tail = "Нужен последний игрок для запуска Ready Check."
+                elif free == 2:
+                    tail = "Присоединяйтесь к Ranked CS 4×4."
+                else:
+                    tail = (
+                        f"До запуска матча осталось {free} игрока!"
+                    )
+                head = (
+                    "Осталось всего одно место!"
+                    if free <= 1 else
+                    "Матч почти собран!"
+                    if free <= 2 else
+                    "Поиск игроков продолжается."
+                )
+                desc = (
+                    f"{head}\n\n"
+                    f"Участников: {count}/{required}\n"
+                    f"Свободных мест: {free}\n\n"
+                    f"{tail}\n"
+                    f"{search_channel.mention}"
+                )
             embed = discord.Embed(
-                title="🔍 Поиск игроков",
-                description=f"{search_channel.mention}",
+                title="🔍 RANKED MATCHMAKING",
+                description=desc,
                 color=discord.Color.from_rgb(69, 69, 69)
             )
-            await notification_channel.send(
+            # Повторная проверка актуальности перед отправкой:
+            # между claim и send мог стартовать Ready Check,
+            # истечь дедлайн или измениться состав — устаревший
+            # пинг роли не отправляем (ТЗ §6.1).
+            fresh = mm_search_store.get(search.guild_id, search.channel_id)
+            attr = f"{kind}_notification_status"
+            if (
+                fresh is None
+                or getattr(fresh, attr) != "sending"
+                or fresh.is_locked
+                or fresh.is_full
+                or not self._notification_due(fresh, kind, time.time())
+            ):
+                logger.info(
+                    "Queue notification %s aborted — session changed "
+                    "before send (%s/%s)",
+                    kind, search.guild_id, search.channel_id,
+                )
+                if fresh is not None and getattr(fresh, attr) == "sending":
+                    self._finish_notification(search, kind, 0)
+                return
+            msg = await notification_channel.send(
                 content=role_mention,
                 embed=embed,
                 allowed_mentions=discord.AllowedMentions(roles=True)
             )
+            self._finish_notification(search, kind, msg.id)
         except Exception as e:
-            logger.error(f"Error sending search notification: {e}")
+            logger.error(f"Error sending queue notification ({kind}): {e}")
+            try:
+                self._finish_notification(search, kind, 0)
+            except Exception:
+                pass
+
+    async def _maybe_send_notifications(self, search: MMSearch) -> None:
+        """Проверить и отправить Due-уведомления сессии.
+
+        Должна вызываться под _queue_lock — claim атомарен,
+        а перед отправкой состояние перечитывается вызывающим кодом.
+        """
+        now = time.time()
+        for kind in ("first", "second"):
+            attr = f"{kind}_notification_status"
+            if getattr(search, attr) != "pending":
+                continue
+            if not self._notification_due(search, kind, now):
+                continue
+            if not self._claim_notification(search, kind):
+                continue
+            await self._send_queue_notification(search, kind)
 
     def _start_search_timer(self, guild_id: int, channel_id: int) -> None:
-        """Таймер поиска 10 минут: пинги на 1 мин и 5 мин, кик в конце."""
+        """Динамический таймер поиска.
+
+        Дедлайн = session_started_at + effective_limit_seconds —
+        персистится в MMSearch и переживает рестарт. Лимит растёт
+        с заполнением очереди (10→12→15→20 мин), но не уменьшается
+        при выходе игроков. Уведомления: первое на 60с, второе при
+        elapsed>=300с И 5<=count<required — максимум два за сессию.
+        """
         async def timer_task():
             try:
-                # Уведомления: 1 мин и 5 мин после первого игрока
-                for delay in (60, 240):
-                    await asyncio.sleep(delay)
+                while True:
                     search = mm_search_store.get(guild_id, channel_id)
-                    if not search or not search.players:
+                    if (
+                        not search
+                        or not search.players
+                        or search.is_locked
+                        or not search.timer_started
+                    ):
                         return
-                    await self._notify_search_started(guild_id, channel_id)
-
-                # 10 минут — кик, если поиск не заполнен
-                await asyncio.sleep(180)
-
-                search = mm_search_store.get(guild_id, channel_id)
-                if not search:
-                    return
-
-                # Если не заполнен, кикнуть игроков и сбросить канал
-                if not search.is_full:
-                    # Разблокировать канал
-                    if search.tournament_channel_id in LOCKED_CHANNELS:
-                        del LOCKED_CHANNELS[search.tournament_channel_id]
-
-                    # Кикнуть игроков но сохранить поиск активным
-                    search.players = []
-                    search.player_user_ids = {}
-                    search.aliases = {}
-                    search.timer_started = False
-                    search.tournament_channel_id = 0
-                    mm_search_store.set(search)
-
-                    # Обновить панель (без сообщения в канал)
-                    try:
-                        await self._update_queue_panel(search)
-                    except Exception as e:
-                        logger.error(f"Error updating search timer message: {e}")
+                    now = time.time()
+                    # Legacy/edge: сессия без started_at — стартуем сейчас
+                    if not search.session_started_at:
+                        search.start_new_session(now)
+                        mm_search_store.set(search)
+                    deadline = search.deadline_at
+                    # Уведомления (claim атомарен под queue lock)
+                    async with self._queue_lock(guild_id, channel_id):
+                        fresh = mm_search_store.get(guild_id, channel_id)
+                        if (
+                            fresh is None
+                            or not fresh.players
+                            or fresh.is_locked
+                            or not fresh.timer_started
+                        ):
+                            return
+                        await self._maybe_send_notifications(fresh)
+                    # Тайм-аут: дедлайн из сохранённого состояния
+                    search = mm_search_store.get(guild_id, channel_id)
+                    if search is None:
+                        return
+                    if not search.players or search.is_locked:
+                        return
+                    if not search.is_full and now >= search.deadline_at:
+                        await self._expire_queue(guild_id, channel_id)
+                        return
+                    # Сон до ближайшего события (уведомление/дедлайн),
+                    # максимум 30с — на случай изменений состояния.
+                    delay = 30.0
+                    for mark in (
+                        search.session_started_at + 60,
+                        search.session_started_at + 300,
+                        search.deadline_at,
+                    ):
+                        if mark > now:
+                            delay = min(delay, mark - now)
+                    await asyncio.sleep(max(5.0, delay))
             except asyncio.CancelledError:
                 pass
             except Exception as e:
@@ -597,6 +757,49 @@ class MMCog(commands.Cog):
 
         task = asyncio.create_task(timer_task())
         self._search_timers[(guild_id, channel_id)] = task
+
+    async def _expire_queue(self, guild_id: int, channel_id: int) -> None:
+        """Завершить сессию по дедлайну: кик игроков, сброс состояния.
+
+        Под queue lock: перепроверяет актуальный дедлайн — если он
+        был продлён (effective_limit вырос), поиск продолжается.
+        """
+        async with self._queue_lock(guild_id, channel_id):
+            search = mm_search_store.get(guild_id, channel_id)
+            if search is None or not search.players:
+                return
+            if search.is_locked or search.is_full:
+                return
+            if time.time() < search.deadline_at:
+                return  # дедлайн продлён — таймер продолжит
+            # Разблокировать канал
+            if search.tournament_channel_id in LOCKED_CHANNELS:
+                del LOCKED_CHANNELS[search.tournament_channel_id]
+            # Завершить сессию: игроки и псевдонимы освобождаются,
+            # уведомления сбрасываются — следующий вход = новая сессия
+            search.players = []
+            search.player_user_ids = {}
+            search.aliases = {}
+            search.timer_started = False
+            search.tournament_channel_id = 0
+            search.session_started_at = 0.0
+            search.effective_limit_seconds = 0
+            search.first_notification_status = "pending"
+            search.first_notification_sent_at = 0.0
+            search.first_notification_message_id = 0
+            search.second_notification_status = "pending"
+            search.second_notification_sent_at = 0.0
+            search.second_notification_message_id = 0
+            search.notify_suppressed_until = 0.0
+            mm_search_store.set(search)
+            try:
+                await self._update_queue_panel(search)
+            except Exception as e:
+                logger.error(f"Error updating search timer message: {e}")
+            logger.info(
+                "MM queue expired: guild=%s channel=%s",
+                guild_id, channel_id,
+            )
 
     def _cancel_search_timer(self, guild_id: int, channel_id: int) -> None:
         """Отменить таймер поиска."""
@@ -1128,10 +1331,21 @@ class MMCog(commands.Cog):
         search.players = keep_names
         search.player_user_ids = {n: search.player_user_ids[n] for n in keep_names if n in search.player_user_ids}
         search.aliases = {n: a for n, a in search.aliases.items() if n in keep_names}
-        search.timer_started = bool(keep_names)
-        # Очередь снова открыта — готовые игроки ждут следующего матча
         search.state = QUEUE_OPEN
         search.match_num = 0
+        # Возврат после неудачного Ready Check = НОВАЯ сессия:
+        # новый started_at, лимит по числу вернувшихся. Авто-
+        # уведомления роли подавлены на 30 минут — защита от
+        # циклов пингов при повторных неудачных RC.
+        now = time.time()
+        if keep_names:
+            search.start_new_session(now)
+            search.suppress_notifications(now + 1800)
+        else:
+            search.timer_started = False
+            search.session_started_at = 0.0
+            search.effective_limit_seconds = 0
+        search.timer_started = bool(keep_names)
         mm_search_store.set(search)
 
         # Перезапустить таймер поиска, если игроки вернулись
@@ -1480,14 +1694,25 @@ class MMCog(commands.Cog):
         self,
         search: MMSearch,
         interaction_channel: discord.TextChannel,
-        teams: tuple[list[str], list[str]] | None = None,
+        teams: tuple[list[str], list[str]],
     ) -> None:
         """Создать обычный турнир из поиска.
 
-        teams — зафиксированный снимок составов из Ready Check
-        (обязателен для MM-флоу): повторная балансировка для этого
-        матча запрещена. Без teams — только legacy-фолбэк.
+        teams — ОБЯЗАТЕЛЬНЫЙ снимок составов из Ready Check
+        (player.user_id + team). Повторная балансировка для
+        Ranked-матча запрещена: smart_balance_4v4 недетерминирован
+        при равных метриках и уже выполнялся при создании RC.
+        Вызывающий код (_launch_ready_check_impl) обязан проверить
+        снимок через _teams_from_ready_check и отменить матч при
+        невалидных данных — здесь fallback отсутствует намеренно.
         """
+        if teams is None or len(teams) != 2:
+            logger.error(
+                "_create_tournament_from_search called without a "
+                "valid team snapshot for search %s/%s — aborting",
+                search.guild_id, search.channel_id,
+            )
+            return
         guild = interaction_channel.guild or self.bot.get_guild(search.guild_id)
         
         # Канал турнира — созданный ботом канал матча cs-4x4-match-N;
@@ -1536,22 +1761,12 @@ class MMCog(commands.Cog):
         # Закрыть регистрацию
         tournament.registration = RegistrationState.CLOSED
 
-        # Составы: если передан снимок из Ready Check — используем
-        # его БЕЗ повторной балансировки (она недетерминирована при
-        # равных метриках и уже выполнялась при создании RC).
-        # Фолбэк на Smart Balance — только для вызовов без снимка.
-        team_lists: list[list[str]]
-        if teams is not None:
-            team_lists = [list(teams[0]), list(teams[1])]
-        else:
-            from utils.smart_balance import smart_balance_4v4
-            team_lists = smart_balance_4v4(
-                players_with_sr, tournament.player_user_ids
-            )
-            if team_lists is None:
-                team_lists = tournament.distribute_players_random_auto(
-                    players_with_sr
-                )
+        # Составы — ТОЛЬКО из снимка Ready Check. Никакой повторной
+        # балансировки: smart_balance_4v4 недетерминирован при равных
+        # метриках и уже выполнялся при создании карточки «НАЙДЕН
+        # МАТЧ». Отсутствие/повреждение снимка обработано выше
+        # (отмена матча + возврат игроков).
+        team_lists: list[list[str]] = [list(teams[0]), list(teams[1])]
 
         # НЕ заполнять круги - команды создаются напрямую
         # Для random-auto круги не используются, только teams
@@ -1827,10 +2042,19 @@ class MMCog(commands.Cog):
                     return
 
                 if not search.timer_started:
+                    # Новая сессия: started_at, лимит, уведомления
+                    search.start_new_session(time.time())
                     search.timer_started = True
                     mm_search_store.set(search)
                     self._start_search_timer(guild_id, channel_id)
+                else:
+                    # Динамический лимит: только растёт, не сбрасывается
+                    search.update_effective_limit()
                 mm_search_store.set(search)
+
+                # Умное уведомление: второе может сработать сразу
+                # при достижении 5 игроков после 5-й минуты (сценарий B)
+                await self._maybe_send_notifications(search)
 
                 if search.is_full:
                     # Атомарный захват: lock снят до тяжёлого _begin_match
@@ -1903,8 +2127,22 @@ class MMCog(commands.Cog):
 
             search.remove_player(name)
             if not search.players:
+                # Сессия завершена: следующий вход создаст новую
+                # (новый started_at, лимит и уведомления)
                 search.timer_started = False
+                search.session_started_at = 0.0
+                search.effective_limit_seconds = 0
+                search.first_notification_status = "pending"
+                search.first_notification_sent_at = 0.0
+                search.first_notification_message_id = 0
+                search.second_notification_status = "pending"
+                search.second_notification_sent_at = 0.0
+                search.second_notification_message_id = 0
+                search.notify_suppressed_until = 0.0
                 self._cancel_search_timer(guild_id, channel_id)
+            else:
+                # Выход НЕ сбрасывает достигнутый лимит и уведомления
+                search.update_effective_limit()
             mm_search_store.set(search)
             await self._edit_panel(interaction, search)
             # Снимаем состояние «бот думает…» ephemeral-подтверждением
@@ -2247,6 +2485,47 @@ class MMCog(commands.Cog):
                                     self._start_search_timer(
                                         search.guild_id, search.channel_id
                                     )
+                # Активная открытая очередь с игроками: восстановить
+                # сессию (started_at/лимит/уведомления) и таймер.
+                # Дедлайн не сбрасывается — если он прошёл во время
+                # простоя, таймер сразу завершит сессию.
+                if (
+                    search.state == QUEUE_OPEN
+                    and search.players
+                    and search.timer_started
+                ):
+                    if not search.session_started_at:
+                        # Legacy-сессия без метки времени: даём
+                        # полный лимит от момента восстановления
+                        search.start_new_session(time.time())
+                        mm_search_store.set(search)
+                    else:
+                        # Лимит мог вырасти до рестарта — не уменьшаем
+                        search.update_effective_limit()
+                        mm_search_store.set(search)
+                    key = (search.guild_id, search.channel_id)
+                    task = self._search_timers.get(key)
+                    if task is None or task.done():
+                        self._start_search_timer(
+                            search.guild_id, search.channel_id
+                        )
+                    # Уведомления, наступившие во время простоя:
+                    # отправляем только если условия ещё актуальны
+                    # и уведомление не было отправлено ранее.
+                    try:
+                        async with self._queue_lock(
+                            search.guild_id, search.channel_id
+                        ):
+                            fresh = mm_search_store.get(
+                                search.guild_id, search.channel_id
+                            )
+                            if fresh is not None and not fresh.is_full:
+                                await self._maybe_send_notifications(fresh)
+                    except Exception as exc:
+                        logger.warning(
+                            "MM notify recovery failed %s/%s: %s",
+                            search.guild_id, search.channel_id, exc,
+                        )
                 try:
                     await self._update_queue_panel(search)
                 except Exception:

@@ -65,6 +65,30 @@ QUEUE_OPEN = "open"                    # принимает игроков
 QUEUE_LOCKED_READY_CHECK = "locked"    # матч найден, идёт ready-check
 QUEUE_WAITING_CHANNEL = "waiting_channel"  # матч готов, ждёт свободный канал
 
+# Динамический лимит ожидания очереди (секунды) для формата 8 игроков.
+# Лимит — ОБЩЕЕ время сессии, может только увеличиваться.
+_QUEUE_LIMIT_8: tuple[tuple[int, int], ...] = (
+    (7, 1200),   # 7/8 → 20 минут
+    (6, 900),    # 6/8 → 15 минут
+    (4, 720),    # 4-5/8 → 12 минут
+)
+_QUEUE_LIMIT_DEFAULT_8 = 600           # 1-3/8 → 10 минут
+_QUEUE_LIMIT_OTHER = 600               # не-8 форматы — прежние 10 минут
+
+
+def queue_limit_seconds(player_count: int, required: int = 8) -> int:
+    """Максимальное время сессии поиска по числу участников.
+
+    Для required=8: 1-3→600с, 4-5→720с, 6→900с, 7→1200с.
+    8 обрабатывается отдельно (немедленный Ready Check).
+    """
+    if required != 8:
+        return _QUEUE_LIMIT_OTHER
+    for threshold, limit in _QUEUE_LIMIT_8:
+        if player_count >= threshold:
+            return limit
+    return _QUEUE_LIMIT_DEFAULT_8
+
 
 @dataclass
 class MMSearch:
@@ -82,6 +106,71 @@ class MMSearch:
     tournament_channel_id: int = 0  # Канал в котором будет создан турнир
     state: str = QUEUE_OPEN        # open | locked
     match_num: int = 0             # номер матча на время ready-check
+
+    # ---- Динамический таймер сессии (UTC epoch seconds) ----
+    session_started_at: float = 0.0       # начало текущей сессии
+    effective_limit_seconds: int = 0      # максимальный достигнутый лимит
+    # Уведомления с ролью: максимум 2 за сессию.
+    # status: pending | sending | sent | failed | suppressed
+    first_notification_status: str = "pending"
+    first_notification_sent_at: float = 0.0
+    first_notification_message_id: int = 0
+    second_notification_status: str = "pending"
+    second_notification_sent_at: float = 0.0
+    second_notification_message_id: int = 0
+    # Cooldown на авто-уведомления после возврата из неудачного RC
+    notify_suppressed_until: float = 0.0
+
+    # ---- session helpers ----
+
+    def start_new_session(self, now: float) -> None:
+        """Начать новую сессию поиска: сброс таймера и уведомлений."""
+        self.session_started_at = now
+        self.effective_limit_seconds = queue_limit_seconds(
+            len(self.players), self.required_players
+        )
+        self.first_notification_status = "pending"
+        self.first_notification_sent_at = 0.0
+        self.first_notification_message_id = 0
+        self.second_notification_status = "pending"
+        self.second_notification_sent_at = 0.0
+        self.second_notification_message_id = 0
+        self.notify_suppressed_until = 0.0
+
+    def suppress_notifications(self, until: float) -> None:
+        """Подавить авто-уведомления до указанного времени (requeue)."""
+        self.notify_suppressed_until = max(
+            self.notify_suppressed_until, until
+        )
+        for kind in ("first", "second"):
+            if getattr(self, f"{kind}_notification_status") == "pending":
+                setattr(self, f"{kind}_notification_status", "suppressed")
+
+    def update_effective_limit(self) -> None:
+        """Поднять лимит до значения для текущего числа игроков.
+
+        Лимит только растёт — выход игроков его не уменьшает.
+        """
+        limit = queue_limit_seconds(
+            len(self.players), self.required_players
+        )
+        self.effective_limit_seconds = max(
+            self.effective_limit_seconds, limit
+        )
+
+    @property
+    def deadline_at(self) -> float:
+        """Дедлайн сессии (epoch). 0 — сессия не активна."""
+        if not self.session_started_at or not self.effective_limit_seconds:
+            return 0.0
+        return self.session_started_at + self.effective_limit_seconds
+
+    @property
+    def session_elapsed(self) -> float:
+        if not self.session_started_at:
+            return 0.0
+        import time as _t
+        return max(0.0, _t.time() - self.session_started_at)
 
     @property
     def required_players(self) -> int:
@@ -143,6 +232,15 @@ class MMSearch:
         self.tournament_channel_id = 0
         self.state = QUEUE_OPEN
         self.match_num = 0
+        self.session_started_at = 0.0
+        self.effective_limit_seconds = 0
+        self.first_notification_status = "pending"
+        self.first_notification_sent_at = 0.0
+        self.first_notification_message_id = 0
+        self.second_notification_status = "pending"
+        self.second_notification_sent_at = 0.0
+        self.second_notification_message_id = 0
+        self.notify_suppressed_until = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         """Конвертировать в словарь для JSON."""
@@ -159,6 +257,15 @@ class MMSearch:
             "tournament_channel_id": self.tournament_channel_id,
             "state": self.state,
             "match_num": self.match_num,
+            "session_started_at": self.session_started_at,
+            "effective_limit_seconds": self.effective_limit_seconds,
+            "first_notification_status": self.first_notification_status,
+            "first_notification_sent_at": self.first_notification_sent_at,
+            "first_notification_message_id": self.first_notification_message_id,
+            "second_notification_status": self.second_notification_status,
+            "second_notification_sent_at": self.second_notification_sent_at,
+            "second_notification_message_id": self.second_notification_message_id,
+            "notify_suppressed_until": self.notify_suppressed_until,
         }
 
     @classmethod
@@ -177,4 +284,29 @@ class MMSearch:
             tournament_channel_id=data.get("tournament_channel_id", 0),
             state=data.get("state", QUEUE_OPEN),
             match_num=int(data.get("match_num", 0) or 0),
+            session_started_at=float(data.get("session_started_at", 0.0) or 0.0),
+            effective_limit_seconds=int(
+                data.get("effective_limit_seconds", 0) or 0
+            ),
+            first_notification_status=data.get(
+                "first_notification_status", "pending"
+            ),
+            first_notification_sent_at=float(
+                data.get("first_notification_sent_at", 0.0) or 0.0
+            ),
+            first_notification_message_id=int(
+                data.get("first_notification_message_id", 0) or 0
+            ),
+            second_notification_status=data.get(
+                "second_notification_status", "pending"
+            ),
+            second_notification_sent_at=float(
+                data.get("second_notification_sent_at", 0.0) or 0.0
+            ),
+            second_notification_message_id=int(
+                data.get("second_notification_message_id", 0) or 0
+            ),
+            notify_suppressed_until=float(
+                data.get("notify_suppressed_until", 0.0) or 0.0
+            ),
         )

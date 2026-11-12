@@ -139,12 +139,26 @@ def build_queue_panel(
         required = search.required_players
         current = len(search.players)
         view.text("## ПОИСК ИГРОКОВ")
-        view.lines(
+        lines = [
             f"Участников: {current}/{required}",
             f"Свободных мест: {max(0, required - current)}",
-        )
+        ]
+        # Динамический дедлайн сессии (Discord timestamp — без
+        # пер-редактирования каждую секунду)
+        deadline = search.deadline_at
+        if search.timer_started and deadline:
+            limit_min = max(1, int(search.effective_limit_seconds // 60))
+            lines.append(f"Максимальное ожидание: {limit_min} минут")
+            lines.append(f"Поиск завершится: <t:{int(deadline)}:R>")
+        view.lines(*lines)
         view.sep()
         view.text(f"## УЧАСТНИКИ В ОЧЕРЕДИ\n{_roster_lines(search)}")
+        # Долгое ожидание — напоминание без пингов
+        if search.session_elapsed >= 600:
+            view.text(
+                "-# Поиск продолжается. Убедитесь, что сможете "
+                "подтвердить готовность при нахождении матча."
+            )
 
     view.row(
         QueueJoinButton(search.guild_id, search.channel_id,
