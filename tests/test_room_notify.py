@@ -98,17 +98,19 @@ async def test_mm_room_notify_goes_to_match_channel():
         bot, t, "qualifier", 0, 0, 1, "38765135", "11"
     )
 
-    # В канал матча: ОДНО embed-сообщение с кнопками данных
+    # В канал матча: ОДНО V2-сообщение (LayoutView) с кнопками данных
     assert len(match_ch.sent) == 1
     kw = match_ch.sent[0][1]
-    emb = kw.get("embed")
-    assert emb is not None and "Комната открыта" in emb.title
     view = kw.get("view")
     assert view is not None
-    ids = [getattr(c, "custom_id", "") for c in view.children]
+    assert kw.get("embed") is None
+    text = _view_text(view)
+    assert "🔓 Комната открыта" in text
+    assert "<@111>" in text and "<@222>" in text  # реальные ping ID
+    ids = _view_custom_ids(view)
     assert any(i.endswith(":id") for i in ids)
     assert any(i.endswith(":pass") for i in ids)
-    # ID/пароль НЕ отправляются сырым текстом
+    # ID/пароль НЕ отправляются отдельными сообщениями
     assert len(match_ch.sent) == 1
     # Общий канал и канал данных НЕ используются для MM
     assert general.sent == []
@@ -129,11 +131,12 @@ async def test_tournament_room_notify_two_places():
         bot, t, "qualifier", 0, 0, 1, "37736674", "11"
     )
 
-    # Канал данных: ОДНО embed-сообщение с кнопками данных
+    # Канал данных: ОДНО V2-сообщение (LayoutView) с кнопками данных
     assert len(data_ch.sent) == 1
     kw = data_ch.sent[0][1]
-    assert kw.get("embed") is not None
     assert kw.get("view") is not None
+    assert kw.get("embed") is None
+    assert "🔓 Комната открыта" in _view_text(kw["view"])
     # Канал уведомлений: 1 сообщение, role mention в content
     assert len(general.sent) == 1
     content = general.sent[0][1].get("content") or (
@@ -142,17 +145,45 @@ async def test_tournament_room_notify_two_places():
     assert content and "<@&" in str(content)
 
 
-def test_room_card_embed_format():
+def _view_text(view):
+    """Собрать текст всех TextDisplay внутри LayoutView."""
+    import discord.ui as dui
+    parts = []
+    for item in view.walk_children():
+        if isinstance(item, dui.TextDisplay):
+            parts.append(item.content)
+    return "\n".join(parts)
+
+
+def _view_custom_ids(view):
+    ids = []
+    for item in view.walk_children():
+        cid = getattr(item, "custom_id", None)
+        if cid:
+            ids.append(cid)
+    return ids
+
+
+def test_room_card_view_format():
     t = _tournament(mm=True)
     t1 = t.teams[0]
     t2 = t.teams[1]
-    emb = rm._room_card_embed(t, t1, t2, "CapA", "CapB")
-    assert emb.title == "🔓 Комната открыта"
-    values = "\n".join(f.value for f in emb.fields)
-    assert "CapA" in values and "CapB" in values
-    assert "<@111>" in values  # упоминания игроков внутри embed
-    assert "<@222>" in values
-    assert "кнопке ниже" in values
+    view = rm._room_card_view(
+        t, t1, t2, "CapA", "CapB",
+        "qualifier", 0, 0, 1,
+    )
+    text = _view_text(view)
+    assert "🔓 Комната открыта" in text
+    # Строгая структура: без заголовков «Матч»/«Данные комнаты»
+    assert "⚔️ Матч" not in text
+    assert "Данные комнаты" not in text
+    assert "CapA" in text and "CapB" in text
+    assert "<@111>" in text and "<@222>" in text
+    # Нет сырых ID/пароля в тексте карточки
+    assert "38765135" not in text
+    ids = _view_custom_ids(view)
+    assert any(i.endswith(":id") for i in ids)
+    assert any(i.endswith(":pass") for i in ids)
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +242,9 @@ async def test_room_data_captain_a_gets_id(_store_tournament):
     await rm._room_data_press(ix)
     assert ix.response.messages
     content = ix.response.messages[0][0]
-    assert "38765135" in content and ix.response.messages[0][1].get("ephemeral")
+    # ответ — ТОЛЬКО значение ID, без заголовков/markdown
+    assert content == "38765135"
+    assert ix.response.messages[0][1].get("ephemeral")
 
 
 @pytest.mark.asyncio
@@ -219,14 +252,15 @@ async def test_room_data_captain_b_gets_password(_store_tournament):
     ix = _FakeInteraction(_room_custom_id("pass"), _user(222), _guild())
     await rm._room_data_press(ix)
     content = ix.response.messages[0][0]
-    assert "Пароль" in content and "`11`" in content
+    # ответ — ТОЛЬКО пароль
+    assert content == "11"
 
 
 @pytest.mark.asyncio
 async def test_room_data_admin_allowed(_store_tournament):
     ix = _FakeInteraction(_room_custom_id("id"), _user(9999, admin=True), _guild())
     await rm._room_data_press(ix)
-    assert "38765135" in ix.response.messages[0][0]
+    assert ix.response.messages[0][0] == "38765135"
 
 
 @pytest.mark.asyncio
