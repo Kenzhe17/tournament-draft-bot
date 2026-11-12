@@ -7323,6 +7323,7 @@ class RoomFilesView(View):
         self, guild_id: int, channel_id: int, tournament,
         match_type: str, match_index: int, room_index: int, gen: int,
         allow_add: bool | None = None,
+        allow_done: bool | None = None,
     ):
         super().__init__(timeout=None)
         self.guild_id = guild_id
@@ -7331,10 +7332,14 @@ class RoomFilesView(View):
         self.match_index = match_index
         self.room_index = room_index
         self.gen = gen
-        if allow_add is None:
+        if allow_add is None or allow_done is None:
             # Восстановление после рестарта: состояние кнопок
-            # вычисляем из АКТУАЛЬНОГО pending комнаты.
-            allow_add = self._room_allows_add(tournament)
+            # вычисляем из АКТУАЛЬНОГО состояния комнаты.
+            _a, _d = self._room_button_state(tournament)
+            if allow_add is None:
+                allow_add = _a
+            if allow_done is None:
+                allow_done = _d
         if allow_add:
             b_add = Button(
                 label="📸 Добавить скриншот",
@@ -7347,17 +7352,18 @@ class RoomFilesView(View):
             )
             b_add.callback = self._on_add
             self.add_item(b_add)
-        b_done = Button(
-            label="✅ Завершить комнату",
-            style=discord.ButtonStyle.success,
-            custom_id=(
-                f"rooms_file_done:{guild_id}:{channel_id}:{match_type}:"
-                f"{match_index}:{room_index}:{gen}"
-            ),
-            row=0,
-        )
-        b_done.callback = self._on_done
-        self.add_item(b_done)
+        if allow_done:
+            b_done = Button(
+                label="✅ Завершить комнату",
+                style=discord.ButtonStyle.success,
+                custom_id=(
+                    f"rooms_file_done:{guild_id}:{channel_id}:{match_type}:"
+                    f"{match_index}:{room_index}:{gen}"
+                ),
+                row=0,
+            )
+            b_done.callback = self._on_done
+            self.add_item(b_done)
 
     def _session_room(self, tournament):
         session = (tournament.ocr_sessions or {}).get(
@@ -7379,32 +7385,39 @@ class RoomFilesView(View):
         )
         return session, room
 
-    def _room_allows_add(self, tournament) -> bool:
-        """Нужен ли ещё один скриншот этой комнате — по pending.
+    def _room_entry(self, tournament):
+        """dict комнаты этой сессии (или None)."""
+        sess = (getattr(tournament, "ocr_sessions", None) or {}).get(
+            _session_key(self.match_type, self.match_index)
+        )
+        return next(
+            (
+                r for r in (sess or {}).get("rooms") or []
+                if int(r.get("room_index", 0) or 0)
+                == int(self.room_index)
+            ),
+            None,
+        )
 
-        Используется при построении кнопок (в т.ч. восстановление
-        после рестарта): полный Classic без флагов повторной
-        загрузки → кнопка «Добавить скриншот» не нужна.
+    def _room_button_state(self, tournament) -> tuple[bool, bool]:
+        """(allow_add, allow_done) из АКТУАЛЬНОГО состояния
+        комнаты — единый источник room_allows_second_file /
+        room_file_progress (кнопки, тексты и finalize согласованы).
         """
         try:
-            from cogs.ocr_upload import room_allows_second_file
+            from cogs.ocr_upload import (
+                room_allows_second_file, room_files_complete,
+            )
 
-            sess = (getattr(tournament, "ocr_sessions", None) or {}).get(
-                _session_key(self.match_type, self.match_index)
-            )
-            room = next(
-                (
-                    r for r in (sess or {}).get("rooms") or []
-                    if int(r.get("room_index", 0) or 0)
-                    == int(self.room_index)
-                ),
-                None,
-            )
+            room = self._room_entry(tournament)
             if room is None:
-                return True
-            return room_allows_second_file(room)
+                return True, False
+            return (
+                room_allows_second_file(room),
+                room_files_complete(room),
+            )
         except Exception:
-            return True
+            return True, False
 
     async def _on_add(self, interaction: discord.Interaction) -> None:
         from cogs.ocr_upload import (
@@ -7516,6 +7529,25 @@ class RoomFilesView(View):
                 ephemeral=True,
             )
             return
+        # Серверная проверка полноты ДО finalize: устаревшая
+        # кнопка/поддельный вызов не завершит комнату с
+        # неполным комплектом (обязательный минимум — единый
+        # room_file_progress; повторно проверяется под
+        # _room_lock внутри finalize_room_collect).
+        from cogs.ocr_upload import room_file_progress
+
+        _acc, _req, _rem, _can = room_file_progress(room)
+        if not _can:
+            await interaction.response.send_message(
+                replace_emojis(
+                    f"⚠️ Комната {self.room_index} ещё не "
+                    f"заполнена — загружено {_acc}/{_req}, "
+                    f"осталось {_rem}. Добавьте скриншоты "
+                    "кнопкой «Добавить скриншот»."
+                ),
+                ephemeral=True,
+            )
+            return
         try:
             await interaction.response.defer(ephemeral=True, thinking=True)
         except Exception:
@@ -7553,6 +7585,11 @@ class RoomFilesView(View):
             "forbidden": (
                 "❌ Завершить комнату может только капитан "
                 "одной из команд матча или администратор сервера."
+            ),
+            "incomplete": (
+                f"⚠️ Комната {self.room_index} ещё не заполнена "
+                "— обязательные скриншоты загружены не все. "
+                "Добавьте файлы кнопкой «Добавить скриншот»."
             ),
             "invalid": "❌ Не удалось собрать комнату — проверьте файлы.",
         }

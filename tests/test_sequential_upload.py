@@ -1455,3 +1455,121 @@ class TestRoomStartModal:
         ]
         assert add_btns == []
         assert up.room_allows_second_file(room) is False
+
+
+class TestRoomCompletionGate:
+    """Единый счётчик файлов: «Завершить комнату» только при
+    обязательном минимуме (classic 1 / squad 2); серверная
+    проверка в finalize дублирует кнопки."""
+
+    def _buttons(self, view, prefix):
+        return [
+            c for c in view.children
+            if getattr(c, "custom_id", "").startswith(prefix)
+        ]
+
+    def _collect_msg(self, env):
+        room = env.session["rooms"][0]
+        return env.stats._by_id[room["collect_message_id"]]
+
+    @pytest.mark.asyncio
+    async def test_one_squad_no_done_button(self, env):
+        """1 squad (1/2) → только «Добавить скриншот»,
+        «Завершить» скрыта, текст показывает остаток."""
+        await _file(env, 1, "squadA")
+        view = _room_view(env)
+        assert self._buttons(view, "rooms_file_add")
+        assert not self._buttons(view, "rooms_file_done")
+        cmsg = self._collect_msg(env)
+        assert "1/2" in (cmsg.content or "")
+        assert "осталось" in (cmsg.content or "")
+
+    @pytest.mark.asyncio
+    async def test_two_squads_done_button(self, env):
+        """2 squad (2/2) → только «Завершить комнату»."""
+        await _file(env, 1, "squadA")
+        await _file(env, 1, "squadB")
+        view = _room_view(env)
+        assert not self._buttons(view, "rooms_file_add")
+        assert self._buttons(view, "rooms_file_done")
+        cmsg = self._collect_msg(env)
+        assert "2/2" in (cmsg.content or "")
+
+    @pytest.mark.asyncio
+    async def test_full_classic_done_shows_1_of_1(self, env,
+                                                 monkeypatch):
+        """Полный Classic → «Завершить» при 1 файле, прогресс
+        1/1 — не вводит в заблуждение «1/2»."""
+        async def full_pipe(data, need_score=True):
+            return _full_classic_pipe()
+        monkeypatch.setattr(up, "_classic_pipeline", full_pipe)
+        await _file(env, 1, "full1")
+        view = _room_view(env)
+        assert not self._buttons(view, "rooms_file_add")
+        assert self._buttons(view, "rooms_file_done")
+        cmsg = self._collect_msg(env)
+        assert "1/2" not in (cmsg.content or "")
+        assert "1/1" in (cmsg.content or "")
+
+    @pytest.mark.asyncio
+    async def test_incomplete_classic_done_and_optional_add(
+        self, env
+    ):
+        """Неполный Classic: обязательный минимум = 1 →
+        «Завершить» доступна, «Добавить» остаётся для сверки."""
+        await _file(env, 1, "classic1")
+        view = _room_view(env)
+        assert self._buttons(view, "rooms_file_add")
+        assert self._buttons(view, "rooms_file_done")
+        assert await _finish(env) == "ok"
+
+    @pytest.mark.asyncio
+    async def test_done_rejected_when_incomplete(self, env):
+        """Старая/поддельная кнопка «Завершить» при 1 squad:
+        ephemeral-отказ, finalize → incomplete, состояние цело."""
+        await _file(env, 1, "squadA")
+        room = env.session["rooms"][0]
+        view = _room_view(env)
+        ix = _FakeInteraction(env, user_id=42)
+        await view._on_done(ix)
+        assert any("не" in m and "заполнена" in m
+                   for m in ix.messages), ix.messages
+        assert room["status"] == "collecting_files"
+        assert not room.get("panels")
+        assert await _finish(env) == "incomplete"
+        assert room["status"] == "collecting_files"
+
+    @pytest.mark.asyncio
+    async def test_third_file_rejected(self, env):
+        """Третий файл при 2 squad → room_full."""
+        await _file(env, 1, "squadA")
+        await _file(env, 1, "squadB")
+        assert await _file(env, 1, "squadC") == "room_full"
+        room = env.session["rooms"][0]
+        assert len(room["pending"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_progress_helper_values(self, env):
+        """room_file_progress — единый источник счётчика."""
+        room = {"pending": []}
+        assert up.room_file_progress(room) == (0, 2, 2, False)
+        room["pending"] = [{"kind": "squad"}]
+        assert up.room_file_progress(room) == (1, 2, 1, False)
+        room["pending"].append({"kind": "squad"})
+        assert up.room_file_progress(room) == (2, 2, 0, True)
+        room["pending"] = [{"kind": "classic", "pipe": {}}]
+        assert up.room_file_progress(room) == (1, 1, 0, True)
+
+    @pytest.mark.asyncio
+    async def test_restart_restores_correct_buttons(self, env):
+        """После «рестарта» (новый view без явных allow_*) кнопки
+        вычисляются из сохранённого pending."""
+        await _file(env, 1, "squadA")
+        # Новый экземпляр view — как при восстановлении в bot.py.
+        view = _room_view(env)
+        assert self._buttons(view, "rooms_file_add")
+        assert not self._buttons(view, "rooms_file_done")
+        await _file(env, 1, "squadB")
+        view2 = _room_view(env)
+        assert not self._buttons(view2, "rooms_file_add")
+        assert self._buttons(view2, "rooms_file_done")

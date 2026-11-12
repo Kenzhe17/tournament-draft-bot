@@ -2598,6 +2598,45 @@ def room_allows_second_file(room: dict) -> bool:
     return False
 
 
+def room_required_files(room: dict) -> int:
+    """Сколько скриншотов НЕОБХОДИМО для завершения комнаты.
+
+    Classic-экран покрывает обе команды сразу → 1 файл достаточен
+    (неполный pipe не блокирует завершение — сверка опциональна).
+    Squad-скриншот — один отряд → нужны 2 (по одному на команду).
+    Пока файлов нет, тип неизвестен → лимит 2.
+    """
+    pending = room.get("pending") or []
+    if not pending:
+        return 2
+    if any(p.get("kind") == "classic" for p in pending):
+        return 1
+    return 2
+
+
+def room_file_progress(room: dict) -> tuple[int, int, int, bool]:
+    """ЕДИНЫЙ источник счётчика файлов комнаты.
+
+    Возвращает (accepted, required, remaining, can_finish):
+    accepted — принято файлов; required — сколько необходимо;
+    remaining — сколько осталось; can_finish — можно ли
+    завершать комнату. Используется кнопками RoomFilesView,
+    текстами collect/shot-сообщений и серверной проверкой
+    finalize_room_collect — логика не дублируется.
+    """
+    pending = room.get("pending") or []
+    accepted = len(pending)
+    required = room_required_files(room)
+    remaining = max(0, required - accepted)
+    return accepted, required, remaining, bool(accepted) and remaining == 0
+
+
+def room_files_complete(room: dict) -> bool:
+    """Комнату можно завершать: есть файлы и обязательный
+    минимум загружен."""
+    return room_file_progress(room)[3]
+
+
 def _room_pending_summary(pending: list) -> tuple[list[str], int]:
     """(виды файлов, распознанные игроки) для текста collect-
     сообщения: 'экран'/'отряд' + сумма строк panels/squad."""
@@ -2680,13 +2719,14 @@ async def _publish_seq_shot(
         else "скриншот отряда"
     )
     n = len(room.get("pending") or [])
+    accepted, required, _rem, _cf = room_file_progress(room)
     try:
         # Техническое сообщение-источник байтов: минимум текста —
         # публичную карточку комнаты публикует _publish_room_message.
         msg = await stats_channel.send(
             content=replace_emojis(
                 f"📸 **Комната {room['room_index']}** — {kind_label} "
-                f"({n}/2)"
+                f"({accepted}/{required})"
             ),
             files=[
                 discord.File(
@@ -2765,6 +2805,7 @@ async def _ensure_room_collect_message(
     pending = room.get("pending") or []
     kinds, players = _room_pending_summary(pending)
     allow_add = room_allows_second_file(room)
+    accepted, required, remaining, can_finish = room_file_progress(room)
     detail = " · ".join(
         ([" · ".join(dict.fromkeys(kinds))] if kinds else [])
         + ([f"игроки {players}"] if players else [])
@@ -2782,13 +2823,25 @@ async def _ensure_room_collect_message(
         lines.append(
             "Капитаны: " + " ".join(f"<@{u}>" for u in cap_ids)
         )
-    if allow_add and len(pending) < 2:
+    # Единый счётчик: «Скриншоты: X/Y» — Y = сколько необходимо
+    # (classic 1 / squad 2), а не максимум слотов.
+    if can_finish:
+        if allow_add:
+            lines.append(
+                f"Скриншоты: {accepted}/{required} — все "
+                "обязательные загружены, можно завершить "
+                "или добавить ещё для сверки"
+            )
+        else:
+            lines.append(
+                f"Скриншоты: {accepted}/{required} — все "
+                "загружены. Нажмите «Завершить комнату»"
+            )
+    else:
         lines.append(
-            f"Файлов: {len(pending)}/2 — можно добавить ещё "
-            "скриншот"
+            f"Скриншоты: {accepted}/{required} — осталось "
+            f"загрузить: {remaining}"
         )
-    elif not allow_add and pending:
-        lines.append("Файлы приняты — нажмите «Завершить комнату»")
     text = replace_emojis("\n".join(lines))
     # В content только <@id> капитанов — пингуются исключительно
     # они; роли и @everyone отключены.
@@ -2808,6 +2861,7 @@ async def _ensure_room_collect_message(
         match_type, match_index, int(room["room_index"]),
         int(session.get("gen", 1)),
         allow_add=allow_add,
+        allow_done=can_finish,
     )
     cmid = room.get("collect_message_id")
     try:
@@ -3249,7 +3303,7 @@ async def finalize_room_collect(
     awaiting_mapping. Идемпотентно под _room_lock.
 
     Коды: "ok" | "publish_fail" | "done" | "empty" | "closed" |
-    "forbidden" | "invalid" | "files_missing".
+    "forbidden" | "invalid" | "files_missing" | "incomplete".
     """
     key = _session_key(match_type, match_index)
     session = (tournament.ocr_sessions or {}).get(key)
@@ -3364,6 +3418,11 @@ async def finalize_room_collect(
         pend = room.get("pending") or []
         if not pend:
             return "empty"
+        # Серверная проверка полноты комплекта: кнопки можно
+        # подделать/устареть — обязательный минимум файлов
+        # (classic 1 / squad 2) проверяется здесь, под локом.
+        if not room_files_complete(room):
+            return "incomplete"
         # Pending мог измениться между снимком и локом (параллельная
         # загрузка/повтор/отмена) — сверяем АКТУАЛЬНЫЙ набор sha
         # с независимым снимком, снятым до await восстановления.
@@ -4831,10 +4890,11 @@ async def _accept_room_file(
             interaction.guild, channel_id, key, session,
             getattr(tournament, "id", "") or "",
         )
-    # Если комната уже «полная» (классический экран 4×4) —
-    # не предлагаем второй скриншот.
+    # Единый счётчик комнаты: сообщаем, сколько файлов ещё
+    # обязательно загрузить (или что комплект полон).
     ok_extra = ""
-    if res == "ok":
+    remaining = 0
+    if res in ("ok", "added"):
         try:
             r = next(
                 (
@@ -4843,23 +4903,28 @@ async def _accept_room_file(
                 ),
                 None,
             )
-            if r is not None and not room_allows_second_file(r):
-                ok_extra = (
-                    f" Комната {room_index} заполнена — нажмите "
-                    "«Завершить комнату»."
-                )
+            if r is not None:
+                _a, _req, remaining, _cf = room_file_progress(r)
         except Exception:
             pass
     messages = {
         "ok": (
             f"✅ Скриншот принят в комнату {room_index}. "
-            "Добавьте второй скриншот кнопкой «Добавить "
-            "скриншот» или завершите комнату."
-            + ok_extra
+            + (
+                f"Осталось загрузить ещё {remaining}."
+                if remaining
+                else "Все скриншоты приняты — можно завершить "
+                "комнату."
+            )
         ),
         "added": (
-            f"✅ Второй скриншот принят в комнату "
-            f"{room_index} — нажмите «Завершить комнату»."
+            f"✅ Скриншот принят в комнату {room_index}. "
+            + (
+                f"Осталось загрузить ещё {remaining}."
+                if remaining
+                else "Все скриншоты приняты — можно завершить "
+                "комнату."
+            )
         ),
         "shot_pending": (
             "⚠️ Статистика распознана и сохранена, но "
