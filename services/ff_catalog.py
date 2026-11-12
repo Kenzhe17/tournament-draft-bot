@@ -1,7 +1,7 @@
 """Каталог предметов Free Fire (ff-catalog, AfnanTawsif/ff-catalog).
 
 Данные: assets/item-data.msgpack.gz — msgpack+gzip, ~34k предметов.
-Иконки: https://cdn.jsdelivr.net/gh/AfnanTawsif/ff-catalog@main/Item-icons/{itemID}.webp
+Иконки: https://raw.githubusercontent.com/AfnanTawsif/ff-catalog/main/Item-icons/{itemID}.webp
 
 Поля предмета: icon, itemID, name, description, rarity, type.
 """
@@ -19,8 +19,10 @@ logger = logging.getLogger(__name__)
 _DB_PATH = (
     Path(__file__).resolve().parent.parent / "assets" / "item-data.msgpack.gz"
 )
+# jsdelivr gh-CDN отклоняет часть файлов (лимит размера пакета -> 403);
+# raw.githubusercontent отдаёт все иконки стабильно.
 ICON_BASE = (
-    "https://cdn.jsdelivr.net/gh/AfnanTawsif/ff-catalog@main/Item-icons"
+    "https://raw.githubusercontent.com/AfnanTawsif/ff-catalog/main/Item-icons"
 )
 
 def _rarity_color(name: str):

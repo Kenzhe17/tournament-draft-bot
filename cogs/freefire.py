@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
 from typing import Any
 
 import discord
-from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
-from config import replace_emojis, get_emoji
+from config import get_emoji, replace_emojis
 from services import ff_catalog
 from services.freefire_service import FreeFireError, freefire_service
+from utils.design import compose
+from views.freefire_profile_view import FreeFireProfileView
 
 logger = logging.getLogger(__name__)
 
@@ -232,112 +232,20 @@ async def ff_info(
         await interaction.followup.send( view=compose(_error_embed(result)))
         return
 
-    basic = result.get("basicInfo") or {}
-    clan = result.get("clanBasicInfo") or result.get("clanInfo") or {}
-    guild_info = result.get("guildBasicInfo") or result.get("guildInfo") or {}
-    social = result.get("socialInfo") or {}
-    pet = result.get("petInfo") or {}
-    profile = result.get("profileInfo") or {}
-    credit = result.get("creditScoreInfo") or {}
-    diamond = result.get("diamondCostRes") or {}
-    prime = basic.get("primeInfo") or {}
+    async def _fetch() -> dict[str, Any]:
+        res = await _safe_call(freefire_service.get_info(region.value, uid))
+        if isinstance(res, FreeFireError):
+            raise res
+        return res
 
-    nickname = basic.get("nickname", "Unknown")
-    signature = social.get("signature") or ""
-
-    def _date(ts: Any) -> str:
-        try:
-            return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime(
-                "%d.%m.%Y %H:%M UTC")
-        except (TypeError, ValueError, OSError):
-            return "—"
-
-    def _mode_prefer() -> str:
-        mp = social.get("modePrefer") or ""
-        return {"ModePrefer_BR": "Battle Royale", "ModePrefer_CS": "Clash Squad"}.get(mp, mp or "—")
-
-    embed = discord.Embed(
-        title=replace_emojis(f"{get_emoji('game')} FREE FIRE | Профиль"),
-        description=(
-            f"**{nickname}** — ID `{uid}`"
-            + (f"\n{signature}" if signature else "")
-        ),
-        color=COLOR_MAIN,
+    view = FreeFireProfileView(
+        uid=uid,
+        region=region.value,
+        owner_id=interaction.user.id,
+        data=result,
+        fetch=_fetch,
     )
-    embed.set_footer(text=FOOTER)
-
-    def _num(key: str):
-        v = basic.get(key)
-        return f"{v:,}" if isinstance(v, int) else (v if v is not None else "—")
-
-    embed.add_field(
-        name=replace_emojis(f"{get_emoji('stats')} Основное"),
-        value="\n".join(
-            [
-                f"• Уровень: **{basic.get('level', '—')}** • EXP: **{_num('exp')}**",
-                f"• Ранг BR: **{basic.get('rank', '—')}** (макс: {basic.get('maxRank', '—')}) • Очки: **{_num('rankingPoints')}**",
-                f"• Ранг CS: **{basic.get('csRank', '—')}** (макс: {basic.get('csMaxRank', '—')}) • Очки: **{_fmt_value(basic.get('csRankingPoints'))}**",
-                f"• Лайки: **{_num('liked')}** • Бейджи: **{basic.get('badgeCnt', '—')}**",
-                f"• Регион: {str(basic.get('region', region.value)).upper()} • Версия: {basic.get('releaseVersion', '—')} • Сезон: {basic.get('seasonId', '—')}",
-            ]
-        ),
-        inline=False,
-    )
-
-    account_lines = [
-        f"• Создан: {_date(basic.get('createAt'))}",
-        f"• Последний вход: {_date(basic.get('lastLoginAt'))}",
-        f"• Язык: {str(social.get('language', '—')).replace('Language_', '')}",
-        f"• Любимый режим: {_mode_prefer()}",
-        f"• Кредитный счёт: **{_fmt_value(credit.get('creditScore'))}**",
-    ]
-    if diamond.get("diamondCost") is not None:
-        account_lines.append(f"• Diamond cost: **{_fmt_value(diamond.get('diamondCost'))}**")
-    if prime.get("primeLevel"):
-        account_lines.append(f"• Prime уровень: **{prime.get('primeLevel')}**")
-    if pet.get("id"):
-        pet_item = ff_catalog.get_item(pet.get("id"))
-        pet_name = pet_item.get("name") if pet_item else f"ID `{pet.get('id')}`"
-        account_lines.append(
-            f"• Питомец: **{pet_name}** ур. **{pet.get('level', '—')}**"
-            + (f" • EXP: {_fmt_value(pet.get('exp'))}" if pet.get("exp") else "")
-        )
-    embed.add_field(
-        name=replace_emojis(f"{get_emoji('profile')} Аккаунт"),
-        value="\n".join(account_lines),
-        inline=False,
-    )
-
-    team_lines = []
-    clan_name = clan.get("clanName") or guild_info.get("name") or guild_info.get("guildName")
-    if clan_name:
-        team_lines.append(f"• {'Клан' if clan.get('clanName') else 'Гильдия'}: **{clan_name}**")
-    if clan.get("memberNum") is not None:
-        team_lines.append(f"• Участники: {clan.get('memberNum', '—')}/{clan.get('capacity', '—')}")
-    if team_lines:
-        embed.add_field(
-            name=replace_emojis(f"{get_emoji('team')} Команда"),
-            value="\n".join(team_lines),
-            inline=False,
-        )
-
-    avatar_id = profile.get("avatarId")
-    if avatar_id and ff_catalog.get_item(avatar_id):
-        embed.set_thumbnail(url=ff_catalog.icon_url(avatar_id))
-
-    clothes = [c for c in (profile.get("clothes") or []) if c]
-    if clothes:
-        names = []
-        for cid in clothes:
-            item = ff_catalog.get_item(cid)
-            names.append(item.get("name") if item else f"`{cid}`")
-        embed.add_field(
-            name=replace_emojis(f"{get_emoji('sword')} Экипировка"),
-            value="\n".join(f"• {n}" for n in names[:10]),
-            inline=False,
-        )
-
-    await interaction.followup.send( view=compose(embed))
+    view.bound_message = await interaction.followup.send(view=view)
 
 
 # ----------------------------------------------------------------- /ff stats
