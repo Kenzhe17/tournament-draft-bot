@@ -14,7 +14,7 @@ from discord.ext import commands
 from config import get_emoji, replace_emojis
 from services import ff_catalog
 from services.freefire_service import FreeFireError, freefire_service
-from storage.ff_cooldowns import ff_info_cooldowns
+from storage.ff_cooldowns import ff_info_cooldowns, ff_stats_cooldowns
 from utils.design import compose
 from utils.ff_stats_formatter import MODE_BY_KEY
 from views.freefire_profile_view import FreeFireProfileView
@@ -121,18 +121,11 @@ async def ff_info(
         return
     ff_info_cooldowns.mark_used(interaction.user.id)
 
-    async def _fetch() -> dict[str, Any]:
-        res = await _safe_call(freefire_service.get_info(region.value, uid))
-        if isinstance(res, FreeFireError):
-            raise res
-        return res
-
     view = FreeFireProfileView(
         uid=uid,
         region=region.value,
         owner_id=interaction.user.id,
         data=result,
-        fetch=_fetch,
     )
     view.bound_message = await interaction.followup.send(view=view)
 
@@ -149,6 +142,15 @@ async def ff_stats(
     uid = uid.strip()
     region = region or app_commands.Choice(name="RU / CIS", value="ru")
     if not await _check_and_key(interaction, uid):
+        return
+
+    remaining = ff_stats_cooldowns.seconds_left(interaction.user.id)
+    if remaining > 0:
+        ready_at = int(time.time()) + remaining
+        await interaction.response.send_message(
+            f"⏳ `/ff stats` доступна через <t:{ready_at}:R>.",
+            ephemeral=True,
+        )
         return
 
     async def _fetch(mode: str) -> dict[str, Any]:
@@ -171,6 +173,7 @@ async def ff_stats(
     if isinstance(result, FreeFireError):
         await interaction.followup.send( view=compose(_error_embed(result)))
         return
+    ff_stats_cooldowns.mark_used(interaction.user.id)
 
     view = FreeFireStatsView(
         uid=uid,

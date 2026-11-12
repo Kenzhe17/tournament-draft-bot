@@ -1,28 +1,23 @@
 """Components V2 профиль игрока Free Fire для /ff info.
 
 LayoutView с четырьмя вкладками (Обзор / Ранги / Экипировка / Аккаунт)
-и кнопкой «Обновить». Данные API хранятся в состоянии View —
-переключение вкладок не выполняет повторных запросов.
+и кнопкой «✕», удаляющей сообщение. Данные API хранятся в состоянии
+View — переключение вкладок не выполняет повторных запросов.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 import discord
 
 from services import ff_catalog
-from services.freefire_service import FreeFireError
 from utils import ff_profile_formatter as fmt
-from utils.design.containers import chunk_text
 
 logger = logging.getLogger(__name__)
 
-REFRESH_COOLDOWN = 30.0  # секунд между API-обновлениями одного профиля
 VIEW_TIMEOUT = 300.0     # время жизни интерактивного профиля
 MAX_GALLERY_ITEMS = 10   # лимит MediaGallery
 
@@ -32,8 +27,6 @@ TABS: tuple[tuple[str, str], ...] = (
     ("gear", "Экипировка"),
     ("account", "Аккаунт"),
 )
-
-FetchFn = Callable[[], Awaitable[dict[str, Any]]]
 
 
 def _td(content: str) -> discord.ui.TextDisplay:
@@ -57,7 +50,6 @@ class FreeFireProfileView(discord.ui.LayoutView):
     """Интерактивный профиль /ff info на Components V2.
 
     :param data: сырой ответ freefire_service.get_info.
-    :param fetch: async callable без аргументов для кнопки «Обновить».
     :param expired: отрисовать уже отключённым (после on_timeout).
     """
 
@@ -68,7 +60,6 @@ class FreeFireProfileView(discord.ui.LayoutView):
         region: str,
         owner_id: int,
         data: dict[str, Any],
-        fetch: FetchFn | None = None,
         timeout: float | None = VIEW_TIMEOUT,
         expired: bool = False,
     ) -> None:
@@ -77,12 +68,8 @@ class FreeFireProfileView(discord.ui.LayoutView):
         self.region = region
         self.owner_id = owner_id
         self.result = data if isinstance(data, dict) else {}
-        self._fetch = fetch
         self.tab = "overview"
         self._expired = expired
-        self._notice = ""
-        self._last_refresh = 0.0
-        self._refresh_lock = asyncio.Lock()
         self.bound_message: discord.Message | None = None
         self._render()
 
@@ -110,21 +97,18 @@ class FreeFireProfileView(discord.ui.LayoutView):
             )
             btn.callback = self._on_button
             row.add_item(btn)
-        refresh = discord.ui.Button(
-            label="Обновить",
-            style=discord.ButtonStyle.success,
-            custom_id="ffp:refresh",
-            disabled=disabled or self._fetch is None,
+        close = discord.ui.Button(
+            label="✕",
+            style=discord.ButtonStyle.danger,
+            custom_id="ffp:close",
+            disabled=disabled,
         )
-        refresh.callback = self._on_button
-        row.add_item(refresh)
+        close.callback = self._on_button
+        row.add_item(close)
         return row
 
     def _footer_text(self) -> str:
-        parts = []
-        if self._notice:
-            parts.append(f"⚠ {self._notice}")
-        parts.append(f"обновлено <t:{int(time.time())}:R>")
+        parts = [f"обновлено <t:{int(time.time())}:R>"]
         season = self._fields().get("season")
         if season:
             parts.append(f"сезон {season}")
@@ -284,19 +268,15 @@ class FreeFireProfileView(discord.ui.LayoutView):
                 items.append(
                     _td(f"-# показаны первые {MAX_GALLERY_ITEMS} из {len(all_entries)}")
                 )
-
-            lines: list[str] = []
-            for label, entries in groups:
-                lines.append(f"**{label}**")
-                for e in entries:
-                    tail = f" · {e['rarity']}" if e["rarity"] else ""
-                    lines.append(f"• {e['name']}{tail}")
-                lines.append("")
-            text = "\n".join(lines).strip()
-            if len(text) > 1800:
-                text = text[:1800].rstrip() + "\n-# …"
-            for chunk in chunk_text(text):
-                items.append(_td(chunk))
+            # Компактный список только для предметов без иконки
+            no_icon = [
+                e["name"] for e in all_entries[:MAX_GALLERY_ITEMS] if not e["icon"]
+            ]
+            if no_icon:
+                names = " · ".join(no_icon)
+                if len(names) > 300:
+                    names = names[:300].rstrip() + "…"
+                items.append(_td(f"-# без иконок: {names}"))
 
         pet = fmt.pet_entry(data["pet"])
         if pet:
@@ -394,52 +374,32 @@ class FreeFireProfileView(discord.ui.LayoutView):
             return
 
         custom_id = str(interaction.data.get("custom_id") or "")
-        if custom_id.startswith("ffp:") and custom_id != "ffp:refresh":
+        if custom_id == "ffp:close":
+            await self._do_close(interaction)
+            return
+        if custom_id.startswith("ffp:"):
             tab = custom_id.split(":", 1)[1]
             if tab in dict(TABS):
                 self.tab = tab
-                self._notice = ""
                 self._render()
                 await interaction.response.edit_message(view=self)
-            return
 
-        if custom_id == "ffp:refresh":
-            await self._do_refresh(interaction)
-
-    async def _do_refresh(self, interaction: discord.Interaction) -> None:
-        if self._fetch is None:
-            await interaction.response.send_message(
-                "Обновление недоступно.", ephemeral=True
-            )
-            return
-        async with self._refresh_lock:
-            remaining = REFRESH_COOLDOWN - (time.monotonic() - self._last_refresh)
-            if remaining > 0:
+    async def _do_close(self, interaction: discord.Interaction) -> None:
+        """Удалить сообщение с профилем."""
+        message = getattr(interaction, "message", None) or self.bound_message
+        try:
+            if message is not None:
+                await message.delete()
+            else:
+                await interaction.delete_original_response()
+        except Exception:
+            logger.debug("FF profile close failed", exc_info=True)
+            try:
                 await interaction.response.send_message(
-                    f"Обновление доступно через {int(remaining) + 1} сек.",
-                    ephemeral=True,
+                    "Не удалось удалить сообщение.", ephemeral=True
                 )
-                return
-            self._last_refresh = time.monotonic()
-            await interaction.response.defer()
-            try:
-                self.result = await self._fetch()
-                self._notice = ""
-            except FreeFireError as exc:
-                logger.warning("FF profile refresh failed: %s", exc)
-                self._notice = f"обновление не удалось: {exc}"
             except Exception:
-                logger.exception("FF profile refresh unexpected error")
-                self._notice = "обновление не удалось: внутренняя ошибка"
-            self._render()
-            try:
-                await interaction.edit_original_response(view=self)
-            except Exception:
-                logger.exception("FF profile edit_original_response failed")
-                try:
-                    await interaction.followup.edit_message(view=self)
-                except Exception:
-                    logger.exception("FF profile followup edit failed")
+                logger.debug("FF profile close fallback failed", exc_info=True)
 
     async def on_timeout(self) -> None:
         """Отключить кнопки и попросить вызвать команду заново."""
@@ -448,7 +408,6 @@ class FreeFireProfileView(discord.ui.LayoutView):
             region=self.region,
             owner_id=self.owner_id,
             data=self.result,
-            fetch=None,
             timeout=None,
             expired=True,
         )

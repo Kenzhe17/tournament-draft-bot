@@ -290,14 +290,14 @@ async def test_stats_component_limits_all_modes():
                 assert len(item.content) <= 2000
 
 
-# ------------------------------------------------------- /ff info cooldown
+# ------------------------------------------------------- FF cooldown store
 
 
-def test_ff_info_cooldown_store(tmp_path, monkeypatch):
+def test_ff_cooldown_store(tmp_path, monkeypatch):
     import storage.ff_cooldowns as mod
 
-    monkeypatch.setattr(mod, "DATA_FILE", tmp_path / "cd.json")
-    store = mod.FFInfoCooldownStore()
+    monkeypatch.setattr(mod, "DATA_DIR", tmp_path)
+    store = mod.FFCooldownStore("test_cd.json")
     assert store.seconds_left(1) == 0
     store.mark_used(1)
     left = store.seconds_left(1)
@@ -305,14 +305,25 @@ def test_ff_info_cooldown_store(tmp_path, monkeypatch):
     # Другой пользователь не затронут
     assert store.seconds_left(2) == 0
     # Персистентность: новый экземпляр читает тот же файл
-    store2 = mod.FFInfoCooldownStore()
+    store2 = mod.FFCooldownStore("test_cd.json")
     assert store2.seconds_left(1) == left
 
 
-def test_ff_info_cooldown_expired(tmp_path, monkeypatch):
+def test_ff_cooldown_expired(tmp_path, monkeypatch):
     import storage.ff_cooldowns as mod
 
-    monkeypatch.setattr(mod, "DATA_FILE", tmp_path / "cd.json")
-    store = mod.FFInfoCooldownStore()
+    monkeypatch.setattr(mod, "DATA_DIR", tmp_path)
+    store = mod.FFCooldownStore("test_cd.json")
     store._data["7"] = time.time() - mod.COOLDOWN_SECONDS - 1
     assert store.seconds_left(7) == 0
+
+
+def test_ff_info_and_stats_cooldowns_are_independent(tmp_path, monkeypatch):
+    import storage.ff_cooldowns as mod
+
+    monkeypatch.setattr(mod, "DATA_DIR", tmp_path)
+    info = mod.FFCooldownStore("ff_info_cooldowns.json")
+    stats = mod.FFCooldownStore("ff_stats_cooldowns.json")
+    info.mark_used(1)
+    assert info.seconds_left(1) > 0
+    assert stats.seconds_left(1) == 0

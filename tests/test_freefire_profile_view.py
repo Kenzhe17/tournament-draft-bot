@@ -1,9 +1,9 @@
 """Тесты Components V2 профиля Free Fire (/ff info).
 
-Покрывают: 4 вкладки, 5 кнопок, отсутствие повторных API-запросов
-при переключении, обновление с cooldown, права доступа, отсутствующие
-поля, неизвестные ранги/предметы, экранирование markdown/mentions,
-timeout View и лимиты Components V2.
+Покрывают: 4 вкладки, 5 кнопок (включая «✕» — удаление сообщения),
+отсутствие повторных API-запросов при переключении, права доступа,
+отсутствующие поля, неизвестные ранги/предметы, экранирование
+markdown/mentions, timeout View и лимиты Components V2.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import discord
 
-from services.freefire_service import FreeFireError
 from utils import ff_profile_formatter as fmt
 from views.freefire_profile_view import FreeFireProfileView
 
@@ -77,13 +76,12 @@ SAMPLE = {
 OWNER_ID = 42
 
 
-def _make_view(data=None, fetch=None, **kwargs):
+def _make_view(data=None, **kwargs):
     return FreeFireProfileView(
         uid="535606728",
         region="ru",
         owner_id=OWNER_ID,
         data=SAMPLE if data is None else data,
-        fetch=fetch if fetch is not None else AsyncMock(),
         timeout=None,
         **kwargs,
     )
@@ -99,6 +97,7 @@ def _interaction(user_id=OWNER_ID, custom_id="ffp:overview"):
             defer=AsyncMock(),
         ),
         edit_original_response=AsyncMock(),
+        delete_original_response=AsyncMock(),
         followup=SimpleNamespace(
             send=AsyncMock(), edit_message=AsyncMock()
         ),
@@ -238,16 +237,15 @@ async def test_overview_renders_key_data_and_buttons():
     buttons = _buttons(view)
     assert len(buttons) == 5
     labels = {b.label for b in buttons}
-    assert labels == {"Обзор", "Ранги", "Экипировка", "Аккаунт", "Обновить"}
+    assert labels == {"Обзор", "Ранги", "Экипировка", "Аккаунт", "✕"}
     # активная вкладка выделена
     active = [b for b in buttons if b.style == discord.ButtonStyle.primary]
     assert len(active) == 1 and active[0].label == "Обзор"
 
 
 @pytest.mark.asyncio
-async def test_tab_switch_edits_same_view_without_api():
-    fetch = AsyncMock()
-    view = _make_view(fetch=fetch)
+async def test_tab_switch_edits_same_view():
+    view = _make_view()
     for tab in ("ranks", "gear", "account", "overview"):
         _, interaction, coro = _press(view, f"ffp:{tab}")
         await coro
@@ -256,7 +254,6 @@ async def test_tab_switch_edits_same_view_without_api():
         assert sent is view
         assert view.tab == tab
         interaction.response.edit_message.reset_mock()
-    fetch.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -329,56 +326,38 @@ async def test_long_nickname_and_signature_safety():
             assert len(item.content) <= 2000
 
 
-# ------------------------------------------------------------ view: refresh
+# ------------------------------------------------------------ view: close
 
 
 @pytest.mark.asyncio
-async def test_refresh_fetches_and_updates():
-    new_data = {"basicInfo": {"nickname": "NewName", "level": 99}}
-    fetch = AsyncMock(return_value=new_data)
-    view = _make_view(fetch=fetch)
-    _, interaction, coro = _press(view, "ffp:refresh")
+async def test_close_deletes_message():
+    view = _make_view()
+    message = SimpleNamespace(delete=AsyncMock())
+    view.bound_message = message
+    _, _, coro = _press(view, "ffp:close")
     await coro
-    fetch.assert_awaited_once()
-    interaction.response.defer.assert_awaited_once()
-    interaction.edit_original_response.assert_awaited_once()
-    assert view.result == new_data
-    assert "NewName" in _all_text(view)
+    message.delete.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_refresh_keeps_old_data_on_error():
-    fetch = AsyncMock(side_effect=FreeFireError("rate limit", "RATE_LIMIT"))
-    view = _make_view(fetch=fetch)
-    old = view.result
-    _, _, coro = _press(view, "ffp:refresh")
+async def test_close_without_bound_message_uses_interaction():
+    view = _make_view()
+    _, interaction, coro = _press(view, "ffp:close")
     await coro
-    assert view.result is old
-    assert "rate limit" in view._notice
-    text = _all_text(view)
-    assert "uNøtaR!z3" in text  # старые данные на месте
+    interaction.delete_original_response.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_refresh_cooldown():
-    fetch = AsyncMock(return_value={"basicInfo": {"nickname": "N"}})
-    view = _make_view(fetch=fetch)
-    _, _, c1 = _press(view, "ffp:refresh")
-    await c1
-    _, i2, c2 = _press(view, "ffp:refresh")
-    await c2
-    assert fetch.await_count == 1
-    i2.response.send_message.assert_awaited_once()
-    assert "сек" in i2.response.send_message.await_args.args[0]
-
-
-@pytest.mark.asyncio
-async def test_refresh_network_error_generic():
-    fetch = AsyncMock(side_effect=RuntimeError("boom"))
-    view = _make_view(fetch=fetch)
-    _, _, coro = _press(view, "ffp:refresh")
+async def test_close_failure_falls_back_to_ephemeral():
+    view = _make_view()
+    message = SimpleNamespace(delete=AsyncMock(side_effect=RuntimeError("x")))
+    view.bound_message = message
+    _, interaction, coro = _press(view, "ffp:close")
     await coro
-    assert "внутренняя ошибка" in view._notice
+    interaction.response.send_message.assert_awaited_once()
+    assert interaction.response.send_message.await_args.kwargs.get(
+        "ephemeral"
+    )
 
 
 # ------------------------------------------------------------ view: доступ
@@ -388,7 +367,7 @@ async def test_refresh_network_error_generic():
 async def test_non_owner_denied_everywhere():
     view = _make_view()
     for cid in ("ffp:overview", "ffp:ranks", "ffp:gear", "ffp:account",
-                "ffp:refresh"):
+                "ffp:close"):
         _, interaction, coro = _press(view, cid, user_id=999)
         await coro
         interaction.response.send_message.assert_awaited_once()
