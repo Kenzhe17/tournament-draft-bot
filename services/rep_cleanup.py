@@ -88,8 +88,16 @@ def load_legacy_manual_rep(path: Path | None = None) -> dict[tuple[int, int], in
     return out
 
 
-async def fetch_cleanup_inputs(conn) -> dict[str, Any]:
+async def fetch_cleanup_inputs(
+    conn, for_update: bool = False
+) -> dict[str, Any]:
     """Собрать все входные данные для плана очистки.
+
+    for_update=True — SELECT ... FOR UPDATE по player_stats: строка
+    блокируется до конца транзакции, поэтому параллельные начисления
+    REP 2.0 (/rep, invite, boost, tag, admin) либо завершатся до
+    блокировки и попадут в план, либо подождут коммита cleanup и
+    начислятся поверх уже очищенного баланса — потерь нет.
 
     Возвращает:
       stats_rows: [(guild_id, user_id, name, reputation)]
@@ -97,9 +105,10 @@ async def fetch_cleanup_inputs(conn) -> dict[str, Any]:
       game_est:   {(guild_id, user_id): int} — подтверждённая игровая REP
       match_history_available: bool
     """
+    lock = " FOR UPDATE" if for_update else ""
     stats_rows = await conn.fetch(
         "SELECT guild_id, user_id, name, reputation"
-        " FROM player_stats WHERE user_id > 0"
+        " FROM player_stats WHERE user_id > 0" + lock
     )
 
     tx_rows = await conn.fetch(
@@ -118,7 +127,7 @@ async def fetch_cleanup_inputs(conn) -> dict[str, Any]:
             """
             SELECT guild_id, user_id,
                    COUNT(*) AS matches,
-                   COUNT(*) FILTER (WHERE lower(result) = 'win') AS wins
+                   COUNT(*) FILTER (WHERE lower(btrim(result)) = 'win') AS wins
             FROM match_history
             GROUP BY guild_id, user_id
             """
@@ -358,19 +367,55 @@ async def export_backup(conn, path: Path) -> dict[str, int]:
     }
 
 
-async def restore_backup(conn, path: Path) -> int:
-    """Откатить player_stats.reputation из бэкапа (репутация only)."""
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    rows = payload.get("player_stats_reputation", [])
-    restored = 0
-    async with conn.transaction():
-        for r in rows:
-            res = await conn.execute(
-                """
-                UPDATE player_stats SET reputation = $3
-                WHERE guild_id = $1 AND user_id = $2
-                """,
-                int(r["guild_id"]), int(r["user_id"]), int(r["reputation"]),
-            )
-            restored += 1
-    return restored
+async def restore_cleanup(
+    conn, op_id: str = CLEANUP_OP_ID
+) -> dict[str, Any]:
+    """Точечный откат очистки: вернуть ровно списанные суммы.
+
+    В отличие от восстановления из JSON-бэкапа (который затёр бы
+    REP, начисленную ПОСЛЕ миграции), здесь к текущему балансу
+    прибавляется только deducted из rep_cleanup_items — новые
+    легальные начисления (/rep, invite, boost, tag, admin)
+    сохраняются.
+
+    Идемпотентно: работает только для run со status='done',
+    после отката status='restored' — повторный вызов no-op.
+    Вызывающий код оборачивает в транзакцию.
+    """
+    row = await conn.fetchrow(
+        "SELECT status FROM rep_cleanup_runs WHERE op_id = $1", op_id
+    )
+    if row is None:
+        return {"restored": False, "reason": "no_run"}
+    if row["status"] != "done":
+        return {"restored": False, "reason": f"status={row['status']}"}
+
+    items = await conn.fetch(
+        """
+        SELECT guild_id, user_id, deducted
+        FROM rep_cleanup_items
+        WHERE run_op_id = $1 AND deducted > 0
+        """,
+        op_id,
+    )
+    restored_rep = 0
+    for it in items:
+        res = await conn.execute(
+            """
+            UPDATE player_stats
+            SET reputation = reputation + $3
+            WHERE guild_id = $1 AND user_id = $2
+            """,
+            int(it["guild_id"]), int(it["user_id"]), int(it["deducted"]),
+        )
+        restored_rep += int(it["deducted"])
+
+    await conn.execute(
+        "UPDATE rep_cleanup_runs SET status = 'restored' WHERE op_id = $1",
+        op_id,
+    )
+    return {
+        "restored": True,
+        "players": len(items),
+        "restored_rep": restored_rep,
+    }

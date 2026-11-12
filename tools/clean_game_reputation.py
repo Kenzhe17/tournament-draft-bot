@@ -8,7 +8,11 @@ utils/rating_calculator.py без записи в reputation_transactions.
 Использование:
     python tools/clean_game_reputation.py --dry-run
     python tools/clean_game_reputation.py --confirm --backup backup.json --report report.json
-    python tools/clean_game_reputation.py --restore backup.json
+    python tools/clean_game_reputation.py --restore --confirm
+
+--restore возвращает ровно списанные суммы из rep_cleanup_items
+(не затирает REP, начисленную после миграции). JSON-бэкап из
+--backup остаётся для аудита и ручного восстановления через pg_restore.
 
 Требуется DATABASE_URL. Скрипт НЕ запускается автоматически и НЕ
 выполняет списание без --confirm. Повторный запуск — no-op
@@ -42,11 +46,17 @@ async def run(args: argparse.Namespace) -> int:
 
     conn = await asyncpg.connect(DATABASE_URL)
     try:
-        # --- Откат из бэкапа ---
+        # --- Точечный откат списанной REP (не трогает REP,
+        #     начисленную после миграции) ---
         if args.restore:
-            n = await rep_cleanup.restore_backup(conn, args.restore)
-            log.info("RESTORE complete: %d player_stats rows updated", n)
-            return 0
+            if not args.confirm:
+                log.error("--restore требует --confirm.")
+                return 2
+            await rep_cleanup.ensure_cleanup_tables(conn)
+            async with conn.transaction():
+                result = await rep_cleanup.restore_cleanup(conn)
+            log.info("RESTORE result: %s", result)
+            return 0 if result.get("restored") else 3
 
         # --- Сбор данных ---
         legacy = rep_cleanup.load_legacy_manual_rep()
@@ -127,7 +137,36 @@ async def run(args: argparse.Namespace) -> int:
         else:
             log.warning("Бэкап не запрошен — рекомендую --backup или pg_dump.")
 
+        # План + списание в ОДНОЙ транзакции с FOR UPDATE на
+        # player_stats: параллельные /rep, invite, boost, tag и
+        # admin-корректировки либо попадут в план (если закоммитятся
+        # до блокировки), либо применятся поверх очищенного баланса
+        # после коммита — начисления не теряются.
         async with conn.transaction():
+            inputs = await rep_cleanup.fetch_cleanup_inputs(
+                conn, for_update=True
+            )
+            legacy = rep_cleanup.load_legacy_manual_rep()
+            plan = rep_cleanup.build_cleanup_plan(
+                inputs["stats_rows"],
+                inputs["tx_sums"],
+                inputs["game_est"],
+                legacy,
+                match_history_available=inputs["match_history_available"],
+            )
+            # Отчёт по фактически применённому (заблокированному) плану
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "op_id": rep_cleanup.CLEANUP_OP_ID,
+                        "legacy_manual_known": legacy is not None,
+                        "match_history_available": inputs["match_history_available"],
+                        "players": plan,
+                    },
+                    ensure_ascii=False, indent=2, default=str,
+                ),
+                encoding="utf-8",
+            )
             result = await rep_cleanup.apply_cleanup_plan(conn, plan)
         log.info("Cleanup result: %s", result)
         return 0
@@ -141,7 +180,8 @@ def main() -> int:
     ap.add_argument("--confirm", action="store_true")
     ap.add_argument("--backup", type=Path, default=None)
     ap.add_argument("--report", type=Path, default=None)
-    ap.add_argument("--restore", type=Path, default=None)
+    ap.add_argument("--restore", action="store_true",
+                    help="Откатить списание, вернув deducted из rep_cleanup_items")
     args = ap.parse_args()
     args.dry_run = args.dry_run or not args.confirm
     return asyncio.run(run(args))

@@ -116,9 +116,11 @@ class _FakePgConn:
         return None
 
     async def fetchrow(self, query, *args):
+        self.queries.append(query)
         return None
 
     async def fetch(self, query, *args):
+        self.queries.append(query)
         return []
 
     def transaction(self):
@@ -326,3 +328,75 @@ class TestApplyCleanup:
         assert "GREATEST(reputation - $3, 0)" in updates[0]
         item_inserts = [q for q in conn.queries if "INSERT INTO rep_cleanup_items" in q]
         assert len(item_inserts) == 1
+
+
+class _RestoreConn(_FakePgConn):
+    """Conn для restore_cleanup: run status + items."""
+
+    def __init__(self, status="done", items=None):
+        super().__init__()
+        self._status = status
+        self._items = items or []
+        self._status_updates = 0
+
+    async def fetchrow(self, query, *args):
+        self.queries.append(query)
+        if "rep_cleanup_runs" in query:
+            return {"status": self._status} if self._status else None
+        return None
+
+    async def fetch(self, query, *args):
+        self.queries.append(query)
+        if "rep_cleanup_items" in query:
+            # имитация WHERE deducted > 0 из реального запроса
+            return [i for i in self._items if i["deducted"] > 0]
+        return []
+
+    async def execute(self, query, *args):
+        self.queries.append(query)
+        if "status = 'restored'" in query:
+            self._status_updates += 1
+            self._status = "restored"
+
+
+class TestRestoreCleanup:
+    @pytest.mark.asyncio
+    async def test_restore_adds_back_only_deducted(self):
+        conn = _RestoreConn(items=[
+            {"guild_id": 1, "user_id": 10, "deducted": 4},
+            {"guild_id": 1, "user_id": 11, "deducted": 0},
+        ])
+        result = await rep_cleanup.restore_cleanup(conn, op_id="op_x")
+        assert result["restored"] is True
+        assert result["players"] == 1
+        assert result["restored_rep"] == 4
+        updates = [q for q in conn.queries if "reputation = reputation +" in q]
+        assert len(updates) == 1
+        # статус переведён в restored
+        assert conn._status == "restored"
+
+    @pytest.mark.asyncio
+    async def test_restore_idempotent(self):
+        conn = _RestoreConn(status="restored")
+        result = await rep_cleanup.restore_cleanup(conn, op_id="op_x")
+        assert result["restored"] is False
+        assert result["reason"] == "status=restored"
+        assert not any("reputation = reputation +" in q for q in conn.queries)
+
+    @pytest.mark.asyncio
+    async def test_restore_no_run(self):
+        conn = _RestoreConn(status=None)
+        # status=None -> fetchrow возвращает None? в fake: status falsy -> None
+        result = await rep_cleanup.restore_cleanup(conn, op_id="op_x")
+        assert result["restored"] is False
+        assert result["reason"] == "no_run"
+
+    @pytest.mark.asyncio
+    async def test_for_update_flag_locks_stats(self):
+        conn = _FakePgConn()
+        await rep_cleanup.fetch_cleanup_inputs(conn, for_update=True)
+        stats_q = conn.queries[0]
+        assert "FOR UPDATE" in stats_q
+        conn2 = _FakePgConn()
+        await rep_cleanup.fetch_cleanup_inputs(conn2)
+        assert "FOR UPDATE" not in conn2.queries[0]
