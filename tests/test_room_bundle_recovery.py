@@ -666,7 +666,7 @@ class TestMixedRoomBundle:
              "classic": 100, "squad": 200, "resolved": False}
         ]
         # Предупреждение в сообщении комнаты
-        assert "расходится" in stats.sent[0].content
+        assert "Конфликт" in stats.sent[0].content
 
     @pytest.mark.asyncio
     async def test_two_classics_still_invalid_mix(self, mixed_env):

@@ -1974,24 +1974,27 @@ async def _publish_room_message(
         len(p.get("rows") or [])
         for p in (room.get("panels") or {}).values()
     )
-    text = (
-        f"**Комната {room['room_index']}**\n"
-        f"Распознано игроков: {players_n}"
+    kind_label = (
+        "CS 4×4" if room.get("kind") in (None, "classic")
+        else str(room.get("kind")).upper()
     )
+    lines = [
+        f"**Комната {room['room_index']}** · {kind_label} · "
+        f"игроков {players_n}"
+    ]
     if room.get("stat_conflicts"):
         n = sum(
             1 for c in room["stat_conflicts"] if not c.get("resolved")
         )
-        text += (
-            f"\n⚠️ Скриншот отряда расходится с полным экраном "
-            f"({n} неразрешённых) — финализация заблокирована до "
-            "выбора источника администратором."
+        lines.append(
+            f"⚠️ Конфликт экран/отряд: {n} — нужен выбор админа."
         )
     if room.get("aux_review"):
-        text += (
-            f"\n👁 {len(room['aux_review'])} игр. отряда требуют "
-            "ручной проверки (нет уверенного совпадения)."
+        lines.append(
+            f"👁 {len(room['aux_review'])} строк отряда — "
+            "проверка админом."
         )
+    text = "\n".join(lines)
     bot_msg = await stats_channel.send(
         content=replace_emojis(text), view=view, files=files
     )
@@ -2000,6 +2003,35 @@ async def _publish_room_message(
     if bot_msg.id not in ids:
         ids.append(bot_msg.id)
     store.set(tournament)
+    if files:
+        # Основная карточка теперь хранит те же байты —
+        # технические shot-сообщения удаляем, чтобы в канале
+        # оставалась ОДНА карточка на комнату. Без вложений в
+        # карточке архивировать нельзя — shot'ы остаются
+        # единственным источником.
+        await _archive_seq_shot_messages(stats_channel, room)
+
+
+async def _archive_seq_shot_messages(stats_channel, room: dict) -> None:
+    """Удалить технические shot-сообщения после публикации
+    основной карточки комнаты с теми же вложениями.
+
+    Вызывается ТОЛЬКО после успешной отправки room-сообщения с
+    файлами — иначе потеряется единственная копия исходника.
+    shot_message_ids сохраняются для аудита/отмены комплекта.
+    """
+    if room.get("shots_archived") or stats_channel is None:
+        return
+    for mid in list(room.get("shot_message_ids") or []):
+        try:
+            msg = await stats_channel.fetch_message(int(mid))
+            await msg.delete()
+        except Exception:
+            logger.debug(
+                "seq shot archive delete failed mid=%s", mid,
+                exc_info=True,
+            )
+    room["shots_archived"] = True
 
 
 def _img_ext(filename: str) -> str:
@@ -2051,18 +2083,16 @@ def _rooms_progress_text(session: dict) -> str:
     done = _rooms_completed_count(session)
     nxt = _rooms_next_index(session)
     if nxt is None:
-        status = "Комплект полный — ожидается сопоставление игроков"
+        status = "ожидание сопоставления"
     elif done == 0:
-        status = f"Сбор скриншотов — отправьте комнату {nxt}"
+        status = f"загрузка · комната {nxt}"
     else:
-        status = f"Обработка OCR / сбор — отправьте комнату {nxt}"
+        status = f"обработка · комната {nxt}"
     return (
-        f"**ОБРАБОТКА РЕЗУЛЬТАТОВ**\n"
-        f"Комнат: {total}\n"
-        f"Заполнено: {done}/{total}\n"
-        f"Статус: {status}\n"
-        "Скриншоты приняты. Повторная отправка не требуется — "
-        "продолжайте через «Добавить скриншоты»."
+        f"**Результаты матча**\n"
+        f"Комнаты: {done}/{total}"
+        + (f" · далее: комната {nxt}" if nxt is not None else "")
+        + f"\nСтатус: {status}"
     )
 
 
@@ -2514,12 +2544,12 @@ async def _publish_seq_shot(
     )
     n = len(room.get("pending") or [])
     try:
+        # Техническое сообщение-источник байтов: минимум текста —
+        # публичную карточку комнаты публикует _publish_room_message.
         msg = await stats_channel.send(
             content=replace_emojis(
-                f"📸 **Комната {room['room_index']}** — принят "
-                f"{kind_label} ({n}/2).\n"
-                "Для смешанной комнаты можно добавить скриншот "
-                "отряда или завершить кнопку «Завершить комнату»."
+                f"📸 **Комната {room['room_index']}** — {kind_label} "
+                f"({n}/2)"
             ),
             files=[
                 discord.File(
@@ -2554,20 +2584,16 @@ async def _ensure_room_collect_message(
     room["collect_pending"] = True
     store.set(tournament)
     pending = room.get("pending") or []
-    lines = [f"**Комната {room['room_index']}** — сбор скриншотов"]
-    for i, p in enumerate(pending, 1):
-        kind_label = (
-            "полный экран" if p.get("kind") == "classic"
-            else "скриншот отряда"
-        )
-        lines.append(f"• {i}. {kind_label} — ✅ принят")
-    if not pending:
-        lines.append("• Пока файлов нет — отправьте первый скриншот.")
-    else:
-        lines.append(
-            "\nМожно завершить комнату или добавить "
-            "второй скриншот (для сверки)."
-        )
+    # Компактный статус: одна строка + счётчик файлов.
+    kinds = ", ".join(
+        "экран" if p.get("kind") == "classic" else "отряд"
+        for p in pending
+    )
+    lines = [
+        f"**Комната {room['room_index']}** · сбор файлов "
+        f"({len(pending)}/2)"
+        + (f" — {kinds}" if kinds else "")
+    ]
     from views.ocr_match_view import RoomFilesView
 
     gid = (
@@ -3020,6 +3046,23 @@ async def finalize_room_collect(
     )
     items, problems = await _seq_pending_items(
         stats_channel, pend_pre, ck
+    )
+    # Mixed-комната: Classic — главный скриншот, идёт первым
+    # во вложениях карточки; squad — дополнительный для проверки.
+    kind_by_sha = {
+        p.get("sha"): p.get("kind") for p in pend_pre
+    }
+    sha_of_item = {
+        _sha256_bytes(it["data"]): it for it in items
+    }
+    items = [
+        sha_of_item[s] for s in sha_snapshot
+        if s in sha_of_item
+    ]
+    items.sort(
+        key=lambda it: 0 if kind_by_sha.get(
+            _sha256_bytes(it["data"])
+        ) == "classic" else 1
     )
     if problems:
         bad = {p["sha"] for p in problems}

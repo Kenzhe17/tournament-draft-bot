@@ -564,17 +564,17 @@ class TestProcessingCardState:
         from cogs.ocr_upload import _rooms_progress_text
 
         s = {"rooms_expected": 3, "rooms": []}
-        assert "Сбор скриншотов" in _rooms_progress_text(s)
-        assert "комнату 1" in _rooms_progress_text(s)
+        assert "загрузка" in _rooms_progress_text(s)
+        assert "комната 1" in _rooms_progress_text(s)
         s["rooms"] = [{"room_index": 1, "panels": {"left": {}}}]
         txt = _rooms_progress_text(s)
-        assert "Обработка OCR" in txt
-        assert "комнату 2" in txt
+        assert "обработка" in txt
+        assert "комната 2" in txt
         s["rooms"] += [
             {"room_index": 2, "panels": {"left": {}}},
             {"room_index": 3, "panels": {"left": {}}},
         ]
-        assert "Комплект полный" in _rooms_progress_text(s)
+        assert "сопоставления" in _rooms_progress_text(s)
 
     @pytest.mark.asyncio
     async def test_ensure_processing_card_hides_once(self, monkeypatch):

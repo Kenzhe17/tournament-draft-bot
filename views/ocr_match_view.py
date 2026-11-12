@@ -150,6 +150,44 @@ def _session_key(match_type: str, match_index: int) -> str:
     return f"{match_type}_{match_index}"
 
 
+async def _respond(
+    interaction: discord.Interaction,
+    *,
+    content: str | None = None,
+    view=None,
+    files=None,
+    ephemeral: bool = True,
+):
+    """Единая точка ответа на interaction: после defer() —
+    followup, до — response.send_message. Исключает двойной
+    ответ и «interaction failed» при уже подтверждённом
+    interaction."""
+    try:
+        done = interaction.response.is_done()
+    except Exception:
+        done = False
+    if done:
+        return await interaction.followup.send(
+            content=content, view=view, files=files,
+            ephemeral=ephemeral,
+        )
+    return await interaction.response.send_message(
+        content=content, view=view, files=files,
+        ephemeral=ephemeral,
+    )
+
+
+def _log_mapping(stage: str, **ctx) -> None:
+    """Контекстный лог этапов сопоставления (ocr_mapping_*)."""
+    logger.info("ocr_mapping_%s %s", stage, ctx)
+
+
+def _log_mapping_failed(exc: BaseException, stage: str, **ctx) -> None:
+    logger.error(
+        "ocr_mapping_failed stage=%s %s", stage, ctx, exc_info=exc
+    )
+
+
 def _match_tuple(tournament: Tournament, match_type: str, match_index: int) -> tuple[int, int]:
     if match_type == "qualifier":
         return tournament.qualifier_matches[match_index]
@@ -4728,15 +4766,44 @@ class RoomView(View):
         self.match_type = match_type
         self.match_index = match_index
         self.room_index = room_index
+        # team_index=0 — валидная команда: проверяем тип/диапазон,
+        # а не truthiness. Битая пара логируется, кнопки не
+        # подменяются индексом 0.
         try:
             t1, t2 = _match_tuple(tournament, match_type, match_index)
         except Exception:
-            t1 = t2 = 0
+            logger.warning(
+                "room view: bad match tuple guild=%s match=%s_%s "
+                "room=%s",
+                guild_id, match_type, match_index, room_index,
+                exc_info=True,
+            )
+            t1 = t2 = None
+        n_teams = len(getattr(tournament, "teams", None) or [])
+        seen: set[int] = set()
         for team_index in (t1, t2):
-            if not team_index:
+            if (
+                not isinstance(team_index, int)
+                or isinstance(team_index, bool)
+                or team_index < 0
+                or team_index >= n_teams
+            ):
+                if team_index is not None:
+                    logger.warning(
+                        "room view: invalid team_index=%r "
+                        "guild=%s match=%s_%s room=%s",
+                        team_index, guild_id, match_type,
+                        match_index, room_index,
+                    )
                 continue
+            if team_index in seen:
+                continue
+            seen.add(team_index)
+            short = _team_display_name(tournament, team_index)
+            if len(short) > 18:
+                short = short[:17] + "…"
             b = Button(
-                label=f"🧩 {_team_display_name(tournament, team_index)}",
+                label=f"🧩 Сопоставить · {short}",
                 style=discord.ButtonStyle.primary,
                 custom_id=(
                     f"room_map:{guild_id}:{channel_id}:{match_type}:"
@@ -4788,10 +4855,42 @@ class RoomView(View):
     async def _on_team(
         self, interaction: discord.Interaction, team_index: int
     ) -> None:
+        """Открыть сопоставление команды. Defer СРАЗУ — дальше
+        store/lock/Discord I/O может превысить 3-секундное окно;
+        все ответы — через followup (_respond)."""
+        ctx = {
+            "guild_id": self.guild_id, "match_type": self.match_type,
+            "match_index": self.match_index,
+            "room_index": self.room_index, "team_index": team_index,
+        }
+        _log_mapping("click", **ctx)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+        try:
+            await self._on_team_inner(interaction, team_index, ctx)
+        except Exception as exc:
+            _log_mapping_failed(exc, "team", **ctx)
+            try:
+                await _respond(
+                    interaction,
+                    content=replace_emojis(
+                        "⚠️ Не удалось открыть сопоставление — "
+                        "попробуйте ещё раз."
+                    ),
+                )
+            except Exception:
+                pass
+
+    async def _on_team_inner(
+        self, interaction: discord.Interaction, team_index: int,
+        ctx: dict,
+    ) -> None:
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            await _respond(
+                interaction, content=replace_emojis("❌ Турнир не найден.")
             )
             return
         _, session = _rooms_session_fresh(
@@ -4802,27 +4901,26 @@ class RoomView(View):
             interaction, tournament, session, self.room_index
         )
         if err:
-            await interaction.response.send_message(
-                replace_emojis(err), ephemeral=True
-            )
+            await _respond(interaction, content=replace_emojis(err))
             return
-        if not _room_map_team(interaction.user, tournament, team_index):
-            await interaction.response.send_message(
-                replace_emojis(
+        _log_mapping("permission_checked", **ctx)
+        if not _room_map_team(tournament, interaction.user, team_index):
+            await _respond(
+                interaction,
+                content=replace_emojis(
                     "❌ Сопоставлять команду может её капитан, "
                     "участник или организатор."
                 ),
-                ephemeral=True,
             )
             return
         if int(session.get("rooms_received") or 0) < int(
             session.get("rooms_expected") or 0
         ):
-            await interaction.response.send_message(
-                replace_emojis(
+            await _respond(
+                interaction,
+                content=replace_emojis(
                     "⏳ Дождитесь полного комплекта скриншотов."
                 ),
-                ephemeral=True,
             )
             return
         room = next(
@@ -4841,6 +4939,7 @@ class RoomView(View):
                     tournament, rs, team_index, squad_panel
                 )
                 store.set(tournament)
+                _log_mapping("panel_resolved", panel=squad_panel, **ctx)
                 await _open_room_team_map(
                     interaction, tournament, self.match_type,
                     self.match_index, self.room_index, team_index,
@@ -4849,6 +4948,7 @@ class RoomView(View):
             else:
                 _ensure_manual_map(rs, team_index)
                 store.set(tournament)
+                _log_mapping("panel_resolved", panel="manual", **ctx)
                 await _open_room_team_map(
                     interaction, tournament, self.match_type,
                     self.match_index, self.room_index, team_index, "manual",
@@ -4858,8 +4958,9 @@ class RoomView(View):
         if panel not in ("left", "right"):
             panel = _auto_panel_for_team(tournament, rs, team_index)
         if panel not in ("left", "right"):
-            await interaction.response.send_message(
-                replace_emojis(
+            await _respond(
+                interaction,
+                content=replace_emojis(
                     "Выберите панель вашей команды на этом скриншоте:"
                 ),
                 view=RoomPanelPickView(
@@ -4867,11 +4968,11 @@ class RoomView(View):
                     self.match_type, self.match_index,
                     self.room_index, team_index,
                 ),
-                ephemeral=True,
             )
             return
         _ensure_room_panel_map(tournament, rs, team_index, panel)
         store.set(tournament)
+        _log_mapping("panel_resolved", panel=panel, **ctx)
         await _open_room_team_map(
             interaction, tournament, self.match_type,
             self.match_index, self.room_index, team_index, panel,
@@ -4906,10 +5007,15 @@ class RoomView(View):
                 ephemeral=True,
             )
             return
-        t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
+        try:
+            t1, t2 = _match_tuple(
+                tournament, self.match_type, self.match_index
+            )
+        except Exception:
+            t1 = t2 = None
         team_index = _team_of_user(
             tournament, (t1, t2), interaction.user.id
-        )
+        ) if t1 is not None else None
         if team_index is None:
             await interaction.response.send_message(
                 replace_emojis(
@@ -4972,10 +5078,16 @@ class RoomView(View):
         )
 
     async def _on_wrong(self, interaction: discord.Interaction) -> None:
+        # cancel_rooms_session делает серию fetch/edit по комнатам —
+        # подтверждаем interaction сразу, отвечаем через followup.
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            await _respond(
+                interaction, content=replace_emojis("❌ Турнир не найден.")
             )
             return
         from cogs.ocr_upload import cancel_rooms_session
@@ -4985,32 +5097,36 @@ class RoomView(View):
             self.match_type, self.match_index,
         )
         if res == "forbidden":
-            await interaction.response.send_message(
-                replace_emojis(
+            await _respond(
+                interaction,
+                content=replace_emojis(
                     "❌ «Неправильный скриншот» доступен только "
                     "администратору."
                 ),
-                ephemeral=True,
             )
         elif res in ("none", "done"):
-            await interaction.response.send_message(
-                replace_emojis("ℹ️ Активной загрузки нет."),
-                ephemeral=True,
+            await _respond(
+                interaction,
+                content=replace_emojis("ℹ️ Активной загрузки нет."),
             )
         else:
-            await interaction.response.send_message(
-                replace_emojis(
+            await _respond(
+                interaction,
+                content=replace_emojis(
                     "✅ Весь комплект скриншотов отменён — можно "
                     "загрузить заново."
                 ),
-                ephemeral=True,
             )
 
     async def _on_admin(self, interaction: discord.Interaction) -> None:
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            await _respond(
+                interaction, content=replace_emojis("❌ Турнир не найден.")
             )
             return
         try:
@@ -5026,8 +5142,9 @@ class RoomView(View):
             )
         except Exception as e:
             logger.warning("room call-admin failed: %s", e)
-        await interaction.response.send_message(
-            replace_emojis("📣 Администратор уведомлён."), ephemeral=True
+        await _respond(
+            interaction,
+            content=replace_emojis("📣 Администратор уведомлён."),
         )
 
 
@@ -5068,14 +5185,41 @@ class RoomPanelPickView(View):
 
     async def _on_pick(self, interaction: discord.Interaction) -> None:
         values = getattr(self.select, "values", None) or []
+        ctx = {
+            "guild_id": self.guild_id, "match_type": self.match_type,
+            "match_index": self.match_index,
+            "room_index": self.room_index, "team_index": self.team_index,
+        }
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+        try:
+            await self._on_pick_inner(interaction, values, ctx)
+        except Exception as exc:
+            _log_mapping_failed(exc, "panel_pick", **ctx)
+            try:
+                await _respond(
+                    interaction,
+                    content=replace_emojis(
+                        "⚠️ Не удалось открыть сопоставление — "
+                        "попробуйте ещё раз."
+                    ),
+                )
+            except Exception:
+                pass
+
+    async def _on_pick_inner(
+        self, interaction: discord.Interaction, values: list, ctx: dict
+    ) -> None:
         if not values:
-            await interaction.response.defer()
+            await _respond(interaction, content="Выбор не получен.")
             return
         panel = values[0]
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            await _respond(
+                interaction, content=replace_emojis("❌ Турнир не найден.")
             )
             return
         _, session = _rooms_session_fresh(
@@ -5084,12 +5228,13 @@ class RoomPanelPickView(View):
         )
         rs = _room_session(session, self.room_index) if session else None
         if rs is None:
-            await interaction.response.send_message(
-                replace_emojis("❌ Комната не найдена."), ephemeral=True
+            await _respond(
+                interaction, content=replace_emojis("❌ Комната не найдена.")
             )
             return
         rs.setdefault("panel_picks", {})[str(self.team_index)] = panel
         store.set(tournament)
+        _log_mapping("panel_resolved", panel=panel, **ctx)
         await _open_room_team_map(
             interaction, tournament, self.match_type,
             self.match_index, self.room_index, self.team_index, panel,
@@ -5106,23 +5251,29 @@ async def _open_room_team_map(
     panel: str,
 ) -> None:
     """Открыть ephemeral-маппинг команды внутри комнаты."""
+    ctx = {
+        "guild_id": getattr(tournament, "guild_id", None),
+        "match_type": match_type, "match_index": match_index,
+        "room_index": room_index, "team_index": team_index,
+        "panel": panel,
+    }
     _, session = _rooms_session_fresh(
         tournament.guild_id, tournament.channel_id,
         match_type, match_index,
     )
     rs = _room_session(session, room_index) if session else None
     if rs is None:
-        await interaction.response.send_message(
-            replace_emojis("❌ Комната не найдена."), ephemeral=True
+        await _respond(
+            interaction, content=replace_emojis("❌ Комната не найдена.")
         )
         return
     if _panel_claimed_by_other(rs, team_index, panel):
-        await interaction.response.send_message(
-            replace_emojis(
+        await _respond(
+            interaction,
+            content=replace_emojis(
                 "❌ Эта панель уже закреплена за другой командой "
                 "в этой комнате."
             ),
-            ephemeral=True,
         )
         return
     _ensure_room_panel_map(tournament, rs, team_index, panel)
@@ -5138,12 +5289,12 @@ async def _open_room_team_map(
     else:
         side_label = "Левая" if panel == "left" else "Правая"
     embed = discord.Embed(
-        title=f"🧩 {name} — Комната {room_index}",
+        title=f"🧩 {_team_display_name(tournament, team_index)} · Комната {room_index}",
         description=(
-            f"**{side_label} панель** · сопоставьте игроков. "
-            "Игроки могут выбрать свой ник сами («Это мой ник»."
+            f"**{side_label}** — выберите Discord-игрока для "
+            "каждой строки и сохраните."
         ),
-        color=discord.Color.blurple(),
+        color=discord.Color.dark_grey(),
     )
     for i, row in enumerate(rows):
         mark = ""
@@ -5165,9 +5316,24 @@ async def _open_room_team_map(
         interaction.guild.id, tournament.channel_id, tournament,
         match_type, match_index, room_index, team_index, panel,
     )
-    await interaction.response.send_message(
-        view=compose(embed, view), ephemeral=True
-    )
+    _log_mapping("view_built", **ctx)
+    try:
+        await _respond(
+            interaction, view=compose(embed, view)
+        )
+        _log_mapping("response_sent", **ctx)
+    except Exception as exc:
+        _log_mapping_failed(exc, "send", **ctx)
+        try:
+            await _respond(
+                interaction,
+                content=replace_emojis(
+                    "⚠️ Discord не принял интерфейс сопоставления — "
+                    "попробуйте ещё раз."
+                ),
+            )
+        except Exception:
+            pass
 
 
 class RoomTeamMapView(View):
@@ -5209,7 +5375,9 @@ class RoomTeamMapView(View):
                     if dn and dn != cur:
                         forbidden.add(dn)
             options = [
-                discord.SelectOption(label="— не назначен —", value=""),
+                discord.SelectOption(
+                    label="— не назначен —", value="__none__",
+                ),
             ]
             for name in roster:
                 if name in forbidden:
@@ -5246,11 +5414,14 @@ class RoomTeamMapView(View):
     def _make_row_cb(self, i: int):
         async def _cb(interaction: discord.Interaction) -> None:
             values = getattr(self.selects[i], "values", None) or []
+            picked = values[0] if values else ""
+            if picked == "__none__":
+                picked = "—"
             await interaction.response.defer(ephemeral=True)
             await interaction.followup.send(
                 replace_emojis(
                     f"Строка {i + 1} → "
-                    f"**{values[0] if values and values[0] else '—'}** "
+                    f"**{picked}** "
                     "(сохранится по кнопке ниже)"
                 ),
                 ephemeral=True,
@@ -5258,10 +5429,37 @@ class RoomTeamMapView(View):
         return _cb
 
     async def _on_save(self, interaction: discord.Interaction) -> None:
+        ctx = {
+            "guild_id": self.guild_id, "match_type": self.match_type,
+            "match_index": self.match_index,
+            "room_index": self.room_index, "team_index": self.team_index,
+        }
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+        try:
+            await self._on_save_inner(interaction, ctx)
+        except Exception as exc:
+            _log_mapping_failed(exc, "save", **ctx)
+            try:
+                await _respond(
+                    interaction,
+                    content=replace_emojis(
+                        "⚠️ Не удалось сохранить сопоставление — "
+                        "попробуйте ещё раз."
+                    ),
+                )
+            except Exception:
+                pass
+
+    async def _on_save_inner(
+        self, interaction: discord.Interaction, ctx: dict
+    ) -> None:
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            await _respond(
+                interaction, content=replace_emojis("❌ Турнир не найден.")
             )
             return
         _, session = _rooms_session_fresh(
@@ -5272,21 +5470,21 @@ class RoomTeamMapView(View):
             interaction, tournament, session, self.room_index
         )
         if err:
-            await interaction.response.send_message(
-                replace_emojis(err), ephemeral=True
-            )
+            await _respond(interaction, content=replace_emojis(err))
             return
-        if not _room_map_team(interaction.user, tournament, self.team_index):
-            await interaction.response.send_message(
-                replace_emojis("❌ Нет прав на сопоставление этой команды."),
-                ephemeral=True,
+        if not _room_map_team(tournament, interaction.user, self.team_index):
+            await _respond(
+                interaction,
+                content=replace_emojis(
+                    "❌ Нет прав на сопоставление этой команды."
+                ),
             )
             return
 
         chosen: dict[int, str] = {}
         for i, sel in self.selects.items():
             vals = getattr(sel, "values", None) or []
-            if vals:
+            if vals and vals[0] != "__none__":
                 chosen[i] = vals[0]
 
         async with _mapping_lock(
@@ -5361,20 +5559,20 @@ class RoomTeamMapView(View):
                     else "captain"
                 )
             if errors:
-                await interaction.response.send_message(
-                    replace_emojis("❌ " + "\n".join(errors[:5])),
-                    ephemeral=True,
+                await _respond(
+                    interaction,
+                    content=replace_emojis("❌ " + "\n".join(errors[:5])),
                 )
                 return
             tm["confirmed"] = True
             store.set(tournament)
 
-        await interaction.response.send_message(
-            replace_emojis(
+        await _respond(
+            interaction,
+            content=replace_emojis(
                 f"✅ Команда **{_team_display_name(tournament, self.team_index)}**, "
                 f"комната {self.room_index} — сопоставление сохранено."
             ),
-            ephemeral=True,
         )
         await _rooms_after_map(
             interaction, tournament, self.match_type,
@@ -6821,7 +7019,7 @@ class RoomRowBindView(View):
         self.team_index = team_index
         self.row_idx = row_idx
         options = [
-            discord.SelectOption(label="— пропустить —", value=""),
+            discord.SelectOption(label="— пропустить —", value="__none__"),
         ]
         for name in team_roster(tournament, team_index)[:24]:
             options.append(discord.SelectOption(
@@ -6837,7 +7035,7 @@ class RoomRowBindView(View):
     async def _on_pick(self, interaction: discord.Interaction) -> None:
         values = getattr(self.select, "values", None) or [""]
         name = values[0]
-        if not name:
+        if not name or name == "__none__":
             await interaction.response.send_message(
                 replace_emojis("ℹ️ Привязка отложена — можно назначить "
                                "позже через маппинг команды."),
