@@ -4561,10 +4561,19 @@ async def cancel_rooms_session(
                     break
         except Exception:
             pass
+    # progress_message_id для обычных турниров == work_message_id:
+    # это рабочая карточка матча, а не временное сообщение. Её
+    # нельзя гасить текстом «комплект отменён» — финальное
+    # состояние «Ожидание скриншотов» + кнопка загрузки
+    # выставляется через update_match_card/refresh_match_control.
+    _mc_entry = (getattr(tournament, "match_cards", None) or {}).get(key) or {}
+    _work_mid = _mc_entry.get("work_message_id")
     if channel is not None:
         try:
             prog_id = session.get("progress_message_id")
-            if prog_id:
+            if prog_id and (
+                not _work_mid or int(prog_id) != int(_work_mid)
+            ):
                 prog = await channel.fetch_message(prog_id)
                 await prog.edit(
                     content=replace_emojis(

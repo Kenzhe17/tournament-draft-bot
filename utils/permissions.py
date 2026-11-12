@@ -103,6 +103,47 @@ def is_org_check(user: discord.Member, guild: discord.Guild) -> bool:
     return False
 
 
+def can_manage_tournament_results(user, guild: discord.Guild, tournament) -> bool:
+    """Управление результатами обычного турнира (/tournament create).
+
+    Допустимы:
+    - администратор сервера / владелец бота / ADMIN_USER_IDS;
+    - роли 'org' и ORG-1/2/3 (is_org_check);
+    - создатель турнира (tournament.organizer_id);
+    - уполномоченные организаторы канала этого турнира
+      (organizer_store; при заданном tournament_id — только
+      привязанные к этому турниру).
+
+    Капитан команды без организаторских прав — False.
+    """
+    if user is None:
+        return False
+    try:
+        if is_org_check(user, guild):
+            return True
+    except Exception:
+        pass
+    uid = getattr(user, "id", 0)
+    if not uid:
+        return False
+    if getattr(tournament, "organizer_id", 0) == uid:
+        return True
+    try:
+        from storage.organizer_store import organizer_store
+
+        orgs = organizer_store.get(
+            getattr(tournament, "guild_id", 0) or getattr(guild, "id", 0),
+            getattr(tournament, "channel_id", 0),
+        )
+        if orgs and orgs.is_organizer(uid):
+            tid = str(getattr(orgs, "tournament_id", "") or "")
+            if not tid or tid == str(getattr(tournament, "id", "") or ""):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def is_channel_organizer(user: discord.Member, guild: discord.Guild, channel_id: int) -> bool:
     """Проверка: является ли пользователь организатором канала."""
     # Check if user is global org/admin

@@ -42,7 +42,10 @@ from config import (BOT_OWNER_ID, OCR_ADMIN_ROLE_ID as _CFG_OCR_ADMIN_ROLE_ID,
 from models.tournament import Tournament
 from storage.json_store import store
 from utils.cosmetics import clean_nickname
-from utils.permissions import is_org_check
+from utils.permissions import (
+    can_manage_tournament_results,
+    is_org_check,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -4296,11 +4299,13 @@ class OCRWinnerPickView(View):
                 )
                 return
             t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
+            if not can_manage_tournament_results(
+                interaction.user, interaction.guild, tournament
+            ):
                 await interaction.response.send_message(
                     replace_emojis(
-                        "❌ Подтверждение доступно капитанам команд "
-                        "и организатору."
+                        "❌ Подтверждение доступно организатору "
+                        "турнира или администратору."
                     ),
                     ephemeral=True,
                 )
@@ -6281,12 +6286,15 @@ class RoomsConfirmView(View):
             )
             return
         t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
-        # Права — как в обычном workflow: капитан/организатор
-        if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
+        # Подтверждение результата — только организаторы/админы
+        # этого турнира (не капитаны без организаторских прав).
+        if not can_manage_tournament_results(
+            interaction.user, interaction.guild, tournament
+        ):
             await interaction.response.send_message(
                 replace_emojis(
-                    "❌ Подтвердить результат может капитан команды "
-                    "или организатор."
+                    "❌ Подтвердить результат может организатор "
+                    "турнира или администратор."
                 ),
                 ephemeral=True,
             )
@@ -6377,10 +6385,10 @@ class RoomsConfirmView(View):
         session = tournament.ocr_sessions.get(
             _session_key(self.match_type, self.match_index)
         )
-        # Исправлять может капитан/орг/админ (как и маппинг)
-        allowed = session and (
-            _can_use_ocr(interaction.user, tournament, [t1, t2])
-            or _is_server_admin(interaction.user)
+        # Исправление статистики — те же полномочия, что и
+        # подтверждение: организатор турнира / администратор.
+        allowed = session and can_manage_tournament_results(
+            interaction.user, interaction.guild, tournament
         )
         if not allowed:
             await interaction.response.send_message(

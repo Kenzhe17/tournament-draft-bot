@@ -1833,3 +1833,132 @@ class TestOnMessageOrdering:
         assert s["winning_team_index"] == 0
         assert s["uploaded_by"] == 1
         assert s.get("message_id") is not None
+
+
+# ---------------------------------------------------------------------------
+# Отмена комплекта: рабочая карточка матча сохраняется
+# ---------------------------------------------------------------------------
+
+class _CancelMsg:
+    def __init__(self, mid):
+        self.id = mid
+        self.edits = []
+        self.deleted = False
+        self.attachments = []
+
+    async def edit(self, **kw):
+        self.edits.append(kw)
+
+    async def delete(self):
+        self.deleted = True
+
+
+class _CancelChan:
+    def __init__(self, cid, messages):
+        self.id = cid
+        self._messages = messages
+
+    async def fetch_message(self, mid):
+        m = self._messages.get(int(mid))
+        if m is None:
+            raise Exception("not found")
+        return m
+
+    async def send(self, **kw):
+        raise Exception("unexpected send")
+
+
+def _cancel_guild(channels):
+    return SimpleNamespace(
+        id=1,
+        get_channel=lambda cid: channels.get(int(cid)),
+        fetch_channel=lambda cid: (_ for _ in ()).throw(Exception("nf")),
+    )
+
+
+class TestCancelKeepsWorkCard:
+    @pytest.mark.asyncio
+    async def test_progress_eq_work_card_not_blanked(self, monkeypatch):
+        """progress_message_id == work_message_id (обычный турнир):
+        отмена НЕ должна перезаписывать карточку текстом
+        «комплект отменён» — она остаётся рабочей и update_match_card
+        возвращает её в состояние «Ожидание скриншотов»."""
+        import cogs.ocr_upload as up
+        import services.match_announcer as ma
+
+        tournament = _tournament(mm=False)
+        tournament.match_cards = {
+            "final_0": {"work_message_id": 500, "work_channel_id": 9}
+        }
+        sess = _session(
+            status="collecting",
+            progress_message_id=500,
+            progress_channel_id=9,
+            ocr_channel_id=9,
+        )
+        tournament.ocr_sessions["final_0"] = sess
+
+        work_msg = _CancelMsg(500)
+        chan = _CancelChan(9, {500: work_msg})
+        guild = _cancel_guild({9: chan})
+
+        monkeypatch.setattr(up.store, "get", lambda g, c: tournament)
+        monkeypatch.setattr(up.store, "set", lambda t: None)
+
+        calls = []
+
+        async def fake_update(*a, **kw):
+            calls.append(kw.get("state"))
+
+        monkeypatch.setattr(ma, "update_match_card", fake_update)
+
+        res = await up.cancel_rooms_session(
+            guild, _user(88, "A", admin=True), tournament, "final", 0
+        )
+        assert res == "ok"
+        assert "final_0" not in tournament.ocr_sessions
+        # Карточка матча запрошена обратно в active-состояние
+        assert calls == ["active"]
+        # И главное: сообщение НЕ было затёрто «комплект отменён»
+        for e in work_msg.edits:
+            assert "отменён" not in str(e.get("content", ""))
+
+    @pytest.mark.asyncio
+    async def test_separate_progress_message_still_cancelled(
+        self, monkeypatch
+    ):
+        """Если progress-сообщение отдельное от work-карточки
+        (legacy/MM), оно по-прежнему гасится текстом отмены."""
+        import cogs.ocr_upload as up
+        import services.match_announcer as ma
+
+        tournament = _tournament(mm=False)
+        tournament.match_cards = {
+            "final_0": {"work_message_id": 500, "work_channel_id": 9}
+        }
+        sess = _session(
+            status="collecting",
+            progress_message_id=600,
+            progress_channel_id=9,
+            ocr_channel_id=9,
+        )
+        tournament.ocr_sessions["final_0"] = sess
+
+        prog_msg = _CancelMsg(600)
+        chan = _CancelChan(9, {600: prog_msg})
+        guild = _cancel_guild({9: chan})
+
+        monkeypatch.setattr(up.store, "get", lambda g, c: tournament)
+        monkeypatch.setattr(up.store, "set", lambda t: None)
+
+        async def fake_update(*a, **kw):
+            return None
+
+        monkeypatch.setattr(ma, "update_match_card", fake_update)
+
+        res = await up.cancel_rooms_session(
+            guild, _user(88, "A", admin=True), tournament, "final", 0
+        )
+        assert res == "ok"
+        assert prog_msg.edits
+        assert "отменён" in str(prog_msg.edits[0].get("content", ""))
