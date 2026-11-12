@@ -5,8 +5,10 @@
 и текст участника дня. Шрифт Inter Variable (base64 @font-face),
 как в профиле.
 
-Разметка повторяет координаты OCR-разметки шаблона 1671x941,
-масштабированные до viewport 1920x1080.
+Дизайн — новый шаблон 1672x941 («Neon Purple Temple Participant
+Banner»): лого, рамка карточки и лейблы запечены в template_clean.png,
+динамические зоны (аватар, ник, подзаголовок, стата) отрисовываются
+поверх. Шрифт Inter Variable (base64 @font-face), как в профиле.
 """
 
 from __future__ import annotations
@@ -24,25 +26,23 @@ TEMPLATE_PATH = ASSETS_DIR / "template_clean.png"
 FALLBACK_LOGO_PATH = ASSETS_DIR / "logo.png"
 LOGO_PATH = ASSETS_DIR.parent / "logo+banner" / "logo.png"
 
-# viewport / template — оба 1920x1080, масштаб 1:1
-VW, VH = 1920, 1080
-TW, TH = 1920, 1080
+# viewport / template — оба 1672x941 (новый дизайн «Neon Purple
+# Temple Participant Banner»), масштаб 1:1
+VW, VH = 1672, 941
+TW, TH = 1672, 941
 SX = VW / TW
 SY = VH / TH
 
-# Динамические зоны в координатах шаблона 1920x1080.
-# Шаблон пересобран под обрезку Discord: карточка поднята и уменьшена
-# (патч x790-1905 y432-990 -> scale 0.95 -> вставка 818,342), логотип
-# опущен, описание под логотипом удалено. Координаты ниже — уже в новой
-# системе координат (преобразование T: x'=818+(x-790)*0.95,
-# y'=338+(y-432)*0.95 применено к исходной OCR-разметке).
-AVATAR_CX, AVATAR_CY, AVATAR_R = 1037, 557, 76   # внутри кольца r~85
-NICK_X, NICK_TOP = 1148, 479                      # верх текста ника
-NICK_FONT = 57
-NICK_MAX_W = 589                                  # до правого края карточки
-SUBTITLE_X, SUBTITLE_TOP, SUBTITLE_FONT = 1151, 553, 32
-VOICE_X, VOICE_TOP, STAT_FONT = 1017, 724, 49
-MATCHES_X = 1509
+# Динамические зоны в координатах шаблона 1672x941 (OCR-разметка
+# примера + HoughCircles для аватара). Статичный дизайн (лого, рамка
+# карточки, лейблы) запечён в template_clean.png.
+AVATAR_CX, AVATAR_CY, AVATAR_R = 908, 536, 45   # внутри неонового кольца r~58
+NICK_X, NICK_TOP = 992, 480                      # верх текста ника
+NICK_FONT = 44
+NICK_MAX_W = 500                                  # до правого края карточки
+SUBTITLE_X, SUBTITLE_TOP, SUBTITLE_FONT = 998, 542, 27
+VOICE_X, VOICE_TOP, STAT_FONT = 920, 652, 42
+MATCHES_X, MATCHES_TOP = 1232, 634
 
 RENDER_TIMEOUT = 20
 RENDER_SEM = asyncio.Semaphore(2)
@@ -163,10 +163,10 @@ def build_banner_html(
     a = parts.append
 
     a("<!doctype html><html lang='ru'><head><meta charset='UTF-8'><style>")
-    a("html,body{margin:0;padding:0;width:1920px;height:1080px;overflow:hidden;"
+    a(f"html,body{{margin:0;padding:0;width:{VW}px;height:{VH}px;overflow:hidden;"
       "background:#0B0E19;font-family:'Inter',Arial,sans-serif;}")
-    a(".stage{position:relative;width:1920px;height:1080px;}")
-    a(".bg{position:absolute;inset:0;width:1920px;height:1080px;"
+    a(f".stage{{position:relative;width:{VW}px;height:{VH}px;}}")
+    a(f".bg{{position:absolute;inset:0;width:{VW}px;height:{VH}px;"
       "object-fit:fill;display:block;}")
     a(".avatar{position:absolute;border-radius:50%;object-fit:cover;"
       "box-shadow:0 0 0 3px rgba(168,85,247,.55),0 6px 24px rgba(0,0,0,.5);"
@@ -230,16 +230,16 @@ def build_banner_html(
         matches_txt = f"{matches} {_plural_matches(matches)}"
         a(f"<div class='stat' style='left:{_px(VOICE_X)}px;top:{_py(VOICE_TOP)}px;"
           f"font-size:{round(STAT_FONT*SY)}px;'>{_esc(voice_txt)}</div>")
-        a(f"<div class='stat' style='left:{_px(MATCHES_X)}px;top:{_py(VOICE_TOP)}px;"
+        a(f"<div class='stat' style='left:{_px(MATCHES_X)}px;top:{_py(MATCHES_TOP)}px;"
           f"font-size:{round(STAT_FONT*SY)}px;'>{_esc(matches_txt)}</div>")
     else:
         a(f"<div class='stat' style='left:{_px(VOICE_X)}px;top:{_py(VOICE_TOP)}px;"
           f"font-size:{round(STAT_FONT*SY)}px;color:#8F7FB0;'>—</div>")
-        a(f"<div class='stat' style='left:{_px(MATCHES_X)}px;top:{_py(VOICE_TOP)}px;"
+        a(f"<div class='stat' style='left:{_px(MATCHES_X)}px;top:{_py(MATCHES_TOP)}px;"
           f"font-size:{round(STAT_FONT*SY)}px;color:#8F7FB0;'>—</div>")
 
     if report_day_label:
-        a(f"<div class='subtitle' style='right:60px;bottom:56px;font-size:20px;"
+        a(f"<div class='subtitle' style='right:50px;bottom:36px;font-size:18px;"
           f"color:#7E6C9C;letter-spacing:1px;'>{_esc(report_day_label)}</div>")
 
     a("</div></body></html>")
