@@ -2076,8 +2076,6 @@ def _room_files_totals(room: dict) -> tuple[int, int]:
     «Завершить комнату» pending очищается — считаем по kind и
     sha/shas: classic/mixed минимум 1 файл, squad — 2. Неизвестный
     kind с panels → required=accepted (не занижаем denominator).
-    Комната без файлов → (0, 1): тип неизвестен, гарантированный
-    минимум — один скриншот; squad-лимит 2 не предполагаем.
     """
     if _room_has_panels(room):
         shas = {str(s) for s in room.get("shas") or []}
@@ -2092,8 +2090,6 @@ def _room_files_totals(room: dict) -> tuple[int, int]:
         else:
             required = accepted
         return accepted, required
-    if not (room.get("pending") or []):
-        return 0, 1
     accepted, required, _rem, _cf = room_file_progress(room)
     return accepted, required
 
@@ -2101,10 +2097,10 @@ def _room_files_totals(room: dict) -> tuple[int, int]:
 def _session_files_totals(session: dict) -> tuple[int, int]:
     """Сумма (принято, требуется) скриншотов по ВСЕМ комнатам матча.
 
-    Комната без записи/файлов учитывается минимумом в 1 скриншот:
-    тип (classic → 1 / squad → 2) становится известен только после
-    первой загрузки — лимит загрузки пустой комнаты (2) НЕ является
-    её требованием и в denominator не подставляется.
+    Комната без записи эквивалентна пустой collecting-комнате:
+    room_required_files({}) → 2 — канонический лимит неизвестного
+    типа, а не произвольная константа: при появлении classic-файла
+    требование комнаты пересчитывается в 1.
     """
     expected = int(session.get("rooms_expected") or 0)
     by_idx = {
@@ -2115,12 +2111,119 @@ def _session_files_totals(session: dict) -> tuple[int, int]:
     for i in range(1, expected + 1):
         room = by_idx.get(i)
         if room is None:
-            required += 1
+            required += room_required_files({})
             continue
         a, r = _room_files_totals(room)
         accepted += a
         required += r
     return accepted, required
+
+
+def _session_bundle(session: dict | None) -> bool:
+    """Пакетный флоу (/tournament create): 1 скриншот на комнату,
+    файлы по порядку, единая кнопка «Завершить загрузку». MM и
+    legacy-сессии без флага — False (старый per-room сбор)."""
+    return bool(
+        session
+        and session.get("mode") == "rooms"
+        and session.get("bundle_v2")
+    )
+
+
+def _bundle_room_filled(room: dict | None) -> bool:
+    """У комнаты есть принятый файл: pending (collecting) или
+    panels (финализирована)."""
+    if not room:
+        return False
+    return _room_has_panels(room) or bool(room.get("pending"))
+
+
+def _bundle_entry_flagged(entry: dict) -> bool:
+    return bool(entry.get("needs_reupload") or entry.get("shot_pending"))
+
+
+def _bundle_room_needs_reupload(room: dict | None) -> bool:
+    return any(
+        _bundle_entry_flagged(p)
+        for p in (room or {}).get("pending") or []
+    )
+
+
+def _bundle_rooms_by_index(session: dict) -> dict[int, dict]:
+    return {
+        int(r.get("room_index", 0)): r
+        for r in session.get("rooms") or []
+    }
+
+
+def _bundle_next_room_index(session: dict) -> int | None:
+    """Первая комната 1..rooms_expected без принятого файла.
+
+    None — все комнаты заполнены (или нужна только повторная
+    отправка уже принятых файлов).
+    """
+    expected = int(session.get("rooms_expected") or 0)
+    by_idx = _bundle_rooms_by_index(session)
+    for i in range(1, expected + 1):
+        if not _bundle_room_filled(by_idx.get(i)):
+            return i
+    return None
+
+
+def _bundle_reupload_room_index(session: dict) -> int | None:
+    """Комната, чей файл надо отправить повторно (байты не
+    сохранены/утеряны) — приоритетнее пустых комнат."""
+    for r in sorted(
+        session.get("rooms") or [],
+        key=lambda r: int(r.get("room_index", 0)),
+    ):
+        if _bundle_room_needs_reupload(r):
+            return int(r.get("room_index", 0))
+    return None
+
+
+def _bundle_files_accepted(session: dict) -> int:
+    """Принято скриншотов = комнаты с pending или panels
+    (bundle: ровно 1 файл на комнату)."""
+    return sum(
+        1 for r in session.get("rooms") or [] if _bundle_room_filled(r)
+    )
+
+
+def _bundle_upload_complete(session: dict | None) -> bool:
+    """Все rooms_expected комнат имеют файл и ни один не ждёт
+    повторной отправки — можно показывать «Завершить загрузку»."""
+    if not _session_bundle(session):
+        return False
+    expected = int(session.get("rooms_expected") or 0)
+    if expected <= 0:
+        return False
+    by_idx = _bundle_rooms_by_index(session)
+    for i in range(1, expected + 1):
+        room = by_idx.get(i)
+        if not _bundle_room_filled(room):
+            return False
+        if not _room_has_panels(room) and _bundle_room_needs_reupload(room):
+            return False
+    return True
+
+
+def _bundle_upload_slots(session: dict) -> int:
+    """Сколько файлов ещё можно принять: пустые комнаты +
+    комнаты, ожидающие повторной отправки."""
+    expected = int((session or {}).get("rooms_expected") or 0)
+    if expected <= 0:
+        return 0
+    by_idx = _bundle_rooms_by_index(session or {})
+    empty = sum(
+        1 for i in range(1, expected + 1)
+        if not _bundle_room_filled(by_idx.get(i))
+    )
+    reupload = sum(
+        1 for r in (session or {}).get("rooms") or []
+        if _bundle_room_needs_reupload(r)
+    )
+    return empty + reupload
 
 
 def _rooms_completed_count(session: dict) -> int:
@@ -2161,12 +2264,35 @@ def _rooms_progress_text(session: dict) -> str:
     done = _rooms_completed_count(session)
     rep = _rooms_republish_index(session)
     nxt = _rooms_next_index(session)
-    if nxt is None:
+    bundle = _session_bundle(session)
+    # В bundle-режиме «Комнаты» = сколько комнат уже получили
+    # свой скриншот (pending или panels); до финализации panels
+    # ещё нет, поэтому completed_count здесь не подходит.
+    rooms_shown = (
+        _bundle_files_accepted(session) if bundle else done
+    )
+    # «Далее» для bundle — первая комната без файла, а не без
+    # panels (panels появляются только после «Завершить
+    # загрузку» для всех комнат сразу).
+    shown_next = (
+        _bundle_next_room_index(session) if bundle else nxt
+    )
+    if bundle and _bundle_upload_complete(session):
+        # Все файлы приняты, финализация ещё не запущена.
+        base = "комплект загружен — нажмите «Завершить загрузку»"
+    elif bundle and _bundle_reupload_room_index(session) is not None:
+        # Файл принят, но Discord-копия не сохранена — нужен
+        # повтор той же загрузки, новые комнаты не трогаем.
+        base = (
+            "ожидается повторная отправка скриншота · комната "
+            f"{_bundle_reupload_room_index(session)}"
+        )
+    elif shown_next is None:
         base = "ожидание сопоставления"
-    elif done == 0:
-        base = f"загрузка · комната {nxt}"
+    elif rooms_shown == 0:
+        base = f"загрузка · комната {shown_next}"
     else:
-        base = f"обработка · комната {nxt}"
+        base = f"обработка · комната {shown_next}"
     # Комната распознана, но интерфейс не опубликован (publish_fail)
     # — recover-путь через «Добавить скриншот» важнее основного
     # статуса, показываем его отдельным суффиксом.
@@ -2174,10 +2300,18 @@ def _rooms_progress_text(session: dict) -> str:
         f"{base} · восстановление интерфейса · комната {rep}"
         if rep is not None else base
     )
+    shots = (
+        f"\nСкриншоты: {_bundle_files_accepted(session)}/{total}"
+        if bundle and total > 0 else ""
+    )
     return (
         f"**Результаты матча**\n"
-        f"Комнаты: {done}/{total}"
-        + (f" · далее: комната {nxt}" if nxt is not None else "")
+        f"Комнаты: {rooms_shown}/{total}"
+        + (
+            f" · далее: комната {shown_next}"
+            if shown_next is not None else ""
+        )
+        + shots
         + f"\nСтатус: {status}"
     )
 
@@ -2904,7 +3038,7 @@ async def _ensure_room_collect_message(
     if sess_total > 0:
         tot_a, tot_r = _session_files_totals(session)
         lines.append(
-            f"Всего скриншотов: {tot_a}/{tot_r}"
+            f"Всего принятых скриншотов: {tot_a}/{tot_r}"
         )
     text = replace_emojis("\n".join(lines))
     # В content только <@id> капитанов — пингуются исключительно
@@ -3028,6 +3162,7 @@ async def process_room_file(
     expected = int(session.get("rooms_expected") or 0)
     if room_index < 1 or room_index > expected:
         return "invalid"
+    bundle = _session_bundle(session)
 
     rooms = session.setdefault("rooms", [])
     room = _find_seq_room(session, room_index)
@@ -3069,6 +3204,12 @@ async def process_room_file(
             )
         _drop_empty_room(rooms, room)
         return "dup"
+    # Bundle (/tournament create): ровно 1 скриншот на комнату —
+    # любое pending (даже с флагами повторной отправки: тот же
+    # SHA ушёл в _retry_seq_shot выше) закрывает комнату для
+    # новых файлов. Проверка повторяется под _room_lock.
+    if bundle and pend_entries:
+        return "room_full"
     known = _all_room_shas(session)
     if room.get("sha"):
         known.discard(room["sha"])
@@ -3118,6 +3259,12 @@ async def process_room_file(
         return "parse_fail"
 
     kind = "squad" if pipe.get("squad") is not None else "classic"
+    # Bundle: один скриншот = полный экран обеих команд. Скриншот
+    # отряда покрывает только одну команду — в этом флоу не
+    # принимается (MM/legacy сохраняют squad-путь).
+    if bundle and kind != "classic":
+        _drop_empty_room(fs.get("rooms") or [], room)
+        return "invalid_classic"
     existing_kinds = [
         p.get("kind") for p in room.get("pending") or []
     ]
@@ -3145,7 +3292,7 @@ async def process_room_file(
             return "closed"
         pend = room.setdefault("pending", [])
         pshas = _pending_shas(room)
-        if sha in pshas or len(pend) >= 2:
+        if sha in pshas or (bundle and pend) or len(pend) >= 2:
             return "dup" if sha in pshas else "room_full"
         # Гонка: состояние комнаты изменилось между проверкой и
         # локом — полный Classic не принимает второй файл, а
@@ -3185,10 +3332,15 @@ async def process_room_file(
     shot_ok = await _publish_seq_shot(stats_channel, room, entry, item)
     entry["shot_pending"] = not shot_ok
     store.set(tournament)
-    await _ensure_room_collect_message(
-        stats_channel, tournament, session, room,
-        match_type, match_index,
-    )
+    # Bundle: per-room сообщение сбора не создаётся — прогресс и
+    # кнопки живут на рабочей карточке матча (RoomCollectView).
+    # Комната получит своё сообщение с маппингом только после
+    # «Завершить загрузку» → finalize_room_collect.
+    if not _session_bundle(session):
+        await _ensure_room_collect_message(
+            stats_channel, tournament, session, room,
+            match_type, match_index,
+        )
     # Файл принят — карточка матча переходит в processing
     # (кнопка «Отправить результат» скрывается).
     await _ensure_processing_card(guild, tournament, match_type, match_index)
@@ -4184,6 +4336,11 @@ async def create_rooms_session(
         if existing and existing.get("status") not in ("completed", "cancelled"):
             return None
         t1, t2 = _match_tuple(tournament, match_type, match_index)
+        # Пакетный флоу (bundle): только обычные турниры
+        # /tournament create — 1 скриншот на комнату, файлы
+        # привязываются по порядку, единая кнопка «Завершить
+        # загрузку». MM/Ranked сохраняют по-room сбор.
+        is_plain = not getattr(tournament, "mm_search_channel_id", 0)
         session = {
             "match_type": match_type,
             "match_index": match_index,
@@ -4192,6 +4349,7 @@ async def create_rooms_session(
             "rooms_expected": int(count),
             "rooms_received": 0,
             "rooms": [],
+            "bundle_v2": is_plain,
             "gen": 1,
             "uploaded_by": user.id,
             "uploaded_by_name": getattr(user, "display_name", user.name),
@@ -4242,7 +4400,6 @@ async def create_rooms_session(
         # ensure_work_card — одно сообщение на матч, дубли
         # исключены per-match lock'ом и reconciliation-сканом.
         # Для MM отправляем новое в канале матча.
-        is_plain = not getattr(tournament, "mm_search_channel_id", 0)
         if is_plain:
             from services.match_announcer import ensure_work_card
 
@@ -4893,6 +5050,150 @@ class RoomUploadModal(Modal):
         )
 
 
+class BundleUploadModal(Modal):
+    """Дозагрузка скриншотов bundle-комплекта (/tournament create).
+
+    Принимает до max_files изображений за раз; файлы привязываются
+    к комнатам по порядку: сначала комнаты, ожидающие повторной
+    отправки (needs_reupload/shot_pending), затем пустые — по
+    возрастанию room_index. Одна комната = один файл.
+    """
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int, gen: int,
+        max_files: int,
+    ):
+        self.upload = Label(
+            text=(
+                "Скриншоты комнат по порядку "
+                f"(до {max_files} файл(ов))"
+            ),
+            component=FileUpload(
+                required=True,
+                min_values=1,
+                max_values=max(1, min(int(max_files), 10)),
+            ),
+        )
+        super().__init__(title="Добавить скриншоты", timeout=600)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.gen = gen
+        self.max_files = max_files
+        self.add_item(self.upload)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        files = list(
+            getattr(self.upload.component, "values", None) or []
+        )
+        if not files:
+            await interaction.followup.send(
+                replace_emojis("❌ Файлы не получены — попробуйте ещё раз."),
+                ephemeral=True,
+            )
+            return
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.followup.send(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        key = _session_key(self.match_type, self.match_index)
+        session = (tournament.ocr_sessions or {}).get(key)
+        if (
+            not _session_bundle(session)
+            or session.get("status") != "collecting"
+            or int(session.get("gen", 0)) != int(self.gen)
+        ):
+            await interaction.followup.send(
+                replace_emojis(
+                    "⚠️ Сессия загрузки устарела или отменена — "
+                    "начните заново."
+                ),
+                ephemeral=True,
+            )
+            return
+        if not _rooms_file_submit_allowed(
+            tournament, session, interaction.user
+        ):
+            await interaction.followup.send(
+                replace_emojis(
+                    "❌ Этот комплект может продолжить только его "
+                    "отправитель, капитан команды-победителя "
+                    "или администратор."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        items = []
+        for f in files:
+            try:
+                data = await f.read()
+            except Exception:
+                data = None
+            if not data:
+                await interaction.followup.send(
+                    replace_emojis("❌ Не удалось прочитать файл."),
+                    ephemeral=True,
+                )
+                return
+            if len(data) > MAX_ATTACH:
+                await interaction.followup.send(
+                    replace_emojis("❌ Файл слишком большой (макс. 10 МБ)."),
+                    ephemeral=True,
+                )
+                return
+            items.append({"filename": f.filename, "data": data})
+
+        # Целевые комнаты: сначала ожидающие повторной отправки,
+        # затем пустые — строго по порядку room_index.
+        expected = int(session.get("rooms_expected") or 0)
+        by_idx = _bundle_rooms_by_index(session)
+        targets: list[int] = []
+        for r in sorted(
+            session.get("rooms") or [],
+            key=lambda r: int(r.get("room_index", 0)),
+        ):
+            ridx = int(r.get("room_index", 0))
+            if _bundle_room_needs_reupload(r):
+                targets.append(ridx)
+        for i in range(1, expected + 1):
+            if not _bundle_room_filled(by_idx.get(i)):
+                targets.append(i)
+        targets = list(dict.fromkeys(targets))
+
+        slots = len(targets)
+        if slots <= 0:
+            await interaction.followup.send(
+                replace_emojis("✅ Комплект уже заполнен."),
+                ephemeral=True,
+            )
+            return
+        if len(items) > slots:
+            await interaction.followup.send(
+                replace_emojis(
+                    f"⚠️ Свободных комнат осталось {slots}, а "
+                    f"файлов {len(items)} — лишние не будут "
+                    "приняты. Беру первые "
+                    f"{slots} по порядку."
+                ),
+                ephemeral=True,
+            )
+        assignments = [
+            (ridx, item)
+            for ridx, item in zip(targets, items[:slots])
+        ]
+        await _accept_bundle_files(
+            interaction, tournament, session, key,
+            self.channel_id, self.match_type, self.match_index,
+            assignments,
+        )
+
+
 async def _accept_room_file(
     interaction: discord.Interaction,
     tournament,
@@ -5014,7 +5315,16 @@ async def _accept_room_file(
         "room_full": (
             f"⚠️ В комнате {room_index} достаточно "
             "скриншотов — больше добавить нельзя. "
-            "Завершите комнату."
+            + (
+                "Комплект этой комнаты заполнен."
+                if _session_bundle(session)
+                else "Завершите комнату."
+            )
+        ),
+        "invalid_classic": (
+            "❌ Нужен полный экран результатов — скриншот "
+            "покрывает обе команды сразу. Скриншот одного "
+            "отряда в этом режиме не подходит."
         ),
         "dup": "⚠️ Этот скриншот уже загружен в комплект.",
         "invalid": (
@@ -5069,6 +5379,149 @@ async def _accept_room_file(
     )
 
 
+# Короткие причины для сводки пакетной загрузки — полные тексты
+# живут в _accept_room_file, здесь только то, что нужно в итоге.
+_BUNDLE_RESULT_SHORT = {
+    "ok": "принят",
+    "added": "принят",
+    "dup": "дубликат",
+    "invalid": "не распознан",
+    "invalid_classic": "нужен полный экран (не скриншот отряда)",
+    "invalid_mix": "конфликт типов файлов",
+    "room_full": "комната уже заполнена",
+    "room_done": "комната уже завершена",
+    "parse_fail": "не удалось распознать таблицу",
+    "shot_pending": "принят, но файл не сохранился — повторите",
+    "publish_fail": "статистика сохранена, интерфейс не опубликован",
+    "cancelled": "сессия отменена",
+    "sha_mismatch": "файл не совпадает с оригиналом",
+    "republish_partial": "учтён для восстановления",
+    "republished": "интерфейс восстановлен",
+    "files_missing": "исходный файл утерян — нужна повторная отправка",
+    "closed": "сессия закрыта",
+    "empty": "нет файлов",
+    "incomplete": "комплект неполный",
+    "forbidden": "нет прав",
+    "error": "ошибка обработки",
+}
+
+
+async def _accept_bundle_files(
+    interaction: discord.Interaction,
+    tournament,
+    session: dict,
+    key: str,
+    channel_id: int,
+    match_type: str,
+    match_index: int,
+    assignments: list[tuple[int, dict]],
+) -> None:
+    """Пакетная приёмка файлов bundle-комплекта (/tournament create).
+
+    assignments — пары (room_index, item) в порядке загрузки:
+    файл j привязан к своей комнате, порядок не меняется.
+    Claim отправителя фиксируется один раз, процессинг идёт через
+    общий process_room_file (OCR/дедуп/блокировки — без
+    дублирования), пользователю — один ephemeral-итог.
+    """
+    was_unclaimed = not _rooms_bundle_claimed(session)
+    status, tournament, session = await _rooms_claim_bundle(
+        interaction.guild, tournament, key, session, interaction.user
+    )
+    if status == "stale":
+        await interaction.followup.send(
+            replace_emojis(
+                "⚠️ Сессия загрузки устарела или отменена — "
+                "начните заново."
+            ),
+            ephemeral=True,
+        )
+        return
+    if status == "forbidden":
+        await interaction.followup.send(
+            replace_emojis(
+                "❌ Этот комплект может продолжить только его "
+                "отправитель или администратор."
+            ),
+            ephemeral=True,
+        )
+        return
+    stats_channel = await _stats_channel_for(interaction.guild, session)
+    if stats_channel is None:
+        stats_channel = await _stats_channel(interaction, tournament)
+    if stats_channel is None:
+        stats_channel = interaction.channel
+
+    results: list[tuple[int, str]] = []
+    for room_index, item in assignments:
+        # store.get возвращает живой объект — состояние комнат
+        # обновляется между итерациями без ручной передачи.
+        fresh_t = (
+            store.get(interaction.guild.id, channel_id) or tournament
+        )
+        fs = (fresh_t.ocr_sessions or {}).get(key) or session
+        res = await process_room_file(
+            guild=interaction.guild,
+            channel=stats_channel,
+            user=interaction.user,
+            tournament=fresh_t,
+            match_type=match_type,
+            match_index=match_index,
+            key=key,
+            session=fs,
+            stats_channel=stats_channel,
+            room_index=room_index,
+            item=item,
+        )
+        results.append((room_index, res))
+        tournament = fresh_t
+        session = fs
+
+    # Ни один файл не принят и комплект был свободен — claim
+    # откатываем, кнопка загрузки остаётся доступной.
+    if (
+        was_unclaimed
+        and results
+        and all(r in _BUNDLE_REJECT_CODES for _, r in results)
+    ):
+        await _rooms_release_claim(
+            interaction.guild, channel_id, key, session,
+            getattr(tournament, "id", "") or "",
+        )
+
+    accepted = [
+        r for r, res in results if res in ("ok", "added")
+    ]
+    lines = []
+    if accepted:
+        lines.append(
+            "✅ Принято скриншотов: "
+            f"{len(accepted)} — комнаты "
+            + ", ".join(str(r) for r in accepted)
+            + "."
+        )
+    for r, res in results:
+        if res in ("ok", "added"):
+            continue
+        short = _BUNDLE_RESULT_SHORT.get(res, "ошибка")
+        lines.append(f"⚠️ Комната {r}: {short}.")
+    exp = int(session.get("rooms_expected") or 0)
+    filled = _bundle_files_accepted(session)
+    if filled < exp:
+        lines.append(
+            f"Загружено {filled}/{exp} — остальные комнаты "
+            "можно дозагрузить кнопкой «Добавить скриншоты»."
+        )
+    elif _bundle_upload_complete(session):
+        lines.append(
+            "Комплект полный — нажмите «Завершить загрузку»."
+        )
+    await interaction.followup.send(
+        replace_emojis("\n".join(lines) or "⚠️ Файлы не приняты."),
+        ephemeral=True,
+    )
+
+
 class RoomStartModal(Modal):
     """Старт rooms-загрузки одним окном: количество комнат
     (String Select, по умолчанию 1) + скриншот комнаты 1.
@@ -5081,7 +5534,7 @@ class RoomStartModal(Modal):
 
     def __init__(
         self, guild_id: int, channel_id: int,
-        match_type: str, match_index: int,
+        match_type: str, match_index: int, bundle: bool = False,
     ):
         options = []
         for n in range(1, 11):
@@ -5105,12 +5558,19 @@ class RoomStartModal(Modal):
                 max_values=1,
             ),
         )
+        # Bundle (/tournament create): до 10 файлов за раз —
+        # файлы привязываются к комнатам по порядку, не больше
+        # выбранного числа комнат. MM — строго 1 файл.
         self.upload = Label(
-            text="Скриншот комнаты 1 (1 файл)",
+            text=(
+                "Скриншоты комнат по порядку "
+                "(можно все сразу, до 10 файлов)"
+                if bundle else "Скриншот комнаты 1 (1 файл)"
+            ),
             component=FileUpload(
                 required=True,
                 min_values=1,
-                max_values=1,
+                max_values=10 if bundle else 1,
             ),
         )
         super().__init__(title="Отправить результат", timeout=600)
@@ -5118,6 +5578,7 @@ class RoomStartModal(Modal):
         self.channel_id = channel_id
         self.match_type = match_type
         self.match_index = match_index
+        self.bundle = bundle
         self.add_item(self.count_select)
         self.add_item(self.upload)
 
@@ -5148,23 +5609,40 @@ class RoomStartModal(Modal):
                 ephemeral=True,
             )
             return
-        f = files[0]
-        try:
-            data = await f.read()
-        except Exception:
-            data = None
-        if not data:
+        # Bundle: файлов не больше выбранного числа комнат —
+        # каждый файл = одна комната, порядок = порядок вложений.
+        if self.bundle and len(files) > count:
             await interaction.followup.send(
-                replace_emojis("❌ Не удалось прочитать файл."),
+                replace_emojis(
+                    f"❌ Файлов ({len(files)}) больше, чем "
+                    f"комнат ({count}) — по одному скриншоту "
+                    "на комнату. Уберите лишние и отправьте "
+                    "снова."
+                ),
                 ephemeral=True,
             )
             return
-        if len(data) > MAX_ATTACH:
-            await interaction.followup.send(
-                replace_emojis("❌ Файл слишком большой (макс. 10 МБ)."),
-                ephemeral=True,
-            )
-            return
+        items = []
+        for f in files[:1] if not self.bundle else files:
+            try:
+                data = await f.read()
+            except Exception:
+                data = None
+            if not data:
+                await interaction.followup.send(
+                    replace_emojis("❌ Не удалось прочитать файл."),
+                    ephemeral=True,
+                )
+                return
+            if len(data) > MAX_ATTACH:
+                await interaction.followup.send(
+                    replace_emojis(
+                        "❌ Файл слишком большой (макс. 10 МБ)."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            items.append({"filename": f.filename, "data": data})
 
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
@@ -5245,10 +5723,22 @@ class RoomStartModal(Modal):
         tournament = (
             store.get(self.guild_id, self.channel_id) or tournament
         )
+        if self.bundle and _session_bundle(session):
+            # Файл j → комната j+1 (сессия новая, комнаты пустые);
+            # порядок вложений = порядок комнат.
+            assignments = [
+                (j + 1, item) for j, item in enumerate(items)
+            ]
+            await _accept_bundle_files(
+                interaction, tournament, session, key,
+                self.channel_id, self.match_type, self.match_index,
+                assignments,
+            )
+            return
         await _accept_room_file(
             interaction, tournament, session, key,
             self.channel_id, self.match_type, self.match_index,
-            1, {"filename": f.filename, "data": data},
+            1, items[0],
         )
 
 
@@ -5277,7 +5767,13 @@ async def _rooms_reply(interaction: discord.Interaction, text: str) -> None:
 
 
 class RoomCollectView(View):
-    """Кнопки на сообщении прогресса: дозагрузка + админ-откат."""
+    """Кнопки на сообщении прогресса: дозагрузка + админ-откат.
+
+    Bundle (/tournament create): «Добавить скриншоты» пока
+    комплект не полон, затем «✅ Завершить загрузку» — кнопки
+    вычисляются из актуального состояния сессии при каждом
+    пересоздании View (edit прогресса / restart recovery).
+    """
 
     def __init__(
         self, guild_id: int, channel_id: int, tournament,
@@ -5289,17 +5785,39 @@ class RoomCollectView(View):
         self.match_type = match_type
         self.match_index = match_index
         self.gen = gen
-        add_btn = Button(
-            label="📸 Добавить скриншоты",
-            style=discord.ButtonStyle.primary,
-            custom_id=(
-                f"rooms_add:{guild_id}:{channel_id}:{match_type}:"
-                f"{match_index}:{gen}"
-            ),
-            row=0,
+        session = (
+            (getattr(tournament, "ocr_sessions", None) or {}).get(
+                _session_key(match_type, match_index)
+            )
+            if tournament else None
         )
-        add_btn.callback = self._on_add
-        self.add_item(add_btn)
+        bundle = _session_bundle(session)
+        complete = _bundle_upload_complete(session)
+        slots = _bundle_upload_slots(session)
+        if not bundle or (not complete and slots > 0):
+            add_btn = Button(
+                label="📸 Добавить скриншоты",
+                style=discord.ButtonStyle.primary,
+                custom_id=(
+                    f"rooms_add:{guild_id}:{channel_id}:{match_type}:"
+                    f"{match_index}:{gen}"
+                ),
+                row=0,
+            )
+            add_btn.callback = self._on_add
+            self.add_item(add_btn)
+        if bundle and complete:
+            done_btn = Button(
+                label="✅ Завершить загрузку",
+                style=discord.ButtonStyle.success,
+                custom_id=(
+                    f"rooms_finish:{guild_id}:{channel_id}:{match_type}:"
+                    f"{match_index}:{gen}"
+                ),
+                row=0,
+            )
+            done_btn.callback = self._on_finish
+            self.add_item(done_btn)
         b = Button(
             label="❌ Отменить комплект",
             style=discord.ButtonStyle.danger,
@@ -5334,6 +5852,46 @@ class RoomCollectView(View):
                 replace_emojis("⚠️ Сессия загрузки завершена или отменена."),
                 ephemeral=True,
             )
+            return
+        # Bundle-сбор (collecting): пакетная модалка — файлы
+        # распределяются по комнатам по порядку. Режим
+        # восстановления интерфейса (awaiting_mapping + rep)
+        # остаётся по-комнатным — там нужен конкретный room_index.
+        if _session_bundle(session) and status == "collecting":
+            slots = _bundle_upload_slots(session)
+            if slots <= 0:
+                await interaction.response.send_message(
+                    replace_emojis("✅ Комплект уже заполнен."),
+                    ephemeral=True,
+                )
+                return
+            if not _rooms_file_submit_allowed(
+                tournament, session, interaction.user
+            ):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Этот комплект может продолжить только "
+                        "его отправитель, капитан команды-"
+                        "победителя или администратор."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            try:
+                await interaction.response.send_modal(
+                    BundleUploadModal(
+                        self.guild_id, self.channel_id, tournament,
+                        self.match_type, self.match_index,
+                        int(session.get("gen", 1)), slots,
+                    )
+                )
+            except Exception as exc:
+                logger.error(
+                    "Не удалось открыть bundle-модалку "
+                    "(match %s_%s): %s",
+                    self.match_type, self.match_index, exc,
+                    exc_info=True,
+                )
             return
         # Комната без опубликованного интерфейса — приоритетнее
         # следующей пустой: иначе пользователь не сможет восстановить
@@ -5388,6 +5946,109 @@ class RoomCollectView(View):
                 )
             except Exception:
                 pass
+
+    async def _on_finish(self, interaction: discord.Interaction) -> None:
+        """«Завершить загрузку» (bundle): финализировать ВСЕ
+        комнаты подряд через существующий finalize_room_collect —
+        merge pending→panels, публикация сообщений с маппингом,
+        переход сессии в awaiting_mapping."""
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except Exception:
+            pass
+        tournament = store.get(self.guild_id, self.channel_id)
+        key = _session_key(self.match_type, self.match_index)
+        session = (
+            (tournament.ocr_sessions or {}).get(key)
+            if tournament else None
+        )
+        if (
+            not _session_bundle(session)
+            or session.get("status") != "collecting"
+            or int(session.get("gen", 0)) != int(self.gen)
+        ):
+            await _rooms_reply(
+                interaction,
+                "⚠️ Сессия загрузки устарела или отменена.",
+            )
+            return
+        # Серверная проверка полноты комплекта — устаревшую View
+        # обойти нельзя: требуется файл в каждой комнате и ни
+        # одного ожидающего повторной отправки.
+        if not _bundle_upload_complete(session):
+            await _rooms_reply(
+                interaction,
+                "❌ Комплект неполный — загрузите скриншоты "
+                "всех комнат перед завершением.",
+            )
+            return
+        # Права — как у «Завершить комнату»: капитан команды
+        # матча или администратор (проверяется и внутри
+        # finalize_room_collect на свежем состоянии).
+        teams = list(session.get("teams") or [])
+        if teams and not _can_finalize_room(
+            interaction.user, tournament, teams
+        ):
+            await _rooms_reply(
+                interaction,
+                "❌ Завершить загрузку может капитан команды "
+                "или администратор.",
+            )
+            return
+        stats_channel = await _stats_channel_for(
+            interaction.guild, session
+        )
+        if stats_channel is None:
+            stats_channel = await _stats_channel(
+                interaction, tournament
+            )
+        expected = int(session.get("rooms_expected") or 0)
+        done_rooms: list[int] = []
+        failed: list[tuple[int, str]] = []
+        for i in range(1, expected + 1):
+            # Свежий объект на каждую комнату: finalize пишет
+            # store.set — состояние не должно быть устаревшим.
+            t = store.get(self.guild_id, self.channel_id) or tournament
+            res = await finalize_room_collect(
+                interaction.guild, interaction.user, t,
+                self.match_type, self.match_index, i,
+                stats_channel=stats_channel,
+            )
+            tournament = t
+            if res in ("ok", "done", "publish_fail"):
+                done_rooms.append(i)
+            else:
+                failed.append((i, res))
+        # Финальный прогресс: все panels → awaiting_mapping,
+        # прогресс-сообщение показывает «комплект принят».
+        t = store.get(self.guild_id, self.channel_id) or tournament
+        try:
+            await _update_rooms_progress(
+                interaction.guild, t, key,
+                self.match_type, self.match_index, stats_channel,
+            )
+        except Exception:
+            logger.warning(
+                "rooms finish progress update failed", exc_info=True
+            )
+        if failed:
+            detail = ", ".join(
+                f"комната {r} ({_BUNDLE_RESULT_SHORT.get(res, res)})"
+                for r, res in failed
+            )
+            await _rooms_reply(
+                interaction,
+                f"⚠️ Финализировано комнат: {len(done_rooms)}. "
+                f"Не удалось: {detail}. Повторите через "
+                "«Добавить скриншоты».",
+            )
+        else:
+            await _rooms_reply(
+                interaction,
+                "✅ Загрузка завершена — все комнаты обработаны. "
+                "Сопоставьте игроков кнопками под сообщениями "
+                "комнат.",
+            )
 
     async def _on_cancel(self, interaction: discord.Interaction) -> None:
         # Отвечаем Discord сразу: cancel_rooms_session делает

@@ -1339,7 +1339,9 @@ class TestRoomStartModal:
             getattr(c, "label", None) or getattr(c, "text", None)
             for c in ix.modal.children
         ]
-        assert any("Скриншот комнаты 1" in str(x) for x in labels)
+        # Bundle-режим обычного турнира: модалка предлагает
+        # пакетную загрузку файлов по порядку комнат.
+        assert any("по порядку" in str(x) for x in labels)
 
     @pytest.mark.asyncio
     async def test_default_count_is_one(self, env):
@@ -1437,8 +1439,9 @@ class TestRoomStartModal:
     async def test_full_classic_only_done_button_via_modal(
         self, env, monkeypatch,
     ):
-        """Полный Classic через RoomStartModal → collect-сообщение
-        с одной кнопкой «Завершить комнату»."""
+        """Полный Classic через RoomStartModal (bundle): per-room
+        collect-сообщения нет — комплект полон, на карточке
+        прогресса появляется «Завершить загрузку»."""
         async def full_pipe(data, need_score=True):
             return _full_classic_pipe()
         monkeypatch.setattr(up, "_classic_pipeline", full_pipe)
@@ -1447,14 +1450,36 @@ class TestRoomStartModal:
         ix = _start_ix(env)
         await m.on_submit(ix)
         sess = env.tournament.ocr_sessions["qualifier_0"]
+        assert sess.get("bundle_v2") is True
         room = sess["rooms"][0]
-        cmsg = env.stats._by_id[room["collect_message_id"]]
-        add_btns = [
-            c for c in cmsg.view.children
-            if getattr(c, "custom_id", "").startswith("rooms_file_add")
-        ]
-        assert add_btns == []
+        # Per-room сообщение сбора в bundle-режиме не создаётся.
+        assert room.get("collect_message_id") is None
+        assert len(room["pending"]) == 1
         assert up.room_allows_second_file(room) is False
+        # Комплект полон → кнопка завершения вместо «Добавить».
+        assert up._bundle_upload_complete(sess) is True
+        view = up.RoomCollectView(
+            1, 1, env.tournament, "qualifier", 0, sess["gen"],
+        )
+        finish = [
+            c for c in view.children
+            if getattr(c, "custom_id", "").startswith("rooms_finish")
+        ]
+        add = [
+            c for c in view.children
+            if getattr(c, "custom_id", "").startswith("rooms_add")
+        ]
+        assert finish and not add
+        # Второй файл в ту же комнату отклоняется сервером.
+        r = await up.process_room_file(
+            guild=env.guild, channel=env.stats,
+            user=SimpleNamespace(id=42),
+            tournament=env.tournament, match_type="qualifier",
+            match_index=0, key="qualifier_0", session=sess,
+            stats_channel=env.stats, room_index=1,
+            item=_item("squadA"),
+        )
+        assert r == "room_full"
 
 
 class TestRoomCompletionGate:
