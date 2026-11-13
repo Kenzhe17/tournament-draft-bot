@@ -21,6 +21,8 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from services import ocr_worker
+
 logger = logging.getLogger(__name__)
 
 _ocr_instance = None
@@ -55,16 +57,39 @@ def _tracked(fn):
     return _w
 
 
-class _CountingExecutor(concurrent.futures.ThreadPoolExecutor):
-    """ThreadPoolExecutor, считающий активные задачи (gauge)."""
-
-    def submit(self, fn, /, *args, **kwargs):
-        return super().submit(_tracked(fn), *args, **kwargs)
-
-
 # Отдельный ограниченный пул для OCR: дефолтный executor даёт до ~32
 # потоков — пачка скриншотов подряд запускает параллельные ONNX-инференсы
 # и кладёт CPU/RAM. Два воркера = очередь вместо шторма.
+# Очередь тоже ограничена (OCR_MAX_PENDING): без bound'а всплеск
+# вложений копил бы десятки PNG-байтов в памяти. Превышение —
+# OcrWorkerError (инфраструктурная ошибка, не «пустой результат»).
+_OCR_MAX_PENDING = int(os.environ.get("OCR_MAX_PENDING", "8"))
+_OCR_PENDING = 0
+_OCR_PENDING_LOCK = threading.Lock()
+
+
+class _CountingExecutor(concurrent.futures.ThreadPoolExecutor):
+    """ThreadPoolExecutor: счётчик активных (gauge) + bound очереди."""
+
+    def submit(self, fn, /, *args, **kwargs):
+        global _OCR_PENDING
+        with _OCR_PENDING_LOCK:
+            if _OCR_PENDING >= _OCR_MAX_PENDING:
+                raise ocr_worker.OcrWorkerError(
+                    f"OCR queue is full ({_OCR_MAX_PENDING})"
+                )
+            _OCR_PENDING += 1
+        fut = super().submit(_tracked(fn), *args, **kwargs)
+
+        def _dec(_f):
+            global _OCR_PENDING
+            with _OCR_PENDING_LOCK:
+                _OCR_PENDING -= 1
+
+        fut.add_done_callback(_dec)
+        return fut
+
+
 OCR_EXECUTOR = _CountingExecutor(
     max_workers=2, thread_name_prefix="ocr"
 )
@@ -111,6 +136,22 @@ _OCR_MAX_UPSCALE = 2.5
 
 
 def _run_ocr(image_bytes: bytes) -> list[dict[str, Any]]:
+    """Полный OCR: worker-процесс с restart+retry.
+
+    ONNX-модели НИКОГДА не загружаются в основной процесс —
+    локальный путь существует только при явном
+    OCR_WORKER_DISABLE=1 (отладка/тесты)."""
+    if ocr_worker.worker_enabled():
+        # OcrWorkerError НЕ маскируем пустым списком: [] — валидный
+        # результат OCR (на кадре нет таблицы), а недоступный worker —
+        # инфраструктурная ошибка. caller (pipeline загрузки)
+        # показывает «сервис недоступен» и сохраняет сессию для
+        # безопасного повтора — без нулевых K/D/A и без ELO.
+        return ocr_worker.call("ocr_full", image_bytes) or []
+    return _run_ocr_local(image_bytes)
+
+
+def _run_ocr_local(image_bytes: bytes) -> list[dict[str, Any]]:
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     scale = 1.0
     if img.width < _OCR_MIN_WIDTH:
@@ -221,6 +262,21 @@ def _cyr_region_text(img, region: tuple[float, float, float, float]) -> str:
 def _run_ocr_cyrillic_region(
     image_bytes: bytes, region: tuple[float, float, float, float]
 ) -> str:
+    """OCR области — worker с retry; без ONNX в основном процессе.
+
+    OcrWorkerError пробрасывается наверх — '' здесь неотличим
+    от «область без текста», а недоступный worker — ошибка
+    инфраструктуры."""
+    if ocr_worker.worker_enabled():
+        return ocr_worker.call(
+            "ocr_cyr_region", image_bytes, region
+        ) or ""
+    return _run_ocr_cyrillic_region_local(image_bytes, region)
+
+
+def _run_ocr_cyrillic_region_local(
+    image_bytes: bytes, region: tuple[float, float, float, float]
+) -> str:
     """OCR области изображения кириллической моделью → текст или ''."""
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -230,6 +286,26 @@ def _run_ocr_cyrillic_region(
 
 
 def _run_ocr_cyrillic_regions(
+    image_bytes: bytes, regions: list[tuple[float, float, float, float]]
+) -> list[str]:
+    """OCR нескольких областей — worker с retry; без ONNX локально.
+
+    OcrWorkerError пробрасывается наверх: ['']*n неотличим от
+    «текст не распознан», а недоступный worker — ошибка
+    инфраструктуры."""
+    if ocr_worker.worker_enabled():
+        res = ocr_worker.call(
+            "ocr_cyr_regions", image_bytes, regions
+        )
+        if isinstance(res, list):
+            return res
+        raise ocr_worker.OcrWorkerError(
+            "worker returned non-list for ocr_cyr_regions"
+        )
+    return _run_ocr_cyrillic_regions_local(image_bytes, regions)
+
+
+def _run_ocr_cyrillic_regions_local(
     image_bytes: bytes, regions: list[tuple[float, float, float, float]]
 ) -> list[str]:
     """OCR нескольких областей за одно декодирование изображения.
@@ -310,14 +386,19 @@ def warmup() -> None:
     Первый инференс RapidOCR стоит ~4 с (аллокация сессий ONNX) —
     лучше сделать его при запуске, а не на первом скриншоте матча.
     """
-    import numpy as np
-
     missing = verify_model_files()
     if missing:
         logger.error(
             "OCR model files missing — RapidOCR will try network "
             "download at runtime: %s", "; ".join(missing)
         )
+    if ocr_worker.worker_enabled():
+        # Модели грузим в worker-процесс — основной процесс остаётся
+        # без ONNX-сессий и их арен.
+        ocr_worker.warmup()
+        return
+    import numpy as np
+
     dummy = np.zeros((64, 64, 3), dtype=np.uint8)
     try:
         _get_ocr()(dummy[:, :, ::-1])

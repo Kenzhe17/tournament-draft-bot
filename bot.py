@@ -1493,6 +1493,12 @@ class TournamentBot(commands.Bot):
             await shutdown_profile_renderer()
         except Exception:
             pass
+        try:
+            from services import ocr_worker
+
+            ocr_worker.shutdown()
+        except Exception:
+            pass
         await super().close()
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
