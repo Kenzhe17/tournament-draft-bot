@@ -1020,6 +1020,28 @@ class Tournament:
         remaining = int(draft_pick_duration - elapsed)
         return max(0, remaining)
 
+    def draft_pick_deadline_unix(self) -> int | None:
+        """Unix-время (секунды) окончания текущего выбора.
+
+        Для Discord <t:...:R>: дедлайн вычисляется один раз из
+        сохранённого draft_pick_start_time + draft_pick_duration и
+        не пересчитывается от «сейчас» — после рестарта значение
+        то же, что до него. None — таймер не запущен/невалиден.
+        """
+        from datetime import datetime
+        start_raw = getattr(self, "draft_pick_start_time", "") or ""
+        if not start_raw:
+            return None
+        try:
+            start = datetime.fromisoformat(start_raw)
+        except (ValueError, TypeError):
+            return None
+        # Naive ISO пишется локальным datetime.now() — timestamp()
+        # трактует naive как локальное время, что совпадает с
+        # elapsed-логикой get_draft_pick_remaining_time.
+        duration = int(getattr(self, "draft_pick_duration", 60) or 60)
+        return int(start.timestamp()) + duration
+
     def pick_random_player(self) -> tuple[int, str] | None:
         """Случайно выбрать игрока для текущего капитана.
         Возвращает (position, player_name) или None если нет доступных игроков.

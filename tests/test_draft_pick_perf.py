@@ -393,3 +393,102 @@ class TestDraftPickConcurrency:
         assert "draft_pick_total_ms" in recorded
         assert "draft_pick_save_ms" in recorded
         assert recorded["draft_pick_total_ms"][0] >= 0
+
+
+# ---------------------------------------------------------------------------
+# Динамический таймер и удаление «Очереди выбора»
+# ---------------------------------------------------------------------------
+
+class TestDraftEmbedTimer:
+    @pytest.mark.asyncio
+    async def test_deadline_is_unix_timestamp(self):
+        """Embed содержит <t:UNIX:R> из draft_pick_start_time+60."""
+        from utils.embeds import build_draft_embed
+        import re
+
+        t = _mk()
+        start_unix = int(
+            __import__("datetime").datetime.fromisoformat(
+                t.draft_pick_start_time
+            ).timestamp()
+        )
+        embed = await build_draft_embed(t, SimpleNamespace(id=1))
+        m = re.search(r"<t:(\d+):R>", embed.description)
+        assert m is not None
+        assert int(m.group(1)) == start_unix + 60
+        assert "Очередь выбора" not in embed.description
+        assert "60 сек" not in embed.description
+
+    @pytest.mark.asyncio
+    async def test_deadline_stable_across_renders(self):
+        """Timestamp не пересчитывается от текущего времени —
+        два рендера подряд дают одинаковый дедлайн."""
+        from utils.embeds import build_draft_embed
+        import re
+
+        t = _mk()
+        e1 = await build_draft_embed(t, SimpleNamespace(id=1))
+        e2 = await build_draft_embed(t, SimpleNamespace(id=1))
+        ts1 = re.search(r"<t:(\d+):R>", e1.description).group(1)
+        ts2 = re.search(r"<t:(\d+):R>", e2.description).group(1)
+        assert ts1 == ts2
+
+    @pytest.mark.asyncio
+    async def test_deadline_updates_after_pick(self):
+        """После pick+advance дедлайн пересчитывается от нового
+        draft_pick_start_time."""
+        from utils.embeds import build_draft_embed
+        import re
+
+        t = _mk()
+        e1 = await build_draft_embed(t, SimpleNamespace(id=1))
+        ts1 = int(re.search(r"<t:(\d+):R>", e1.description).group(1))
+
+        pos = t.current_picker_position()
+        t.pick_player(pos, t.available[str(t.current_circle)][0])
+        t.advance_after_pick()
+        e2 = await build_draft_embed(t, SimpleNamespace(id=1))
+        ts2 = int(re.search(r"<t:(\d+):R>", e2.description).group(1))
+        assert ts2 >= ts1  # новый ход — новый (не меньший) дедлайн
+        assert ts2 - ts1 <= 120  # в пределах разумного
+
+    @pytest.mark.asyncio
+    async def test_deadline_survives_restart(self):
+        """to_dict/from_dict round-trip сохраняет deadline —
+        Railway restart не сбрасывает таймер."""
+        from utils.embeds import build_draft_embed
+        import re
+
+        t = _mk()
+        e1 = await build_draft_embed(t, SimpleNamespace(id=1))
+        ts1 = re.search(r"<t:(\d+):R>", e1.description).group(1)
+
+        t2 = Tournament.from_dict(t.to_dict())
+        e2 = await build_draft_embed(t2, SimpleNamespace(id=1))
+        ts2 = re.search(r"<t:(\d+):R>", e2.description).group(1)
+        assert ts1 == ts2
+
+    def test_deadline_unix_method(self):
+        t = _mk()
+        dl = t.draft_pick_deadline_unix()
+        assert isinstance(dl, int)
+        assert dl > 0
+        # legacy-турнир без start_time → None → fallback-текст
+        t.draft_pick_start_time = ""
+        assert t.draft_pick_deadline_unix() is None
+        t.draft_pick_start_time = "not-a-date"
+        assert t.draft_pick_deadline_unix() is None
+
+    @pytest.mark.asyncio
+    async def test_queue_block_removed_order_kept(self):
+        """Блок «Очередь выбора» удалён визуально; реальная
+        очередь captain_order не изменилась."""
+        from utils.embeds import build_draft_embed
+
+        t = _mk()
+        order_before = list(t.captain_order)
+        embed = await build_draft_embed(t, SimpleNamespace(id=1))
+        assert "Очередь выбора" not in embed.description
+        # Следующие капитаны больше не перечисляются в embed —
+        # но captain_order/PICK_ORDERS не тронуты.
+        assert list(t.captain_order) == order_before

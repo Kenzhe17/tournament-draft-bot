@@ -742,24 +742,22 @@ async def build_draft_embed(
     if current_picker_pos is not None:
         current_captain_name = tournament.captains[tournament.captain_order[current_picker_pos]]
         current_captain_id = tournament.player_user_ids.get(current_captain_name, 0)
-        if current_captain_id > 0:
-            current_line = f"**Сейчас выбирает:** <@{current_captain_id}>\nУ вас есть 60 сек на выбор!"
+        # Динамический дедлайн: Discord сам отсчитывает <t:...:R>
+        # на клиенте — сообщение не редактируется каждую секунду.
+        # Дедлайн вычисляется из сохранённого draft_pick_start_time
+        # и не зависит от момента рендера embed.
+        deadline = tournament.draft_pick_deadline_unix()
+        if deadline is not None:
+            timer_line = f"До окончания выбора: <t:{deadline}:R>"
         else:
-            current_line = f"**Сейчас выбирает:** {current_captain_name}\nУ вас есть 60 сек на выбор!"
+            timer_line = "У вас есть 60 сек на выбор!"
+        who = (
+            f"<@{current_captain_id}>" if current_captain_id > 0
+            else current_captain_name
+        )
+        current_line = f"**Сейчас выбирает:** {who}\n{timer_line}"
     else:
         current_line = "Драфт завершён"
-
-    # Show next 4 captains in order
-    next_captains = []
-    if current_picker_pos is not None:
-        for i in range(4):
-            pos = (current_picker_pos + i) % len(tournament.captain_order)
-            captain_name = tournament.captains[tournament.captain_order[pos]]
-            captain_id = tournament.player_user_ids.get(captain_name, 0)
-            if captain_id > 0:
-                next_captains.append(f"<@{captain_id}>")
-            else:
-                next_captains.append(captain_name)
 
     # Build picks table
     picks_sections = []
@@ -803,8 +801,6 @@ async def build_draft_embed(
 
     description = (
         f"{replace_emojis(current_line)}\n\n"
-        f" **Очередь выбора:**\n"
-        f" {', '.join(next_captains)}\n\n"
         f" **Выборы по кругам:**\n"
         + "\n\n".join(picks_sections)
         + warning
