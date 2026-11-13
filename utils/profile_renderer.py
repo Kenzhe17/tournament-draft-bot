@@ -16,6 +16,8 @@ import base64
 import html
 import io
 import logging
+import os
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -471,15 +473,91 @@ _browser = None
 _playwright = None
 _browser_lock = asyncio.Lock()
 
+# Chromium держим только пока он нужен: после IDLE_CLOSE_SECONDS
+# без рендеров браузер закрывается — фоновый профиль-рендер редок,
+# а спящий Chromium держит сотни МБ RSS. Playwright-ДРАЙВЕР при
+# этом НЕ останавливается: повторный launch ~1с, а новый
+# async_playwright().start() плодил бы дочерние процессы.
+# Значение переопределяется env PROFILE_BROWSER_IDLE_S.
+IDLE_CLOSE_SECONDS = float(
+    os.environ.get("PROFILE_BROWSER_IDLE_S", "600")
+)
+_REAPER_INTERVAL = float(
+    os.environ.get("PROFILE_REAPER_INTERVAL_S", "60")
+)
+_last_browser_used = 0.0
+_active_renders = 0
+_idle_reaper_task: "asyncio.Task | None" = None
 
-async def _get_browser():
-    """Переиспользуемый Chromium-инстанс на процесс."""
-    global _browser, _playwright
-    if _browser is not None and _browser.is_connected():
-        return _browser
+
+def _render_started() -> None:
+    """Отметить начало рендера: reaper не закроет браузер."""
+    global _active_renders, _last_browser_used
+    _active_renders += 1
+    _last_browser_used = time.monotonic()
+
+
+def _render_finished() -> None:
+    global _active_renders, _last_browser_used
+    _active_renders = max(0, _active_renders - 1)
+    _last_browser_used = time.monotonic()
+
+
+async def _close_browser() -> None:
+    """Закрыть Chromium под _browser_lock (не во время launch).
+
+    Драйвер playwright сохраняем — следующему _get_browser()
+    нужен только chromium.launch, без нового start().
+    """
+    global _browser
     async with _browser_lock:
-        if _browser is not None and _browser.is_connected():
-            return _browser
+        try:
+            if _browser is not None:
+                await _browser.close()
+        except Exception:
+            pass
+        _browser = None
+
+
+async def _idle_reaper() -> None:
+    """Periodic check: закрыть Chromium после долгого простоя."""
+    while True:
+        try:
+            await asyncio.sleep(_REAPER_INTERVAL)
+            stale = (
+                _browser is not None
+                and _active_renders == 0
+                and time.monotonic() - _last_browser_used
+                > IDLE_CLOSE_SECONDS
+            )
+            if stale:
+                logger.info(
+                    "Profile renderer: Chromium idle %.0fs — closing",
+                    time.monotonic() - _last_browser_used,
+                )
+                await _close_browser()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+
+
+def _ensure_reaper() -> None:
+    global _idle_reaper_task
+    if _idle_reaper_task is None or _idle_reaper_task.done():
+        try:
+            _idle_reaper_task = asyncio.get_running_loop().create_task(
+                _idle_reaper()
+            )
+            _idle_reaper_task.set_name("profile_browser_reaper")
+        except Exception:
+            _idle_reaper_task = None
+
+
+async def _launch_browser():
+    """Запустить Chromium на существующем (или новом) драйвере."""
+    global _browser, _playwright
+    if _playwright is None:
         try:
             from playwright.async_api import async_playwright
         except ImportError as exc:
@@ -487,21 +565,53 @@ async def _get_browser():
                 "playwright is not installed — pip install playwright"
             ) from exc
         _playwright = await async_playwright().start()
+    try:
         _browser = await _playwright.chromium.launch(
             args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
         )
-        logger.info("Profile renderer: Chromium launched")
+    except Exception:
+        # Драйвер мог умереть вместе с закрытым браузером/системой —
+        # останавливаем его корректно и поднимаем заново, чтобы не
+        # накапливать orphan-процессы.
+        try:
+            await _playwright.stop()
+        except Exception:
+            pass
+        _playwright = None
+        from playwright.async_api import async_playwright
+
+        _playwright = await async_playwright().start()
+        _browser = await _playwright.chromium.launch(
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+        )
+    logger.info("Profile renderer: Chromium launched")
+    return _browser
+
+
+async def _get_browser():
+    """Переиспользуемый Chromium-инстанс на процесс."""
+    global _browser, _last_browser_used
+    _last_browser_used = time.monotonic()
+    _ensure_reaper()
+    if _browser is not None and _browser.is_connected():
         return _browser
+    async with _browser_lock:
+        _last_browser_used = time.monotonic()
+        if _browser is not None and _browser.is_connected():
+            return _browser
+        return await _launch_browser()
 
 
 async def shutdown_profile_renderer() -> None:
-    """Закрыть браузер при остановке бота (best-effort)."""
-    global _browser, _playwright
+    """Закрыть браузер и reaper при остановке бота (best-effort)."""
+    global _browser, _playwright, _idle_reaper_task
     try:
-        if _browser is not None:
-            await _browser.close()
+        if _idle_reaper_task is not None and not _idle_reaper_task.done():
+            _idle_reaper_task.cancel()
     except Exception:
         pass
+    _idle_reaper_task = None
+    await _close_browser()
     try:
         if _playwright is not None:
             await _playwright.stop()
@@ -521,45 +631,69 @@ async def render_profile_png_async(data: dict,
     import time
 
     async with CARD_RENDER_SEM:
-        t0 = time.monotonic()
-        svg = build_profile_svg(data, avatar_png, badge_png)
-        html_doc = build_profile_html(svg)
-
-        browser = await _get_browser()
-        page = await browser.new_page(
-            viewport={"width": 1920, "height": 1080},
-            device_scale_factor=1,
-        )
+        _render_started()
         try:
-            await asyncio.wait_for(
-                page.set_content(html_doc, wait_until="load"),
-                timeout=RENDER_TIMEOUT,
-            )
-            # Дожидаемся шрифтов и декодирования data-URI изображений
-            try:
-                await page.evaluate(
-                    "() => Promise.all(["
-                    "document.fonts.ready,"
-                    "...Array.from(document.images).map(i => i.decode().catch(() => {}))"
-                    "]).then(() => true)"
-                )
-            except Exception:
-                await page.wait_for_timeout(150)
-            png = await asyncio.wait_for(
-                page.screenshot(type="png"), timeout=RENDER_TIMEOUT
+            return await _render_profile_png_inner(
+                data, avatar_png, badge_png
             )
         finally:
-            try:
-                await page.close()
-            except Exception:
-                pass
+            _render_finished()
 
-        logger.info(
-            "Profile PNG rendered in %.0fms | renderer=%s v%s module=%s",
-            (time.monotonic() - t0) * 1000,
-            Path(__file__).name, "svg-v2", Path(__file__).resolve(),
+
+async def _render_profile_png_inner(
+    data: dict,
+    avatar_png: bytes | None = None,
+    badge_png: bytes | None = None,
+) -> bytes:
+    import time
+
+    t0 = time.monotonic()
+    svg = build_profile_svg(data, avatar_png, badge_png)
+    html_doc = build_profile_html(svg)
+
+    browser = await _get_browser()
+    page = await browser.new_page(
+        viewport={"width": 1920, "height": 1080},
+        device_scale_factor=1,
+    )
+    try:
+        await asyncio.wait_for(
+            page.set_content(html_doc, wait_until="load"),
+            timeout=RENDER_TIMEOUT,
         )
-        return png
+        # Дожидаемся шрифтов и декодирования data-URI изображений
+        try:
+            await page.evaluate(
+                "() => Promise.all(["
+                "document.fonts.ready,"
+                "...Array.from(document.images).map(i => i.decode().catch(() => {}))"
+                "]).then(() => true)"
+            )
+        except Exception:
+            await page.wait_for_timeout(150)
+        png = await asyncio.wait_for(
+            page.screenshot(type="png"), timeout=RENDER_TIMEOUT
+        )
+    finally:
+        try:
+            await page.close()
+        except Exception:
+            pass
+
+    render_ms = (time.monotonic() - t0) * 1000
+    try:
+        from utils import perf_metrics
+
+        perf_metrics.record("profile_render_ms", render_ms)
+        perf_metrics.incr("profile_renders")
+    except Exception:
+        pass
+    logger.info(
+        "Profile PNG rendered in %.0fms | renderer=%s v%s module=%s",
+        render_ms,
+        Path(__file__).name, "svg-v2", Path(__file__).resolve(),
+    )
+    return png
 
 
 # Синхронная точка входа для executor-вызовов/тестов не нужна:

@@ -32,10 +32,40 @@ _ocr_init_lock = threading.Lock()
 _cyr_instance = None
 _cyr_init_lock = threading.Lock()
 
+# Счётчик активных OCR-операций в пуле — для perf_metrics gauge.
+_ACTIVE_OCR_OPS = 0
+
+
+def active_ocr_ops() -> int:
+    """Количество OCR-задач, сейчас выполняемых в OCR_EXECUTOR."""
+    return _ACTIVE_OCR_OPS
+
+
+def _tracked(fn):
+    """Обёртка worker-функции: инкремент/декремент _ACTIVE_OCR_OPS."""
+
+    def _w(*args, **kwargs):
+        global _ACTIVE_OCR_OPS
+        _ACTIVE_OCR_OPS += 1
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _ACTIVE_OCR_OPS -= 1
+
+    return _w
+
+
+class _CountingExecutor(concurrent.futures.ThreadPoolExecutor):
+    """ThreadPoolExecutor, считающий активные задачи (gauge)."""
+
+    def submit(self, fn, /, *args, **kwargs):
+        return super().submit(_tracked(fn), *args, **kwargs)
+
+
 # Отдельный ограниченный пул для OCR: дефолтный executor даёт до ~32
 # потоков — пачка скриншотов подряд запускает параллельные ONNX-инференсы
 # и кладёт CPU/RAM. Два воркера = очередь вместо шторма.
-OCR_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+OCR_EXECUTOR = _CountingExecutor(
     max_workers=2, thread_name_prefix="ocr"
 )
 
@@ -148,14 +178,8 @@ def _get_cyrillic_ocr():
     return _cyr_instance
 
 
-def _run_ocr_cyrillic_region(
-    image_bytes: bytes, region: tuple[float, float, float, float]
-) -> str:
-    """OCR области изображения кириллической моделью → текст или ''."""
-    try:
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    except Exception:
-        return ""
+def _cyr_region_text(img, region: tuple[float, float, float, float]) -> str:
+    """OCR одной области уже декодированного изображения."""
     x0, y0, x1, y1 = region
     pad = 14
     crop = img.crop(
@@ -194,6 +218,33 @@ def _run_ocr_cyrillic_region(
     return " ".join(words)[:48]
 
 
+def _run_ocr_cyrillic_region(
+    image_bytes: bytes, region: tuple[float, float, float, float]
+) -> str:
+    """OCR области изображения кириллической моделью → текст или ''."""
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        return ""
+    return _cyr_region_text(img, region)
+
+
+def _run_ocr_cyrillic_regions(
+    image_bytes: bytes, regions: list[tuple[float, float, float, float]]
+) -> list[str]:
+    """OCR нескольких областей за одно декодирование изображения.
+
+    Названия двух команд матча — два соседних region; раньше каждый
+    вызов декодировал PNG заново (~10–25 МБ временного PIL-образа
+    на регион). Здесь — одно декодирование на обе области.
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        return [""] * len(regions)
+    return [_cyr_region_text(img, r) for r in regions]
+
+
 async def ocr_cyrillic_region(
     image_bytes: bytes, region: tuple[float, float, float, float]
 ) -> str:
@@ -201,6 +252,18 @@ async def ocr_cyrillic_region(
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         OCR_EXECUTOR, _run_ocr_cyrillic_region, image_bytes, region
+    )
+
+
+async def ocr_cyrillic_regions(
+    image_bytes: bytes, regions: list[tuple[float, float, float, float]]
+) -> list[str]:
+    """Async-обёртка: кириллический OCR нескольких областей."""
+    if not regions:
+        return []
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        OCR_EXECUTOR, _run_ocr_cyrillic_regions, image_bytes, regions
     )
 
 
@@ -275,24 +338,19 @@ def warmup() -> None:
         logger.warning("Fast det warmup failed", exc_info=True)
 
 
-def ocr_image_region(
-    image_bytes: bytes,
+def _ocr_region_boxes(
+    img: Image.Image,
     region: tuple[float, float, float, float],
     *,
     min_height: int = 48,
     max_upscale: float = 3.0,
 ) -> list[dict[str, Any]]:
-    """Targeted OCR области изображения основным движком.
+    """OCR области уже декодированного изображения.
 
     Вырезает region (x0,y0,x1,y1), при необходимости увеличивает
     (мелкий шрифт строк таблицы), прогоняет полный RapidOCR и
-    возвращает боксы с координатами, пересчитанными в систему
-    координат ИСХОДНОГО изображения.
+    возвращает боксы с координатами в системе ИСХОДНОГО кадра.
     """
-    try:
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    except Exception:
-        return []
     x0, y0, x1, y1 = region
     pad = 6
     crop = img.crop(
@@ -331,6 +389,53 @@ def ocr_image_region(
             oy + b["y1"] / scale,
         ))
     return out
+
+
+def ocr_image_region(
+    image_bytes: bytes,
+    region: tuple[float, float, float, float],
+    *,
+    min_height: int = 48,
+    max_upscale: float = 3.0,
+) -> list[dict[str, Any]]:
+    """Targeted OCR области изображения основным движком."""
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        return []
+    return _ocr_region_boxes(
+        img, region, min_height=min_height, max_upscale=max_upscale
+    )
+
+
+def _run_ocr_regions(
+    image_bytes: bytes,
+    regions: list[tuple[float, float, float, float]],
+) -> list[list[dict[str, Any]]]:
+    """OCR нескольких областей за одно декодирование кадра.
+
+    Раньше каждая область декодировала PNG заново (~10–25 МБ
+    временного PIL-образа на вызов); refine-строк делает до 8
+    таких вызовов на скриншот.
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        return [[] for _ in regions]
+    return [_ocr_region_boxes(img, r) for r in regions]
+
+
+async def ocr_image_regions_async(
+    image_bytes: bytes,
+    regions: list[tuple[float, float, float, float]],
+) -> list[list[dict[str, Any]]]:
+    """Async-обёртка: targeted OCR нескольких областей."""
+    if not regions:
+        return []
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        OCR_EXECUTOR, _run_ocr_regions, image_bytes, regions
+    )
 
 
 async def ocr_image_region_async(

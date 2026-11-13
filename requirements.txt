@@ -11,3 +11,4 @@ rapidocr_onnxruntime==1.4.4
 rapidocr==3.10.0
 playwright>=1.40,<2
 tzdata>=2024.1
+psutil>=5.9,<8
