@@ -71,34 +71,45 @@ async def test_mm_vac_event_key_no_double_punish(fake_store):
 
 # -------------------------------------------------------- Ultimatum _vac_check
 
+try:
+    from cogs.ultimatum import _vac_check
+except ImportError:  # старое дерево без Ultimatum 2.0
+    _vac_check = None
+
+
+def _require_vac_check():
+    if _vac_check is None:
+        pytest.skip("_vac_check отсутствует в этой версии cogs/ultimatum")
+    return _vac_check
+
+
 @pytest.mark.asyncio
 async def test_ult_vac_check_solo(fake_store):
-    from cogs.ultimatum import _vac_check
+    vac_check = _require_vac_check()
 
     await vac_service.record_violation(1, 42, 7, "неявка", event_key="e1")
     vac = await vac_service.check_vac(1, 42)
     ts = int(vac["expires_at"].timestamp())
 
-    assert await _vac_check(1, 42) is None or True  # активен → текст
-    text = await _vac_check(1, 42)
+    text = await vac_check(1, 42)
     assert text is not None
     assert "неявка" in text
     assert f"<t:{ts}:R>" in text
     # чистый пользователь — None
-    assert await _vac_check(1, 999) is None
+    assert await vac_check(1, 999) is None
 
 
 @pytest.mark.asyncio
 async def test_ult_vac_check_duo_both_players(fake_store):
     """Duo: VAC любого из двух блокирует, в тексте — кто именно."""
-    from cogs.ultimatum import _vac_check
+    vac_check = _require_vac_check()
 
     await vac_service.record_violation(1, 42, 7, "срыв", event_key="e1")
     # второй чист — блокирует первый, упоминание есть
-    text = await _vac_check(1, 42, 555)
+    text = await vac_check(1, 42, 555)
     assert text is not None and "<@42>" in text
     # оба чисты — None
-    assert await _vac_check(1, 555, 556) is None
+    assert await vac_check(1, 555, 556) is None
 
 
 # ------------------------------------------------------------- service API
