@@ -2076,6 +2076,8 @@ def _room_files_totals(room: dict) -> tuple[int, int]:
     «Завершить комнату» pending очищается — считаем по kind и
     sha/shas: classic/mixed минимум 1 файл, squad — 2. Неизвестный
     kind с panels → required=accepted (не занижаем denominator).
+    Комната без файлов → (0, 1): тип неизвестен, гарантированный
+    минимум — один скриншот; squad-лимит 2 не предполагаем.
     """
     if _room_has_panels(room):
         shas = {str(s) for s in room.get("shas") or []}
@@ -2090,6 +2092,8 @@ def _room_files_totals(room: dict) -> tuple[int, int]:
         else:
             required = accepted
         return accepted, required
+    if not (room.get("pending") or []):
+        return 0, 1
     accepted, required, _rem, _cf = room_file_progress(room)
     return accepted, required
 
@@ -2097,10 +2101,10 @@ def _room_files_totals(room: dict) -> tuple[int, int]:
 def _session_files_totals(session: dict) -> tuple[int, int]:
     """Сумма (принято, требуется) скриншотов по ВСЕМ комнатам матча.
 
-    Комната без записи эквивалентна пустой collecting-комнате:
-    room_required_files({}) → 2 — канонический лимит неизвестного
-    типа, а не произвольная константа: при появлении classic-файла
-    требование комнаты пересчитывается в 1.
+    Комната без записи/файлов учитывается минимумом в 1 скриншот:
+    тип (classic → 1 / squad → 2) становится известен только после
+    первой загрузки — лимит загрузки пустой комнаты (2) НЕ является
+    её требованием и в denominator не подставляется.
     """
     expected = int(session.get("rooms_expected") or 0)
     by_idx = {
@@ -2111,7 +2115,7 @@ def _session_files_totals(session: dict) -> tuple[int, int]:
     for i in range(1, expected + 1):
         room = by_idx.get(i)
         if room is None:
-            required += room_required_files({})
+            required += 1
             continue
         a, r = _room_files_totals(room)
         accepted += a
@@ -2900,7 +2904,7 @@ async def _ensure_room_collect_message(
     if sess_total > 0:
         tot_a, tot_r = _session_files_totals(session)
         lines.append(
-            f"Всего принятых скриншотов: {tot_a}/{tot_r}"
+            f"Всего скриншотов: {tot_a}/{tot_r}"
         )
     text = replace_emojis("\n".join(lines))
     # В content только <@id> капитанов — пингуются исключительно
