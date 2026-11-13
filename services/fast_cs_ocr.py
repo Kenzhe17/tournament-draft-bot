@@ -1440,11 +1440,39 @@ async def parse_cs_fast(
     import asyncio
     import functools
 
+    from services import ocr_worker
     from services.ocr_service import OCR_EXECUTOR
 
     loop = asyncio.get_running_loop()
     t_submit = time.perf_counter()
-    return await loop.run_in_executor(
-        OCR_EXECUTOR,
-        functools.partial(_extract_parsed, data, t_submit, reason_out),
-    )
+
+    def _run() -> dict[str, Any] | None:
+        if ocr_worker.worker_enabled():
+            try:
+                res = ocr_worker.call("cs_fast", data)
+            except ocr_worker.OcrWorkerError:
+                logger.warning(
+                    "OCR worker failed — local fast OCR fallback",
+                    exc_info=True,
+                )
+            else:
+                if reason_out is not None and res.get("reason"):
+                    reason_out.append(res["reason"])
+                try:
+                    from utils import perf_metrics
+
+                    perf_metrics.record(
+                        "fast_ocr_total_ms", res.get("wall_ms", 0.0)
+                    )
+                    perf_metrics.incr(
+                        "fast_ocr_ok"
+                        if res.get("ok")
+                        else "fast_ocr_fallback"
+                    )
+                except Exception:
+                    pass
+                return res.get("parsed")
+        # Локальный путь (worker выключен или упал).
+        return _extract_parsed(data, t_submit, reason_out)
+
+    return await loop.run_in_executor(OCR_EXECUTOR, _run)

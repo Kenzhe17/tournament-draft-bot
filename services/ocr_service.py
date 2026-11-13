@@ -21,6 +21,8 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from services import ocr_worker
+
 logger = logging.getLogger(__name__)
 
 _ocr_instance = None
@@ -111,6 +113,18 @@ _OCR_MAX_UPSCALE = 2.5
 
 
 def _run_ocr(image_bytes: bytes) -> list[dict[str, Any]]:
+    """Полный OCR: worker-процесс, при сбое — локальный инференс."""
+    if ocr_worker.worker_enabled():
+        try:
+            return ocr_worker.call("ocr_full", image_bytes) or []
+        except ocr_worker.OcrWorkerError:
+            logger.warning(
+                "OCR worker unavailable — local fallback", exc_info=True
+            )
+    return _run_ocr_local(image_bytes)
+
+
+def _run_ocr_local(image_bytes: bytes) -> list[dict[str, Any]]:
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     scale = 1.0
     if img.width < _OCR_MIN_WIDTH:
@@ -221,6 +235,22 @@ def _cyr_region_text(img, region: tuple[float, float, float, float]) -> str:
 def _run_ocr_cyrillic_region(
     image_bytes: bytes, region: tuple[float, float, float, float]
 ) -> str:
+    """OCR области — worker, при сбое локально."""
+    if ocr_worker.worker_enabled():
+        try:
+            return ocr_worker.call(
+                "ocr_cyr_region", image_bytes, region
+            ) or ""
+        except ocr_worker.OcrWorkerError:
+            logger.warning(
+                "OCR worker unavailable — local fallback", exc_info=True
+            )
+    return _run_ocr_cyrillic_region_local(image_bytes, region)
+
+
+def _run_ocr_cyrillic_region_local(
+    image_bytes: bytes, region: tuple[float, float, float, float]
+) -> str:
     """OCR области изображения кириллической моделью → текст или ''."""
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -230,6 +260,24 @@ def _run_ocr_cyrillic_region(
 
 
 def _run_ocr_cyrillic_regions(
+    image_bytes: bytes, regions: list[tuple[float, float, float, float]]
+) -> list[str]:
+    """OCR нескольких областей — worker, при сбое локально."""
+    if ocr_worker.worker_enabled():
+        try:
+            res = ocr_worker.call(
+                "ocr_cyr_regions", image_bytes, regions
+            )
+            if isinstance(res, list):
+                return res
+        except ocr_worker.OcrWorkerError:
+            logger.warning(
+                "OCR worker unavailable — local fallback", exc_info=True
+            )
+    return _run_ocr_cyrillic_regions_local(image_bytes, regions)
+
+
+def _run_ocr_cyrillic_regions_local(
     image_bytes: bytes, regions: list[tuple[float, float, float, float]]
 ) -> list[str]:
     """OCR нескольких областей за одно декодирование изображения.
@@ -310,14 +358,19 @@ def warmup() -> None:
     Первый инференс RapidOCR стоит ~4 с (аллокация сессий ONNX) —
     лучше сделать его при запуске, а не на первом скриншоте матча.
     """
-    import numpy as np
-
     missing = verify_model_files()
     if missing:
         logger.error(
             "OCR model files missing — RapidOCR will try network "
             "download at runtime: %s", "; ".join(missing)
         )
+    if ocr_worker.worker_enabled():
+        # Модели грузим в worker-процесс — основной процесс остаётся
+        # без ONNX-сессий и их арен.
+        ocr_worker.warmup()
+        return
+    import numpy as np
+
     dummy = np.zeros((64, 64, 3), dtype=np.uint8)
     try:
         _get_ocr()(dummy[:, :, ::-1])
