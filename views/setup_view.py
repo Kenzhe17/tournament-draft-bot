@@ -163,7 +163,14 @@ class CircleSelectButton(discord.ui.Button):
                 return
 
             from services import vac_service
-            vac = await vac_service.check_vac(self.guild_id, interaction.user.id)
+            try:
+                vac = await vac_service.check_vac(self.guild_id, interaction.user.id)
+            except vac_service.VacStoreUnavailable:
+                await interaction.response.send_message(
+                    "⚠️ Сервис VAC временно недоступен. Попробуйте позже.",
+                    ephemeral=True,
+                )
+                return
             if vac is not None:
                 ts = int(vac["expires_at"].timestamp())
                 await interaction.response.send_message(
@@ -295,7 +302,14 @@ class JoinPoolButton(discord.ui.Button):
                 return
 
             from services import vac_service
-            vac = await vac_service.check_vac(self.guild_id, interaction.user.id)
+            try:
+                vac = await vac_service.check_vac(self.guild_id, interaction.user.id)
+            except vac_service.VacStoreUnavailable:
+                await interaction.response.send_message(
+                    "⚠️ Сервис VAC временно недоступен. Попробуйте позже.",
+                    ephemeral=True,
+                )
+                return
             if vac is not None:
                 ts = int(vac["expires_at"].timestamp())
                 await interaction.response.send_message(
@@ -454,7 +468,14 @@ class AdminAddModal(discord.ui.Modal):
         # VAC — админское добавление тоже проверяется
         if user_id:
             from services import vac_service
-            vac = await vac_service.check_vac(self.guild_id, user_id)
+            try:
+                vac = await vac_service.check_vac(self.guild_id, user_id)
+            except vac_service.VacStoreUnavailable:
+                await interaction.response.send_message(
+                    "⚠️ Сервис VAC временно недоступен. Попробуйте позже.",
+                    ephemeral=True,
+                )
+                return
             if vac is not None:
                 reason = vac.get("reason")
                 reason_part = f" ({reason})" if reason else ""
@@ -1217,9 +1238,16 @@ class StartTournamentButton(discord.ui.Button):
 
         # VAC: исключить заблокированных до проверки готовности
         from services import vac_service
-        vac_ids = await vac_service.vac_active_ids(
-            self.guild_id, tournament.player_user_ids.values()
-        )
+        try:
+            vac_ids = await vac_service.vac_active_ids(
+                self.guild_id, tournament.player_user_ids.values()
+            )
+        except vac_service.VacStoreUnavailable:
+            await interaction.response.send_message(
+                "⚠️ Сервис VAC временно недоступен. Старт отменён, попробуйте позже.",
+                ephemeral=True,
+            )
+            return
         if vac_ids:
             removed_names = []
             for name, uid in list(tournament.player_user_ids.items()):

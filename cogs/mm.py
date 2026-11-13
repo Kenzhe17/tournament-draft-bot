@@ -1986,7 +1986,10 @@ class MMCog(commands.Cog):
         # VAC — временная блокировка участия в турнирах
         from services import vac_service
 
-        vac = await vac_service.check_vac(guild_id, interaction.user.id)
+        try:
+            vac = await vac_service.check_vac(guild_id, interaction.user.id)
+        except vac_service.VacStoreUnavailable:
+            return "⚠️ Сервис VAC временно недоступен. Попробуйте позже."
         if vac is not None:
             ts = int(vac["expires_at"].timestamp())
             return vac_service.vac_blocked_text(

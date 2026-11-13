@@ -142,6 +142,44 @@ BEGIN
         ALTER TABLE ultimatum_tournaments ADD COLUMN is_open BOOLEAN DEFAULT FALSE;
     END IF;
 END $$;
+
+-- Migration: ID сообщения карточки регистрации (независимые колонки).
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ultimatum_tournaments' AND column_name = 'setup_channel_id'
+    ) THEN
+        ALTER TABLE ultimatum_tournaments ADD COLUMN setup_channel_id BIGINT;
+    END IF;
+END $$;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ultimatum_tournaments' AND column_name = 'setup_message_id'
+    ) THEN
+        ALTER TABLE ultimatum_tournaments ADD COLUMN setup_message_id BIGINT;
+    END IF;
+END $$;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ultimatum_tournaments' AND column_name = 'round_channel_id'
+    ) THEN
+        ALTER TABLE ultimatum_tournaments ADD COLUMN round_channel_id BIGINT;
+    END IF;
+END $$;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ultimatum_tournaments' AND column_name = 'round_message_id'
+    ) THEN
+        ALTER TABLE ultimatum_tournaments ADD COLUMN round_message_id BIGINT;
+    END IF;
+END $$;
 """
 
 # Elo Rating System Schema

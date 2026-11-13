@@ -115,11 +115,15 @@ async def test_ult_vac_check_duo_both_players(fake_store):
 # ------------------------------------------------------------- service API
 
 @pytest.mark.asyncio
-async def test_check_vac_fail_open_on_store_error(monkeypatch):
-    """Сбой PG не должен ломать регистрацию — check_vac → None."""
+async def test_check_vac_fail_closed_on_store_error(monkeypatch):
+    """Сбой VAC-хранилища — VacStoreUnavailable: игрок не считается
+    автоматически незаблокированным, точки входа показывают временную
+    ошибку вместо регистрации."""
     class Boom:
         async def get_active(self, *a):
             raise RuntimeError("pg down")
     monkeypatch.setattr(vac_service, "vac_store", Boom())
-    assert await vac_service.check_vac(1, 42) is None
-    assert await vac_service.is_vac_active(1, 42) is False
+    with pytest.raises(vac_service.VacStoreUnavailable):
+        await vac_service.check_vac(1, 42)
+    with pytest.raises(vac_service.VacStoreUnavailable):
+        await vac_service.is_vac_active(1, 42)
