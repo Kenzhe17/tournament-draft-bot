@@ -4,6 +4,17 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+# Формат FF CS «7 раундов»: K/D/A выросли ~x1.4, урон ~x1.8
+# за матч. Пороги АБСОЛЮТНЫХ показателей (avg kills, avg damage)
+# подняты пропорционально — SR одинаково эффективного игрока
+# нового формата совпадает со старым. KDA — отношение (K+A)/D:
+# при равномерном росте K/A/D x1.4 оно не меняется, поэтому его
+# порог НЕ масштабируется. Сырые суммы статистики не трогаем.
+_SR_KILLS_THRESHOLD = 8.0 * 1.4    # 11.2
+_SR_DAMAGE_THRESHOLD = 3000.0 * 1.8  # 5400.0
+_SR_KDA_THRESHOLD = 4.0
+
+
 def calculate_sr(
     kills: int, deaths: int, assists: int, damage: int, games: int
 ) -> float:
@@ -15,9 +26,9 @@ def calculate_sr(
     avg_kills = kills / games
     avg_damage = damage / games
 
-    kda_score = min(kda / 4.0, 1.25)
-    kills_score = min(avg_kills / 8.0, 1.25)
-    damage_score = min(avg_damage / 3000.0, 1.25)
+    kda_score = min(kda / _SR_KDA_THRESHOLD, 1.25)
+    kills_score = min(avg_kills / _SR_KILLS_THRESHOLD, 1.25)
+    damage_score = min(avg_damage / _SR_DAMAGE_THRESHOLD, 1.25)
 
     performance = (
         kda_score * 0.40
