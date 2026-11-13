@@ -42,6 +42,7 @@ from storage.match_number_store import match_number_store
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
 from utils.embeds import build_setup_embed
+from utils.message_refresher import EditRequest, MessageRefresher
 from utils.match_found_renderer import (
     MatchFoundData,
     PlayerCard,
@@ -137,6 +138,9 @@ class MMCog(commands.Cog):
         # схлопывается в одно актуальное обновление карточки.
         self._rc_ui_dirty: dict[str, int] = {}
         self._rc_ui_tasks: dict[str, asyncio.Task] = {}
+        # Централизованный debounce/coalescing для message.edit —
+        # динамические панели не должны спамить PATCH (429).
+        self._msg_refresher = MessageRefresher(default_delay=1.5)
         # Метрики задержек Ready Check (последние N значений, мс)
         self._ready_metrics: dict[str, deque] = {}
         self.bot.mm_cog = self  # Регистрация для доступа из view
@@ -1042,27 +1046,22 @@ class MMCog(commands.Cog):
         )
 
     async def _update_ready_message(self, rc: ReadyCheck) -> None:
-        """Обновить основное сообщение Ready Check (без спама).
+        """Запланировать обновление карточки Ready Check.
 
         Карточка матча и панель очереди обновляются независимо:
-        сбой одного не отменяет второй, каждый сегмент замеряется.
+        сам edit идёт через MessageRefresher (debounce +
+        пропуск неизменённого содержимого), панель очереди
+        планируется сразу — каждый сегмент замеряется.
         """
         t0 = time.perf_counter()
-        try:
-            channel = self.bot.get_channel(rc.channel_id) or await self.bot.fetch_channel(rc.channel_id)
-            if channel is None:
-                return
-            message = await channel.fetch_message(rc.message_id)
-            disabled = rc.status != ReadyCheckStatus.READY_CHECK
-            await message.edit(view=ready_card(rc, self.bot, disabled=disabled))
-            self._ready_metric(
-                "ready_message_update_ms",
-                (time.perf_counter() - t0) * 1000, rc.match_id,
-            )
-        except discord.NotFound:
-            logger.warning("Ready check message %s not found", rc.message_id)
-        except Exception as exc:
-            logger.error("Failed to update ready check message: %s", exc)
+        self._msg_refresher.schedule(
+            ("mm", "ready", rc.match_id),
+            lambda: self._ready_message_request(rc.match_id),
+        )
+        self._ready_metric(
+            "ready_message_schedule_ms",
+            (time.perf_counter() - t0) * 1000, rc.match_id,
+        )
 
         # Обновить и панель очереди — живой счётчик готовности
         t1 = time.perf_counter()
@@ -1076,6 +1075,55 @@ class MMCog(commands.Cog):
             "ready_queue_update_ms",
             (time.perf_counter() - t1) * 1000, rc.match_id,
         )
+
+    async def _ready_message_request(
+        self, match_id: str
+    ) -> EditRequest | None:
+        """Builder для refresher: свежее состояние → EditRequest."""
+        rc = await ready_check_store.get(match_id)
+        if rc is None or not rc.message_id:
+            return None
+        t0 = time.perf_counter()
+        try:
+            channel = self.bot.get_channel(rc.channel_id) or await self.bot.fetch_channel(rc.channel_id)
+            if channel is None:
+                return None
+            try:
+                message = await channel.fetch_message(rc.message_id)
+            except discord.NotFound:
+                logger.warning(
+                    "Ready check message %s not found — clearing id",
+                    rc.message_id,
+                )
+                rc.message_id = 0
+                await ready_check_store.save(rc)
+                return None
+            disabled = rc.status != ReadyCheckStatus.READY_CHECK
+
+            async def _on_missing() -> None:
+                fresh = await ready_check_store.get(match_id)
+                if fresh is not None and fresh.message_id == rc.message_id:
+                    fresh.message_id = 0
+                    await ready_check_store.save(fresh)
+
+            return EditRequest(
+                message=message,
+                kwargs={
+                    "view": ready_card(rc, self.bot, disabled=disabled)
+                },
+                on_missing=_on_missing,
+            )
+        except discord.NotFound:
+            logger.warning("Ready check message %s not found", rc.message_id)
+            return None
+        except Exception as exc:
+            logger.error("Failed to update ready check message: %s", exc)
+            return None
+        finally:
+            self._ready_metric(
+                "ready_message_fetch_ms",
+                (time.perf_counter() - t0) * 1000, match_id,
+            )
 
     # ------------------------------------------------------ UI coalescing
 
@@ -1926,15 +1974,32 @@ class MMCog(commands.Cog):
         return lock
 
     async def _update_queue_panel(self, search: MMSearch) -> None:
-        """Обновить V2-панель очереди на её сообщении."""
-        if not search.message_id:
-            return
+        """Запланировать обновление V2-панели очереди.
+
+        Все вызовы коалесцируются в MessageRefresher: серия
+        join/leave/readiness-событий даёт один PATCH с
+        актуальным состоянием, а не поток 429.
+        """
+        self._msg_refresher.schedule(
+            ("mm", "queue", search.guild_id, search.channel_id),
+            lambda: self._queue_panel_request(
+                search.guild_id, search.channel_id
+            ),
+        )
+
+    async def _queue_panel_request(
+        self, guild_id: int, channel_id: int
+    ) -> EditRequest | None:
+        """Builder для refresher: свежее состояние → EditRequest."""
+        search = mm_search_store.get(guild_id, channel_id)
+        if search is None or not search.message_id:
+            return None
         channel = self.bot.get_channel(search.channel_id)
         if channel is None:
             try:
                 channel = await self.bot.fetch_channel(search.channel_id)
             except Exception:
-                return
+                return None
         # Счётчик готовности для locked-состояния панели
         ready_count = None
         if search.is_locked:
@@ -1948,14 +2013,34 @@ class MMCog(commands.Cog):
                 pass
         try:
             message = await channel.fetch_message(search.message_id)
-            await message.edit(
-                view=build_queue_panel(search, ready_count=ready_count),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
         except discord.NotFound:
-            logger.warning("Queue panel message %s not found", search.message_id)
+            logger.warning(
+                "Queue panel message %s not found — clearing id",
+                search.message_id,
+            )
+            search.message_id = 0
+            mm_search_store.set(search)
+            return None
         except Exception as exc:
-            logger.error("Failed to update queue panel: %s", exc)
+            logger.error("Failed to fetch queue panel: %s", exc)
+            return None
+
+        async def _on_missing() -> None:
+            fresh = mm_search_store.get(guild_id, channel_id)
+            if fresh is not None and fresh.message_id == search.message_id:
+                fresh.message_id = 0
+                mm_search_store.set(fresh)
+
+        return EditRequest(
+            message=message,
+            kwargs={
+                "view": build_queue_panel(
+                    search, ready_count=ready_count
+                ),
+                "allowed_mentions": discord.AllowedMentions.none(),
+            },
+            on_missing=_on_missing,
+        )
 
     async def _validate_join(
         self, interaction: discord.Interaction, search: MMSearch
@@ -2630,6 +2715,9 @@ class MMCog(commands.Cog):
                 task.cancel()
         for task in self._bg_tasks:
             task.cancel()
+        refresher = getattr(self, "_msg_refresher", None)
+        if refresher is not None:
+            asyncio.get_event_loop().create_task(refresher.shutdown())
 
 
 async def setup(bot: TournamentBot) -> None:
