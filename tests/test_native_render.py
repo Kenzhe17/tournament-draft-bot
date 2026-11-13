@@ -247,6 +247,81 @@ class TestBackendSwitch:
         assert called == ["chromium"]
 
 
+class TestRenderAdmission:
+    @pytest.mark.asyncio
+    async def test_queue_full_rejected(self, native_backend, monkeypatch):
+        """Превышение PNG_RENDER_MAX_INFLIGHT → быстрый отказ,
+        без создания SVG/буферов."""
+        from utils import profile_renderer as pr
+
+        monkeypatch.setattr(pr, "_PNG_MAX_INFLIGHT", 2)
+        gate = asyncio.Event()
+
+        async def slow(*a, **k):
+            await gate.wait()
+            return b"\x89PNG\r\n\x1a\nx"
+
+        monkeypatch.setattr(pr, "_render_profile_png_native", slow)
+        t1 = asyncio.create_task(pr.render_profile_png_async({}))
+        t2 = asyncio.create_task(pr.render_profile_png_async({}))
+        await asyncio.sleep(0.05)
+        assert pr.png_render_inflight() == 2
+        # Третий — отказ сразу, не в очередь
+        with pytest.raises(RuntimeError, match="queue is full"):
+            await pr.render_profile_png_async({})
+        gate.set()
+        await asyncio.gather(t1, t2)
+        assert pr.png_render_inflight() == 0
+
+    @pytest.mark.asyncio
+    async def test_admission_covers_banner_too(
+        self, native_backend, monkeypatch
+    ):
+        """Banner и profile делят один admission-счётчик."""
+        from utils import profile_renderer as pr
+        from services.banner import renderer as br
+
+        monkeypatch.setattr(pr, "_PNG_MAX_INFLIGHT", 1)
+        import threading
+        gate = threading.Event()
+
+        def slow_banner(**kw):
+            gate.wait(10)
+            return b"\x89PNG\r\n\x1a\nx"
+
+        monkeypatch.setattr(br, "_render_banner_native", slow_banner)
+        t1 = asyncio.create_task(br.render_banner_png(
+            nickname="A", avatar_png=None, voice_seconds=1,
+            matches=1, has_activity=True))
+        await asyncio.sleep(0.05)
+        # profile не может занять слот, пока banner держит его
+        with pytest.raises(RuntimeError, match="queue is full"):
+            from utils.profile_renderer import render_profile_png_async
+            await render_profile_png_async(_profile_data())
+        gate.set()
+        await t1
+        assert pr.png_render_inflight() == 0
+
+    @pytest.mark.asyncio
+    async def test_event_loop_not_blocked(self, native_backend):
+        """Рендеры идут в executor — loop отвечает во время рендера."""
+        from utils.profile_renderer import render_profile_png_async
+
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            for _ in range(20):
+                await asyncio.sleep(0.01)
+                ticks += 1
+
+        t = asyncio.create_task(ticker())
+        png = await render_profile_png_async(_profile_data())
+        await t
+        assert _png_size(png) == (1920, 1080)
+        assert ticks >= 15  # loop не был заблокирован на ~600мс
+
+
 class TestMetrics:
     def test_native_metric_keys_exist(self):
         from utils import perf_metrics

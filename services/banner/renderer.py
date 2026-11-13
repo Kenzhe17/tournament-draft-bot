@@ -25,6 +25,7 @@ import io
 import logging
 import math
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PIL import Image
@@ -268,6 +269,9 @@ def _esc(s: str) -> str:
 # ---------------------------------------------------------------------------
 
 _NATIVE_SEM = asyncio.Semaphore(2)
+# Отдельный executor для Pillow-рендеров — не делим default pool.
+BANNER_EXECUTOR = ThreadPoolExecutor(max_workers=2,
+                                     thread_name_prefix="png-banner")
 _template_img_cache = None
 _avatar_empty_bg_cache = None
 _logo_img_cache = None
@@ -432,10 +436,15 @@ def _draw_avatar(img, avatar_png: bytes | None, has_activity: bool) -> None:
             ox = (nw - d) // 2
             oy = (nh - d) // 2
             av = av.crop((ox, oy, ox + d, oy + d))
+            # Круглая маска + сохранение альфы аватара: transparent
+            # области PNG-аватара должны показывать шаблон, а не
+            # превращаться в чёрное при convert("RGB").
             mask = Image.new("L", (d, d), 0)
             md = ImageDraw.Draw(mask)
             md.ellipse((0, 0, d - 1, d - 1), fill=255)
-            img.paste(av, (int(x0), int(y0)), mask)
+            av_layer = Image.composite(
+                av, Image.new("RGBA", (d, d), (0, 0, 0, 0)), mask)
+            img.alpha_composite(av_layer, (int(x0), int(y0)))
             return
 
     # пустое состояние: градиент + логотип 58%
@@ -443,11 +452,14 @@ def _draw_avatar(img, avatar_png: bytes | None, has_activity: bool) -> None:
     img.paste(bg, (int(x0), int(y0)))
     logo = _load_logo()
     if logo is not None:
-        lw = int(d * 0.58)
-        lh = int(logo.height * lw / logo.width)
-        lg = logo.resize((lw, lh), Image.LANCZOS)
+        # CSS: width:58%;height:58%;object-fit:contain;opacity:.9
+        box = d * 0.58
+        scale = min(box / logo.width, box / logo.height)
+        lw, lh = int(logo.width * scale + 0.5), int(logo.height * scale + 0.5)
+        lg = logo.resize((max(1, lw), max(1, lh)), Image.LANCZOS)
+        lg.putalpha(lg.getchannel("A").point(lambda v: int(v * 0.9)))
         img.alpha_composite(
-            lg, (int(cx - lw / 2), int(cy - lh / 2)))
+            lg, (int(cx - lg.width / 2), int(cy - lg.height / 2)))
 
 
 def _render_banner_native(
@@ -547,43 +559,53 @@ async def render_banner_png(
 ) -> bytes:
     """PNG баннера 1672x941. native → Pillow; chromium → Playwright."""
     backend = _banner_backend()
-    if backend != "chromium":
-        async with _NATIVE_SEM:
-            try:
-                import time as _time
-                _t0 = _time.monotonic()
-                loop = asyncio.get_running_loop()
-                png = await loop.run_in_executor(
-                    None, functools.partial(
-                        _render_banner_native,
-                        nickname=nickname, avatar_png=avatar_png,
-                        voice_seconds=voice_seconds, matches=matches,
-                        has_activity=has_activity,
-                        report_day_label=report_day_label))
+    from utils.profile_renderer import _png_admission, _note_render_rss
+
+    async with _png_admission():
+        if backend != "chromium":
+            async with _NATIVE_SEM:
                 try:
-                    from utils import perf_metrics
-                    perf_metrics.record(
-                        "banner_render_native_ms",
-                        (_time.monotonic() - _t0) * 1000)
-                    perf_metrics.incr("banner_renders_native")
+                    import time as _time
+                    _t0 = _time.monotonic()
+                    loop = asyncio.get_running_loop()
+                    png = await loop.run_in_executor(
+                        BANNER_EXECUTOR, functools.partial(
+                            _render_banner_native,
+                            nickname=nickname, avatar_png=avatar_png,
+                            voice_seconds=voice_seconds, matches=matches,
+                            has_activity=has_activity,
+                            report_day_label=report_day_label))
+                    try:
+                        from utils import perf_metrics
+                        perf_metrics.record(
+                            "banner_render_native_ms",
+                            (_time.monotonic() - _t0) * 1000)
+                        perf_metrics.incr("banner_renders_native")
+                    except Exception:
+                        pass
+                    _note_render_rss()
+                    return png
                 except Exception:
-                    pass
-                return png
-            except Exception:
-                if backend == "native":
-                    raise
-                logger.warning(
-                    "Native banner render failed — falling back to "
-                    "chromium", exc_info=True)
-                try:
-                    from utils import perf_metrics
-                    perf_metrics.incr("png_render_fallbacks")
-                except Exception:
-                    pass
-    return await _render_banner_png_chromium(
-        nickname=nickname, avatar_png=avatar_png,
-        voice_seconds=voice_seconds, matches=matches,
-        has_activity=has_activity, report_day_label=report_day_label)
+                    try:
+                        from utils import perf_metrics
+                        perf_metrics.incr("png_render_errors")
+                    except Exception:
+                        pass
+                    if backend == "native":
+                        raise
+                    logger.warning(
+                        "Native banner render failed — falling back to "
+                        "chromium", exc_info=True)
+                    try:
+                        from utils import perf_metrics
+                        perf_metrics.incr("png_render_fallbacks")
+                    except Exception:
+                        pass
+        return await _render_banner_png_chromium(
+            nickname=nickname, avatar_png=avatar_png,
+            voice_seconds=voice_seconds, matches=matches,
+            has_activity=has_activity,
+            report_day_label=report_day_label)
 
 
 async def _render_banner_png_chromium(

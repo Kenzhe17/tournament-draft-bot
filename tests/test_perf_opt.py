@@ -445,7 +445,11 @@ class TestRealChromiumLifecycle:
     циклы и контроль дочерних процессов (без mock-драйвера)."""
 
     @pytest.mark.asyncio
-    async def test_real_cycles_no_process_accumulation(self, pr):
+    async def test_real_cycles_no_process_accumulation(
+        self, pr, monkeypatch
+    ):
+        # Тест проверяет жизненный цикл CHROMIUM — форсируем backend.
+        monkeypatch.setenv("PNG_RENDER_BACKEND", "chromium")
         psutil = pytest.importorskip("psutil")
         pytest.importorskip("playwright.async_api")
         import os
@@ -486,7 +490,11 @@ class TestRealChromiumLifecycle:
             await pr.shutdown_profile_renderer()
 
     @pytest.mark.asyncio
-    async def test_real_render_survives_idle_close_attempts(self, pr):
+    async def test_real_render_survives_idle_close_attempts(
+        self, pr, monkeypatch
+    ):
+        # Chromium-рендер — форсируем backend.
+        monkeypatch.setenv("PNG_RENDER_BACKEND", "chromium")
         """Конкурентно: PNG-рендер vs попытки idle-close.
 
         Рендер держит _active_renders>0 → reaper обязан
