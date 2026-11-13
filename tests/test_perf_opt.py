@@ -46,6 +46,10 @@ class TestCyrillicBatch:
         import services.ocr_service as ocr
         from PIL import Image
 
+        # Локальный путь: декодирование происходит в main-процессе
+        # только при явном OCR_WORKER_DISABLE=1.
+        monkeypatch.setenv("OCR_WORKER_DISABLE", "1")
+
         # PNG 100x100
         import io
 
