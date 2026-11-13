@@ -93,10 +93,21 @@ def _kill_proc() -> None:
             proc.kill()
 
 
-def call(kind: str, *args: Any, timeout: float | None = None) -> Any:
+def call(
+    kind: str,
+    *args: Any,
+    timeout: float | None = None,
+    retries: int = 1,
+) -> Any:
     """Синхронный вызов worker'а. Блокирует до результата.
 
     Вызывать из executor-потока (OCR_EXECUTOR), не из event loop.
+
+    retries — число ПОВТОРНЫХ попыток после сбоя: при таймауте,
+    падении child или ошибке задачи воркер убивается и
+    перезапускается, затем запрос повторяется. ONNX-модели в
+    основной процесс не загружаются — при недоступности worker'а
+    caller получает OcrWorkerError.
     """
     global _last_used
     if not worker_enabled():
@@ -104,27 +115,45 @@ def call(kind: str, *args: Any, timeout: float | None = None) -> Any:
     if is_worker_child():
         # Защита от рекурсии: в child диспатчим напрямую.
         return _dispatch(kind, args)
-    with _lock:
-        _ensure_proc()
-        seq = next(_seq)
-        _task_q.put((seq, kind, args))
-        _last_used = time.time()
+    attempts = max(0, retries) + 1
+    last_exc: OcrWorkerError | None = None
+    for attempt in range(attempts):
         try:
-            got_seq, ok, payload = _res_q.get(
-                timeout=timeout or _TIMEOUT_S
+            with _lock:
+                _ensure_proc()
+                seq = next(_seq)
+                _task_q.put((seq, kind, args))
+                _last_used = time.time()
+                try:
+                    got_seq, ok, payload = _res_q.get(
+                        timeout=timeout or _TIMEOUT_S
+                    )
+                except queue.Empty:
+                    raise OcrWorkerError(
+                        f"worker timeout kind={kind}"
+                    )
+                if got_seq != seq:
+                    # Рассинхрон (не должно случаться при одном
+                    # клиенте) — считаем worker битым.
+                    raise OcrWorkerError("worker seq mismatch")
+                _last_used = time.time()
+                if not ok:
+                    raise OcrWorkerError(str(payload))
+                return payload
+        except OcrWorkerError as exc:
+            last_exc = exc
+            if attempt + 1 >= attempts:
+                break
+            logger.warning(
+                "OCR worker call failed (%s) — restart+retry %d/%d",
+                exc, attempt + 1, attempts,
             )
-        except queue.Empty:
-            _kill_proc()
-            raise OcrWorkerError(f"worker timeout kind={kind}")
-        if got_seq != seq:
-            # Рассинхрон (не должно случаться при одном клиенте) —
-            # считаем worker битым.
-            _kill_proc()
-            raise OcrWorkerError("worker seq mismatch")
-        _last_used = time.time()
-        if not ok:
-            raise OcrWorkerError(str(payload))
-        return payload
+            # Убиваем возможно зависший child и повторяем.
+            with _lock:
+                _kill_proc()
+            time.sleep(0.2 * (attempt + 1))
+    assert last_exc is not None
+    raise last_exc
 
 
 def warmup() -> None:

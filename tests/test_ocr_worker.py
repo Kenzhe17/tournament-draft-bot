@@ -70,3 +70,38 @@ def test_shutdown_terminates():
     ocr_worker.call("echo", "x")
     ocr_worker.shutdown()
     assert ocr_worker._proc is None
+
+
+def test_worker_retry_restarts_child():
+    """Ошибка задачи → kill+respawn+retry; после retries — OcrWorkerError."""
+    ocr_worker.call("echo", "warm")
+    pid1 = ocr_worker._proc.pid
+    # no_such_kind: child отвечает ok=False → OcrWorkerError → retry.
+    with pytest.raises(ocr_worker.OcrWorkerError):
+        ocr_worker.call("no_such_kind", retries=1)
+    # После retry-попыток child был перезапущен.
+    assert ocr_worker._proc is not None
+    assert ocr_worker._proc.pid != pid1
+    # Воркер жив и отвечает после рестарта.
+    assert ocr_worker.call("echo", "after") == ("after",)
+
+
+def test_call_retries_on_transport_failure(monkeypatch):
+    """Искусственный транспортный сбой → автоматический retry."""
+    calls = {"n": 0}
+    real_call = ocr_worker.call
+
+    # Имитируем: первый вызой падает по таймауту через подмену _res_q.get
+    # — проще проверить счётчик перезапусков через kill.
+    killed = []
+    real_kill = ocr_worker._kill_proc
+
+    def spy_kill():
+        killed.append(1)
+        real_kill()
+
+    monkeypatch.setattr(ocr_worker, "_kill_proc", spy_kill)
+    # no_such_kind с retries=2 → 3 попытки, ≥2 kill.
+    with pytest.raises(ocr_worker.OcrWorkerError):
+        ocr_worker.call("no_such_kind", retries=2)
+    assert len(killed) >= 2

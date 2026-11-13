@@ -113,14 +113,19 @@ _OCR_MAX_UPSCALE = 2.5
 
 
 def _run_ocr(image_bytes: bytes) -> list[dict[str, Any]]:
-    """Полный OCR: worker-процесс, при сбое — локальный инференс."""
+    """Полный OCR: worker-процесс с restart+retry.
+
+    ONNX-модели НИКОГДА не загружаются в основной процесс —
+    локальный путь существует только при явном
+    OCR_WORKER_DISABLE=1 (отладка/тесты)."""
     if ocr_worker.worker_enabled():
         try:
             return ocr_worker.call("ocr_full", image_bytes) or []
-        except ocr_worker.OcrWorkerError:
-            logger.warning(
-                "OCR worker unavailable — local fallback", exc_info=True
+        except ocr_worker.OcrWorkerError as exc:
+            logger.error(
+                "OCR worker unavailable after retries: %s", exc
             )
+            return []
     return _run_ocr_local(image_bytes)
 
 
@@ -235,16 +240,17 @@ def _cyr_region_text(img, region: tuple[float, float, float, float]) -> str:
 def _run_ocr_cyrillic_region(
     image_bytes: bytes, region: tuple[float, float, float, float]
 ) -> str:
-    """OCR области — worker, при сбое локально."""
+    """OCR области — worker с retry; без ONNX в основном процессе."""
     if ocr_worker.worker_enabled():
         try:
             return ocr_worker.call(
                 "ocr_cyr_region", image_bytes, region
             ) or ""
-        except ocr_worker.OcrWorkerError:
-            logger.warning(
-                "OCR worker unavailable — local fallback", exc_info=True
+        except ocr_worker.OcrWorkerError as exc:
+            logger.error(
+                "OCR worker unavailable after retries: %s", exc
             )
+            return ""
     return _run_ocr_cyrillic_region_local(image_bytes, region)
 
 
@@ -262,7 +268,7 @@ def _run_ocr_cyrillic_region_local(
 def _run_ocr_cyrillic_regions(
     image_bytes: bytes, regions: list[tuple[float, float, float, float]]
 ) -> list[str]:
-    """OCR нескольких областей — worker, при сбое локально."""
+    """OCR нескольких областей — worker с retry; без ONNX локально."""
     if ocr_worker.worker_enabled():
         try:
             res = ocr_worker.call(
@@ -270,10 +276,11 @@ def _run_ocr_cyrillic_regions(
             )
             if isinstance(res, list):
                 return res
-        except ocr_worker.OcrWorkerError:
-            logger.warning(
-                "OCR worker unavailable — local fallback", exc_info=True
+        except ocr_worker.OcrWorkerError as exc:
+            logger.error(
+                "OCR worker unavailable after retries: %s", exc
             )
+            return [""] * len(regions)
     return _run_ocr_cyrillic_regions_local(image_bytes, regions)
 
 

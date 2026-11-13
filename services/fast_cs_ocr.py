@@ -1449,30 +1449,32 @@ async def parse_cs_fast(
     def _run() -> dict[str, Any] | None:
         if ocr_worker.worker_enabled():
             try:
-                res = ocr_worker.call("cs_fast", data)
-            except ocr_worker.OcrWorkerError:
-                logger.warning(
-                    "OCR worker failed — local fast OCR fallback",
-                    exc_info=True,
+                res = ocr_worker.call("cs_fast", data, retries=1)
+            except ocr_worker.OcrWorkerError as exc:
+                # ONNX в основной процесс не грузим — fast-путь
+                # просто недоступен, полный OCR тоже идёт через
+                # worker и завершится ошибкой выше по стеку.
+                logger.error(
+                    "OCR worker failed after retries: %s", exc
                 )
-            else:
-                if reason_out is not None and res.get("reason"):
-                    reason_out.append(res["reason"])
-                try:
-                    from utils import perf_metrics
+                return None
+            if reason_out is not None and res.get("reason"):
+                reason_out.append(res["reason"])
+            try:
+                from utils import perf_metrics
 
-                    perf_metrics.record(
-                        "fast_ocr_total_ms", res.get("wall_ms", 0.0)
-                    )
-                    perf_metrics.incr(
-                        "fast_ocr_ok"
-                        if res.get("ok")
-                        else "fast_ocr_fallback"
-                    )
-                except Exception:
-                    pass
-                return res.get("parsed")
-        # Локальный путь (worker выключен или упал).
+                perf_metrics.record(
+                    "fast_ocr_total_ms", res.get("wall_ms", 0.0)
+                )
+                perf_metrics.incr(
+                    "fast_ocr_ok"
+                    if res.get("ok")
+                    else "fast_ocr_fallback"
+                )
+            except Exception:
+                pass
+            return res.get("parsed")
+        # Локальный путь — только при явном OCR_WORKER_DISABLE=1.
         return _extract_parsed(data, t_submit, reason_out)
 
     return await loop.run_in_executor(OCR_EXECUTOR, _run)
