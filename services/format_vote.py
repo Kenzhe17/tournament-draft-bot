@@ -55,6 +55,12 @@ _FORMATS: dict[str, dict[str, str]] = {
 # одновременных нажатиях и от гонки finalize/клик.
 _LOCKS: dict[str, asyncio.Lock] = {}
 _TIMERS: dict[str, asyncio.Task] = {}
+_UI_TASKS: dict[str, asyncio.Task] = {}
+_WATCHDOG: asyncio.Task | None = None
+_UI_DEBOUNCE_S = 0.6
+_WATCHDOG_S = 12.0
+_TIMER_RETRY_S = 5.0
+_UI_SYNC_MAX_ATTEMPTS = 20
 
 
 def _lock(key: str) -> asyncio.Lock:
@@ -361,15 +367,6 @@ async def handle_vote_click(
                 interaction, "ℹ️ Голосование уже завершено."
             )
             return
-        if time.time() > float(fv.get("vote_deadline") or 0):
-            # Протухшее голосование — финализируем перед ответом.
-            await finalize_format_vote(
-                interaction.guild, tournament, mt, mi
-            )
-            await _ephemeral(
-                interaction, "ℹ️ Голосование уже завершено."
-            )
-            return
         uid = int(getattr(interaction.user, "id", 0) or 0)
         if uid not in _player_uids(tournament):
             await _ephemeral(
@@ -384,31 +381,45 @@ async def handle_vote_click(
                 "Вы уже проголосовали за этот формат",
             )
             return
-        votes[str(uid)] = fmt
-        store.set(tournament)
-        await _mirror_to_pg(tournament, mt, mi, fv)
-
-        # Обновить сообщение голосования (один edit на голос).
-        try:
-            vch_id = int(fv.get("vote_channel_id") or cid)
-            vch = interaction.guild.get_channel(vch_id)
-            if vch is None:
-                vch = await interaction.guild.fetch_channel(vch_id)
-            mid = int(fv.get("vote_message_id") or 0)
-            if vch is not None and mid:
-                msg = await vch.fetch_message(mid)
-                await msg.edit(
-                    view=build_vote_view(tournament, mt, mi, fv)
-                )
-        except Exception as exc:
-            logger.warning("Format vote update failed: %s", exc)
-
-        if len(votes) >= VOTE_PLAYERS:
-            await finalize_format_vote(
-                interaction.guild, tournament, mt, mi
-            )
+        expired = time.time() > float(fv.get("vote_deadline") or 0)
+        if expired:
+            # После deadline новые голоса запрещены (ТЗ).
+            need_finalize = True
         else:
-            await _ephemeral(interaction, "✅ Голос учтён.")
+            votes[str(uid)] = fmt
+            store.set(tournament)
+            await _mirror_to_pg(tournament, mt, mi, fv)
+            need_finalize = len(votes) >= VOTE_PLAYERS
+        logger.info(
+            "format_vote_cast match=%s user=%s fmt=%s votes=%d "
+            "deadline=%.0f expired=%s",
+            fv.get("match_id"), uid, fmt, len(votes),
+            float(fv.get("vote_deadline") or 0), expired,
+        )
+
+    # Всё ниже — ВНЕ lock: Discord-ответ не ждёт PATCH и наоборот.
+    if expired:
+        await _ephemeral(
+            interaction, "ℹ️ Голосование уже завершено."
+        )
+        await finalize_format_vote(
+            interaction.guild, tournament, mt, mi
+        )
+        return
+
+    # Ответ пользователю — до любых долгих Discord-операций.
+    await _ephemeral(interaction, "✅ Голос учтён.")
+
+    # Карточка голосования — debounce/coalescing: серия кликов
+    # даёт один PATCH со свежим состоянием.
+    _schedule_vote_ui(key, interaction.guild, tournament, mt, mi)
+
+    if need_finalize:
+        # Отменяем отложенный UI — финальная карточка важнее.
+        _cancel_vote_ui(key)
+        await finalize_format_vote(
+            interaction.guild, tournament, mt, mi
+        )
 
 
 async def _ephemeral(interaction: discord.Interaction,
@@ -438,29 +449,96 @@ def _schedule_timer(guild_id: int, channel_id: int,
     _TIMERS[key] = task
 
 
+def _cancel_vote_ui(key: str) -> None:
+    task = _UI_TASKS.pop(key, None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
+def _schedule_vote_ui(
+    key: str,
+    guild,
+    tournament,
+    match_type: str,
+    match_index: int,
+) -> None:
+    """Debounced обновление карточки голосования.
+
+    Серия голосов → один PATCH с последним состоянием. Задача
+    перечитывает свежее состояние из store перед edit.
+    """
+    _cancel_vote_ui(key)
+
+    async def _run() -> None:
+        try:
+            await asyncio.sleep(_UI_DEBOUNCE_S)
+            fresh = store.get(
+                int(getattr(tournament, "guild_id", 0) or 0),
+                int(getattr(tournament, "channel_id", 0) or 0),
+            ) or tournament
+            fv = get_vote_state(fresh, match_type, match_index)
+            if fv is None or fv.get("vote_status") != "open":
+                return
+            try:
+                g = guild
+                if g is None:
+                    gid = int(getattr(fresh, "guild_id", 0) or 0)
+                    g = store_bot_guild(gid)
+                vch_id = int(fv.get("vote_channel_id") or 0)
+                mid = int(fv.get("vote_message_id") or 0)
+                if g is not None and vch_id and mid:
+                    vch = g.get_channel(vch_id)
+                    if vch is None:
+                        vch = await g.fetch_channel(vch_id)
+                    msg = await vch.fetch_message(mid)
+                    await msg.edit(
+                        view=build_vote_view(
+                            fresh, match_type, match_index, fv
+                        )
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Format vote UI debounce edit failed: %s", exc
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Format vote UI task failed: %s", key)
+        finally:
+            _UI_TASKS.pop(key, None)
+
+    _UI_TASKS[key] = asyncio.create_task(_run())
+
+
 async def _vote_timer(guild_id: int, channel_id: int,
                       match_type: str, match_index: int) -> None:
     key = _key(guild_id, channel_id, match_type, match_index)
     try:
         while True:
-            tournament = store.get(guild_id, channel_id)
-            fv = (
-                get_vote_state(tournament, match_type, match_index)
-                if tournament is not None else None
-            )
-            if fv is None or fv.get("vote_status") != "open":
-                return
-            remain = float(fv.get("vote_deadline") or 0) - time.time()
-            if remain <= 0:
-                await finalize_format_vote(
-                    None, tournament, match_type, match_index
+            try:
+                tournament = store.get(guild_id, channel_id)
+                fv = (
+                    get_vote_state(tournament, match_type, match_index)
+                    if tournament is not None else None
                 )
-                return
-            await asyncio.sleep(min(remain + 0.5, 30.0))
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.exception("Format vote timer failed: %s", key)
+                if fv is None or fv.get("vote_status") != "open":
+                    return
+                remain = float(fv.get("vote_deadline") or 0) - time.time()
+                if remain <= 0:
+                    await finalize_format_vote(
+                        None, tournament, match_type, match_index
+                    )
+                    return
+                await asyncio.sleep(min(remain + 0.5, 30.0))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Сбой не убивает таймер: watchdog подстрахует,
+                # но и здесь повторяем через короткую паузу.
+                logger.exception(
+                    "format_vote_timer_failed key=%s", key
+                )
+                await asyncio.sleep(_TIMER_RETRY_S)
     finally:
         _TIMERS.pop(key, None)
 
@@ -504,44 +582,111 @@ async def finalize_format_vote(
         fv["vote_status"] = "done"
         fv["tie"] = tie
         fv["closed_at"] = time.time()
+        fv["ui_synced"] = False
+        fv["ui_sync_attempts"] = 0
         store.set(fresh)
         await _mirror_to_pg(fresh, match_type, match_index, fv)
-
-        # CV2-сообщение → финальный вид с правилами.
-        try:
-            if guild is None:
-                gid = int(getattr(fresh, "guild_id", 0) or 0)
-                guild = store_bot_guild(gid)
-            vch_id = int(fv.get("vote_channel_id") or 0)
-            mid = int(fv.get("vote_message_id") or 0)
-            if guild is not None and vch_id and mid:
-                vch = guild.get_channel(vch_id)
-                if vch is None:
-                    vch = await guild.fetch_channel(vch_id)
-                msg = await vch.fetch_message(mid)
-                await msg.edit(
-                    view=build_vote_view(fresh, match_type,
-                                         match_index, fv)
-                )
-        except Exception as exc:
-            logger.warning("Format vote final edit failed: %s", exc)
-
-        # Строка «Формат» в карточке матча.
-        try:
-            from services.match_announcer import update_match_card
-
-            meta = _match_meta(fresh, match_type, match_index) or {}
-            await update_match_card(
-                guild, fresh, match_type, match_index,
-                state=meta.get("card_state") or "active",
-            )
-        except Exception as exc:
-            logger.warning("Format vote card update failed: %s", exc)
         logger.info(
-            "Format vote finalized %s: %s (votes=%s)",
+            "format_vote_finalized match=%s format=%s votes=%s "
+            "deadline=%.0f",
             fv.get("match_id"), selected, counts,
+            float(fv.get("vote_deadline") or 0),
         )
-        return True
+
+    # UI-синхронизация ВНЕ lock — Discord PATCH не держит состояние.
+    # Сбой API не откатывает зафиксированный итог; watchdog повторит.
+    _cancel_vote_ui(key)
+    await _sync_vote_ui(guild, fresh, match_type, match_index, fv)
+    return True
+
+
+async def _sync_vote_ui(
+    guild,
+    tournament,
+    match_type: str,
+    match_index: int,
+    fv: dict,
+) -> bool:
+    """Discord-синхронизация финальной карточки + карточки матча.
+
+    Идемпотентно и безопасно для повторов (watchdog). ui_synced=True
+    ТОЛЬКО когда реально отредактированы И карточка голосования, И
+    карточка матча: пропуск ветки (нет guild/channel/message_id) —
+    несинхронизированное состояние, а не успех. Удалённое сообщение
+    (404) — attempts в максимум: watchdog не долбит Discord вечно.
+    """
+    ok = True
+    reason = ""
+    try:
+        if guild is None:
+            gid = int(getattr(tournament, "guild_id", 0) or 0)
+            guild = store_bot_guild(gid)
+        vch_id = int(fv.get("vote_channel_id") or 0)
+        mid = int(fv.get("vote_message_id") or 0)
+        if guild is None:
+            ok = False
+            reason = "guild unavailable"
+        elif not vch_id or not mid:
+            ok = False
+            reason = "vote message ref missing"
+        else:
+            vch = guild.get_channel(vch_id)
+            if vch is None:
+                vch = await guild.fetch_channel(vch_id)
+            msg = await vch.fetch_message(mid)
+            await msg.edit(
+                view=build_vote_view(tournament, match_type,
+                                     match_index, fv)
+            )
+    except discord.NotFound:
+        ok = False
+        reason = "vote message deleted"
+        fv["ui_sync_attempts"] = _UI_SYNC_MAX_ATTEMPTS
+        logger.warning(
+            "format_vote_ui_sync_gone match=%s: message %s deleted "
+            "— retries disabled",
+            fv.get("match_id"), fv.get("vote_message_id"),
+        )
+    except Exception as exc:
+        ok = False
+        reason = str(exc)
+        logger.warning(
+            "format_vote_ui_sync_failed match=%s: %s",
+            fv.get("match_id"), exc,
+        )
+
+    # Строка «Формат» в карточке матча.
+    try:
+        from services.match_announcer import update_match_card
+
+        meta = _match_meta(tournament, match_type, match_index) or {}
+        await update_match_card(
+            guild, tournament, match_type, match_index,
+            state=meta.get("card_state") or "active",
+        )
+    except Exception as exc:
+        ok = False
+        if not reason:
+            reason = str(exc)
+        logger.warning(
+            "format_vote_card_update_failed match=%s: %s",
+            fv.get("match_id"), exc,
+        )
+
+    fv["ui_sync_attempts"] = (
+        _UI_SYNC_MAX_ATTEMPTS
+        if reason == "vote message deleted"
+        else int(fv.get("ui_sync_attempts") or 0) + 1
+    )
+    fv["ui_synced"] = ok
+    if reason and not ok:
+        fv["ui_sync_last_error"] = reason[:200]
+    store.set(tournament)
+    if ok:
+        logger.info(
+            "format_vote_ui_synced match=%s", fv.get("match_id")
+        )
+    return ok
 
 
 def store_bot_guild(guild_id: int):
@@ -619,6 +764,85 @@ async def restore_format_votes(bot) -> None:
                 await finalize_format_vote(guild, tournament, mt, mi)
             else:
                 _schedule_timer(gid, cid, mt, mi)
+    ensure_format_vote_watchdog()
+
+
+# ---------------------------------------------------------------------------
+# Watchdog: гарантия завершения даже при потере таймера/ошибках API
+# ---------------------------------------------------------------------------
+
+def ensure_format_vote_watchdog() -> None:
+    """Идемпотентный запуск периодической проверки голосований."""
+    global _WATCHDOG
+    if _WATCHDOG is not None and not _WATCHDOG.done():
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    _WATCHDOG = loop.create_task(_watchdog_loop())
+
+
+async def _watchdog_loop() -> None:
+    """Каждые ~12с: open+просрочен → финализация; done без
+    ui_synced → повтор Discord-синхронизации (ограниченно)."""
+    while True:
+        try:
+            await asyncio.sleep(_WATCHDOG_S)
+            now = time.time()
+            recovered = 0
+            for tournament in store.all():
+                if not getattr(tournament, "mm_search_channel_id", 0):
+                    continue
+                gid = int(getattr(tournament, "guild_id", 0) or 0)
+                cid = int(getattr(tournament, "channel_id", 0) or 0)
+                for meta in (tournament.match_channels or {}).values():
+                    fv = (meta or {}).get("format_vote")
+                    if not isinstance(fv, dict):
+                        continue
+                    status = fv.get("vote_status")
+                    mt, mi = meta.get("match_type"), int(
+                        meta.get("match_index", 0) or 0
+                    )
+                    if not mt:
+                        continue
+                    try:
+                        if status == "open" and now > float(
+                            fv.get("vote_deadline") or 0
+                        ):
+                            logger.warning(
+                                "format_vote_watchdog_recovered "
+                                "match=%s", fv.get("match_id"),
+                            )
+                            recovered += 1
+                            await finalize_format_vote(
+                                None, tournament, mt, mi
+                            )
+                        elif (
+                            status == "done"
+                            and not fv.get("ui_synced")
+                            and int(fv.get("ui_sync_attempts") or 0)
+                            < _UI_SYNC_MAX_ATTEMPTS
+                        ):
+                            await _sync_vote_ui(
+                                None, tournament, mt, mi, fv
+                            )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.exception(
+                            "format_vote_watchdog_item_failed "
+                            "match=%s", fv.get("match_id"),
+                        )
+            if recovered:
+                from utils import perf_metrics
+
+                perf_metrics.incr("format_votes_watchdog_recovered",
+                                  recovered)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("format_vote_watchdog_failed")
 
 
 async def _mirror_to_pg(tournament, match_type: str,
