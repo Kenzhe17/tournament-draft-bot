@@ -181,3 +181,61 @@ async def test_queue_bounded():
         ref.schedule(f"key{i}", build)
     assert len(ref._wanted) <= 3
     await ref.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_429_single_retry_no_loop():
+    """429 → ровно одна повторная попытка; без новых schedule
+    цикл не продолжается (нет бесконечных ретраев)."""
+    ref = MessageRefresher(default_delay=0.05)
+    resp = SimpleNamespace(status=429, reason="Too Many Requests", text="x")
+    exc = discord.HTTPException(resp, "rate limited")
+    exc.retry_after = 0.01
+    msg = FakeMessage(fail_with=exc)
+
+    ref.schedule("k6", _builder_for(msg, {"text": "v"}))
+    await asyncio.sleep(0.4)
+    # 1 исходная попытка + 1 retry = 2 вызова edit, дальше стоп
+    assert len(msg.edits) == 2
+    await asyncio.sleep(0.3)
+    assert len(msg.edits) == 2
+    await ref.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancels_pending_workers():
+    ref = MessageRefresher(default_delay=60.0)
+    msg = FakeMessage()
+    for i in range(5):
+        ref.schedule(f"s{i}", _builder_for(msg, {"text": "x"}))
+    assert len(ref._workers) == 5
+    await ref.shutdown()
+    assert not ref._workers
+    assert not ref._wanted
+    await asyncio.sleep(0.05)
+    assert msg.edits == []
+
+
+@pytest.mark.asyncio
+async def test_404_dead_window_suppresses_reschedule():
+    ref = MessageRefresher(default_delay=0.05, dead_seconds=0.5)
+    gone = discord.NotFound(
+        SimpleNamespace(status=404, reason="NF", text="x"), "gone"
+    )
+    msg = FakeMessage(fail_with=gone)
+    calls = []
+
+    async def build():
+        calls.append(1)
+        return EditRequest(message=msg, kwargs={"content": "x"})
+
+    ref.schedule("k7", build)
+    await asyncio.sleep(0.2)
+    assert calls == [1]
+    # В dead-окне повторные события не вызывают builder/API
+    ref.schedule("k7", build)
+    ref.schedule("k7", build)
+    await asyncio.sleep(0.3)
+    assert calls == [1]
+    assert msg.edits  # edit вызывался (и падал с NotFound)
+    await ref.shutdown()
