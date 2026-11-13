@@ -163,11 +163,12 @@ class CircleSelectButton(discord.ui.Button):
                 return
 
             from services import vac_service
-            from services.vac_service import vac_blocked_text
-            vac = await vac_service.get_active_vac(self.guild_id, interaction.user.id)
+            vac = await vac_service.check_vac(self.guild_id, interaction.user.id)
             if vac is not None:
+                ts = int(vac["expires_at"].timestamp())
                 await interaction.response.send_message(
-                    vac_blocked_text(int(vac["expires_at"].timestamp())),
+                    vac_service.vac_blocked_text(
+                        ts, reason=vac.get("reason"), level=vac.get("level")),
                     ephemeral=True,
                 )
                 return
@@ -294,11 +295,12 @@ class JoinPoolButton(discord.ui.Button):
                 return
 
             from services import vac_service
-            from services.vac_service import vac_blocked_text
-            vac = await vac_service.get_active_vac(self.guild_id, interaction.user.id)
+            vac = await vac_service.check_vac(self.guild_id, interaction.user.id)
             if vac is not None:
+                ts = int(vac["expires_at"].timestamp())
                 await interaction.response.send_message(
-                    vac_blocked_text(int(vac["expires_at"].timestamp())),
+                    vac_service.vac_blocked_text(
+                        ts, reason=vac.get("reason"), level=vac.get("level")),
                     ephemeral=True,
                 )
                 return
@@ -452,11 +454,12 @@ class AdminAddModal(discord.ui.Modal):
         # VAC — админское добавление тоже проверяется
         if user_id:
             from services import vac_service
-            from services.vac_service import vac_blocked_text
-            vac = await vac_service.get_active_vac(self.guild_id, user_id)
+            vac = await vac_service.check_vac(self.guild_id, user_id)
             if vac is not None:
+                reason = vac.get("reason")
+                reason_part = f" ({reason})" if reason else ""
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} У {player_name} активен VAC "
+                    f"{replace_emojis('❌')} У {player_name} активен VAC{reason_part} "
                     f"(до <t:{int(vac['expires_at'].timestamp())}:R>).",
                     ephemeral=True
                 )

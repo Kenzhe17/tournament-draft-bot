@@ -7,7 +7,6 @@ import io
 import logging
 import time
 from collections import deque
-from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,8 +24,6 @@ from config import (
 # Единый канал для карточек «НАЙДЕН МАТЧ» (Ready Check)
 MATCH_FOUND_CHANNEL_ID = _cfg.MATCH_FOUND_CHANNEL_ID
 
-# VAC 10 минут — не нажал «Готов» / нажал «Отказаться» на Ready Check
-MM_NO_SHOW_VAC = timedelta(minutes=10)
 # Пауза между попытками запуска матча после ошибки (антиспам API)
 MATCH_START_RETRY_COOLDOWN = 120.0
 # Сколько считается «живым» запуск матча между LOCKED и Ready Check.
@@ -1249,18 +1246,26 @@ class MMCog(commands.Cog):
         self._ready_metric("ready_user_response_ms", total_ms, match_id)
 
     async def _issue_mm_vacs(
-        self, guild_id: int, user_ids, reason: str
+        self, guild_id: int, user_ids, reason: str, event_key: str
     ) -> None:
-        """VAC игрокам, не подтвердившим готовность / отказавшимся."""
-        from services.vac_service import issue_vac
+        """VAC игрокам за срыв Ready Check — прогрессивная лестница.
+
+        record_violation сам вычисляет уровень и срок; event_key
+        (матч+тип нарушения) защищает от повторной выдачи за то же
+        событие при дублирующихся Discord-callback/таймаутах.
+        """
+        from services.vac_service import record_violation
         issued_by = getattr(getattr(self.bot, "user", None), "id", 0) or 0
         for uid in {int(u) for u in user_ids if u and int(u) > 0}:
             try:
-                row, err = await issue_vac(
-                    guild_id, uid, issued_by, MM_NO_SHOW_VAC)
+                row, err = await record_violation(
+                    guild_id, uid, issued_by, reason,
+                    event_key=f"{event_key}:{uid}")
                 if row is None:
-                    continue  # already_active или ошибка — не дублируем
-                logger.info("MM VAC issued: user=%s reason=%s", uid, reason)
+                    continue  # дубликат события или ошибка — не наказываем дважды
+                logger.info(
+                    "MM VAC issued: user=%s level=%s reason=%s",
+                    uid, row.get("new_level"), reason)
                 try:
                     user = self.bot.get_user(uid)
                     if user is None:
@@ -1268,9 +1273,12 @@ class MMCog(commands.Cog):
                     expires = row.get("expires_at")
                     ts = int(expires.timestamp()) if hasattr(
                         expires, "timestamp") else 0
-                    vac_minutes = int(MM_NO_SHOW_VAC.total_seconds() // 60)
+                    issued = row.get("issued_at")
+                    minutes = int(
+                        (expires - issued).total_seconds() // 60
+                    ) if expires and issued else 0
                     await user.send(
-                        f"Вам выдан VAC на {vac_minutes} минут: {reason}.\n"
+                        f"Вам выдан VAC {minutes} минут: {reason}.\n"
                         f"До <t:{ts}:R> вы не можете участвовать "
                         "в турнирах r!z3."
                     )
@@ -1310,7 +1318,8 @@ class MMCog(commands.Cog):
             await ready_check_store.save(rc)
             await self._issue_mm_vacs(
                 rc.guild_id, [player.user_id],
-                "отказ от Ranked-матча")
+                "отказ от Ranked-матча",
+                event_key=f"mm_decline:{rc.match_id}")
 
             await self._ephemeral(
                 interaction,
@@ -1345,7 +1354,8 @@ class MMCog(commands.Cog):
             if no_show:
                 await self._issue_mm_vacs(
                     rc.guild_id, no_show,
-                    "не подтвердил готовность на матч")
+                    "не подтвердил готовность на матч",
+                    event_key=f"mm_timeout:{rc.match_id}")
             await self._finish_cancelled(rc, keep_user_ids=keep)
 
     async def _finish_cancelled(self, rc: ReadyCheck, keep_user_ids: set[int]) -> None:
@@ -1975,12 +1985,12 @@ class MMCog(commands.Cog):
 
         # VAC — временная блокировка участия в турнирах
         from services import vac_service
-        from services.vac_service import vac_blocked_text
 
-        vac = await vac_service.get_active_vac(guild_id, interaction.user.id)
+        vac = await vac_service.check_vac(guild_id, interaction.user.id)
         if vac is not None:
             ts = int(vac["expires_at"].timestamp())
-            return vac_blocked_text(ts)
+            return vac_service.vac_blocked_text(
+                ts, reason=vac.get("reason"), level=vac.get("level"))
         return None
 
     async def _ephemeral(self, interaction: discord.Interaction, text: str) -> None:
