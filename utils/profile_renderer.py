@@ -1,7 +1,11 @@
 """Рендерер графической карточки профиля 1920x1080 — Player Profile V2.
 
-Новая реализация: SVG-сцена собирается в Python из реальных данных,
-затем рендерится в PNG через Playwright/Chromium (viewport 1920x1080).
+SVG-сцена собирается в Python из реальных данных, затем растеризуется
+в PNG. Два backend'а (PNG_RENDER_BACKEND):
+
+- ``native``/``auto`` — resvg (Rust) напрямую из SVG: без браузера,
+  ~10–50 МБ RSS, миллисекунды;
+- ``chromium`` — Playwright/Chromium (viewport 1920x1080), legacy.
 
 Вся типографика — Inter (variable font, в assets_ds_server/fonts).
 Вёрстка повторяет шаблон riz3_profile_v2: CSS/SVG Grid-зоны,
@@ -17,7 +21,10 @@ import html
 import io
 import logging
 import os
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -35,11 +42,14 @@ RENDER_TIMEOUT = 20.0
 # SVG helpers (портировано из riz3_profile_v2_pack/create_riz3_v2.py)
 # ---------------------------------------------------------------------------
 
-_E: list[str] = []
+# Список элементов SVG — thread-local: build_profile_svg вызывается
+# из PNG_EXECUTOR параллельно в нескольких потоках, общий _E
+# приводил бы к гонке и битому SVG.
+_E = threading.local()
 
 
 def _add(s: str) -> None:
-    _E.append(s)
+    _E.items.append(s)
 
 
 def _esc(v) -> str:
@@ -109,7 +119,24 @@ def _pil_font(size: int, weight: int = 700):
 
         f = ImageFont.truetype(str(INTER_FONT_PATH), size)
         try:
-            f.set_variation_by_axes([float(weight)])
+            # Inter-Variable имеет ДВА вариационных шрифта:
+            # 'Optical size' (14–32) и 'Weight' (100–900).
+            # set_variation_by_axes([weight]) ставил только ПЕРВУЮ
+            # ось (opsz=weight→clamp 32) и оставлял wght=400 —
+            # текст рендерился regular вместо bold.
+            coords = []
+            for ax in f.get_variation_axes():
+                name = ax["name"]
+                name = name.decode() if isinstance(name, bytes) else name
+                low = name.lower()
+                if "weight" in low:
+                    coords.append(float(weight))
+                elif "optical" in low:
+                    # font-optical-sizing: auto ≈ кегль, clamp в ось
+                    coords.append(min(32.0, max(14.0, float(size))))
+                else:
+                    coords.append(float(ax["default"]))
+            f.set_variation_by_axes(coords)
         except Exception:
             pass
         _font_cache[key] = f
@@ -200,8 +227,7 @@ def _rank_info(level: int) -> dict:
 def build_profile_svg(data: dict, avatar_png: bytes | None = None,
                       badge_png: bytes | None = None) -> str:
     """Собрать SVG-сцену 1920x1080 из словаря данных профиля."""
-    global _E
-    _E = []
+    _E.items = []
 
     _add(
         '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" '
@@ -260,7 +286,7 @@ def build_profile_svg(data: dict, avatar_png: bytes | None = None,
     if avatar_uri:
         _img(
             105, 239, 130, 130, avatar_uri,
-            extra='clip-path="url(#avatarClip)" preserveAspectRatio="xMidYMid slice"',
+            extra='clip-path="url(#avatarClip)"',
             preserve="xMidYMid slice",
         )
     else:
@@ -432,7 +458,7 @@ def build_profile_svg(data: dict, avatar_png: bytes | None = None,
     _txt(1860, 1057, "1920×1080", 14, "#6F7991", 550, anchor="end")
 
     _add("</svg>")
-    return "\n".join(_E)
+    return "\n".join(_E.items)
 
 
 # ---------------------------------------------------------------------------
@@ -648,14 +674,302 @@ async def shutdown_profile_renderer() -> None:
     _browser = _playwright = None
 
 
+# ---------------------------------------------------------------------------
+# Native backend: SVG → resvg (без браузера)
+# ---------------------------------------------------------------------------
+
+# CPU-bound растеризация — ОДИН общий executor для всех нативных
+# PNG-рендеров (profile + banner): resvg и Pillow. Общий пул —
+# единственный лимит одновременно ВЫПОЛНЯЮЩИХСЯ тяжёлых растеризаций
+# (раньше profile и banner имели по 2 воркера → 4 параллельных рендера).
+# PNG_RENDER_WORKERS — env-переопределение.
+PNG_EXECUTOR = ThreadPoolExecutor(
+    max_workers=int(os.environ.get("PNG_RENDER_WORKERS", "3")),
+    thread_name_prefix="png-native")
+
+
+class _PngQueueFull(RuntimeError):
+    """PNG render queue is full — load-shedding, не ошибка рендера."""
+
+
+# Bounded admission для PNG-рендеров (profile+banner):
+# лимит считает admitted = выполняющиеся + ожидающие в executor
+# тяжёлые операции. Слот освобождается по завершению underlying
+# future — отмена asyncio-задачи НЕ освобождает слот раньше времени
+# (рабочий поток продолжает исполняться). Chromium-путь (async,
+# реально отменяемый) отпускает слот в finally.
+_PNG_INFLIGHT = 0
+_PNG_INFLIGHT_LOCK = threading.Lock()
+_PNG_MAX_INFLIGHT = int(os.environ.get("PNG_RENDER_MAX_INFLIGHT", "8"))
+
+
+def png_render_inflight() -> int:
+    return _PNG_INFLIGHT
+
+
+def _png_try_acquire() -> bool:
+    """Атомарный захват слота. Вызывать только из event loop."""
+    global _PNG_INFLIGHT
+    with _PNG_INFLIGHT_LOCK:
+        if _PNG_INFLIGHT >= _PNG_MAX_INFLIGHT:
+            return False
+        _PNG_INFLIGHT += 1
+        return True
+
+
+def _png_release() -> None:
+    global _PNG_INFLIGHT
+    with _PNG_INFLIGHT_LOCK:
+        _PNG_INFLIGHT = max(0, _PNG_INFLIGHT - 1)
+
+
+@asynccontextmanager
+async def _png_admission():
+    """Bounded admission для ОТМЕНЯЕМОГО (chromium) рендера.
+
+    Проверка и инкремент атомарны (event loop однопоточен, между
+    ними нет await). Превышение лимита — отказ до создания
+    SVG/буферов. Нативный путь использует _png_run_native — там
+    слот привязан к done_callback future.
+    """
+    if not _png_try_acquire():
+        raise _PngQueueFull("PNG render queue is full")
+    try:
+        yield
+    finally:
+        _png_release()
+
+
+_PNG_PEAK_RSS_MB = 0.0
+_RSS_SAMPLE_INTERVAL = 0.01
+
+
+def _tree_rss_mb() -> float:
+    """RSS процесса + всех дочерних (для chromium-fallback ветки).
+
+    Сумма RSS процессов может дважды считать shared pages — это
+    gauge для относительного сравнения backend'ов, а НЕ точный
+    расчёт Railway billing (тот идёт по cgroup контейнера).
+    """
+    try:
+        import psutil
+
+        proc = psutil.Process()
+        total = proc.memory_info().rss
+        for ch in proc.children(recursive=True):
+            try:
+                total += ch.memory_info().rss
+            except Exception:
+                pass
+        return total / 1048576
+    except Exception:
+        return 0.0
+
+
+def _start_rss_monitor():
+    """Фоновый сэмплер RSS на всё время нативного рендера.
+
+    Пик фиксируется сэмплами ~каждые 10мс — ловит промежуточные
+    буферы resvg/Pillow, которые пост-рендерный замер пропускает.
+    Возвращает stop(): вызывать из done_callback future, чтобы
+    монитор покрывал render даже при отмене asyncio-ожидания.
+    """
+    stop = threading.Event()
+
+    def _loop():
+        global _PNG_PEAK_RSS_MB
+        while not stop.is_set():
+            mb = _tree_rss_mb()
+            if mb > _PNG_PEAK_RSS_MB:
+                _PNG_PEAK_RSS_MB = mb
+            stop.wait(_RSS_SAMPLE_INTERVAL)
+
+    t = threading.Thread(target=_loop, daemon=True,
+                         name="png-rss-monitor")
+    t.start()
+
+    def _stop() -> None:
+        stop.set()
+        t.join(timeout=0.5)
+
+    return _stop
+
+
+def _note_render_rss() -> None:
+    """Точечный замер RSS после рендера (chromium-путь)."""
+    global _PNG_PEAK_RSS_MB
+    mb = _tree_rss_mb()
+    if mb > _PNG_PEAK_RSS_MB:
+        _PNG_PEAK_RSS_MB = mb
+
+
+def png_render_peak_rss_mb() -> float:
+    return _PNG_PEAK_RSS_MB
+
+
+async def _png_run_native(fn, /, *args, **kwargs):
+    """Admitted нативный PNG-рендер в общем PNG_EXECUTOR.
+
+    Слот admission и RSS-монитор привязаны к завершению underlying
+    concurrent.futures.Future через done_callback, а не к жизни
+    asyncio-задачи:
+    - отмена ожидания НЕ освобождает слот, пока поток реально
+      работает (future продолжает исполняться);
+    - future, отменённый до старта, освобождает слот через тот же
+      callback — утечек нет.
+    """
+    if not _png_try_acquire():
+        raise _PngQueueFull("PNG render queue is full")
+    import functools
+
+    loop = asyncio.get_running_loop()
+    call = functools.partial(fn, *args, **kwargs)
+    stop_mon = _start_rss_monitor()
+    try:
+        # concurrent.futures.Future — НЕ asyncio-обёртка: её
+        # done_callback срабатывает только при реальном завершении
+        # потока или отмене до старта. asyncio-обёртка завершалась
+        # бы отменой await'а раньше времени → слот освобождался
+        # бы преждевременно.
+        cf = PNG_EXECUTOR.submit(call)
+    except Exception:
+        stop_mon()
+        _png_release()
+        raise
+
+    def _done(_f):
+        stop_mon()
+        _png_release()
+
+    cf.add_done_callback(_done)
+    return await asyncio.wrap_future(cf)
+
+# SVG <text> не задаёт font-family (он пришёл из HTML/CSS).
+# resvg применяет style_sheet при парсинге — возвращаем Inter.
+_RESvg_STYLE = "svg text{font-family:'Inter','DejaVu Sans',sans-serif}"
+
+
+def _resvg_font_files() -> list[str]:
+    # Только Inter: SVG-текст профиля использует одно семейство,
+    # лишние шрифты замедляют загрузку fontdb на каждый рендер.
+    # DejaVu/RussoOne не нужны — глифы покрыты Inter (latin+cyrillic).
+    return [str(INTER_FONT_PATH)] if INTER_FONT_PATH.exists() else []
+
+
+def _svg_to_png_native(svg: str) -> bytes:
+    """SVG → PNG 1920x1080 через resvg. Синхронно, CPU-bound."""
+    import resvg_py
+
+    return resvg_py.svg_to_bytes(
+        svg_string=svg,
+        font_files=_resvg_font_files(),
+        style_sheet=_RESvg_STYLE,
+        skip_system_fonts=True,
+    )
+
+
+def _profile_svg_to_png(
+    data: dict,
+    avatar_png: bytes | None,
+    badge_png: bytes | None,
+) -> bytes:
+    """Сборка SVG + растеризация — целиком в worker-потоке,
+    event loop не тратит ~10мс на build_profile_svg."""
+    return _svg_to_png_native(
+        build_profile_svg(data, avatar_png, badge_png))
+
+
+def _png_backend() -> str:
+    """PNG_RENDER_BACKEND: native | chromium | auto (default)."""
+    return os.environ.get("PNG_RENDER_BACKEND", "auto").strip().lower()
+
+
+def _record_render_metric(native: bool, render_ms: float) -> None:
+    try:
+        from utils import perf_metrics
+
+        perf_metrics.record(
+            "profile_render_native_ms" if native
+            else "profile_render_ms", render_ms)
+        perf_metrics.incr(
+            "profile_renders_native" if native else "profile_renders")
+    except Exception:
+        pass
+    _note_render_rss()
+
+
+def _record_render_error() -> None:
+    try:
+        from utils import perf_metrics
+
+        perf_metrics.incr("png_render_errors")
+    except Exception:
+        pass
+
+
+def _record_fallback() -> None:
+    try:
+        from utils import perf_metrics
+
+        perf_metrics.incr("png_render_fallbacks")
+    except Exception:
+        pass
+
+
 async def render_profile_png_async(data: dict,
                                    avatar_png: bytes | None = None,
                                    badge_png: bytes | None = None) -> bytes:
-    """Собрать SVG → HTML → скриншот Chromium 1920x1080 → PNG bytes.
+    """Собрать PNG профиля 1920x1080.
 
-    Сигнатура сохранена совместимой с прежним рендерером:
-    data — словарь collect_profile_data, avatar/badge — PNG bytes.
+    backend=auto/native → resvg; backend=chromium → Playwright.
+    auto при сбое native откатывается на chromium (лог + метрика).
     """
+    backend = _png_backend()
+    if backend != "chromium":
+        try:
+            return await _render_profile_png_native(
+                data, avatar_png, badge_png)
+        except _PngQueueFull:
+            # load-shedding — не рендерная ошибка, fallback на
+            # более тяжёлый chromium не нужен.
+            raise
+        except Exception:
+            _record_render_error()
+            if backend == "native":
+                raise
+            logger.warning(
+                "Native profile render failed — falling back to "
+                "chromium", exc_info=True)
+            _record_fallback()
+    async with _png_admission():
+        return await _render_profile_png_chromium(
+            data, avatar_png, badge_png)
+
+
+async def _render_profile_png_native(
+    data: dict,
+    avatar_png: bytes | None = None,
+    badge_png: bytes | None = None,
+) -> bytes:
+    import time
+
+    t0 = time.monotonic()
+    # SVG-сборка (~10мс) + растеризация — целиком в worker,
+    # event loop не тратит время и не держит большие буферы.
+    # Admission и RSS-монитор живут внутри _png_run_native.
+    png = await _png_run_native(
+        _profile_svg_to_png, data, avatar_png, badge_png)
+    render_ms = (time.monotonic() - t0) * 1000
+    _record_render_metric(native=True, render_ms=render_ms)
+    logger.info("Profile PNG rendered natively in %.0fms", render_ms)
+    return png
+
+
+async def _render_profile_png_chromium(
+    data: dict,
+    avatar_png: bytes | None = None,
+    badge_png: bytes | None = None,
+) -> bytes:
     import time
 
     async with CARD_RENDER_SEM:

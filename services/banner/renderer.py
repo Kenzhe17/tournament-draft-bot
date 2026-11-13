@@ -1,23 +1,32 @@
-"""Рендер PNG баннера сервера: шаблон + Playwright/Chromium.
+"""Рендер PNG баннера сервера: шаблон + динамические элементы.
+
+Два backend'а (PNG_RENDER_BACKEND):
+
+- ``native``/``auto`` — Pillow поверх template_clean.png: без
+  браузера, ~10–30 МБ RSS, миллисекунды;
+- ``chromium`` — Playwright/Chromium + HTML/CSS (legacy).
 
 База — assets_ds_server/server_banner/template_clean.png (утверждённый
 дизайн с вычищенными динамическими зонами). Поверх — аватар в кольце
-и текст участника дня. Шрифт Inter Variable (base64 @font-face),
-как в профиле.
+и текст участника дня. Шрифт Inter Variable.
 
 Дизайн — новый шаблон 1672x941 («Neon Purple Temple Participant
 Banner»): лого, рамка карточки и лейблы запечены в template_clean.png,
 динамические зоны (аватар, ник, подзаголовок, стата) отрисовываются
-поверх. Шрифт Inter Variable (base64 @font-face), как в профиле.
+поверх.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import logging
 import math
+import os
 from pathlib import Path
+
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +262,289 @@ def _esc(s: str) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Native backend: Pillow поверх template_clean.png
+# ---------------------------------------------------------------------------
+
+# Нативные Pillow-рендеры исполняются в ОБЩЕМ PNG_EXECUTOR
+# (utils.profile_renderer) вместе с resvg-профилями — единый
+# лимит одновременно выполняющихся тяжёлых растеризаций.
+_template_img_cache = None
+_avatar_empty_bg_cache = None
+_logo_img_cache = None
+
+
+def _load_template():
+    global _template_img_cache
+    if _template_img_cache is None:
+        _template_img_cache = Image.open(TEMPLATE_PATH).convert("RGBA")
+    return _template_img_cache.copy()
+
+
+def _avatar_empty_bg(size: int):
+    """Радиальный градиент пустого аватара (#3B2160 → #150B26,
+    центр смещён в 35%/30% — как radial-gradient(circle at 35% 30%))."""
+    global _avatar_empty_bg_cache
+    if _avatar_empty_bg_cache is None or _avatar_empty_bg_cache.size[0] != size:
+        import numpy as np
+
+        c = np.array([59, 33, 96], dtype=np.float32)    # #3B2160
+        e = np.array([21, 11, 38], dtype=np.float32)    # #150B26
+        yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+        cx, cy = size * 0.35, size * 0.30
+        d = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+        t = np.clip(d / (size * 0.72), 0, 1)[:, :, None]
+        rgb = c[None, None, :] * (1 - t) + e[None, None, :] * t
+        _avatar_empty_bg_cache = Image.fromarray(
+            np.dstack([rgb, np.full((size, size, 1), 255, np.float32)])
+            .astype(np.uint8), "RGBA")
+    return _avatar_empty_bg_cache
+
+
+def _load_logo():
+    global _logo_img_cache
+    if _logo_img_cache is None:
+        for p in (FALLBACK_LOGO_PATH, LOGO_PATH):
+            if p.exists():
+                try:
+                    _logo_img_cache = Image.open(p).convert("RGBA")
+                    break
+                except Exception:
+                    continue
+        if _logo_img_cache is None:
+            _logo_img_cache = False
+    return _logo_img_cache or None
+
+
+def _pil_font(size: int, weight: int):
+    from utils.profile_renderer import _pil_font as _pf
+
+    return _pf(size, weight)
+
+
+def _tracked_width(draw, text: str, font, ls: float) -> float:
+    if not text:
+        return 0.0
+    w = sum(font.getlength(ch) for ch in text)
+    return w + ls * max(0, len(text) - 1)
+
+
+def _draw_tracked(draw, x: float, baseline_y: float, text: str,
+                  font, fill, ls: float = 0.0) -> None:
+    """Текст с letter-spacing (PIL не умеет ls нативно)."""
+    cx = x
+    for ch in text:
+        draw.text((cx, baseline_y), ch, font=font, fill=fill,
+                  anchor="ls")
+        cx += font.getlength(ch) + ls
+
+
+def _baseline_y(top: float, font, line_height_factor: float | None) -> float:
+    """CSS top → baseline. line-height: factor*size (None = normal≈em)."""
+    size = font.size
+    asc, desc = font.getmetrics()
+    em = asc + desc
+    if line_height_factor is None:
+        lh = em
+    else:
+        lh = line_height_factor * size
+    half = (lh - em) / 2.0
+    return top + half + asc
+
+
+def _draw_banner_text(img, *, x: float, top: float, text: str,
+                      size: int, weight: int, fill,
+                      ls: float = 0.0, line_height: float | None = None,
+                      shadow=(0, 2, 10, 0.65)) -> None:
+    """Ник/подпись/стата с text-shadow как в CSS.
+
+    shadow=(dx, dy, blur_px, alpha). blur — PIL GaussianBlur radius
+    (CSS blur≈2*radius — задаём radius=blur/2).
+    """
+    from PIL import ImageDraw, ImageFilter
+
+    font = _pil_font(size, weight)
+    asc, desc = font.getmetrics()
+    em = asc + desc
+    lh = (line_height * size) if line_height else em
+    baseline = top + (lh - em) / 2.0 + asc
+
+    if shadow:
+        dx, dy, blur, alpha = shadow
+        # blur-слой только под текст (не весь кадр) — в разы дешевле.
+        # Слой покрывает bbox текста + pad; композитим со сдвигом.
+        tw = _tracked_width(ImageDraw.Draw(img), text, font, ls)
+        pad = int(blur + max(abs(dx), abs(dy)) + 6)
+        asc, desc = font.getmetrics()
+        em = asc + desc
+        lw = int(tw + pad * 2 + 8)
+        lh = int(em + pad * 2 + 8)
+        layer = Image.new("RGBA", (max(1, lw), max(1, lh)), (0, 0, 0, 0))
+        ld = ImageDraw.Draw(layer)
+        # baseline слоя: asc + dy + pad (x_local = dx + pad)
+        _draw_tracked(ld, dx + pad, asc + dy + pad, text, font,
+                      (0, 0, 0, int(255 * alpha)), ls)
+        if blur:
+            layer = layer.filter(ImageFilter.GaussianBlur(blur / 2.0))
+        # origin слоя на канве: (x - pad, baseline - asc - pad)
+        img.alpha_composite(
+            layer, (int(round(x)) - pad, int(round(baseline)) - asc - pad))
+
+    d = ImageDraw.Draw(img)
+    _draw_tracked(d, x, baseline, text, font, fill, ls)
+
+
+def _draw_avatar(img, avatar_png: bytes | None, has_activity: bool) -> None:
+    """Круглый аватар r=45 в (908,536) + неоновое кольцо и тень."""
+    from PIL import ImageDraw, ImageFilter
+
+    cx, cy, r = AVATAR_CX, AVATAR_CY, AVATAR_R
+    d = r * 2
+    x0, y0 = cx - r, cy - r
+
+    # drop-shadow 0 6px 24px rgba(0,0,0,.5) — blur-слой только под аватаром
+    pad = 40
+    lx0, ly0 = int(x0) - pad, int(y0) - pad + 6
+    lw = d + pad * 2
+    lh = d + pad * 2
+    shadow = Image.new("RGBA", (lw, lh), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    sd.ellipse((pad, pad, pad + d, pad + d), fill=(0, 0, 0, 128))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(12))
+    img.alpha_composite(shadow, (lx0, ly0))
+
+    # кольцо 0 0 0 3px rgba(168,85,247,.55)
+    ring = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    rd = ImageDraw.Draw(ring)
+    rd.ellipse((x0 - 1, y0 - 1, x0 + d + 1, y0 + d + 1),
+               outline=(168, 85, 247, 140), width=4)
+    img.alpha_composite(ring)
+
+    if has_activity and avatar_png:
+        try:
+            av = Image.open(io.BytesIO(avatar_png)).convert("RGBA")
+        except Exception:
+            av = None
+        if av is not None:
+            # object-fit: cover → заполнить квадрат, центр-кроп
+            scale = max(d / av.width, d / av.height)
+            nw, nh = int(av.width * scale + 0.5), int(av.height * scale + 0.5)
+            av = av.resize((nw, nh), Image.LANCZOS)
+            ox = (nw - d) // 2
+            oy = (nh - d) // 2
+            av = av.crop((ox, oy, ox + d, oy + d))
+            # Круглая маска + сохранение альфы аватара: transparent
+            # области PNG-аватара должны показывать шаблон, а не
+            # превращаться в чёрное при convert("RGB").
+            mask = Image.new("L", (d, d), 0)
+            md = ImageDraw.Draw(mask)
+            md.ellipse((0, 0, d - 1, d - 1), fill=255)
+            av_layer = Image.composite(
+                av, Image.new("RGBA", (d, d), (0, 0, 0, 0)), mask)
+            img.alpha_composite(av_layer, (int(x0), int(y0)))
+            return
+
+    # пустое состояние: градиент + логотип 58%
+    bg = _avatar_empty_bg(d + 4).resize((d, d), Image.LANCZOS)
+    img.paste(bg, (int(x0), int(y0)))
+    logo = _load_logo()
+    if logo is not None:
+        # CSS: width:58%;height:58%;object-fit:contain;opacity:.9
+        box = d * 0.58
+        scale = min(box / logo.width, box / logo.height)
+        lw, lh = int(logo.width * scale + 0.5), int(logo.height * scale + 0.5)
+        lg = logo.resize((max(1, lw), max(1, lh)), Image.LANCZOS)
+        lg.putalpha(lg.getchannel("A").point(lambda v: int(v * 0.9)))
+        img.alpha_composite(
+            lg, (int(cx - lg.width / 2), int(cy - lg.height / 2)))
+
+
+def _render_banner_native(
+    *,
+    nickname: str | None,
+    avatar_png: bytes | None,
+    voice_seconds: int = 0,
+    matches: int = 0,
+    has_activity: bool = True,
+    report_day_label: str | None = None,
+) -> bytes:
+    """Pillow: template + аватар + текст → PNG 1672x941."""
+    from PIL import ImageDraw
+
+    img = _load_template()
+    _draw_avatar(img, avatar_png, has_activity)
+
+    nick_x, nick_top = _px(NICK_X), _py(NICK_TOP)
+    sub_x, sub_top = _px(SUBTITLE_X), _py(SUBTITLE_TOP)
+
+    if has_activity and nickname:
+        nick, size = _fit_text(nickname, NICK_FONT, NICK_MAX_W)
+        _draw_banner_text(
+            img, x=nick_x, top=nick_top, text=nick, size=size,
+            weight=800, fill=(255, 255, 255), ls=0.5,
+            line_height=1.05, shadow=(0, 2, 10, 0.65))
+        _draw_banner_text(
+            img, x=sub_x, top=sub_top,
+            text="Самый активный за прошедший день",
+            size=SUBTITLE_FONT, weight=600, fill=(233, 221, 247),
+            ls=0.3, shadow=(0, 1, 6, 0.6))
+    else:
+        _draw_banner_text(
+            img, x=nick_x, top=nick_top, text="Участников не было",
+            size=40, weight=800, fill=(201, 184, 232), ls=0.5,
+            line_height=1.05, shadow=(0, 2, 10, 0.65))
+        _draw_banner_text(
+            img, x=sub_x, top=sub_top,
+            text="Вчера активных участников не было",
+            size=SUBTITLE_FONT, weight=600, fill=(233, 221, 247),
+            ls=0.3, shadow=(0, 1, 6, 0.6))
+
+    if has_activity:
+        voice_txt = _format_voice(voice_seconds)
+        matches_txt = f"{matches} {_plural_matches(matches)}"
+        stat_fill = (255, 255, 255)
+    else:
+        voice_txt = matches_txt = "—"
+        stat_fill = (143, 127, 176)
+    _draw_banner_text(
+        img, x=_px(VOICE_X), top=_py(VOICE_TOP), text=voice_txt,
+        size=STAT_FONT, weight=800, fill=stat_fill, ls=0.5,
+        shadow=(0, 2, 8, 0.6))
+    _draw_banner_text(
+        img, x=_px(MATCHES_X), top=_py(MATCHES_TOP), text=matches_txt,
+        size=STAT_FONT, weight=800, fill=stat_fill, ls=0.5,
+        shadow=(0, 2, 8, 0.6))
+
+    if report_day_label:
+        font = _pil_font(18, 600)
+        from PIL import Image, ImageFilter
+        _d = ImageDraw.Draw(img)
+        w = _tracked_width(_d, report_day_label, font, 1.0)
+        asc, desc = font.getmetrics()
+        baseline = VH - 36 - desc
+        x = VW - 50 - w
+        # text-shadow subtitle 0 1px 6px — blur-слой только под текст
+        pad = 12
+        lw = int(w + pad * 2 + 8)
+        lh = int(asc + desc + pad * 2 + 8)
+        layer = Image.new("RGBA", (max(1, lw), max(1, lh)), (0, 0, 0, 0))
+        ld = ImageDraw.Draw(layer)
+        _draw_tracked(ld, pad, asc + 1 + pad, report_day_label, font,
+                      (0, 0, 0, 153), 1.0)
+        layer = layer.filter(ImageFilter.GaussianBlur(3))
+        img.alpha_composite(layer, (int(x) - pad, baseline - asc - pad))
+        _draw_tracked(_d, x, baseline, report_day_label,
+                      font, (126, 108, 156), 1.0)
+
+    out = io.BytesIO()
+    img.convert("RGB").save(out, "PNG")
+    return out.getvalue()
+
+
+def _banner_backend() -> str:
+    return os.environ.get("PNG_RENDER_BACKEND", "auto").strip().lower()
+
+
 async def render_banner_png(
     *,
     nickname: str | None,
@@ -262,7 +554,71 @@ async def render_banner_png(
     has_activity: bool = True,
     report_day_label: str | None = None,
 ) -> bytes:
-    """HTML → Chromium screenshot 1920x1080 → PNG bytes."""
+    """PNG баннера 1672x941. native → Pillow; chromium → Playwright.
+
+    Нативный путь идёт через общий _png_run_native: единый
+    PNG_EXECUTOR + единый admission-счётчик с profile-рендерами.
+    """
+    backend = _banner_backend()
+    from utils.profile_renderer import (
+        _PngQueueFull, _note_render_rss, _png_admission, _png_run_native)
+
+    if backend != "chromium":
+        try:
+            import time as _time
+            _t0 = _time.monotonic()
+            png = await _png_run_native(
+                _render_banner_native,
+                nickname=nickname, avatar_png=avatar_png,
+                voice_seconds=voice_seconds, matches=matches,
+                has_activity=has_activity,
+                report_day_label=report_day_label)
+            try:
+                from utils import perf_metrics
+                perf_metrics.record(
+                    "banner_render_native_ms",
+                    (_time.monotonic() - _t0) * 1000)
+                perf_metrics.incr("banner_renders_native")
+            except Exception:
+                pass
+            _note_render_rss()
+            return png
+        except _PngQueueFull:
+            raise
+        except Exception:
+            try:
+                from utils import perf_metrics
+                perf_metrics.incr("png_render_errors")
+            except Exception:
+                pass
+            if backend == "native":
+                raise
+            logger.warning(
+                "Native banner render failed — falling back to "
+                "chromium", exc_info=True)
+            try:
+                from utils import perf_metrics
+                perf_metrics.incr("png_render_fallbacks")
+            except Exception:
+                pass
+    async with _png_admission():
+        return await _render_banner_png_chromium(
+            nickname=nickname, avatar_png=avatar_png,
+            voice_seconds=voice_seconds, matches=matches,
+            has_activity=has_activity,
+            report_day_label=report_day_label)
+
+
+async def _render_banner_png_chromium(
+    *,
+    nickname: str | None,
+    avatar_png: bytes | None,
+    voice_seconds: int = 0,
+    matches: int = 0,
+    has_activity: bool = True,
+    report_day_label: str | None = None,
+) -> bytes:
+    """HTML → Chromium screenshot 1672x941 → PNG bytes (legacy)."""
     async with RENDER_SEM:
         html_doc = build_banner_html(
             nickname=nickname,
