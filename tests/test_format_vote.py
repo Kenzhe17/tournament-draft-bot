@@ -88,8 +88,8 @@ class _Ix:
         self.channel = SimpleNamespace(id=2)
 
 
-def _cid(fmt="brazil", gid=1, cid=2, mt="final", mi=0):
-    return f"fv:{gid}:{cid}:{mt}:{mi}:{fmt}"
+def _cid(fmt="brazil", gid=1, cid=2, mt="final", mi=0, tid="t1"):
+    return f"fv:{gid}:{cid}:{tid}:{mt}:{mi}:{fmt}"
 
 
 def _state(env):
@@ -298,7 +298,7 @@ class TestViewAndRestore:
         ]
         assert len(btns) == 2
         assert all(not b.disabled for b in btns)
-        assert all(b.custom_id.startswith("fv:1:2:final:0:") for b in btns)
+        assert all(b.custom_id.startswith("fv:1:2:t1:final:0:") for b in btns)
 
     def test_done_view_buttons_disabled(self, env):
         fv.prepare_format_vote(env.tournament, "final", 0, 2)
@@ -435,11 +435,11 @@ class TestTimerResilience:
             "services.format_vote._mirror_to_pg",
             lambda *a, **k: _noop(),
         )
-        fv._schedule_timer(1, 2, "final", 0)
+        fv._schedule_timer(1, 2, "t1", "final", 0)
         await asyncio.sleep(1.2)
         # Таймер жив после ошибки и финализировал по deadline.
         assert s["vote_status"] == "done"
-        task = fv._TIMERS.get("1:2:final:0")
+        task = fv._TIMERS.get("1:2:t1:final:0")
         fv._TIMERS.clear()
         if task is not None:
             task.cancel()
@@ -508,3 +508,131 @@ class TestSyncVoteUiHonesty:
         assert ok is True
         assert state["ui_synced"] is True
         assert edited == [1]
+
+
+class TestPooledChannelIsolation:
+    """Регрессия BUG: MM_MATCH_CHANNEL_POOL переиспользует канал —
+    разные турниры с одинаковым final:0 делили key/timer/custom_id.
+    """
+
+    @pytest.mark.asyncio
+    async def test_three_matches_same_channel_sequential(
+        self, monkeypatch
+    ):
+        """Один канал, три последовательных турнира (t1→t2→t3),
+        у каждого final:0 — голосования независимы и завершаются."""
+        tournaments = [
+            _tournament(id=tid) for tid in ("t1", "t2", "t3")
+        ]
+        current = {"t": tournaments[0]}
+        monkeypatch.setattr(
+            fv.store, "get", lambda g, c: current["t"]
+        )
+        monkeypatch.setattr(fv.store, "set", lambda x: None)
+        monkeypatch.setattr(
+            fv, "_mirror_to_pg", lambda *a, **k: _noop()
+        )
+        monkeypatch.setattr(
+            "services.match_announcer.update_match_card",
+            lambda *a, **k: _noop(),
+        )
+        fv._LOCKS.clear()
+        fv._TIMERS.clear()
+        fv._UI_TASKS.clear()
+
+        # Пул: матч заканчивается → канал отдаётся следующему
+        # турниру. Каждый получает СВОЙ таймер под своим tid.
+        for t in tournaments:
+            current["t"] = t
+            fv.prepare_format_vote(t, "final", 0, 2)
+            s = fv.get_vote_state(t, "final", 0)
+            s["vote_deadline"] = time.time() - 1
+            fv._schedule_timer(1, 2, t.id, "final", 0)
+            await asyncio.sleep(0.3)
+            assert s["vote_status"] == "done", t.id
+            assert s["selected_format"] in fv._FORMATS
+            # 0 голосов → правила выбирают формат (random/tie).
+            # Таймер убран из реестра.
+            assert not any(
+                k.endswith(f":{t.id}:final:0")
+                or f":{t.id}:final:0" in k
+                for k in fv._TIMERS
+            )
+
+    @pytest.mark.asyncio
+    async def test_stale_timer_does_not_touch_new_match(
+        self, monkeypatch
+    ):
+        """Зависший _TIMERS от старого турнира в том же канале:
+        при срабатывании видит чужой турнир в store и завершается,
+        не финализируя и не отменяя голосование нового матча."""
+        old = _tournament(id="t_old")
+        new = _tournament(id="t_new")
+        current = {"t": new}
+        monkeypatch.setattr(
+            fv.store, "get", lambda g, c: current["t"]
+        )
+        monkeypatch.setattr(fv.store, "set", lambda x: None)
+        monkeypatch.setattr(
+            fv, "_mirror_to_pg", lambda *a, **k: _noop()
+        )
+        fv._LOCKS.clear()
+        fv._TIMERS.clear()
+        fv._UI_TASKS.clear()
+
+        # «Зависший» таймер старого матча: deadline давно прошёл,
+        # но задача ещё не умерла (например, спала в retry).
+        fv.prepare_format_vote(new, "final", 0, 2)
+        new_s = fv.get_vote_state(new, "final", 0)
+        new_s["vote_deadline"] = time.time() + 60
+        # Ручная «протухшая» запись таймера со старым tid.
+        stale = asyncio.create_task(
+            fv._vote_timer(1, 2, "t_old", "final", 0)
+        )
+        fv._TIMERS["1:2:t_old:final:0"] = stale
+        # Даём ему тикнуть: store.get → t_new ≠ t_old → return.
+        await asyncio.sleep(0.1)
+        await asyncio.wait_for(stale, timeout=5)
+        assert new_s["vote_status"] == "open"
+        assert new_s["votes"] == {}
+
+        # А таймер НОВОГО матча планируется под своим ключом
+        # и не конфликтует с записью старого.
+        fv._schedule_timer(1, 2, "t_new", "final", 0)
+        assert "1:2:t_new:final:0" in fv._TIMERS
+        assert "1:2:t_old:final:0" not in fv._TIMERS or (
+            fv._TIMERS.get("1:2:t_old:final:0") is stale
+        )
+
+    @pytest.mark.asyncio
+    async def test_stale_button_rejected_for_new_match(
+        self, monkeypatch
+    ):
+        """Кнопка со старым tournament_id не голосует за новый матч."""
+        old = _tournament(id="t_old")
+        new = _tournament(id="t_new")
+        current = {"t": new}
+        monkeypatch.setattr(
+            fv.store, "get", lambda g, c: current["t"]
+        )
+        monkeypatch.setattr(fv.store, "set", lambda x: None)
+        monkeypatch.setattr(
+            fv, "_mirror_to_pg", lambda *a, **k: _noop()
+        )
+        fv._LOCKS.clear()
+        fv._TIMERS.clear()
+        fv._UI_TASKS.clear()
+
+        fv.prepare_format_vote(new, "final", 0, 2)
+        fv.prepare_format_vote(old, "final", 0, 2)
+        fv.get_vote_state(new, "final", 0)["vote_message_id"] = 0
+
+        # Клик по кнопке СТАРОГО матча (tid=t_old) в том же канале.
+        ix = _Ix(None, 1, _cid("brazil", tid="t_old"))
+        ix.guild = SimpleNamespace(id=1)
+        await asyncio.wait_for(
+            fv.handle_vote_click(ix, "brazil"), timeout=5
+        )
+        # Новый матч не получил голос.
+        assert fv.get_vote_state(new, "final", 0)["votes"] == {}
+        assert "не найден" in ix.response.messages[0]

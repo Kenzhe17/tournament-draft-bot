@@ -11,6 +11,7 @@ CV2-интерфейс целиком внутри одного Container (Desig
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import random
 import time
@@ -71,24 +72,51 @@ def _lock(key: str) -> asyncio.Lock:
     return lock
 
 
-def _key(guild_id: int, channel_id: int, match_type: str,
-         match_index: int) -> str:
-    return f"{guild_id}:{channel_id}:{match_type}:{match_index}"
+def _tid_token(tournament_id) -> str:
+    """Короткий стабильный токен tournament.id для custom_id.
+
+    Discord custom_id ≤ 100 символов: ``{gid}_{creation_time}``
+    (~37 симв.) в полном custom_id может не влезть. Токен
+    идемпотентен (повторное применение возвращает то же значение),
+    поэтому безопасен и для сырых id, и для уже токенизированных.
+    """
+    s = str(tournament_id or "?")
+    if len(s) <= 20 and ":" not in s:
+        return s
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()[:16]
 
 
-def _custom_id(guild_id: int, channel_id: int, match_type: str,
-               match_index: int, fmt: str) -> str:
-    return f"fv:{guild_id}:{channel_id}:{match_type}:{match_index}:{fmt}"
+def _key(guild_id: int, channel_id: int, tournament_id,
+         match_type: str, match_index: int) -> str:
+    """Уникальный ключ голосования.
+
+    tournament_id обязателен: каналы MM_MATCH_CHANNEL_POOL
+    переиспользуются — gid:cid:mt:mi совпадает у разных матчей
+    (final:0 в одном канале), что ломало lock/timer/UI задачи.
+    """
+    return (
+        f"{guild_id}:{channel_id}:{_tid_token(tournament_id)}:"
+        f"{match_type}:{match_index}"
+    )
+
+
+def _custom_id(guild_id: int, channel_id: int, tournament_id,
+               match_type: str, match_index: int, fmt: str) -> str:
+    return (
+        f"fv:{guild_id}:{channel_id}:{_tid_token(tournament_id)}:"
+        f"{match_type}:{match_index}:{fmt}"
+    )
 
 
 def _parse_custom_id(custom_id: str):
+    """fv:{gid}:{cid}:{tid}:{mt}:{mi}:{fmt} → (gid,cid,tid,mt,mi,fmt)."""
     parts = (custom_id or "").split(":")
-    if len(parts) != 6 or parts[0] != "fv":
+    if len(parts) != 7 or parts[0] != "fv":
         return None
     try:
         return (
-            int(parts[1]), int(parts[2]), parts[3], int(parts[4]),
-            parts[5],
+            int(parts[1]), int(parts[2]), parts[3], parts[4],
+            int(parts[5]), parts[6],
         )
     except (TypeError, ValueError):
         return None
@@ -229,6 +257,7 @@ async def start_format_vote_message(
             bot.add_view(
                 FormatVoteButtonsView(
                     tournament.guild_id, tournament.channel_id,
+                    getattr(tournament, "id", "?"),
                     match_type, match_index,
                 )
             )
@@ -236,6 +265,7 @@ async def start_format_vote_message(
             logger.warning("Format vote view register failed: %s", exc)
     _schedule_timer(
         tournament.guild_id, tournament.channel_id,
+        getattr(tournament, "id", "?"),
         match_type, match_index,
     )
     await _mirror_to_pg(tournament, match_type, match_index, fv)
@@ -319,7 +349,9 @@ def build_vote_view(
             label=label,
             style=discord.ButtonStyle.secondary,
             custom_id=_custom_id(
-                gid, cid, match_type, match_index, fmt_key
+                gid, cid,
+                getattr(tournament, "id", "?"),
+                match_type, match_index, fmt_key
             ),
             disabled=done,
         )
@@ -349,10 +381,18 @@ async def handle_vote_click(
     )
     if parsed is None:
         return
-    gid, cid, mt, mi, _ = parsed
-    key = _key(gid, cid, mt, mi)
+    gid, cid, tid, mt, mi, _ = parsed
+    key = _key(gid, cid, tid, mt, mi)
     async with _lock(key):
         tournament = store.get(gid, cid)
+        # Канал мог быть переиспользован пулом MM: кнопка обязана
+        # принадлежать текущему турниру (match_id), иначе старое
+        # сообщение влияет на новый матч.
+        if (
+            tournament is not None
+            and _tid_token(getattr(tournament, "id", "")) != tid
+        ):
+            tournament = None
         fv = (
             get_vote_state(tournament, mt, mi)
             if tournament is not None else None
@@ -438,13 +478,16 @@ async def _ephemeral(interaction: discord.Interaction,
 # ---------------------------------------------------------------------------
 
 def _schedule_timer(guild_id: int, channel_id: int,
-                    match_type: str, match_index: int) -> None:
-    key = _key(guild_id, channel_id, match_type, match_index)
+                    tournament_id, match_type: str,
+                    match_index: int) -> None:
+    key = _key(guild_id, channel_id, tournament_id,
+               match_type, match_index)
     task = _TIMERS.get(key)
     if task is not None and not task.done():
         return
     task = asyncio.create_task(
-        _vote_timer(guild_id, channel_id, match_type, match_index)
+        _vote_timer(guild_id, channel_id, tournament_id,
+                    match_type, match_index)
     )
     _TIMERS[key] = task
 
@@ -476,6 +519,14 @@ def _schedule_vote_ui(
                 int(getattr(tournament, "guild_id", 0) or 0),
                 int(getattr(tournament, "channel_id", 0) or 0),
             ) or tournament
+            # Канал мог быть переиспользован: чужой турнир —
+            # это UI-задача старого матча, новое состояние не трогаем.
+            if (
+                getattr(fresh, "id", None) is not None
+                and _tid_token(getattr(fresh, "id", ""))
+                != _tid_token(getattr(tournament, "id", ""))
+            ):
+                return
             fv = get_vote_state(fresh, match_type, match_index)
             if fv is None or fv.get("vote_status") != "open":
                 return
@@ -511,12 +562,23 @@ def _schedule_vote_ui(
 
 
 async def _vote_timer(guild_id: int, channel_id: int,
-                      match_type: str, match_index: int) -> None:
-    key = _key(guild_id, channel_id, match_type, match_index)
+                      tournament_id, match_type: str,
+                      match_index: int) -> None:
+    key = _key(guild_id, channel_id, tournament_id,
+               match_type, match_index)
     try:
         while True:
             try:
                 tournament = store.get(guild_id, channel_id)
+                # Пул MM переиспользует каналы: чужой турнир в
+                # том же (gid,cid) не должен ни финализироваться
+                # этим таймером, ни блокировать свой.
+                if (
+                    tournament is not None
+                    and str(getattr(tournament, "id", ""))
+                    != str(tournament_id)
+                ):
+                    return
                 fv = (
                     get_vote_state(tournament, match_type, match_index)
                     if tournament is not None else None
@@ -551,16 +613,24 @@ async def finalize_format_vote(
 ) -> bool:
     """Подвести итог: победитель по голосам, ничья/пусто — случайно.
     Обновляет CV2-сообщение и строку «Формат» в карточке матча."""
+    tid = getattr(tournament, "id", "?")
     key = _key(
         int(getattr(tournament, "guild_id", 0) or 0),
         int(getattr(tournament, "channel_id", 0) or 0),
-        match_type, match_index,
+        tid, match_type, match_index,
     )
     async with _lock(key):
         fresh = store.get(
             int(getattr(tournament, "guild_id", 0) or 0),
             int(getattr(tournament, "channel_id", 0) or 0),
-        ) or tournament
+        )
+        # Переиспользованный канал: store может вернуть ЧУЖОЙ
+        # турнир — финализируем только свой match_id.
+        if fresh is not None and str(
+            getattr(fresh, "id", "")
+        ) != str(tid):
+            fresh = None
+        fresh = fresh or tournament
         fv = get_vote_state(fresh, match_type, match_index)
         if fv is None or fv.get("vote_status") != "open":
             return False
@@ -712,6 +782,17 @@ def cancel_open_format_votes(tournament) -> None:
                 _key(
                     int(getattr(tournament, "guild_id", 0) or 0),
                     int(ch_id),
+                    getattr(tournament, "id", "?"),
+                    meta.get("match_type", ""),
+                    int(meta.get("match_index", 0) or 0),
+                ),
+                None,
+            )
+            _UI_TASKS.pop(
+                _key(
+                    int(getattr(tournament, "guild_id", 0) or 0),
+                    int(ch_id),
+                    getattr(tournament, "id", "?"),
                     meta.get("match_type", ""),
                     int(meta.get("match_index", 0) or 0),
                 ),
@@ -748,9 +829,10 @@ async def restore_format_votes(bot) -> None:
             )
             if not mt:
                 continue
+            tid = getattr(tournament, "id", "?")
             try:
                 bot.add_view(
-                    FormatVoteButtonsView(gid, cid, mt, mi)
+                    FormatVoteButtonsView(gid, cid, tid, mt, mi)
                 )
             except Exception as exc:
                 logger.warning(
@@ -763,7 +845,7 @@ async def restore_format_votes(bot) -> None:
                 guild = bot.get_guild(gid)
                 await finalize_format_vote(guild, tournament, mt, mi)
             else:
-                _schedule_timer(gid, cid, mt, mi)
+                _schedule_timer(gid, cid, tid, mt, mi)
     ensure_format_vote_watchdog()
 
 
