@@ -4336,10 +4336,12 @@ async def create_rooms_session(
         if existing and existing.get("status") not in ("completed", "cancelled"):
             return None
         t1, t2 = _match_tuple(tournament, match_type, match_index)
-        # Пакетный флоу (bundle): только обычные турниры
-        # /tournament create — 1 скриншот на комнату, файлы
+        # Пакетный флоу (bundle): 1 скриншот на комнату, файлы
         # привязываются по порядку, единая кнопка «Завершить
-        # загрузку». MM/Ranked сохраняют по-room сбор.
+        # загрузку» — для обычных турниров /tournament create
+        # и MM/Ranked. Для MM ocr_channel = канал матча (см.
+        # ниже): все сообщения остаются внутри канала матча,
+        # OCR-канал 1570473950218158180 не используется.
         is_plain = not getattr(tournament, "mm_search_channel_id", 0)
         session = {
             "match_type": match_type,
@@ -4349,7 +4351,7 @@ async def create_rooms_session(
             "rooms_expected": int(count),
             "rooms_received": 0,
             "rooms": [],
-            "bundle_v2": is_plain,
+            "bundle_v2": True,
             "gen": 1,
             "uploaded_by": user.id,
             "uploaded_by_name": getattr(user, "display_name", user.name),

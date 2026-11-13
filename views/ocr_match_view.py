@@ -1673,11 +1673,9 @@ class MatchScreenshotButton(Button):
                 RoomStartModal(
                     self.guild_id, self.channel_id,
                     self.match_type, self.match_index,
-                    # Пакетная загрузка — только обычные турниры;
-                    # MM/Ranked сохраняют по одному файлу.
-                    bundle=not getattr(
-                        tournament, "mm_search_channel_id", 0
-                    ),
+                    # Пакетная загрузка — и обычные турниры, и
+                    # MM/Ranked: N комнат = N скриншотов за раз.
+                    bundle=True,
                 )
             )
             return

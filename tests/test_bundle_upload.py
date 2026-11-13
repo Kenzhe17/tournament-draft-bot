@@ -1,6 +1,9 @@
-"""Bundle-загрузка OCR (/tournament create): 1 скриншот на комнату,
-файлы привязываются по порядку, «Завершить загрузку» только при
-полном комплекте. MM/legacy-сессии без bundle_v2 — старый флоу.
+"""Bundle-загрузка OCR (/tournament create и MM/Ranked):
+1 скриншот на комнату, файлы привязываются по порядку,
+«Завершить загрузку» только при полном комплекте.
+Сессии без bundle_v2 (legacy) — старый per-room флоу.
+Для MM ocr_channel = канал матча — отдельный OCR-канал
+не используется.
 """
 
 from __future__ import annotations
@@ -263,7 +266,11 @@ class TestBundleSessionFlag:
         assert session["bundle_v2"] is True
 
     @pytest.mark.asyncio
-    async def test_mm_tournament_keeps_legacy_flow(self, env, monkeypatch):
+    async def test_mm_tournament_gets_bundle_flag(self, env, monkeypatch):
+        """Ranked MM /mmsquad: rooms-сессия тоже bundle — 1 скриншот
+        на комнату, «Завершить загрузку» при полном комплекте.
+        Канал сообщений — канал матча (ocr_channel = channel),
+        OCR-канал не используется."""
         env.tournament.ocr_sessions.clear()
         env.tournament.mm_search_channel_id = 999
         stats = _Chan()
@@ -277,15 +284,17 @@ class TestBundleSessionFlag:
             SimpleNamespace(id=9, display_name="u", name="u"),
             env.tournament, "qualifier", 0, 2,
         )
-        assert session["bundle_v2"] is False
-        # MM: старый флоу — кнопки «Добавить»+«Отменить», без finish.
-        view = _collect_view(env)
+        assert session["bundle_v2"] is True
+        # MM: прогресс живёт в канале матча, не в OCR-канале.
+        assert session["ocr_channel_id"] == stats.id
+        assert session["progress_channel_id"] == stats.id
         env.session = session
-        view2 = up.RoomCollectView(
+        # Bundle-кнопки: «Добавить скриншоты» + «Отменить».
+        view = up.RoomCollectView(
             1, 1, env.tournament, "qualifier", 0, session["gen"],
         )
-        assert _btns(view2, "rooms_add")
-        assert not _btns(view2, "rooms_finish")
+        assert _btns(view, "rooms_add")
+        assert not _btns(view, "rooms_finish")
 
 
 class TestBundleStartModal:
@@ -496,3 +505,84 @@ def _pending_entry():
                             "right": {"rows": [{}]}}},
         "shot_message_id": None,
     }
+
+
+class TestMMBundleFlow:
+    """Ranked MM (/mm squad rooms-флоу): тот же bundle, но все
+    сообщения — в канале матча (ocr_channel = channel)."""
+
+    @pytest.mark.asyncio
+    async def test_mm_two_rooms_two_files_finish(self, env, monkeypatch):
+        env.tournament.mm_search_channel_id = 999
+        env.tournament.ocr_sessions.clear()
+        published = []
+
+        async def fake_publish(channel, tournament, stats_ch, items,
+                               room, mt, mi):
+            published.append(room["room_index"])
+            room["message_id"] = 6000 + room["room_index"]
+            return True
+
+        monkeypatch.setattr(up, "_publish_room_message", fake_publish)
+        m = _start_modal("2", tags=("m1", "m2"))
+        ix = _FakeInteraction(env)
+        await m.on_submit(ix)
+        sess = env.tournament.ocr_sessions["qualifier_0"]
+        env.session = sess
+        assert sess["bundle_v2"] is True
+        assert sess["rooms_expected"] == 2
+        # Канал матча — единственный канал сессии.
+        assert sess["ocr_channel_id"] == env.stats.id
+        assert sess["progress_channel_id"] == env.stats.id
+        by_idx = {r["room_index"]: r for r in sess["rooms"]}
+        assert all(len(by_idx[i]["pending"]) == 1 for i in (1, 2))
+        # Прогресс-сообщение создано в канале матча.
+        assert len(env.stats.sent) >= 1
+
+        view = _collect_view(env)
+        finish = _btns(view, "rooms_finish")
+        assert finish, "полный комплект → «Завершить загрузку»"
+        ix2 = _FakeInteraction(env)
+        await finish[0].callback(ix2)
+        assert sess["status"] == "awaiting_mapping"
+        assert sorted(published) == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_mm_partial_then_dose_upload(self, env):
+        """3 комнаты: 1 файл сразу, затем дозагрузка 2 → 3/3."""
+        env.tournament.mm_search_channel_id = 999
+        env.tournament.ocr_sessions.clear()
+        m = _start_modal("3", tags=("m1",))
+        ix = _FakeInteraction(env)
+        await m.on_submit(ix)
+        sess = env.tournament.ocr_sessions["qualifier_0"]
+        env.session = sess
+        text = up._rooms_progress_text(sess)
+        assert "Скриншоты: 1/3" in text
+        view = _collect_view(env)
+        assert _btns(view, "rooms_add")
+        assert not _btns(view, "rooms_finish")
+
+        bm = _bundle_modal(env, max_files=2, tags=("m2", "m3"))
+        ix2 = _FakeInteraction(env)
+        await bm.on_submit(ix2)
+        assert up._bundle_upload_complete(sess) is True
+        view2 = _collect_view(env)
+        assert _btns(view2, "rooms_finish")
+        assert not _btns(view2, "rooms_add")
+
+    @pytest.mark.asyncio
+    async def test_mm_finish_blocked_incomplete(self, env):
+        """MM: устаревшая View не завершает неполный комплект."""
+        env.tournament.mm_search_channel_id = 999
+        env.tournament.ocr_sessions.clear()
+        m = _start_modal("2", tags=("m1",))
+        ix = _FakeInteraction(env)
+        await m.on_submit(ix)
+        sess = env.tournament.ocr_sessions["qualifier_0"]
+        env.session = sess
+        view = _collect_view(env)
+        ix2 = _FakeInteraction(env)
+        await view._on_finish(ix2)
+        assert any("неполный" in m for m in ix2.followups)
+        assert sess["status"] == "collecting"
