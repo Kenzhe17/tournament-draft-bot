@@ -199,6 +199,12 @@ class TournamentBot(commands.Bot):
                     return None
 
             perf_metrics.register_gauge("ocr_active", _ocr_active)
+            try:
+                from services.ocr_service import active_ocr_ops
+
+                perf_metrics.register_gauge("ocr_inflight", active_ocr_ops)
+            except Exception:
+                pass
             perf_metrics.register_gauge("ranked_matches", _ranked_active)
             perf_metrics.register_gauge("pg_pool", _pg_pool)
         except Exception as exc:

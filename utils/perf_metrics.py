@@ -166,7 +166,13 @@ def _timing_stats(dq: "deque[float]") -> dict[str, float]:
 
 
 def _process_stats() -> dict[str, float]:
-    """CPU% и RSS через psutil (fallback — resource)."""
+    """CPU%, RSS процесса и дочерних процессов (Chromium и пр.).
+
+    С psutil: rss_mb — ТЕКУЩИЙ RSS (не пик), children — сумма RSS
+    всех дочерних процессов рекурсивно (Playwright/Chromium —
+    отдельные процессы бота). Без psutil — fallback на ru_maxrss
+    (исторический пик, не текущий расход).
+    """
     out: dict[str, float] = {}
     try:
         import psutil
@@ -174,6 +180,21 @@ def _process_stats() -> dict[str, float]:
         proc = psutil.Process(os.getpid())
         out["cpu_pct"] = round(proc.cpu_percent(interval=None), 1)
         out["rss_mb"] = round(proc.memory_info().rss / (1024 * 1024), 1)
+        try:
+            children = proc.children(recursive=True)
+            child_rss = sum(
+                c.memory_info().rss for c in children
+                if c.is_running()
+            )
+            out["rss_children_mb"] = round(
+                child_rss / (1024 * 1024), 1
+            )
+            out["rss_total_mb"] = round(
+                (proc.memory_info().rss + child_rss) / (1024 * 1024), 1
+            )
+            out["child_procs"] = len(children)
+        except Exception:
+            pass
     except Exception:
         try:
             import resource

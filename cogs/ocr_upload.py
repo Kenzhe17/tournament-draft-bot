@@ -1150,19 +1150,27 @@ class OCRUploadCog(commands.Cog):
 
             # Названия команд на экране кириллические («ХИЩНИКИ»), а
             # основной rec-чарсет кириллицу не знает — перепознаём
-            # область названия отдельной cyrillic-моделью.
-            from services.ocr_service import ocr_cyrillic_region
+            # области названий отдельной cyrillic-моделью. Оба region
+            # за один вызов — одно декодирование PNG на два имени.
+            from services.ocr_service import ocr_cyrillic_regions
 
-            for side_name, box_key in (
-                ("left", "team_a_name_box"),
-                ("right", "team_b_name_box"),
-            ):
-                region = parsed.get(box_key)
-                if not region:
-                    continue
-                cname = await ocr_cyrillic_region(data, region)
-                if cname:
-                    panels[side_name]["name"] = _normalize_team_name(cname)
+            _cyr_pairs = [
+                (side_name, parsed.get(box_key))
+                for side_name, box_key in (
+                    ("left", "team_a_name_box"),
+                    ("right", "team_b_name_box"),
+                )
+                if parsed.get(box_key)
+            ]
+            if _cyr_pairs:
+                _cyr_names = await ocr_cyrillic_regions(
+                    data, [r for _, r in _cyr_pairs]
+                )
+                for (side_name, _), cname in zip(_cyr_pairs, _cyr_names):
+                    if cname:
+                        panels[side_name]["name"] = _normalize_team_name(
+                            cname
+                        )
 
             parsed["winner"] = {"left": "a", "right": "b"}.get(side)
 
@@ -1811,7 +1819,7 @@ async def _refine_parsed_rows(data: bytes, parsed: dict) -> None:
     распознанное основной моделью не перезаписываем.
     """
     from services import cs_parser
-    from services.ocr_service import ocr_image_region_async
+    from services.ocr_service import ocr_image_regions_async
     from PIL import Image
 
     try:
@@ -1820,6 +1828,10 @@ async def _refine_parsed_rows(data: bytes, parsed: dict) -> None:
         return
     boundary = float(parsed.get("boundary_x") or img_w / 2)
 
+    # Собираем все области с пропущенными полями и прогоняем OCR
+    # одним batch-вызовом — одно декодирование кадра на все строки
+    # вместо декодирования PNG на каждую строку.
+    jobs: list[tuple[dict, tuple[float, float, float, float]]] = []
     for side, players_key in (("left", "team_a"), ("right", "team_b")):
         x_lo = 0.0 if side == "left" else boundary
         x_hi = boundary if side == "left" else float(img_w)
@@ -1836,22 +1848,30 @@ async def _refine_parsed_rows(data: bytes, parsed: dict) -> None:
                 x_lo, max(0.0, cy - rh * 0.75),
                 x_hi, min(float(img_h), cy + rh * 0.75),
             )
-            try:
-                sub = await ocr_image_region_async(data, region)
-            except Exception:
-                continue
-            if not sub:
-                continue
-            fields = cs_parser.parse_row_fields(sub)
-            if needs_name and fields.get("name"):
-                p["name"] = fields["name"][:32]
-            if needs_kda and fields.get("kills") is not None:
-                p["kills"] = fields["kills"]
-                p["deaths"] = fields.get("deaths")
-                p["assists"] = fields.get("assists")
-                p["dmg"] = fields.get("dmg", p.get("dmg"))
-                if p.get("deaths"):
-                    p["kd"] = round(p["kills"] / p["deaths"], 2)
+            jobs.append((p, region))
+    if not jobs:
+        return
+    try:
+        subs = await ocr_image_regions_async(
+            data, [region for _, region in jobs]
+        )
+    except Exception:
+        return
+    for (p, _region), sub in zip(jobs, subs):
+        if not sub:
+            continue
+        needs_name = p.get("name") in (None, "", "???")
+        needs_kda = p.get("kills") is None
+        fields = cs_parser.parse_row_fields(sub)
+        if needs_name and fields.get("name"):
+            p["name"] = fields["name"][:32]
+        if needs_kda and fields.get("kills") is not None:
+            p["kills"] = fields["kills"]
+            p["deaths"] = fields.get("deaths")
+            p["assists"] = fields.get("assists")
+            p["dmg"] = fields.get("dmg", p.get("dmg"))
+            if p.get("deaths"):
+                p["kd"] = round(p["kills"] / p["deaths"], 2)
 
 
 async def _classic_pipeline(
@@ -1868,7 +1888,6 @@ async def _classic_pipeline(
     from services.ocr_service import (
         OCR_EXECUTOR,
         detect_winner_side,
-        ocr_cyrillic_region,
         ocr_score_fallback,
     )
 
@@ -1934,16 +1953,25 @@ async def _classic_pipeline(
         if nm:
             panels[side_name]["name"] = _normalize_team_name(nm)
 
-    for side_name, box_key in (
-        ("left", "team_a_name_box"),
-        ("right", "team_b_name_box"),
-    ):
-        region = parsed.get(box_key)
-        if not region:
-            continue
-        cname = await ocr_cyrillic_region(data, region)
-        if cname:
-            panels[side_name]["name"] = _normalize_team_name(cname)
+    # Оба региона названий команд — одним вызовом: декодирование
+    # PNG один раз на две области вместо двух.
+    from services.ocr_service import ocr_cyrillic_regions
+
+    _cyr_pairs = [
+        (side_name, parsed.get(box_key))
+        for side_name, box_key in (
+            ("left", "team_a_name_box"),
+            ("right", "team_b_name_box"),
+        )
+        if parsed.get(box_key)
+    ]
+    if _cyr_pairs:
+        _cyr_names = await ocr_cyrillic_regions(
+            data, [r for _, r in _cyr_pairs]
+        )
+        for (side_name, _), cname in zip(_cyr_pairs, _cyr_names):
+            if cname:
+                panels[side_name]["name"] = _normalize_team_name(cname)
 
     return {
         "panels": panels,

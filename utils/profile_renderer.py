@@ -16,6 +16,8 @@ import base64
 import html
 import io
 import logging
+import os
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -471,13 +473,72 @@ _browser = None
 _playwright = None
 _browser_lock = asyncio.Lock()
 
+# Chromium держим только пока он нужен: после IDLE_CLOSE_SECONDS
+# без рендеров браузер закрывается — фоновый профиль-рендер редок,
+# а спящий Chromium держит сотни МБ RSS. Playwright-драйвер
+# остаётся — повторный launch ~1с, несравнимо дешевле постоянного
+# RSS. Значение переопределяется env PROFILE_BROWSER_IDLE_S.
+IDLE_CLOSE_SECONDS = float(
+    os.environ.get("PROFILE_BROWSER_IDLE_S", "600")
+)
+_last_browser_used = 0.0
+_idle_reaper_task: "asyncio.Task | None" = None
+
+
+async def _close_browser() -> None:
+    """Закрыть Chromium (Playwright-драйвер оставляем)."""
+    global _browser
+    try:
+        if _browser is not None:
+            await _browser.close()
+    except Exception:
+        pass
+    _browser = None
+
+
+async def _idle_reaper() -> None:
+    """Periodic check: закрыть Chromium после долгого простоя."""
+    global _browser
+    while True:
+        try:
+            await asyncio.sleep(60)
+            if (
+                _browser is not None
+                and time.monotonic() - _last_browser_used
+                > IDLE_CLOSE_SECONDS
+            ):
+                logger.info(
+                    "Profile renderer: Chromium idle %.0fs — closing",
+                    time.monotonic() - _last_browser_used,
+                )
+                await _close_browser()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+
+
+def _ensure_reaper() -> None:
+    global _idle_reaper_task
+    if _idle_reaper_task is None or _idle_reaper_task.done():
+        try:
+            _idle_reaper_task = asyncio.get_running_loop().create_task(
+                _idle_reaper()
+            )
+            _idle_reaper_task.set_name("profile_browser_reaper")
+        except Exception:
+            _idle_reaper_task = None
+
 
 async def _get_browser():
     """Переиспользуемый Chromium-инстанс на процесс."""
-    global _browser, _playwright
+    global _browser, _playwright, _last_browser_used
+    _last_browser_used = time.monotonic()
+    _ensure_reaper()
     if _browser is not None and _browser.is_connected():
         return _browser
     async with _browser_lock:
+        _last_browser_used = time.monotonic()
         if _browser is not None and _browser.is_connected():
             return _browser
         try:
@@ -495,13 +556,15 @@ async def _get_browser():
 
 
 async def shutdown_profile_renderer() -> None:
-    """Закрыть браузер при остановке бота (best-effort)."""
-    global _browser, _playwright
+    """Закрыть браузер и reaper при остановке бота (best-effort)."""
+    global _browser, _playwright, _idle_reaper_task
     try:
-        if _browser is not None:
-            await _browser.close()
+        if _idle_reaper_task is not None and not _idle_reaper_task.done():
+            _idle_reaper_task.cancel()
     except Exception:
         pass
+    _idle_reaper_task = None
+    await _close_browser()
     try:
         if _playwright is not None:
             await _playwright.stop()
@@ -554,9 +617,17 @@ async def render_profile_png_async(data: dict,
             except Exception:
                 pass
 
+        render_ms = (time.monotonic() - t0) * 1000
+        try:
+            from utils import perf_metrics
+
+            perf_metrics.record("profile_render_ms", render_ms)
+            perf_metrics.incr("profile_renders")
+        except Exception:
+            pass
         logger.info(
             "Profile PNG rendered in %.0fms | renderer=%s v%s module=%s",
-            (time.monotonic() - t0) * 1000,
+            render_ms,
             Path(__file__).name, "svg-v2", Path(__file__).resolve(),
         )
         return png
