@@ -90,7 +90,19 @@ async def balance(request: web.Request) -> web.Response:
     return web.json_response({
         "balance": int(row["balance"]) if row else None,
         "exists": row is not None,
+        # Lets Arcade distinguish "read-only bridge" from a real outage
+        # before attempting a paid match.
+        "writes_enabled": _writes_enabled(),
     })
+
+
+async def health(request: web.Request) -> web.Response:
+    """Token-protected liveness probe for Arcade-side diagnostics.
+    Touches no balances and writes nothing."""
+    denied = _authorized(request)
+    if denied is not None:
+        return denied
+    return web.json_response({"ok": True, "writes_enabled": _writes_enabled()})
 
 
 _SCHEMA = """
@@ -524,6 +536,7 @@ async def start_bridge() -> web.AppRunner | None:
     port = int(port_raw)
     app = web.Application()
     app.router.add_get("/internal/economy/balance", balance)
+    app.router.add_get("/internal/economy/health", health)
     app.router.add_post("/internal/economy/escrow", escrow)
     app.router.add_post("/internal/economy/settle", settle)
     app.router.add_post("/internal/economy/refund", refund)

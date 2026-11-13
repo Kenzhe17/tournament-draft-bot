@@ -374,3 +374,27 @@ async def test_writes_disabled_blocks_all_mutations(env, monkeypatch):
     assert r.status == 200
     r = await bridge.escrows(FakeRequest(query={"guild_id": str(GUILD)}))
     assert r.status == 200
+
+
+async def test_balance_reports_writes_flag_and_health_is_token_gated(env):
+    import services.economy_bridge as bridge
+
+    r = await bridge.balance(FakeRequest(query={"guild_id": str(GUILD), "user_id": U1}))
+    assert r.status == 200
+    body = json.loads(r.text)
+    assert body["writes_enabled"] is True
+
+    # Writes disabled → read endpoints still work and report the flag.
+    import os
+    os.environ["ECONOMY_BRIDGE_WRITES_ENABLED"] = "false"
+    try:
+        r = await bridge.balance(FakeRequest(query={"guild_id": str(GUILD), "user_id": U1}))
+        assert json.loads(r.text)["writes_enabled"] is False
+    finally:
+        os.environ["ECONOMY_BRIDGE_WRITES_ENABLED"] = "true"
+
+    r = await bridge.health(FakeRequest(query={}))
+    assert r.status == 200
+    assert json.loads(r.text)["ok"] is True
+    denied = await bridge.health(FakeRequest(query={}, token="wrong"))
+    assert denied.status == 401
