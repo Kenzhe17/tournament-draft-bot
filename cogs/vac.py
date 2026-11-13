@@ -71,9 +71,14 @@ class VacsView(discord.ui.LayoutView):
                 else f"{hours}ч {minutes}м" if hours
                 else f"{minutes}м"
             )
+            reason = r.get("reason")
+            level = r.get("level")
+            level_str = f" · ур.{level}" if level else ""
+            reason_str = f" · {reason}" if reason else ""
             lines.append(
                 f"{i}. <@{r['user_id']}> — осталось {left_str} "
                 f"(до <t:{int(expires.timestamp())}:R>)"
+                f"{level_str}{reason_str}"
             )
         container.add_item(discord.ui.TextDisplay(content="\n".join(lines)))
         container.add_item(
@@ -170,6 +175,35 @@ class VacCog(commands.Cog):
         except Exception:
             logger.exception("VAC: eject_from_mm failed")
 
+    async def _active_tournament_note(
+        self, guild_id: int, user_id: int
+    ) -> list[str]:
+        """Если игрок в идущем турнире — передать решение организатору.
+
+        Сетку не трогаем: VAC блокирует новые регистрации, а судьбу
+        текущего участия решает орг (mod-log + модераторы).
+        """
+        try:
+            from storage.json_store import store
+            from models.tournament import TournamentPhase
+            hits = []
+            for t in store.all():
+                if getattr(t, "guild_id", None) != guild_id:
+                    continue
+                if getattr(t, "phase", None) == TournamentPhase.SETUP:
+                    continue  # до старта сетки VAC-sweep исключит сам
+                if user_id in (getattr(t, "player_user_ids", None) or {}).values():
+                    hits.append(getattr(t, "channel_id", "?"))
+            if hits:
+                return [
+                    ("⚠️ Игрок участвует в активном турнире "
+                     f"(каналы {', '.join(map(str, hits))}) — "
+                     "решение о текущем участии за организатором.")
+                ]
+        except Exception:
+            logger.exception("VAC: active tournament note failed")
+        return []
+
     async def _mod_log(self, title: str, lines: list[str], color: int) -> None:
         try:
             from config import MOD_LOG_CHANNEL_ID
@@ -186,13 +220,18 @@ class VacCog(commands.Cog):
             logger.exception("VAC: mod log send failed")
 
     @app_commands.command(name="vac", description="Выдать VAC игроку")
-    @app_commands.describe(player="Игрок", duration="30m, 2h, 1d, 7d, 14d, 30d, 1d12h")
+    @app_commands.describe(
+        player="Игрок",
+        duration="30m, 2h, 1d, 7d, 14d, 30d, 1d12h",
+        reason="Причина блокировки (необязательно)",
+    )
     @app_commands.checks.cooldown(1, 2)
     async def vac_cmd(
         self,
         interaction: discord.Interaction,
         player: discord.User,
         duration: str,
+        reason: str = "",
     ) -> None:
         if interaction.guild is None:
             return
@@ -242,8 +281,9 @@ class VacCog(commands.Cog):
             )
             return
 
+        reason = (reason or "").strip()[:200] or None
         row, err = await vac_service.issue_vac(
-            guild_id, player.id, interaction.user.id, delta
+            guild_id, player.id, interaction.user.id, delta, reason=reason
         )
         if err == "already_active" or row is None:
             await interaction.followup.send(
@@ -254,11 +294,13 @@ class VacCog(commands.Cog):
         await self._eject_from_mm(guild_id, player.id)
 
         expires_ts = int(row["expires_at"].timestamp())
+        reason_line = f"Причина: {reason}\n" if reason else ""
         view = success_view(
             "VAC выдан",
             f"Участник: <@{player.id}>\n"
             f"Длительность: {_fmt_duration(delta)}\n"
-            f"Выдан: <@{interaction.user.id}>\n"
+            f"{reason_line}"
+            f"Выдал: <@{interaction.user.id}>\n"
             f"Истекает: <t:{expires_ts}:R> (<t:{expires_ts}:f>)\n\n"
             "Участие в турнирах запрещено до окончания блокировки.",
         )
@@ -273,7 +315,9 @@ class VacCog(commands.Cog):
                 f"Участник: <@{player.id}>",
                 f"Выдал: <@{interaction.user.id}>",
                 f"Срок: {_fmt_duration(delta)}",
+                *([f"Причина: {reason}"] if reason else []),
                 f"Истекает: <t:{expires_ts}:f>",
+                *await self._active_tournament_note(guild_id, player.id),
             ],
             colors.ERROR,
         )

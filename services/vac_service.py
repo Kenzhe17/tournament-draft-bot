@@ -2,6 +2,11 @@
 
 Источник истины — PostgreSQL (vac_store). VAC истекает по expires_at
 без фоновых таймеров; проверка активна пока expires_at > now().
+
+Автоматические нарушения идут через record_violation: прогрессивная
+лестница 3м→10м→30м→1ч→3ч→6ч (уровни 1–6), снижение уровня на 1 за
+каждые полные 24ч без нарушений. Ручной /vac задаёт срок явно и
+уровень не повышает; /unvac историю не сбрасывает.
 """
 
 from __future__ import annotations
@@ -39,38 +44,71 @@ def parse_duration(text: str) -> timedelta | None:
     return delta
 
 
-async def is_vac_active(guild_id: int, user_id: int) -> bool:
-    """True — у пользователя активный VAC."""
-    try:
-        return await vac_store.get_active(guild_id, user_id) is not None
-    except Exception:
-        logger.exception("vac is_vac_active failed")
-        # При недоступности БД не блокируем регистрацию — fail-open,
-        # чтобы сбой PG не ломал турниры.
-        return False
+async def check_vac(guild_id: int, user_id: int) -> dict | None:
+    """Единый API проверки VAC. Возвращает активную запись или None.
 
-
-async def get_active_vac(guild_id: int, user_id: int) -> dict | None:
+    Запись содержит expires_at, reason, level (если выдан
+    автоматически), issued_at. При сбое БД — fail-open (None),
+    чтобы PG-аутедж не ломал регистрацию.
+    """
     try:
         return await vac_store.get_active(guild_id, user_id)
     except Exception:
-        logger.exception("vac get_active_vac failed")
+        logger.exception("vac check_vac failed")
         return None
+
+
+async def is_vac_active(guild_id: int, user_id: int) -> bool:
+    """True — у пользователя активный VAC."""
+    return await check_vac(guild_id, user_id) is not None
+
+
+async def get_active_vac(guild_id: int, user_id: int) -> dict | None:
+    """Alias of check_vac — обратная совместимость."""
+    return await check_vac(guild_id, user_id)
 
 
 async def issue_vac(
     guild_id: int, user_id: int, issued_by: int, duration: timedelta,
+    reason: str | None = None,
 ) -> tuple[dict | None, str | None]:
-    """Выдать VAC. Возвращает (запись|None, ошибка|None)."""
-    existing = await vac_store.get_active(guild_id, user_id)
+    """Выдать VAC вручную (/vac). Не повышает автоматический уровень.
+
+    Возвращает (запись|None, ошибка|None).
+    """
+    existing = await check_vac(guild_id, user_id)
     if existing:
         return None, "already_active"
     expires_at = datetime.now(timezone.utc) + duration
-    row = await vac_store.issue(guild_id, user_id, issued_by, expires_at)
+    row = await vac_store.issue(
+        guild_id, user_id, issued_by, expires_at, reason=reason
+    )
     if row is None:
         # Гонка двух админов — уникальный индекс отклонил второй INSERT.
         return None, "already_active"
     return row, None
+
+
+async def record_violation(
+    guild_id: int,
+    user_id: int,
+    issued_by: int,
+    reason: str,
+    event_key: str | None = None,
+) -> tuple[dict | None, str | None]:
+    """Автоматическое нарушение → прогрессивный VAC.
+
+    Возвращает (запись|None, ошибка|None). None при дубликате
+    event_key — то же событие уже наказано, повторно не наказывать.
+    """
+    try:
+        row = await vac_store.record_violation(
+            guild_id, user_id, issued_by, reason, event_key=event_key
+        )
+        return row, None
+    except Exception:
+        logger.exception("vac record_violation failed")
+        return None, "store_error"
 
 
 async def revoke_vac(guild_id: int, user_id: int, revoked_by: int) -> dict | None:
@@ -86,20 +124,33 @@ async def vac_active_ids(guild_id: int, user_ids) -> set[int]:
     out: set[int] = set()
     for uid in user_ids:
         try:
-            if await vac_store.get_active(guild_id, int(uid)) is not None:
+            if await check_vac(guild_id, int(uid)) is not None:
                 out.add(int(uid))
         except Exception:
             logger.exception("vac_active_ids failed for %s", uid)
     return out
 
 
-def vac_blocked_text(until_ts: int) -> str:
-    return (
-        "Участие в турнирах ограничено\n\n"
-        "У вас активен VAC.\n"
-        f"Окончание ограничения: <t:{until_ts}:R> (<t:{until_ts}:f>)\n\n"
-        "До истечения срока вы не можете участвовать в турнирах r!z3."
-    )
+def vac_blocked_text(until_ts: int, reason: str | None = None,
+                     level: int | None = None) -> str:
+    """Текст отказа: причина, окончание и оставшееся время."""
+    lines = [
+        "Участие в турнирах ограничено",
+        "",
+        "У вас активен VAC.",
+    ]
+    if level:
+        lines.append(f"Уровень наказания: {level}")
+    if reason:
+        lines.append(f"Причина: {reason}")
+    lines += [
+        f"Окончание ограничения: <t:{until_ts}:R> (<t:{until_ts}:f>)",
+        f"Осталось: <t:{until_ts}:R>",
+        "",
+        ("До истечения срока вы не можете участвовать в турнирах r!z3 "
+         "— все режимы, без исключений."),
+    ]
+    return "\n".join(lines)
 
 
 async def list_active_vacs(guild_id: int) -> list[dict]:

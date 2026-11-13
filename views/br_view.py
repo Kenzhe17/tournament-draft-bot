@@ -408,11 +408,12 @@ class JoinBRButton(Button):
 
         # VAC — временная блокировка участия в турнирах
         from services import vac_service
-        from services.vac_service import vac_blocked_text
-        vac = await vac_service.get_active_vac(self.guild_id, user_id)
+        vac = await vac_service.check_vac(self.guild_id, user_id)
         if vac is not None:
+            ts = int(vac["expires_at"].timestamp())
             await interaction.response.send_message(
-                vac_blocked_text(int(vac["expires_at"].timestamp())),
+                vac_service.vac_blocked_text(
+                    ts, reason=vac.get("reason"), level=vac.get("level")),
                 ephemeral=True
             )
             return
@@ -671,12 +672,19 @@ class RegisterTeamButton(Button):
         from services import vac_service
         vac_members = []
         for member_id in team.members:
-            if await vac_service.is_vac_active(self.guild_id, member_id):
-                vac_members.append(member_id)
+            vac = await vac_service.check_vac(self.guild_id, member_id)
+            if vac is not None:
+                vac_members.append((member_id, vac))
         if vac_members:
-            mentions = " ".join(f"<@{m}>" for m in vac_members)
+            parts = []
+            for member_id, vac in vac_members:
+                ts = int(vac["expires_at"].timestamp())
+                parts.append(
+                    f"<@{member_id}> (до <t:{ts}:R>)"
+                )
             await interaction.response.send_message(
-                f"❌ Регистрация невозможна: у {mentions} активен VAC.",
+                "❌ Регистрация невозможна: активен VAC у "
+                + ", ".join(parts) + ".",
                 ephemeral=True
             )
             return
