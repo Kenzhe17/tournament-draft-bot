@@ -22,7 +22,7 @@ from storage.json_store import store
 
 logger = logging.getLogger(__name__)
 
-VOTE_SECONDS = 60
+VOTE_SECONDS = 20
 VOTE_PLAYERS = 8
 
 _FORMATS: dict[str, dict[str, str]] = {
