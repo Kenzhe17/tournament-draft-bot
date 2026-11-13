@@ -447,3 +447,64 @@ class TestTimerResilience:
 
 async def _noop(*a, **k):
     return None
+
+
+class TestSyncVoteUiHonesty:
+    """ui_synced=True только после реального обновления."""
+
+    def _fv(self):
+        return {
+            "vote_status": "done",
+            "vote_channel_id": 2,
+            "vote_message_id": 555,
+            "match_id": "t1_final_0",
+            "ui_sync_attempts": 0,
+        }
+
+    @pytest.mark.asyncio
+    async def test_missing_refs_not_synced(self, env, monkeypatch):
+        monkeypatch.setattr(fv, "store_bot_guild", lambda gid: None)
+
+        async def _card(*a, **k):
+            return None
+
+        import services.match_announcer as ma
+        monkeypatch.setattr(ma, "update_match_card", _card)
+        state = self._fv()
+        state["vote_channel_id"] = 0
+        state["vote_message_id"] = 0
+        guild = SimpleNamespace(id=1, get_channel=lambda cid: None)
+        ok = await fv._sync_vote_ui(
+            guild, env.tournament, "final", 0, state
+        )
+        assert ok is False
+        assert state["ui_synced"] is False
+        assert "ref missing" in state.get("ui_sync_last_error", "")
+
+    @pytest.mark.asyncio
+    async def test_success_marks_synced(self, env, monkeypatch):
+        edited = []
+
+        class _Msg:
+            async def edit(self, **kw):
+                edited.append(1)
+
+        class _Vch:
+            async def fetch_message(self, mid):
+                return _Msg()
+
+        guild = SimpleNamespace(id=1, get_channel=lambda cid: _Vch())
+        monkeypatch.setattr(fv, "build_vote_view", lambda *a, **k: object())
+
+        async def _card(*a, **k):
+            return None
+
+        import services.match_announcer as ma
+        monkeypatch.setattr(ma, "update_match_card", _card)
+        state = self._fv()
+        ok = await fv._sync_vote_ui(
+            guild, env.tournament, "final", 0, state
+        )
+        assert ok is True
+        assert state["ui_synced"] is True
+        assert edited == [1]

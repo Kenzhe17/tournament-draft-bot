@@ -609,17 +609,27 @@ async def _sync_vote_ui(
 ) -> bool:
     """Discord-синхронизация финальной карточки + карточки матча.
 
-    Идемпотентно и безопасно для повторов (watchdog). При успехе
-    помечает fv['ui_synced']; при ошибке увеличивает счётчик попыток.
+    Идемпотентно и безопасно для повторов (watchdog). ui_synced=True
+    ТОЛЬКО когда реально отредактированы И карточка голосования, И
+    карточка матча: пропуск ветки (нет guild/channel/message_id) —
+    несинхронизированное состояние, а не успех. Удалённое сообщение
+    (404) — attempts в максимум: watchdog не долбит Discord вечно.
     """
     ok = True
+    reason = ""
     try:
         if guild is None:
             gid = int(getattr(tournament, "guild_id", 0) or 0)
             guild = store_bot_guild(gid)
         vch_id = int(fv.get("vote_channel_id") or 0)
         mid = int(fv.get("vote_message_id") or 0)
-        if guild is not None and vch_id and mid:
+        if guild is None:
+            ok = False
+            reason = "guild unavailable"
+        elif not vch_id or not mid:
+            ok = False
+            reason = "vote message ref missing"
+        else:
             vch = guild.get_channel(vch_id)
             if vch is None:
                 vch = await guild.fetch_channel(vch_id)
@@ -628,8 +638,18 @@ async def _sync_vote_ui(
                 view=build_vote_view(tournament, match_type,
                                      match_index, fv)
             )
+    except discord.NotFound:
+        ok = False
+        reason = "vote message deleted"
+        fv["ui_sync_attempts"] = _UI_SYNC_MAX_ATTEMPTS
+        logger.warning(
+            "format_vote_ui_sync_gone match=%s: message %s deleted "
+            "— retries disabled",
+            fv.get("match_id"), fv.get("vote_message_id"),
+        )
     except Exception as exc:
         ok = False
+        reason = str(exc)
         logger.warning(
             "format_vote_ui_sync_failed match=%s: %s",
             fv.get("match_id"), exc,
@@ -646,13 +666,21 @@ async def _sync_vote_ui(
         )
     except Exception as exc:
         ok = False
+        if not reason:
+            reason = str(exc)
         logger.warning(
             "format_vote_card_update_failed match=%s: %s",
             fv.get("match_id"), exc,
         )
 
-    fv["ui_sync_attempts"] = int(fv.get("ui_sync_attempts") or 0) + 1
+    fv["ui_sync_attempts"] = (
+        _UI_SYNC_MAX_ATTEMPTS
+        if reason == "vote message deleted"
+        else int(fv.get("ui_sync_attempts") or 0) + 1
+    )
     fv["ui_synced"] = ok
+    if reason and not ok:
+        fv["ui_sync_last_error"] = reason[:200]
     store.set(tournament)
     if ok:
         logger.info(

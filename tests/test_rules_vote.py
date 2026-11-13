@@ -532,3 +532,211 @@ class TestDeadlockRegression:
         await asyncio.sleep(1.2)
         assert _rv(env)["vote_status"] == "done"
         rv_mod._TIMERS.clear()
+
+
+class TestFormationIdempotent:
+    """_continue_tournament_start — строго однократный запуск
+    формирования команд: параллельные finalize/watchdog/restore
+    не должны дать двойное распределение игроков."""
+
+    def _ready(self, env):
+        env.tournament.phase = TournamentPhase.RULES_VOTING
+        env.tournament.rules_vote = {"vote_status": "done"}
+
+    @pytest.mark.asyncio
+    async def test_concurrent_continue_launches_once(
+        self, env, monkeypatch
+    ):
+        import views.setup_view as sv
+
+        self._ready(env)
+        calls = []
+        gate = asyncio.Event()
+
+        async def fake_launch(g, c, t, b):
+            calls.append(1)
+            await gate.wait()
+
+        monkeypatch.setattr(sv, "launch_tournament_formation", fake_launch)
+        guild = SimpleNamespace(id=1, get_channel=lambda cid: _Channel())
+        t1 = asyncio.create_task(
+            rv_mod._continue_tournament_start(guild, env.tournament)
+        )
+        t2 = asyncio.create_task(
+            rv_mod._continue_tournament_start(guild, env.tournament)
+        )
+        await asyncio.sleep(0.05)
+        gate.set()
+        await asyncio.gather(t1, t2)
+        assert calls == [1]
+        assert _rv(env)["formation_started"] is True
+
+    @pytest.mark.asyncio
+    async def test_finalize_and_watchdog_no_double(
+        self, env, monkeypatch
+    ):
+        """finalize_rules_vote + параллельный _continue — один launch."""
+        import views.setup_view as sv
+
+        self._ready(env)
+        env.tournament.rules_vote = {
+            "vote_status": "open",
+            "vote_deadline": time.time() - 1,
+            "votes": {},
+        }
+        calls = []
+        gate = asyncio.Event()
+
+        async def fake_launch(g, c, t, b):
+            calls.append(1)
+            await gate.wait()
+
+        monkeypatch.setattr(sv, "launch_tournament_formation", fake_launch)
+        guild = SimpleNamespace(id=1, get_channel=lambda cid: _Channel())
+        t1 = asyncio.create_task(
+            rv_mod.finalize_rules_vote(guild, env.tournament)
+        )
+        t2 = asyncio.create_task(
+            rv_mod._continue_tournament_start(guild, env.tournament)
+        )
+        await asyncio.sleep(0.05)
+        gate.set()
+        await asyncio.gather(t1, t2)
+        assert calls == [1]
+
+    @pytest.mark.asyncio
+    async def test_failed_launch_resets_flag_for_retry(
+        self, env, monkeypatch
+    ):
+        import views.setup_view as sv
+
+        self._ready(env)
+        calls = []
+
+        async def boom(g, c, t, b):
+            calls.append("boom")
+            raise RuntimeError("discord down")
+
+        monkeypatch.setattr(sv, "launch_tournament_formation", boom)
+        guild = SimpleNamespace(id=1, get_channel=lambda cid: _Channel())
+        await rv_mod._continue_tournament_start(guild, env.tournament)
+        # флаг сброшен — повтор возможен (watchdog/restore)
+        assert _rv(env)["formation_started"] is False
+
+        async def ok_launch(g, c, t, b):
+            calls.append("ok")
+
+        monkeypatch.setattr(sv, "launch_tournament_formation", ok_launch)
+        await rv_mod._continue_tournament_start(guild, env.tournament)
+        assert calls == ["boom", "ok"]
+        assert _rv(env)["formation_started"] is True
+
+    @pytest.mark.asyncio
+    async def test_phase_changed_no_launch(self, env, monkeypatch):
+        import views.setup_view as sv
+
+        self._ready(env)
+        env.tournament.phase = TournamentPhase.DRAFT
+        calls = []
+
+        async def fake_launch(*a):
+            calls.append(1)
+
+        monkeypatch.setattr(sv, "launch_tournament_formation", fake_launch)
+        await rv_mod._continue_tournament_start(None, env.tournament)
+        assert calls == []
+
+
+class TestSyncVoteUi:
+    """ui_synced=True только после реального msg.edit."""
+
+    def _rv(self):
+        return {
+            "vote_status": "done",
+            "vote_channel_id": 2,
+            "vote_message_id": 555,
+            "ui_sync_attempts": 0,
+        }
+
+    @pytest.mark.asyncio
+    async def test_missing_refs_not_synced(self, env):
+        rv = self._rv()
+        rv["vote_channel_id"] = 0
+        rv["vote_message_id"] = 0
+        guild = SimpleNamespace(id=1, get_channel=lambda cid: None)
+        ok = await rv_mod._sync_vote_ui(guild, env.tournament, rv)
+        assert ok is False
+        assert rv["ui_synced"] is False
+        assert "ref missing" in rv.get("ui_sync_last_error", "")
+
+    @pytest.mark.asyncio
+    async def test_guild_unavailable_not_synced(self, env, monkeypatch):
+        monkeypatch.setattr(rv_mod, "_bot_guild", lambda gid: None)
+        rv = self._rv()
+        ok = await rv_mod._sync_vote_ui(None, env.tournament, rv)
+        assert ok is False
+        assert rv["ui_synced"] is False
+        assert "guild" in rv.get("ui_sync_last_error", "")
+
+    @pytest.mark.asyncio
+    async def test_success_marks_synced(self, env, monkeypatch):
+        edited = []
+
+        class _Msg:
+            async def edit(self, **kw):
+                edited.append(1)
+
+        class _Vch:
+            async def fetch_message(self, mid):
+                return _Msg()
+
+        guild = SimpleNamespace(id=1, get_channel=lambda cid: _Vch())
+        monkeypatch.setattr(
+            rv_mod, "build_rules_vote_view", lambda t, r: object()
+        )
+        rv = self._rv()
+        ok = await rv_mod._sync_vote_ui(guild, env.tournament, rv)
+        assert ok is True
+        assert rv["ui_synced"] is True
+        assert edited == [1]
+
+    @pytest.mark.asyncio
+    async def test_edit_failure_not_synced(self, env, monkeypatch):
+        class _Msg:
+            async def edit(self, **kw):
+                raise RuntimeError("discord 500")
+
+        class _Vch:
+            async def fetch_message(self, mid):
+                return _Msg()
+
+        guild = SimpleNamespace(id=1, get_channel=lambda cid: _Vch())
+        monkeypatch.setattr(
+            rv_mod, "build_rules_vote_view", lambda t, r: object()
+        )
+        rv = self._rv()
+        ok = await rv_mod._sync_vote_ui(guild, env.tournament, rv)
+        assert ok is False
+        assert rv["ui_synced"] is False
+        assert rv["ui_sync_attempts"] == 1
+
+    @pytest.mark.asyncio
+    async def test_deleted_message_gives_up(self, env, monkeypatch):
+        import discord
+
+        class _Vch:
+            async def fetch_message(self, mid):
+                raise discord.NotFound(
+                    SimpleNamespace(status=404, reason="NF"), "gone"
+                )
+
+        guild = SimpleNamespace(id=1, get_channel=lambda cid: _Vch())
+        monkeypatch.setattr(
+            rv_mod, "build_rules_vote_view", lambda t, r: object()
+        )
+        rv = self._rv()
+        ok = await rv_mod._sync_vote_ui(guild, env.tournament, rv)
+        assert ok is False
+        assert rv["ui_synced"] is False
+        # attempts в потолок — watchdog не повторяет вечно
+        assert rv["ui_sync_attempts"] >= rv_mod._UI_SYNC_MAX_ATTEMPTS

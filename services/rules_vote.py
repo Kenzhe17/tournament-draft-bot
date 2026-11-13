@@ -469,8 +469,16 @@ async def finalize_rules_vote(
 async def _sync_vote_ui(
     guild, tournament, rv: dict
 ) -> bool:
-    """Финальная CV2-карточка + флаг ui_synced для watchdog-повторов."""
-    ok = True
+    """Финальная CV2-карточка + флаг ui_synced для watchdog-повторов.
+
+    ui_synced=True ТОЛЬКО после подтверждённого msg.edit: пропуск
+    ветки (нет guild/channel/message_id) — это несинхронизированное
+    состояние, а не успех. Удалённое сообщение (404) — даём up:
+    attempts выставляются в максимум, watchdog не долбит Discord
+    по несуществующему сообщению бесконечно.
+    """
+    ok = False
+    reason = ""
     try:
         if guild is None:
             guild = _bot_guild(
@@ -478,7 +486,11 @@ async def _sync_vote_ui(
             )
         vch_id = int(rv.get("vote_channel_id") or 0)
         mid = int(rv.get("vote_message_id") or 0)
-        if guild is not None and vch_id and mid:
+        if guild is None:
+            reason = "guild unavailable"
+        elif not vch_id or not mid:
+            reason = "vote message ref missing"
+        else:
             vch = guild.get_channel(vch_id)
             if vch is None:
                 vch = await guild.fetch_channel(vch_id)
@@ -486,14 +498,30 @@ async def _sync_vote_ui(
             await msg.edit(
                 view=build_rules_vote_view(tournament, rv)
             )
+            ok = True
+    except discord.NotFound:
+        reason = "vote message deleted"
+        # Бессмысленно повторять: сообщение удалено навсегда.
+        rv["ui_sync_attempts"] = _UI_SYNC_MAX_ATTEMPTS
+        logger.warning(
+            "rules_vote_ui_sync_gone tournament=%s: message %s "
+            "deleted — retries disabled",
+            getattr(tournament, "id", "?"), rv.get("vote_message_id"),
+        )
     except Exception as exc:
-        ok = False
+        reason = str(exc)
         logger.warning(
             "rules_vote_ui_sync_failed tournament=%s: %s",
             getattr(tournament, "id", "?"), exc,
         )
-    rv["ui_sync_attempts"] = int(rv.get("ui_sync_attempts") or 0) + 1
+    rv["ui_sync_attempts"] = (
+        _UI_SYNC_MAX_ATTEMPTS
+        if reason == "vote message deleted"
+        else int(rv.get("ui_sync_attempts") or 0) + 1
+    )
     rv["ui_synced"] = ok
+    if reason and not ok:
+        rv["ui_sync_last_error"] = reason[:200]
     store.set(tournament)
     if ok:
         logger.info(
@@ -509,20 +537,38 @@ async def _continue_tournament_start(
 ) -> None:
     """Запустить существующее формирование команд после голосования.
 
-    Защита от повторного запуска: formation-функции сами переводят
-    фазу из RULES_VOTING; если фаза уже не RULES_VOTING — выходим.
+    Запуск СТРОГО однократный: атомарный флаг ``formation_started``
+    выставляется под _lock до вызова launch — параллельные
+    финализация/watchdog/restore не могут запустить формирование
+    дважды (двойное распределение игроков, повторные матчи).
+    При падении launch до смены фазы флаг сбрасывается — watchdog
+    повторит; если фаза уже сменилась — проверка фазы отсекает
+    повторы сама.
     """
-    try:
-        if getattr(tournament, "phase", None) != TournamentPhase.RULES_VOTING:
+    gid = int(getattr(tournament, "guild_id", 0) or 0)
+    cid = int(getattr(tournament, "channel_id", 0) or 0)
+    key = _key(gid, cid)
+    async with _lock(key):
+        fresh = store.get(gid, cid) or tournament
+        if getattr(fresh, "phase", None) != TournamentPhase.RULES_VOTING:
             return
+        rv = get_vote(fresh)
+        if rv is not None and rv.get("formation_started"):
+            return
+        if rv is not None:
+            rv["formation_started"] = True
+        store.set(fresh)
+        tournament = fresh
+    try:
         if guild is None:
             guild = _bot_guild(int(getattr(tournament, "guild_id", 0) or 0))
         if guild is None:
-            logger.warning(
-                "Rules vote continue: guild %s not found",
-                getattr(tournament, "guild_id", "?"),
+            # guild временно недоступен — считаем сбоем запуска:
+            # флаг сбросится в except, watchdog повторит позже.
+            raise RuntimeError(
+                f"guild {getattr(tournament, 'guild_id', '?')} "
+                "not found"
             )
-            return
         channel_id = int(getattr(tournament, "channel_id", 0) or 0)
         channel = guild.get_channel(channel_id)
         if channel is None:
@@ -542,6 +588,26 @@ async def _continue_tournament_start(
             getattr(tournament, "id", "?"),
         )
     except Exception:
+        # Сбой до смены фазы — сбрасываем formation_started, чтобы
+        # watchdog/restore могли повторить запуск. Если launch успел
+        # перевести фазу — проверка фазы в начале функции отсекает
+        # повторы, флаг безвреден.
+        try:
+            async with _lock(key):
+                f2 = store.get(gid, cid)
+                rv2 = get_vote(f2) if f2 is not None else None
+                if (
+                    rv2 is not None
+                    and getattr(f2, "phase", None)
+                    == TournamentPhase.RULES_VOTING
+                ):
+                    rv2["formation_started"] = False
+                    store.set(f2)
+        except Exception:
+            logger.exception(
+                "rules_vote_continue_reset_failed tournament=%s",
+                getattr(tournament, "id", "?"),
+            )
         logger.exception(
             "rules_vote_continue_failed tournament=%s",
             getattr(tournament, "id", "?"),
