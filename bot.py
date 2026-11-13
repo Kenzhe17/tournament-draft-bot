@@ -1034,6 +1034,16 @@ class TournamentBot(commands.Bot):
                             tournament.message_id,
                         )
                         _EDIT_CACHE.pop(key, None)
+                        # Устаревший message_id очищаем и персистим —
+                        # иначе каждый апдейт будет снова делать
+                        # fetch_message → повторные 404.
+                        tournament.message_id = 0
+                        try:
+                            await asyncio.to_thread(store.set, tournament)
+                        except Exception as exc:
+                            logger.warning(
+                                "Не удалось сохранить message_id=0: %s", exc
+                            )
                         message = None
                     except discord.HTTPException as exc:
                         logger.warning("Не удалось получить сообщение: %s", exc)
@@ -1050,13 +1060,20 @@ class TournamentBot(commands.Bot):
                             )
                     except discord.NotFound:
                         # Сообщение удалили между кэшем и правкой —
-                        # инвалидируем кэш, следующий апдейт сделает
-                        # fetch_message заново.
+                        # инвалидируем кэш и чистим message_id,
+                        # следующий апдейт не будет дёргать 404.
                         logger.warning(
                             "Сообщение %s удалено во время edit",
                             tournament.message_id,
                         )
                         _EDIT_CACHE.pop(key, None)
+                        tournament.message_id = 0
+                        try:
+                            await asyncio.to_thread(store.set, tournament)
+                        except Exception as exc:
+                            logger.warning(
+                                "Не удалось сохранить message_id=0: %s", exc
+                            )
                         message = None
                     except discord.Forbidden as exc:
                         logger.error(
@@ -1491,6 +1508,12 @@ class TournamentBot(commands.Bot):
             from utils.profile_renderer import shutdown_profile_renderer
 
             await shutdown_profile_renderer()
+        except Exception:
+            pass
+        try:
+            from services import ocr_worker
+
+            ocr_worker.shutdown()
         except Exception:
             pass
         await super().close()
