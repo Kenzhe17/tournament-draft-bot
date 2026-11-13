@@ -678,16 +678,28 @@ async def shutdown_profile_renderer() -> None:
 # Native backend: SVG → resvg (без браузера)
 # ---------------------------------------------------------------------------
 
-# CPU-bound растеризация — в отдельном ограниченном executor,
-# event loop не блокируется. 2 воркера — как у OCR.
-PNG_EXECUTOR = ThreadPoolExecutor(max_workers=2,
-                                  thread_name_prefix="png-native")
+# CPU-bound растеризация — ОДИН общий executor для всех нативных
+# PNG-рендеров (profile + banner): resvg и Pillow. Общий пул —
+# единственный лимит одновременно ВЫПОЛНЯЮЩИХСЯ тяжёлых растеризаций
+# (раньше profile и banner имели по 2 воркера → 4 параллельных рендера).
+# PNG_RENDER_WORKERS — env-переопределение.
+PNG_EXECUTOR = ThreadPoolExecutor(
+    max_workers=int(os.environ.get("PNG_RENDER_WORKERS", "3")),
+    thread_name_prefix="png-native")
 
-# Ограничение admitted PNG-рендеров (выполняемых + ожидающих):
-# каждый ждёт слот с уже построенными данными; без лимита всплеск
-# команд мог бы накопить десятки SVG/PNG-буферов в памяти.
-# Отказ — быстрый RuntimeError, а не очередь без bound'а.
+
+class _PngQueueFull(RuntimeError):
+    """PNG render queue is full — load-shedding, не ошибка рендера."""
+
+
+# Bounded admission для PNG-рендеров (profile+banner):
+# лимит считает admitted = выполняющиеся + ожидающие в executor
+# тяжёлые операции. Слот освобождается по завершению underlying
+# future — отмена asyncio-задачи НЕ освобождает слот раньше времени
+# (рабочий поток продолжает исполняться). Chromium-путь (async,
+# реально отменяемый) отпускает слот в finally.
 _PNG_INFLIGHT = 0
+_PNG_INFLIGHT_LOCK = threading.Lock()
 _PNG_MAX_INFLIGHT = int(os.environ.get("PNG_RENDER_MAX_INFLIGHT", "8"))
 
 
@@ -695,42 +707,142 @@ def png_render_inflight() -> int:
     return _PNG_INFLIGHT
 
 
+def _png_try_acquire() -> bool:
+    """Атомарный захват слота. Вызывать только из event loop."""
+    global _PNG_INFLIGHT
+    with _PNG_INFLIGHT_LOCK:
+        if _PNG_INFLIGHT >= _PNG_MAX_INFLIGHT:
+            return False
+        _PNG_INFLIGHT += 1
+        return True
+
+
+def _png_release() -> None:
+    global _PNG_INFLIGHT
+    with _PNG_INFLIGHT_LOCK:
+        _PNG_INFLIGHT = max(0, _PNG_INFLIGHT - 1)
+
+
 @asynccontextmanager
 async def _png_admission():
-    """Bounded admission для PNG-рендеров (profile+banner).
+    """Bounded admission для ОТМЕНЯЕМОГО (chromium) рендера.
 
     Проверка и инкремент атомарны (event loop однопоточен, между
     ними нет await). Превышение лимита — отказ до создания
-    SVG/буферов.
+    SVG/буферов. Нативный путь использует _png_run_native — там
+    слот привязан к done_callback future.
     """
-    global _PNG_INFLIGHT
-    if _PNG_INFLIGHT >= _PNG_MAX_INFLIGHT:
-        raise RuntimeError("PNG render queue is full")
-    _PNG_INFLIGHT += 1
+    if not _png_try_acquire():
+        raise _PngQueueFull("PNG render queue is full")
     try:
         yield
     finally:
-        _PNG_INFLIGHT -= 1
+        _png_release()
 
 
 _PNG_PEAK_RSS_MB = 0.0
+_RSS_SAMPLE_INTERVAL = 0.01
 
 
-def _note_render_rss() -> None:
-    """Пиковый RSS процесса после рендера (gauges для PERF-логов)."""
-    global _PNG_PEAK_RSS_MB
+def _tree_rss_mb() -> float:
+    """RSS процесса + всех дочерних (для chromium-fallback ветки).
+
+    Сумма RSS процессов может дважды считать shared pages — это
+    gauge для относительного сравнения backend'ов, а НЕ точный
+    расчёт Railway billing (тот идёт по cgroup контейнера).
+    """
     try:
         import psutil
 
-        mb = psutil.Process(os.getpid()).memory_info().rss / 1048576
-        if mb > _PNG_PEAK_RSS_MB:
-            _PNG_PEAK_RSS_MB = mb
+        proc = psutil.Process()
+        total = proc.memory_info().rss
+        for ch in proc.children(recursive=True):
+            try:
+                total += ch.memory_info().rss
+            except Exception:
+                pass
+        return total / 1048576
     except Exception:
-        pass
+        return 0.0
+
+
+def _start_rss_monitor():
+    """Фоновый сэмплер RSS на всё время нативного рендера.
+
+    Пик фиксируется сэмплами ~каждые 10мс — ловит промежуточные
+    буферы resvg/Pillow, которые пост-рендерный замер пропускает.
+    Возвращает stop(): вызывать из done_callback future, чтобы
+    монитор покрывал render даже при отмене asyncio-ожидания.
+    """
+    stop = threading.Event()
+
+    def _loop():
+        global _PNG_PEAK_RSS_MB
+        while not stop.is_set():
+            mb = _tree_rss_mb()
+            if mb > _PNG_PEAK_RSS_MB:
+                _PNG_PEAK_RSS_MB = mb
+            stop.wait(_RSS_SAMPLE_INTERVAL)
+
+    t = threading.Thread(target=_loop, daemon=True,
+                         name="png-rss-monitor")
+    t.start()
+
+    def _stop() -> None:
+        stop.set()
+        t.join(timeout=0.5)
+
+    return _stop
+
+
+def _note_render_rss() -> None:
+    """Точечный замер RSS после рендера (chromium-путь)."""
+    global _PNG_PEAK_RSS_MB
+    mb = _tree_rss_mb()
+    if mb > _PNG_PEAK_RSS_MB:
+        _PNG_PEAK_RSS_MB = mb
 
 
 def png_render_peak_rss_mb() -> float:
     return _PNG_PEAK_RSS_MB
+
+
+async def _png_run_native(fn, /, *args, **kwargs):
+    """Admitted нативный PNG-рендер в общем PNG_EXECUTOR.
+
+    Слот admission и RSS-монитор привязаны к завершению underlying
+    concurrent.futures.Future через done_callback, а не к жизни
+    asyncio-задачи:
+    - отмена ожидания НЕ освобождает слот, пока поток реально
+      работает (future продолжает исполняться);
+    - future, отменённый до старта, освобождает слот через тот же
+      callback — утечек нет.
+    """
+    if not _png_try_acquire():
+        raise _PngQueueFull("PNG render queue is full")
+    import functools
+
+    loop = asyncio.get_running_loop()
+    call = functools.partial(fn, *args, **kwargs)
+    stop_mon = _start_rss_monitor()
+    try:
+        # concurrent.futures.Future — НЕ asyncio-обёртка: её
+        # done_callback срабатывает только при реальном завершении
+        # потока или отмене до старта. asyncio-обёртка завершалась
+        # бы отменой await'а раньше времени → слот освобождался
+        # бы преждевременно.
+        cf = PNG_EXECUTOR.submit(call)
+    except Exception:
+        stop_mon()
+        _png_release()
+        raise
+
+    def _done(_f):
+        stop_mon()
+        _png_release()
+
+    cf.add_done_callback(_done)
+    return await asyncio.wrap_future(cf)
 
 # SVG <text> не задаёт font-family (он пришёл из HTML/CSS).
 # resvg применяет style_sheet при парсинге — возвращаем Inter.
@@ -813,19 +925,23 @@ async def render_profile_png_async(data: dict,
     auto при сбое native откатывается на chromium (лог + метрика).
     """
     backend = _png_backend()
+    if backend != "chromium":
+        try:
+            return await _render_profile_png_native(
+                data, avatar_png, badge_png)
+        except _PngQueueFull:
+            # load-shedding — не рендерная ошибка, fallback на
+            # более тяжёлый chromium не нужен.
+            raise
+        except Exception:
+            _record_render_error()
+            if backend == "native":
+                raise
+            logger.warning(
+                "Native profile render failed — falling back to "
+                "chromium", exc_info=True)
+            _record_fallback()
     async with _png_admission():
-        if backend != "chromium":
-            try:
-                return await _render_profile_png_native(
-                    data, avatar_png, badge_png)
-            except Exception:
-                _record_render_error()
-                if backend == "native":
-                    raise
-                logger.warning(
-                    "Native profile render failed — falling back to "
-                    "chromium", exc_info=True)
-                _record_fallback()
         return await _render_profile_png_chromium(
             data, avatar_png, badge_png)
 
@@ -838,10 +954,11 @@ async def _render_profile_png_native(
     import time
 
     t0 = time.monotonic()
-    loop = asyncio.get_running_loop()
-    # SVG-сборка (~10мс) тоже в worker — event loop свободен.
-    png = await loop.run_in_executor(
-        PNG_EXECUTOR, _profile_svg_to_png, data, avatar_png, badge_png)
+    # SVG-сборка (~10мс) + растеризация — целиком в worker,
+    # event loop не тратит время и не держит большие буферы.
+    # Admission и RSS-монитор живут внутри _png_run_native.
+    png = await _png_run_native(
+        _profile_svg_to_png, data, avatar_png, badge_png)
     render_ms = (time.monotonic() - t0) * 1000
     _record_render_metric(native=True, render_ms=render_ms)
     logger.info("Profile PNG rendered natively in %.0fms", render_ms)

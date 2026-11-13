@@ -18,8 +18,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-pytest.importorskip("resvg_py")
-pytest.importorskip("PIL")
+# resvg_py — обязательная зависимость native-рендера: тесты должны
+# ПАДАТЬ при её отсутствии, а не молча скипаться.
+import resvg_py  # noqa: F401,E402
+import PIL  # noqa: F401,E402
 
 from PIL import Image  # noqa: E402
 
@@ -109,7 +111,10 @@ class TestProfileNative:
         ])
         for png in results:
             assert _png_size(png) == (1920, 1080)
-        assert PNG_EXECUTOR._max_workers == 2
+        # Единый executor для profile+banner (PNG_RENDER_WORKERS).
+        import os as _os
+        expected = int(_os.environ.get("PNG_RENDER_WORKERS", "3"))
+        assert PNG_EXECUTOR._max_workers == expected
 
     @pytest.mark.asyncio
     async def test_no_child_processes(self, native_backend):
@@ -252,19 +257,27 @@ class TestRenderAdmission:
     async def test_queue_full_rejected(self, native_backend, monkeypatch):
         """Превышение PNG_RENDER_MAX_INFLIGHT → быстрый отказ,
         без создания SVG/буферов."""
+        import threading
+
         from utils import profile_renderer as pr
 
         monkeypatch.setattr(pr, "_PNG_MAX_INFLIGHT", 2)
-        gate = asyncio.Event()
+        gate = threading.Event()
 
-        async def slow(*a, **k):
-            await gate.wait()
+        def slow_svg(*a, **k):
+            gate.wait(10)
+            return b"<svg/>"
+
+        async def fake_png(svg):
             return b"\x89PNG\r\n\x1a\nx"
 
-        monkeypatch.setattr(pr, "_render_profile_png_native", slow)
+        # _profile_svg_to_png строит SVG+растрирует; подменяем
+        # целиком синхронной заглушкой, спящей в worker-потоке.
+        monkeypatch.setattr(pr, "_profile_svg_to_png", slow_svg)
+        monkeypatch.setattr(pr, "_svg_to_png_native", fake_png)
         t1 = asyncio.create_task(pr.render_profile_png_async({}))
         t2 = asyncio.create_task(pr.render_profile_png_async({}))
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)
         assert pr.png_render_inflight() == 2
         # Третий — отказ сразу, не в очередь
         with pytest.raises(RuntimeError, match="queue is full"):
@@ -289,11 +302,16 @@ class TestRenderAdmission:
             gate.wait(10)
             return b"\x89PNG\r\n\x1a\nx"
 
+        def slow_svg(*a, **k):
+            gate.wait(10)
+            return b"<svg/>"
+
         monkeypatch.setattr(br, "_render_banner_native", slow_banner)
+        monkeypatch.setattr(pr, "_profile_svg_to_png", slow_svg)
         t1 = asyncio.create_task(br.render_banner_png(
             nickname="A", avatar_png=None, voice_seconds=1,
             matches=1, has_activity=True))
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)
         # profile не может занять слот, пока banner держит его
         with pytest.raises(RuntimeError, match="queue is full"):
             from utils.profile_renderer import render_profile_png_async
@@ -301,6 +319,121 @@ class TestRenderAdmission:
         gate.set()
         await t1
         assert pr.png_render_inflight() == 0
+
+    @pytest.mark.asyncio
+    async def test_cancel_keeps_slot_until_worker_done(
+        self, native_backend, monkeypatch
+    ):
+        """Отмена asyncio-задачи НЕ освобождает admission-слот,
+        пока worker-поток реально исполняет рендер."""
+        import threading
+
+        from utils import profile_renderer as pr
+
+        monkeypatch.setattr(pr, "_PNG_MAX_INFLIGHT", 1)
+        started = threading.Event()
+        gate = threading.Event()
+
+        def slow_svg(*a, **k):
+            started.set()
+            gate.wait(10)
+            return b"<svg/>"
+
+        async def fake_png(svg):
+            return b"\x89PNG\r\n\x1a\nx"
+
+        monkeypatch.setattr(pr, "_profile_svg_to_png", slow_svg)
+        monkeypatch.setattr(pr, "_svg_to_png_native", fake_png)
+        t = asyncio.create_task(pr.render_profile_png_async({}))
+        # Ждём, пока worker реально начал работу
+        for _ in range(100):
+            if started.is_set():
+                break
+            await asyncio.sleep(0.01)
+        assert started.is_set()
+        assert pr.png_render_inflight() == 1
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+        # Слот ВСЁ ЕЩЁ занят — поток продолжает работать,
+        # новый рендер обязан получить отказ, а не занять слот.
+        await asyncio.sleep(0.05)
+        assert pr.png_render_inflight() == 1
+        with pytest.raises(RuntimeError, match="queue is full"):
+            await pr.render_profile_png_async({})
+        # Освобождаем worker — слот отпускается по done_callback.
+        gate.set()
+        for _ in range(100):
+            if pr.png_render_inflight() == 0:
+                break
+            await asyncio.sleep(0.02)
+        assert pr.png_render_inflight() == 0
+        # После освобождения рендер снова проходит
+        # (_profile_svg_to_png всё ещё замокан → возвращает <svg/>).
+        png = await pr.render_profile_png_async({})
+        assert png == b"<svg/>"
+
+    @pytest.mark.asyncio
+    async def test_cancel_before_start_releases_slot(
+        self, native_backend, monkeypatch
+    ):
+        """Если future отменён ДО старта в executor — слот
+        освобождается через done_callback, утечки нет."""
+        import threading
+
+        from utils import profile_renderer as pr
+
+        # Лимит высокий — blockers и тестовая задача проходят admission.
+        monkeypatch.setattr(pr, "_PNG_MAX_INFLIGHT", 10)
+        blocker = threading.Event()
+
+        def block(*a, **k):
+            blocker.wait(10)
+            return b"ok"
+
+        # Занимаем ВСЕ worker'ы PNG_EXECUTOR блокирующими задачами —
+        # future тестового рендера гарантированно встанет в очередь
+        # executor'а и не стартует до cancel.
+        holders = [asyncio.create_task(pr._png_run_native(block))
+                   for _ in range(pr.PNG_EXECUTOR._max_workers)]
+        await asyncio.sleep(0.1)
+        base = pr.png_render_inflight()
+        assert base == pr.PNG_EXECUTOR._max_workers
+
+        monkeypatch.setattr(pr, "_profile_svg_to_png",
+                            lambda *a, **k: b"<svg/>")
+        t = asyncio.create_task(pr.render_profile_png_async({}))
+        await asyncio.sleep(0.1)
+        assert pr.png_render_inflight() == base + 1
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+        # future ещё не стартовал — отмена освобождает слот.
+        for _ in range(100):
+            if pr.png_render_inflight() == base:
+                break
+            await asyncio.sleep(0.02)
+        assert pr.png_render_inflight() == base
+        # Освобождаем blockers — все слоты возвращаются в 0.
+        blocker.set()
+        await asyncio.gather(*holders)
+        for _ in range(100):
+            if pr.png_render_inflight() == 0:
+                break
+            await asyncio.sleep(0.02)
+        assert pr.png_render_inflight() == 0
+
+    @pytest.mark.asyncio
+    async def test_peak_rss_recorded_during_render(
+        self, native_backend
+    ):
+        """RSS-монитор фиксирует пик во время нативного рендера."""
+        from utils import profile_renderer as pr
+
+        pr._PNG_PEAK_RSS_MB = 0.0
+        png = await pr.render_profile_png_async(_profile_data())
+        assert _png_size(png) == (1920, 1080)
+        assert pr.png_render_peak_rss_mb() > 10  # МБ — реальный пик
 
     @pytest.mark.asyncio
     async def test_event_loop_not_blocked(self, native_backend):

@@ -20,12 +20,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import functools
 import io
 import logging
 import math
 import os
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PIL import Image
@@ -268,10 +266,9 @@ def _esc(s: str) -> str:
 # Native backend: Pillow поверх template_clean.png
 # ---------------------------------------------------------------------------
 
-_NATIVE_SEM = asyncio.Semaphore(2)
-# Отдельный executor для Pillow-рендеров — не делим default pool.
-BANNER_EXECUTOR = ThreadPoolExecutor(max_workers=2,
-                                     thread_name_prefix="png-banner")
+# Нативные Pillow-рендеры исполняются в ОБЩЕМ PNG_EXECUTOR
+# (utils.profile_renderer) вместе с resvg-профилями — единый
+# лимит одновременно выполняющихся тяжёлых растеризаций.
 _template_img_cache = None
 _avatar_empty_bg_cache = None
 _logo_img_cache = None
@@ -557,50 +554,54 @@ async def render_banner_png(
     has_activity: bool = True,
     report_day_label: str | None = None,
 ) -> bytes:
-    """PNG баннера 1672x941. native → Pillow; chromium → Playwright."""
-    backend = _banner_backend()
-    from utils.profile_renderer import _png_admission, _note_render_rss
+    """PNG баннера 1672x941. native → Pillow; chromium → Playwright.
 
+    Нативный путь идёт через общий _png_run_native: единый
+    PNG_EXECUTOR + единый admission-счётчик с profile-рендерами.
+    """
+    backend = _banner_backend()
+    from utils.profile_renderer import (
+        _PngQueueFull, _note_render_rss, _png_admission, _png_run_native)
+
+    if backend != "chromium":
+        try:
+            import time as _time
+            _t0 = _time.monotonic()
+            png = await _png_run_native(
+                _render_banner_native,
+                nickname=nickname, avatar_png=avatar_png,
+                voice_seconds=voice_seconds, matches=matches,
+                has_activity=has_activity,
+                report_day_label=report_day_label)
+            try:
+                from utils import perf_metrics
+                perf_metrics.record(
+                    "banner_render_native_ms",
+                    (_time.monotonic() - _t0) * 1000)
+                perf_metrics.incr("banner_renders_native")
+            except Exception:
+                pass
+            _note_render_rss()
+            return png
+        except _PngQueueFull:
+            raise
+        except Exception:
+            try:
+                from utils import perf_metrics
+                perf_metrics.incr("png_render_errors")
+            except Exception:
+                pass
+            if backend == "native":
+                raise
+            logger.warning(
+                "Native banner render failed — falling back to "
+                "chromium", exc_info=True)
+            try:
+                from utils import perf_metrics
+                perf_metrics.incr("png_render_fallbacks")
+            except Exception:
+                pass
     async with _png_admission():
-        if backend != "chromium":
-            async with _NATIVE_SEM:
-                try:
-                    import time as _time
-                    _t0 = _time.monotonic()
-                    loop = asyncio.get_running_loop()
-                    png = await loop.run_in_executor(
-                        BANNER_EXECUTOR, functools.partial(
-                            _render_banner_native,
-                            nickname=nickname, avatar_png=avatar_png,
-                            voice_seconds=voice_seconds, matches=matches,
-                            has_activity=has_activity,
-                            report_day_label=report_day_label))
-                    try:
-                        from utils import perf_metrics
-                        perf_metrics.record(
-                            "banner_render_native_ms",
-                            (_time.monotonic() - _t0) * 1000)
-                        perf_metrics.incr("banner_renders_native")
-                    except Exception:
-                        pass
-                    _note_render_rss()
-                    return png
-                except Exception:
-                    try:
-                        from utils import perf_metrics
-                        perf_metrics.incr("png_render_errors")
-                    except Exception:
-                        pass
-                    if backend == "native":
-                        raise
-                    logger.warning(
-                        "Native banner render failed — falling back to "
-                        "chromium", exc_info=True)
-                    try:
-                        from utils import perf_metrics
-                        perf_metrics.incr("png_render_fallbacks")
-                    except Exception:
-                        pass
         return await _render_banner_png_chromium(
             nickname=nickname, avatar_png=avatar_png,
             voice_seconds=voice_seconds, matches=matches,
