@@ -522,7 +522,14 @@ class MMCog(commands.Cog):
 
     @staticmethod
     def _notification_due(search: MMSearch, kind: str, now: float) -> bool:
-        """Условия отправки уведомления kind ('first'|'second')."""
+        """Условия отправки уведомления kind ('first'|'second').
+
+        first:  >=120с от старта сессии И >=2 игрока в очереди.
+        second: >=420с от старта, 5 <= count < required, первое
+                уведомление подтверждённо отправлено ('sent') И
+                >=120с прошло с момента ЕГО ФАКТИЧЕСКОЙ отправки
+                (first_notification_sent_at, не плановое время).
+        """
         if search.is_locked or not search.timer_started:
             return False
         count = len(search.players)
@@ -531,9 +538,13 @@ class MMCog(commands.Cog):
             return False
         elapsed = now - (search.session_started_at or 0.0)
         if kind == "first":
-            return elapsed >= 60
-        # second: >=5 минут И >=5 игроков (но < required)
-        return elapsed >= 300 and count >= 5
+            return elapsed >= 120 and count >= 2
+        if not (elapsed >= 420 and count >= 5):
+            return False
+        if getattr(search, "first_notification_status", "") != "sent":
+            return False
+        first_sent = getattr(search, "first_notification_sent_at", 0.0) or 0.0
+        return first_sent > 0 and (now - first_sent) >= 120
 
     def _claim_notification(self, search: MMSearch, kind: str) -> bool:
         """Атомарно (под _queue_lock) зарезервировать отправку.
@@ -722,8 +733,9 @@ class MMCog(commands.Cog):
         Дедлайн = session_started_at + effective_limit_seconds —
         персистится в MMSearch и переживает рестарт. Лимит растёт
         с заполнением очереди (10→12→15→20 мин), но не уменьшается
-        при выходе игроков. Уведомления: первое на 60с, второе при
-        elapsed>=300с И 5<=count<required — максимум два за сессию.
+        при выходе игроков. Уведомления: первое при elapsed>=120с
+        И >=2 игроках; второе при elapsed>=420с И 5<=count<required
+        И >=120с после фактической отправки первого — максимум два.
         """
         async def timer_task():
             try:
@@ -765,11 +777,18 @@ class MMCog(commands.Cog):
                     # Сон до ближайшего события (уведомление/дедлайн),
                     # максимум 30с — на случай изменений состояния.
                     delay = 30.0
-                    for mark in (
-                        search.session_started_at + 60,
-                        search.session_started_at + 300,
+                    first_sent = getattr(
+                        search, "first_notification_sent_at", 0.0
+                    ) or 0.0
+                    marks = [
+                        search.session_started_at + 120,  # first notify
+                        search.session_started_at + 420,  # second notify
                         search.deadline_at,
-                    ):
+                    ]
+                    if first_sent:
+                        # second_eligible_at = first_sent + 120с
+                        marks.append(first_sent + 120)
+                    for mark in marks:
                         if mark > now:
                             delay = min(delay, mark - now)
                     await asyncio.sleep(max(5.0, delay))
@@ -2167,6 +2186,11 @@ class MMCog(commands.Cog):
                 # Выход НЕ сбрасывает достигнутый лимит и уведомления
                 search.update_effective_limit()
             mm_search_store.set(search)
+            # Проверка уведомлений и при выходе: если первый уже
+            # отправлен и второй стал due (5+ игроков, >=7 мин,
+            # >=120с после первого) — не ждём тик таймера.
+            if search.timer_started and not search.is_locked:
+                await self._maybe_send_notifications(search)
             await self._edit_panel(interaction, search)
             # Снимаем состояние «бот думает…» ephemeral-подтверждением
             await self._ephemeral(interaction, "✅ Вы вышли из очереди.")

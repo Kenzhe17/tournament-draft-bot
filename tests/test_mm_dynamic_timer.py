@@ -18,9 +18,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from models.mm_search import (
+    QUEUE_OPEN,
     MMFormat,
     MMSearch,
-    QUEUE_OPEN,
     queue_limit_seconds,
 )
 
@@ -108,32 +108,60 @@ class TestQueueLimits:
 # ------------------------------------------------------- уведомления
 
 class TestNotificationConditions:
-    def _due(self, monkeypatch, n, elapsed, kind, locked=False):
+    def _due(self, monkeypatch, n, elapsed, kind, locked=False,
+             first_sent_ago=None):
         s = _search(n)
         s.timer_started = True
         s.state = "locked" if locked else QUEUE_OPEN
-        s.session_started_at = time.time() - elapsed
+        now = time.time()
+        s.session_started_at = now - elapsed
         s.effective_limit_seconds = 1200
+        if first_sent_ago is not None:
+            s.first_notification_status = "sent"
+            s.first_notification_sent_at = now - first_sent_ago
         cog = _cog(monkeypatch, s)
-        return cog._notification_due(s, kind, time.time())
+        return cog._notification_due(s, kind, now)
 
-    def test_first_at_60s(self, monkeypatch):
-        assert self._due(monkeypatch, 3, 61, "first")
-        assert not self._due(monkeypatch, 3, 30, "first")
-        assert not self._due(monkeypatch, 0, 61, "first")
-        assert not self._due(monkeypatch, 8, 61, "first")
+    def test_first_needs_120s_and_2_players(self, monkeypatch):
+        # 2+ минуты и 2+ игрока → да
+        assert self._due(monkeypatch, 2, 121, "first")
+        assert self._due(monkeypatch, 3, 121, "first")
+        # 119с — ещё нет
+        assert not self._due(monkeypatch, 3, 119, "first")
+        # Один игрок на второй минуте — уведомления нет, ждём второго
+        assert not self._due(monkeypatch, 1, 300, "first")
+        # Пустая/полная очередь — нет
+        assert not self._due(monkeypatch, 0, 300, "first")
+        assert not self._due(monkeypatch, 8, 300, "first")
 
-    def test_second_needs_5min_and_5_players(self, monkeypatch):
-        # 5+ минут, 3 игрока → нет
-        assert not self._due(monkeypatch, 3, 301, "second")
-        # 5+ минут, 5 игроков → да
-        assert self._due(monkeypatch, 5, 301, "second")
-        # 4 минуты, 5 игроков → нет (сценарий B: ждём 5 минут)
-        assert not self._due(monkeypatch, 5, 240, "second")
-        # 7 игроков → да
-        assert self._due(monkeypatch, 7, 600, "second")
+    def test_second_needs_7min_5players_and_first_sent(self, monkeypatch):
+        # Без подтверждённого первого — нет при любых условиях
+        assert not self._due(monkeypatch, 6, 500, "second")
+        # 5 игроков, 7+ мин, первое отправлено >120с назад → да
+        assert self._due(
+            monkeypatch, 5, 421, "second", first_sent_ago=121
+        )
+        assert self._due(
+            monkeypatch, 7, 600, "second", first_sent_ago=300
+        )
+        # 4 игрока → нет (05:00 — 4/8 не триггерит)
+        assert not self._due(
+            monkeypatch, 4, 500, "second", first_sent_ago=300
+        )
+        # <7 минут от старта → нет, даже если первое давно отправлено
+        assert not self._due(
+            monkeypatch, 6, 419, "second", first_sent_ago=300
+        )
+        # Минимум 120с между ФАКТИЧЕСКИМИ отправками:
+        # первое ушло 60с назад → второго нет
+        assert not self._due(
+            monkeypatch, 6, 500, "second", first_sent_ago=60
+        )
         # locked → нет
-        assert not self._due(monkeypatch, 6, 600, "second", locked=True)
+        assert not self._due(
+            monkeypatch, 6, 600, "second", locked=True,
+            first_sent_ago=300,
+        )
 
     def test_claim_atomic_single_sender(self, monkeypatch):
         s = _search(5)
@@ -174,10 +202,10 @@ class TestNotificationConditions:
     @pytest.mark.asyncio
     async def test_maybe_send_both_max_two(self, monkeypatch):
         """За сессию максимум два уведомления; повторные проверки
-        не создают пингов."""
+        не создают пингов. Второе — не раньше 120с после первого."""
         s = _search(6)
         s.timer_started = True
-        s.session_started_at = time.time() - 400
+        s.session_started_at = time.time() - 500
         s.effective_limit_seconds = 1200
         cog = _cog(monkeypatch, s)
         sent: list[str] = []
@@ -189,8 +217,72 @@ class TestNotificationConditions:
         monkeypatch.setattr(cog, "_send_queue_notification", _fake_send)
         await cog._maybe_send_notifications(s)
         await cog._maybe_send_notifications(s)
+        # Только первое: второе требует >=120с после факта отправки
+        assert sent == ["first"]
+        # «Прошло» 121с с момента отправки первого
+        s.first_notification_sent_at = time.time() - 121
+        await cog._maybe_send_notifications(s)
         await cog._maybe_send_notifications(s)
         assert sent == ["first", "second"]
+
+    @pytest.mark.asyncio
+    async def test_both_conditions_simultaneous_sends_first_only(
+        self, monkeypatch
+    ):
+        """ТЗ §3: 1 игрок 8 минут → резко 5/8. Оба условия впервые
+        выполняются одновременно → только первое уведомление,
+        второе — не раньше чем через 120с."""
+        s = _search(1)
+        s.timer_started = True
+        s.session_started_at = time.time() - 480
+        s.effective_limit_seconds = 1200
+        cog = _cog(monkeypatch, s)
+        sent: list[str] = []
+
+        async def _fake_send(search, kind):
+            sent.append(kind)
+            cog._finish_notification(search, kind, 1)
+
+        monkeypatch.setattr(cog, "_send_queue_notification", _fake_send)
+        # Один игрок — вообще ничего
+        await cog._maybe_send_notifications(s)
+        assert sent == []
+        # Резкий приток до 5/8 — только первое
+        for i in range(4):
+            s.add_player(f"New{i}", 2000 + i)
+        await cog._maybe_send_notifications(s)
+        assert sent == ["first"]
+        # +121с и 5–7 игроков — второе
+        s.first_notification_sent_at = time.time() - 121
+        await cog._maybe_send_notifications(s)
+        assert sent == ["first", "second"]
+
+    @pytest.mark.asyncio
+    async def test_second_cancelled_when_queue_drops(self, monkeypatch):
+        """ТЗ §4: игроки вышли до 5/8 — второго нет; при возврате
+        к 5/8 и живом интервале — отправляется сразу."""
+        s = _search(6)
+        s.timer_started = True
+        s.session_started_at = time.time() - 500
+        s.effective_limit_seconds = 1200
+        s.first_notification_status = "sent"
+        s.first_notification_sent_at = time.time() - 300
+        cog = _cog(monkeypatch, s)
+        sent: list[str] = []
+
+        async def _fake_send(search, kind):
+            sent.append(kind)
+            cog._finish_notification(search, kind, 1)
+
+        monkeypatch.setattr(cog, "_send_queue_notification", _fake_send)
+        # Ушли 2 игрока → 4/8 — второго нет
+        s.players = s.players[:-2]
+        await cog._maybe_send_notifications(s)
+        assert sent == []
+        # Вернулся пятый игрок — второе сразу (интервал соблюдён)
+        s.add_player("Back", 3000)
+        await cog._maybe_send_notifications(s)
+        assert sent == ["second"]
 
 
 # ------------------------------------------------------------- expiry
