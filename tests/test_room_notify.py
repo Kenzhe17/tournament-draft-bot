@@ -3,7 +3,7 @@
 - MM (/mm squad): карточка + ID/пароль отдельными сообщениями —
   всё в канал матча, общий канал уведомлений не используется.
 - Обычный турнир: карточка с данными в канал результатов,
-  анонс с ролью в content (пинг работает) в канал уведомлений.
+  анонс с ролью в TextDisplay V2-карточки (пинг работает).
 - Карточка содержит «КОМНАТА ОТКРЫТА», матч, упоминания, «Данные:».
 """
 
@@ -153,12 +153,16 @@ async def test_tournament_room_notify_two_places():
     assert getattr(am, "users", False) is True
     assert getattr(am, "roles", True) is False
     assert getattr(am, "everyone", True) is False
-    # Канал уведомлений: 1 сообщение, role mention в content
+    # Канал уведомлений: 1 V2-сообщение; role mention — внутри
+    # TextDisplay (content= с IS_COMPONENTS_V2 запрещён, 50035).
     assert len(general.sent) == 1
-    content = general.sent[0][1].get("content") or (
-        general.sent[0][0][0] if general.sent[0][0] else None
-    )
-    assert content and "<@&" in str(content)
+    kw = general.sent[0][1]
+    assert kw.get("content") is None
+    am = kw.get("allowed_mentions")
+    assert am is not None
+    assert getattr(am, "roles", False) is True
+    text = _view_text(kw["view"])
+    assert "<@&" in text and "Комната открыта" in text
 
 
 def _view_text(view):

@@ -627,15 +627,28 @@ async def send_room_dm_notifications(
             if guild_obj is not None else None
         )
         role_mention = role.mention if role else ""
-        await general_channel.send(
-            content=role_mention or None,
-            view=text_card(
-                f"**Комната открыта** — данные в <#{data_channel.id}>"
-            ),
-            allowed_mentions=discord.AllowedMentions(
-                users=False, roles=True, everyone=False
-            ),
-        )
+        # Components V2: content= с view= запрещён (50035) —
+        # упоминание роли и текст переносим внутрь TextDisplay
+        # карточки; allowed_mentions roles=True сохраняет пинг.
+        notice_text = (
+            f"{role_mention}\n" if role_mention else ""
+        ) + f"**Комната открыта** — данные в <#{data_channel.id}>"
+        try:
+            await general_channel.send(
+                view=text_card(notice_text),
+                allowed_mentions=discord.AllowedMentions(
+                    users=False, roles=True, everyone=False
+                ),
+            )
+        except discord.HTTPException as exc:
+            # Уведомление не критично для карточки комнаты —
+            # логируем и не прерываем on_submit. Повторной
+            # отправки нет: карточка уже опубликована, дубль
+            # пинга хуже пропущенного уведомления.
+            logger.warning(
+                "Room-open notification to %s failed: %s",
+                getattr(general_channel, "id", "?"), exc,
+            )
     return card_sent
 
 def pending_room_cards(tournament: Any) -> list[tuple[str, int]]:

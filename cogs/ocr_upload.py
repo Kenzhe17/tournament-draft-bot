@@ -5066,8 +5066,8 @@ class BundleUploadModal(Modal):
     ):
         self.upload = Label(
             text=(
-                "Скриншоты комнат по порядку "
-                f"(до {max_files} файл(ов))"
+                # label ≤ 45 символов (Discord 50035).
+                f"Скриншоты по порядку (до {max_files})"
             ),
             component=FileUpload(
                 required=True,
@@ -5563,8 +5563,8 @@ class RoomStartModal(Modal):
         # выбранного числа комнат. MM — строго 1 файл.
         self.upload = Label(
             text=(
-                "Скриншоты комнат по порядку "
-                "(можно все сразу, до 10 файлов)"
+                # label ≤ 45 символов (Discord 50035).
+                "Скриншоты комнат (по порядку)"
                 if bundle else "Скриншот комнаты 1 (1 файл)"
             ),
             component=FileUpload(

@@ -2,10 +2,9 @@
 
 - rooms_expected сохраняется и переживает store-перезапись;
 - счётчики комнат и файлов не смешиваются;
-- «Всего скриншотов» вычисляется из фактических требований
-  каждой комнаты (classic/mixed → 1, squad → 2, неизвестный
-  тип → гарантированный минимум 1 — лимит загрузки 2 не
-  подставляется как требование);
+- «Всего принятых скриншотов» вычисляется из фактических
+  требований каждой комнаты (classic/mixed → 1, squad → 2,
+  неизвестный тип → канонический лимит пустой комнаты);
 - завершённые комнаты считаются по sha/shas/kind, а не по
   очищенному pending.
 """
@@ -64,28 +63,28 @@ def _done_room(idx, kind, shas):
 
 class TestSessionFilesTotals:
     def test_no_rooms_all_unknown(self):
-        """3 комнаты, файлов нет: минимум 1 скриншот на комнату —
-        squad-лимит 2 для неизвестного типа НЕ предполагается."""
+        """3 комнаты, файлов нет: требуется 2 на неизвестную
+        комнату (канонический лимит room_required_files)."""
         session = {"rooms_expected": 3, "rooms": []}
-        assert up._session_files_totals(session) == (0, 3)
+        assert up._session_files_totals(session) == (0, 6)
 
-    def test_classic_room_keeps_minimum(self):
-        """Classic-файл в комнате 1: её требование 1; комнаты
-        2-3 неизвестны → минимум 1 каждая → итог 1/3."""
+    def test_classic_room_reduces_requirement(self):
+        """Classic-файл в комнате 1: её требование 1, не 2 —
+        константа «всегда 2» не используется."""
         session = {
             "rooms_expected": 3,
             "rooms": [_collecting_room(1, [_pending("classic")])],
         }
-        assert up._session_files_totals(session) == (1, 3)
+        # комната 1: 1/1; комнаты 2-3 неизвестны: +4 → 1/5
+        assert up._session_files_totals(session) == (1, 5)
 
     def test_squad_room_needs_two(self):
-        """Squad-файл в комнате 1 → её требование 2 по факту;
-        комната 2 неизвестна → минимум 1 → итог 1/3."""
         session = {
             "rooms_expected": 2,
             "rooms": [_collecting_room(1, [_pending("squad")])],
         }
-        assert up._session_files_totals(session) == (1, 3)
+        # комната 1: 1/2; комната 2 неизвестна: +2 → 1/4
+        assert up._session_files_totals(session) == (1, 4)
 
     def test_completed_classic_counted_by_sha(self):
         """Завершённая classic-комната: pending пуст, но файл
@@ -111,24 +110,23 @@ class TestSessionFilesTotals:
         assert up._session_files_totals(session) == (2, 1)
 
     def test_partial_progression_3_rooms(self):
-        """Сценарий ТЗ: 3 комнаты, squad-файлы по 2 на комнату.
-        Неизвестные комнаты — минимум 1, squad раскрывает 2."""
+        """Сценарий ТЗ: 3 squad-комнаты, заполнена одна
+        (1 файл) → Комнаты 0/3, всего 1/6."""
         session = {
             "rooms_expected": 3,
             "rooms": [_collecting_room(1, [_pending("squad")])],
         }
-        # комната 1: 1/2; комнаты 2-3 неизвестны: +1+1 → 1/4
-        assert up._session_files_totals(session) == (1, 4)
-        # второй squad в комнате 1 → 2/4
+        assert up._session_files_totals(session) == (1, 6)
+        # вторая squad добавлена → 2/6
         session["rooms"][0]["pending"].append(_pending("squad", "s2"))
-        assert up._session_files_totals(session) == (2, 4)
-        # комната 1 завершена (squad 2/2), комната 2 начата squad
+        assert up._session_files_totals(session) == (2, 6)
+        # комната 1 завершена (2 squad-файла), комната 2 начата
         session["rooms"] = [
             _done_room(1, "squad", ["s1", "s2"]),
             _collecting_room(2, [_pending("squad")]),
         ]
-        # принято 2+1; требуется 2+2+1(неизв.) = 5 → 3/5
-        assert up._session_files_totals(session) == (3, 5)
+        # 2+1 принято; требуется 2+2+2(неизв.) = 6 → 3/6
+        assert up._session_files_totals(session) == (3, 6)
 
 
 class _Chan:
@@ -189,8 +187,7 @@ class TestCollectMessageCounters:
         text = ch.sent[0]["content"]
         assert "Комнаты: 0/3" in text
         assert "Скриншоты комнаты 1: 1/1" in text
-        # classic 1/1 + две неизвестные по минимуму 1 → 1/3
-        assert "Всего скриншотов: 1/3" in text
+        assert "Всего принятых скриншотов: 1/5" in text
 
     @pytest.mark.asyncio
     async def test_single_room_totals(self):
@@ -207,7 +204,7 @@ class TestCollectMessageCounters:
         )
         text = ch.sent[0]["content"]
         assert "Комнаты: 0/1" in text
-        assert "Всего скриншотов: 1/1" in text
+        assert "Всего принятых скриншотов: 1/1" in text
 
     @pytest.mark.asyncio
     async def test_no_rooms_expected_no_totals_line(self):
@@ -222,7 +219,7 @@ class TestCollectMessageCounters:
             ch, tournament, session, room, "qualifier", 0,
         )
         text = ch.sent[0]["content"]
-        assert "Всего скриншотов" not in text
+        assert "Всего принятых скриншотов" not in text
 
 
 class TestRoomsExpectedPersistence:

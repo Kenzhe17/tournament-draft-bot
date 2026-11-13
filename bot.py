@@ -979,10 +979,11 @@ class TournamentBot(commands.Bot):
 
             async with perf_metrics.async_timing("embed_build_ms"):
                 embed = await build_embed_for_phase(tournament, guild)
-            view = self.build_view_for_tournament(tournament)
-            self._register_view(view)
-            payload = compose(embed, view)
-            sig = _message_signature(embed, payload)
+            async with perf_metrics.async_timing("view_build_ms"):
+                view = self.build_view_for_tournament(tournament)
+                self._register_view(view)
+                payload = compose(embed, view)
+                sig = _message_signature(embed, payload)
 
             cached = _EDIT_CACHE.get(key)
             message = cached.get("message") if cached else None
@@ -993,9 +994,12 @@ class TournamentBot(commands.Bot):
                 # fetch_message: экономим один API-вызов на апдейт.
                 if message is None:
                     try:
-                        message = await channel.fetch_message(
-                            tournament.message_id
-                        )
+                        async with perf_metrics.async_timing(
+                            "msg_fetch_ms"
+                        ):
+                            message = await channel.fetch_message(
+                                tournament.message_id
+                            )
                         perf_metrics.incr("discord_fetches")
                     except discord.NotFound:
                         logger.warning(
@@ -1010,10 +1014,13 @@ class TournamentBot(commands.Bot):
 
                 if message is not None:
                     try:
-                        await message.edit(
-                            view=payload,
-                            allowed_mentions=discord.AllowedMentions.none(),
-                        )
+                        async with perf_metrics.async_timing(
+                            "msg_edit_ms"
+                        ):
+                            await message.edit(
+                                view=payload,
+                                allowed_mentions=discord.AllowedMentions.none(),
+                            )
                     except discord.NotFound:
                         # Сообщение удалили между кэшем и правкой —
                         # инвалидируем кэш, следующий апдейт сделает
@@ -1046,7 +1053,8 @@ class TournamentBot(commands.Bot):
         try:
             from services.match_announcer import announce_phase_matches
 
-            await announce_phase_matches(tournament, guild, self)
+            async with perf_metrics.async_timing("msg_announce_ms"):
+                await announce_phase_matches(tournament, guild, self)
         except Exception as exc:
             logger.error("Match announce failed: %s", exc)
 
