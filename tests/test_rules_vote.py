@@ -8,6 +8,7 @@ restart-restore.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import time
 from pathlib import Path
@@ -48,6 +49,9 @@ def env(monkeypatch):
     monkeypatch.setattr(rv_mod.store, "set", lambda x: None)
     rv_mod._LOCKS.clear()
     rv_mod._TIMERS.clear()
+    for t in list(rv_mod._UI_TASKS.values()):
+        t.cancel()
+    rv_mod._UI_TASKS.clear()
     return SimpleNamespace(tournament=t)
 
 
@@ -432,3 +436,99 @@ class TestRulesetLabel:
         assert "Brazil" in rv_mod.ruleset_label("BRAZIL")
         assert "Kazakhstan" in rv_mod.ruleset_label("KAZAKHSTAN")
         assert rv_mod.ruleset_label("") == "—"
+
+
+class TestDeadlockRegression:
+    """Регрессия: finalize внутри удерживаемого Lock → deadlock."""
+
+    @pytest.mark.asyncio
+    async def test_expired_click_no_deadlock(self, env, monkeypatch):
+        env.tournament.rules_vote = {
+            "vote_message_id": 0, "vote_channel_id": 2,
+            "vote_deadline": time.time() - 1, "votes": {},
+            "vote_status": "open",
+        }
+        monkeypatch.setattr(
+            "services.rules_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        monkeypatch.setattr(
+            "services.match_announcer.update_match_card",
+            lambda *a, **k: _noop(),
+        )
+        launched = []
+
+        async def fake_launch(g, ch, t, b):
+            launched.append(t)
+
+        monkeypatch.setattr(
+            "views.setup_view.launch_tournament_formation", fake_launch
+        )
+        ix = _Ix(env, 1, _cid())
+        await asyncio.wait_for(
+            rv_mod.handle_rules_vote_click(ix, "brazil"), timeout=5
+        )
+        assert _rv(env)["vote_status"] == "done"
+        assert "завершено" in ix.response.messages[0]
+
+    @pytest.mark.asyncio
+    async def test_concurrent_clicks_serialized(self, env, monkeypatch):
+        """Параллельные голоса двух игроков — оба приняты,
+        состояние консистентно, без deadlock."""
+        env.tournament.rules_vote = {
+            "vote_message_id": 0, "vote_channel_id": 2,
+            "vote_deadline": time.time() + 20, "votes": {},
+            "vote_status": "open",
+        }
+        monkeypatch.setattr(
+            "services.rules_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        monkeypatch.setattr(rv_mod, "_UI_DEBOUNCE_S", 0.01)
+        ixs = [_Ix(env, 1, _cid("brazil")), _Ix(env, 2, _cid("kazakhstan"))]
+        await asyncio.wait_for(
+            asyncio.gather(
+                rv_mod.handle_rules_vote_click(ixs[0], "brazil"),
+                rv_mod.handle_rules_vote_click(ixs[1], "kazakhstan"),
+            ),
+            timeout=5,
+        )
+        votes = _rv(env)["votes"]
+        assert votes == {"1": "brazil", "2": "kazakhstan"}
+
+    @pytest.mark.asyncio
+    async def test_timer_survives_transient_error(
+        self, env, monkeypatch
+    ):
+        env.tournament.rules_vote = {
+            "vote_message_id": 0, "vote_channel_id": 2,
+            "vote_deadline": time.time() + 0.2, "votes": {},
+            "vote_status": "open",
+        }
+        calls = {"n": 0}
+        real_get = rv_mod.store.get
+
+        def flaky_get(g, c):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("transient")
+            return real_get(g, c)
+
+        monkeypatch.setattr(rv_mod.store, "get", flaky_get)
+        monkeypatch.setattr(rv_mod, "_TIMER_RETRY_S", 0.05)
+        monkeypatch.setattr(
+            "services.match_announcer.update_match_card",
+            lambda *a, **k: _noop(),
+        )
+        launched = []
+
+        async def fake_launch(g, ch, t, b):
+            launched.append(t)
+
+        monkeypatch.setattr(
+            "views.setup_view.launch_tournament_formation", fake_launch
+        )
+        rv_mod._schedule_timer(1, 2)
+        await asyncio.sleep(1.2)
+        assert _rv(env)["vote_status"] == "done"
+        rv_mod._TIMERS.clear()

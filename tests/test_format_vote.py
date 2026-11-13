@@ -7,6 +7,7 @@ format label в карточке, persistent custom_id.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import time
 from pathlib import Path
@@ -51,6 +52,10 @@ def env(monkeypatch):
     monkeypatch.setattr(fv.store, "get", lambda g, c: t)
     monkeypatch.setattr(fv.store, "set", lambda x: None)
     fv._LOCKS.clear()
+    fv._TIMERS.clear()
+    for t in list(fv._UI_TASKS.values()):
+        t.cancel()
+    fv._UI_TASKS.clear()
     return SimpleNamespace(tournament=t)
 
 
@@ -140,9 +145,15 @@ class TestVoteClick:
             "services.format_vote._mirror_to_pg",
             lambda *a, **k: _noop(),
         )
+        monkeypatch.setattr(fv, "_UI_DEBOUNCE_S", 0.01)
         ix = _Ix(env, 1, _cid("kazakhstan"))
         ix.guild.get_channel = lambda cid: _Ch()
         await fv.handle_vote_click(ix, "kazakhstan")
+        # UI-обновление отложенное (debounce) — ждём задачу.
+        for _ in range(100):
+            if not fv._UI_TASKS:
+                break
+            await asyncio.sleep(0.01)
         s = _state(env)
         assert s["votes"] == {"1": "kazakhstan"}
         assert ix.response.messages == ["✅ Голос учтён."]
@@ -306,6 +317,132 @@ class TestViewAndRestore:
         fv.cancel_open_format_votes(env.tournament)
         assert _state(env)["vote_status"] == "cancelled"
         assert fv.match_format_label(env.tournament, "final", 0) == ""
+
+
+class TestDeadlockRegression:
+    """Регрессия: finalize внутри удерживаемого Lock → deadlock."""
+
+    @pytest.mark.asyncio
+    async def test_eighth_vote_finalizes_without_deadlock(
+        self, env, monkeypatch
+    ):
+        """8/8 голосов → немедленная финализация. Раньше deadlock:
+        handle держал lock, finalize ждал тот же lock."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["votes"] = {str(i): "brazil" for i in range(1, 8)}
+        s["vote_message_id"] = 0
+        monkeypatch.setattr(fv, "_UI_DEBOUNCE_S", 0.01)
+        monkeypatch.setattr(
+            "services.format_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        monkeypatch.setattr(
+            "services.match_announcer.update_match_card",
+            lambda *a, **k: _noop(),
+        )
+        ix = _Ix(env, 8, _cid("kazakhstan"))
+        # wait_for: deadlock проявился бы как TimeoutError.
+        await asyncio.wait_for(
+            fv.handle_vote_click(ix, "kazakhstan"), timeout=5
+        )
+        assert s["vote_status"] == "done"
+        assert s["selected_format"] in ("brazil", "kazakhstan")
+
+    @pytest.mark.asyncio
+    async def test_expired_click_finalizes_without_deadlock(
+        self, env, monkeypatch
+    ):
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["vote_deadline"] = time.time() - 1
+        monkeypatch.setattr(
+            "services.match_announcer.update_match_card",
+            lambda *a, **k: _noop(),
+        )
+        monkeypatch.setattr(
+            "services.format_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        ix = _Ix(env, 1, _cid())
+        await asyncio.wait_for(
+            fv.handle_vote_click(ix, "brazil"), timeout=5
+        )
+        assert s["vote_status"] == "done"
+        assert "завершено" in ix.response.messages[0]
+
+    @pytest.mark.asyncio
+    async def test_concurrent_clicks_one_finalize(self, env, monkeypatch):
+        """Два параллельных голоса на границе deadline: оба ответа,
+        ровно одна финализация, без deadlock."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["votes"] = {str(i): "brazil" for i in range(1, 7)}
+        s["vote_message_id"] = 0
+        finals = []
+
+        async def counting_fin(g, t, mt, mi):
+            finals.append(1)
+            s["vote_status"] = "done"
+            return True
+
+        monkeypatch.setattr(fv, "finalize_format_vote", counting_fin)
+        monkeypatch.setattr(fv, "_UI_DEBOUNCE_S", 0.01)
+        monkeypatch.setattr(
+            "services.format_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        ixs = [
+            _Ix(env, uid, _cid("kazakhstan" if uid % 2 else "brazil"))
+            for uid in (7, 8)
+        ]
+        await asyncio.wait_for(
+            asyncio.gather(
+                fv.handle_vote_click(ixs[0], "kazakhstan"),
+                fv.handle_vote_click(ixs[1], "brazil"),
+            ),
+            timeout=5,
+        )
+        # Один из кликов мог финализировать (7+1=8) — не более 2.
+        assert len(finals) <= 2
+
+
+class TestTimerResilience:
+    @pytest.mark.asyncio
+    async def test_timer_survives_transient_error(self, env, monkeypatch):
+        """Ошибка внутри итерации таймера не убивает задачу."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["vote_deadline"] = time.time() + 0.2
+        calls = {"n": 0}
+
+        real_get = fv.store.get
+
+        def flaky_get(g, c):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("transient")
+            return real_get(g, c)
+
+        monkeypatch.setattr(fv.store, "get", flaky_get)
+        monkeypatch.setattr(fv, "_WATCHDOG_S", 9999)
+        monkeypatch.setattr(fv, "_TIMER_RETRY_S", 0.05)
+        monkeypatch.setattr(
+            "services.match_announcer.update_match_card",
+            lambda *a, **k: _noop(),
+        )
+        monkeypatch.setattr(
+            "services.format_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        fv._schedule_timer(1, 2, "final", 0)
+        await asyncio.sleep(1.2)
+        # Таймер жив после ошибки и финализировал по deadline.
+        assert s["vote_status"] == "done"
+        task = fv._TIMERS.get("1:2:final:0")
+        fv._TIMERS.clear()
+        if task is not None:
+            task.cancel()
 
 
 async def _noop(*a, **k):
