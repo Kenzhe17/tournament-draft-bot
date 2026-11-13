@@ -11,6 +11,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from services import cs_parser
+from services import ocr_worker
 from services.ocr_service import (
     OCR_EXECUTOR,
     detect_winner_side,
@@ -129,6 +130,17 @@ async def run_statistic(
     try:
         data = await screenshot.read()
         boxes = await extract_text_boxes(data)
+    except ocr_worker.OcrWorkerError as exc:
+        # Инфраструктурный сбой worker'а — не «пустой OCR».
+        logger.error("OCR worker unavailable for /statistic: %s", exc)
+        await interaction.followup.send(
+            view=compose(_error_embed(
+                "Сервис распознавания временно недоступен. "
+                "Повторите обработку."
+            )),
+            ephemeral=True,
+        )
+        return
     except Exception:
         logger.exception("OCR failed for /statistic")
         await interaction.followup.send( view=compose(_error_embed("Ошибка OCR — не удалось обработать изображение.")),
