@@ -199,6 +199,21 @@ def _process_stats() -> dict[str, float]:
     только как грубый индикатор/тренд, не как billing-метрику.
     """
     out: dict[str, float] = {}
+    # cgroup memory — то, что реально тарифицирует Railway
+    # (контейнер целиком: python + chromium + OCR + всё).
+    # v2: /sys/fs/cgroup/memory.current; v1: memory.usage_in_bytes.
+    try:
+        for p in ("/sys/fs/cgroup/memory.current",
+                  "/sys/fs/cgroup/memory/memory.usage_in_bytes"):
+            try:
+                with open(p) as f:
+                    out["cgroup_mem_mb"] = round(
+                        int(f.read().strip()) / 1048576, 1)
+                break
+            except OSError:
+                continue
+    except Exception:
+        pass
     try:
         import psutil  # noqa: F401 — нужен для _get_proc
 

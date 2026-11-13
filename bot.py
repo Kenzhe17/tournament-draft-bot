@@ -205,6 +205,16 @@ class TournamentBot(commands.Bot):
                 perf_metrics.register_gauge("ocr_inflight", active_ocr_ops)
             except Exception:
                 pass
+            try:
+                from utils.profile_renderer import (
+                    png_render_inflight, png_render_peak_rss_mb)
+
+                perf_metrics.register_gauge(
+                    "png_render_inflight", png_render_inflight)
+                perf_metrics.register_gauge(
+                    "png_render_peak_rss_mb", png_render_peak_rss_mb)
+            except Exception:
+                pass
             perf_metrics.register_gauge("ranked_matches", _ranked_active)
             perf_metrics.register_gauge("pg_pool", _pg_pool)
         except Exception as exc:
