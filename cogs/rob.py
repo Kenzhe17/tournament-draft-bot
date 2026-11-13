@@ -141,7 +141,26 @@ class RobStartButton(discord.ui.Button):
         
         # Базовый шанс кражи предмета 50%
         base_item_steal_chance = 0.5
-        
+
+        # Бонусы питомцев для отслеживания — инициализируем ДО
+        # первого использования (раньше UnboundLocalError, если у
+        # грабителя был питомец со способностью «Охотник за вещами»).
+        pet_bonuses = {
+            "robber_success_bonus": 0,
+            "robber_success_name": None,
+            "robber_loot_bonus": 0,
+            "robber_loot_name": None,
+            "victim_defense_bonus": 0,
+            "victim_defense_name": None,
+            "victim_defense_saved": 0,
+            "victim_item_protect_chance": 0,
+            "victim_item_protect_name": None,
+            "black_market_bonus": 0,
+            "black_market_name": None,
+            "item_steal_bonus": 0,
+            "item_steal_name": None,
+        }
+
         # Применить бонус Охотник за вещами (увеличивает шанс кражи предмета)
         try:
             from storage.pet_store import pet_store
@@ -168,23 +187,6 @@ class RobStartButton(discord.ui.Button):
 
         # Базовый шанс успеха 50%
         base_success_chance = 0.5
-
-        # Бонусы питомцев для отслеживания
-        pet_bonuses = {
-            "robber_success_bonus": 0,
-            "robber_success_name": None,
-            "robber_loot_bonus": 0,
-            "robber_loot_name": None,
-            "victim_defense_bonus": 0,
-            "victim_defense_name": None,
-            "victim_defense_saved": 0,
-            "victim_item_protect_chance": 0,
-            "victim_item_protect_name": None,
-            "black_market_bonus": 0,
-            "black_market_name": None,
-            "item_steal_bonus": 0,
-            "item_steal_name": None,
-        }
 
         # Применить бонус питомца грабителя к шансу успеха (Ловкие лапы)
         try:
