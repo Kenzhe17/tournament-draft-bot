@@ -7,6 +7,7 @@ spawn/roundtrip/error-path, idle-kill репера и shutdown.
 from __future__ import annotations
 
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -200,3 +201,168 @@ def test_ocr_executor_queue_bounded(monkeypatch):
     # Слот освобождён по done_callback — новые задачи проходят.
     f2 = ocr_service.OCR_EXECUTOR.submit(lambda: 1)
     assert f2.result(timeout=10) == 1
+
+
+def test_call_stats_filled():
+    """stats получает lock_wait_ms/ipc_ms по итогам вызова."""
+    stats: dict = {}
+    res = ocr_worker.call("echo", 1, stats=stats)
+    assert res == (1,)
+    assert "lock_wait_ms" in stats and stats["lock_wait_ms"] >= 0
+    assert "roundtrip_ms" in stats and stats["roundtrip_ms"] >= 0
+
+
+def test_waiters_bounded(monkeypatch):
+    """Очередь ожидающих ограничена: второй ждущий → OcrWorkerBusy."""
+    import threading
+
+    monkeypatch.setattr(ocr_worker, "_MAX_WAITERS", 1)
+    ocr_worker._lock.acquire()  # worker «занят» — вызовы ждут
+    done: list = []
+    errors: list = []
+
+    def first():
+        try:
+            ocr_worker.call("echo", "a")
+            done.append("first")
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    t1 = threading.Thread(target=first, daemon=True)
+    t1.start()
+    time.sleep(0.3)  # первый уже в _WAITING
+    with pytest.raises(ocr_worker.OcrWorkerBusy):
+        ocr_worker.call("echo", "b", retries=0)
+    ocr_worker._lock.release()
+    t1.join(timeout=10)
+    assert done == ["first"] and not errors
+
+
+def test_low_priority_waits_for_high(monkeypatch):
+    """Low-priority вызов не проходит admission, пока ждёт high."""
+    import threading
+
+    order: list[str] = []
+    ocr_worker._lock.acquire()
+
+    def low():
+        ocr_worker.call("echo", "low", priority=-1, retries=0)
+        order.append("low")
+
+    def high():
+        ocr_worker.call("echo", "high", priority=1, retries=0)
+        order.append("high")
+
+    # High заходит в ожидание ПЕРВЫМ — low должен ждать в
+    # _wait_cond, пока _HI_WAITING > 0, и не конкурировать за _lock.
+    th = threading.Thread(target=high, daemon=True)
+    th.start()
+    time.sleep(0.2)
+    tl = threading.Thread(target=low, daemon=True)
+    tl.start()
+    time.sleep(0.3)
+    ocr_worker._lock.release()
+    th.join(timeout=15)
+    tl.join(timeout=15)
+    assert order == ["high", "low"]
+
+
+def test_ocr_regions_single_worker_call(monkeypatch):
+    """_run_ocr_regions → один worker-вызов kind=ocr_regions
+    на весь batch (не N round-trip'ов)."""
+    from services import ocr_service
+
+    calls: list = []
+
+    def fake_call(kind, *args, **kwargs):
+        calls.append((kind, args))
+        return {
+            "results": [[{"text": "x"}] for _ in args[1]],
+            "timings": {"decode_ms": 1.0, "region_ms": [2.0, 3.0]},
+        }
+
+    monkeypatch.setattr(ocr_worker, "worker_enabled", lambda: True)
+    monkeypatch.setattr(ocr_worker, "call", fake_call)
+    regions = [(0, 0, 10, 10), (20, 20, 30, 30)]
+    res = ocr_service._run_ocr_regions(b"img", regions, priority=-1)
+    assert len(calls) == 1
+    assert calls[0][0] == "ocr_regions_stats"
+    assert calls[0][1] == (b"img", regions)
+    assert calls[0] and res == [[{"text": "x"}], [{"text": "x"}]]
+
+
+def test_ocr_regions_bad_payload_raises(monkeypatch):
+    from services import ocr_service
+
+    monkeypatch.setattr(ocr_worker, "worker_enabled", lambda: True)
+    monkeypatch.setattr(
+        ocr_worker, "call", lambda *a, **k: {"results": "bad"}
+    )
+    with pytest.raises(ocr_worker.OcrWorkerError):
+        ocr_service._run_ocr_regions(b"img", [(0, 0, 1, 1)])
+
+
+def test_gate_low_waits_while_high_pending():
+    """Строгий приоритет gate: low не acquire'ится, пока в
+    ожидании есть high — даже если low встал в очередь раньше."""
+    order: list[str] = []
+    ocr_worker._gate_acquire(0)  # активный holder (main)
+
+    def low():
+        ocr_worker._gate_acquire(-1)
+        try:
+            order.append("low")
+        finally:
+            ocr_worker._gate_release()
+
+    def high():
+        ocr_worker._gate_acquire(1)
+        try:
+            order.append("high")
+        finally:
+            ocr_worker._gate_release()
+
+    tl = threading.Thread(target=low, daemon=True)
+    th = threading.Thread(target=high, daemon=True)
+    tl.start()
+    time.sleep(0.15)   # low уже ждёт на gate
+    th.start()
+    time.sleep(0.15)
+    ocr_worker._gate_release()
+    tl.join(timeout=10)
+    th.join(timeout=10)
+    assert order == ["high", "low"]
+
+
+def test_gate_high_does_not_wait_for_low():
+    """High проходит, даже если low уже держит gate? — нет:
+    активный holder всегда завершается первым (нет вытеснения),
+    но СЛЕДУЮЩИЙ high обгоняет очередь low."""
+    order: list[str] = []
+    ocr_worker._gate_acquire(-1)  # low держит gate
+
+    def low2():
+        ocr_worker._gate_acquire(-1)
+        try:
+            order.append("low2")
+        finally:
+            ocr_worker._gate_release()
+
+    def high():
+        ocr_worker._gate_acquire(1)
+        try:
+            order.append("high")
+        finally:
+            ocr_worker._gate_release()
+
+    tl = threading.Thread(target=low2, daemon=True)
+    th = threading.Thread(target=high, daemon=True)
+    tl.start()
+    time.sleep(0.15)
+    th.start()
+    time.sleep(0.15)
+    ocr_worker._gate_release()
+    tl.join(timeout=10)
+    th.join(timeout=10)
+    # low2 и high ждали; high обгоняет low2
+    assert order == ["high", "low2"]

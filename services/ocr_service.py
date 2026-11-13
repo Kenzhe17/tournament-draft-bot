@@ -135,19 +135,29 @@ _OCR_MIN_WIDTH = 1600
 _OCR_MAX_UPSCALE = 2.5
 
 
-def _run_ocr(image_bytes: bytes) -> list[dict[str, Any]]:
+def _run_ocr(
+    image_bytes: bytes, priority: int = 0, stats: dict | None = None
+) -> list[dict[str, Any]]:
     """Полный OCR: worker-процесс с restart+retry.
 
     ONNX-модели НИКОГДА не загружаются в основной процесс —
     локальный путь существует только при явном
-    OCR_WORKER_DISABLE=1 (отладка/тесты)."""
+    OCR_WORKER_DISABLE=1 (отладка/тесты).
+
+    priority/stats — проброс в ocr_worker.call (см. его docstring).
+    """
     if ocr_worker.worker_enabled():
         # OcrWorkerError НЕ маскируем пустым списком: [] — валидный
         # результат OCR (на кадре нет таблицы), а недоступный worker —
         # инфраструктурная ошибка. caller (pipeline загрузки)
         # показывает «сервис недоступен» и сохраняет сессию для
         # безопасного повтора — без нулевых K/D/A и без ELO.
-        return ocr_worker.call("ocr_full", image_bytes) or []
+        return (
+            ocr_worker.call(
+                "ocr_full", image_bytes, priority=priority, stats=stats
+            )
+            or []
+        )
     return _run_ocr_local(image_bytes)
 
 
@@ -186,10 +196,14 @@ def _run_ocr_local(image_bytes: bytes) -> list[dict[str, Any]]:
     return boxes
 
 
-async def extract_text_boxes(image_bytes: bytes) -> list[dict[str, Any]]:
+async def extract_text_boxes(
+    image_bytes: bytes, priority: int = 0
+) -> list[dict[str, Any]]:
     """OCR изображения → список боксов с координатами."""
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(OCR_EXECUTOR, _run_ocr, image_bytes)
+    return await loop.run_in_executor(
+        OCR_EXECUTOR, _run_ocr, image_bytes, priority
+    )
 
 
 def _get_cyrillic_ocr():
@@ -213,6 +227,15 @@ def _get_cyrillic_ocr():
                         "Rec.lang_type": LangRec.CYRILLIC,
                         "Rec.model_type": ModelType.MOBILE,
                         "Rec.ocr_version": OCRVersion.PPOCRV5,
+                        # Потоки ONNX для кириллической модели —
+                        # те же env, что у v1-движка, отдельные
+                        # имена чтобы крутить независимо.
+                        "EngineConfig.onnxruntime.intra_op_num_threads": int(
+                            os.environ.get("OCR_CYR_INTRA_OP_THREADS", "-1")
+                        ),
+                        "EngineConfig.onnxruntime.inter_op_num_threads": int(
+                            os.environ.get("OCR_CYR_INTER_OP_THREADS", "-1")
+                        ),
                     }
                 )
                 logger.info("RapidOCR cyrillic initialized")
@@ -260,7 +283,9 @@ def _cyr_region_text(img, region: tuple[float, float, float, float]) -> str:
 
 
 def _run_ocr_cyrillic_region(
-    image_bytes: bytes, region: tuple[float, float, float, float]
+    image_bytes: bytes,
+    region: tuple[float, float, float, float],
+    priority: int = 0,
 ) -> str:
     """OCR области — worker с retry; без ONNX в основном процессе.
 
@@ -269,7 +294,7 @@ def _run_ocr_cyrillic_region(
     инфраструктуры."""
     if ocr_worker.worker_enabled():
         return ocr_worker.call(
-            "ocr_cyr_region", image_bytes, region
+            "ocr_cyr_region", image_bytes, region, priority=priority
         ) or ""
     return _run_ocr_cyrillic_region_local(image_bytes, region)
 
@@ -286,7 +311,9 @@ def _run_ocr_cyrillic_region_local(
 
 
 def _run_ocr_cyrillic_regions(
-    image_bytes: bytes, regions: list[tuple[float, float, float, float]]
+    image_bytes: bytes,
+    regions: list[tuple[float, float, float, float]],
+    priority: int = 0,
 ) -> list[str]:
     """OCR нескольких областей — worker с retry; без ONNX локально.
 
@@ -295,7 +322,7 @@ def _run_ocr_cyrillic_regions(
     инфраструктуры."""
     if ocr_worker.worker_enabled():
         res = ocr_worker.call(
-            "ocr_cyr_regions", image_bytes, regions
+            "ocr_cyr_regions", image_bytes, regions, priority=priority
         )
         if isinstance(res, list):
             return res
@@ -322,24 +349,28 @@ def _run_ocr_cyrillic_regions_local(
 
 
 async def ocr_cyrillic_region(
-    image_bytes: bytes, region: tuple[float, float, float, float]
+    image_bytes: bytes,
+    region: tuple[float, float, float, float],
+    priority: int = 0,
 ) -> str:
     """Async-обёртка: кириллический OCR области названия команды."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
-        OCR_EXECUTOR, _run_ocr_cyrillic_region, image_bytes, region
+        OCR_EXECUTOR, _run_ocr_cyrillic_region, image_bytes, region, priority
     )
 
 
 async def ocr_cyrillic_regions(
-    image_bytes: bytes, regions: list[tuple[float, float, float, float]]
+    image_bytes: bytes,
+    regions: list[tuple[float, float, float, float]],
+    priority: int = 0,
 ) -> list[str]:
     """Async-обёртка: кириллический OCR нескольких областей."""
     if not regions:
         return []
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
-        OCR_EXECUTOR, _run_ocr_cyrillic_regions, image_bytes, regions
+        OCR_EXECUTOR, _run_ocr_cyrillic_regions, image_bytes, regions, priority
     )
 
 
@@ -425,6 +456,7 @@ def _ocr_region_boxes(
     *,
     min_height: int = 48,
     max_upscale: float = 3.0,
+    priority: int = 0,
 ) -> list[dict[str, Any]]:
     """OCR области уже декодированного изображения.
 
@@ -456,7 +488,7 @@ def _ocr_region_boxes(
         )
     buf = io.BytesIO()
     crop.save(buf, format="PNG")
-    sub = _run_ocr(buf.getvalue()) or []
+    sub = _run_ocr(buf.getvalue(), priority=priority) or []
     # Пересчёт координат: crop-offset + scale → исходное изображение
     ox = max(0, int(x0) - pad)
     oy = max(0, int(y0) - pad)
@@ -478,6 +510,7 @@ def ocr_image_region(
     *,
     min_height: int = 48,
     max_upscale: float = 3.0,
+    priority: int = 0,
 ) -> list[dict[str, Any]]:
     """Targeted OCR области изображения основным движком."""
     try:
@@ -485,37 +518,104 @@ def ocr_image_region(
     except Exception:
         return []
     return _ocr_region_boxes(
-        img, region, min_height=min_height, max_upscale=max_upscale
+        img, region, min_height=min_height, max_upscale=max_upscale,
+        priority=priority,
     )
 
 
 def _run_ocr_regions(
     image_bytes: bytes,
     regions: list[tuple[float, float, float, float]],
+    priority: int = 0,
 ) -> list[list[dict[str, Any]]]:
-    """OCR нескольких областей за одно декодирование кадра.
+    """OCR нескольких областей — один worker-вызов на batch.
 
-    Раньше каждая область декодировала PNG заново (~10–25 МБ
-    временного PIL-образа на вызов); refine-строк делает до 8
-    таких вызовов на скриншот.
+    Раньше каждая область была отдельным worker round-trip
+    (crop→PNG→pickle→IPC→ONNX): refine-строк делал до 8
+    сериализованных вызовов. Теперь весь batch едет в child
+    одним сообщением — там одно декодирование кадра и N
+    локальных инференсов без IPC между ними.
     """
+    if ocr_worker.worker_enabled():
+        res = ocr_worker.call(
+            "ocr_regions_stats", image_bytes, regions, priority=priority
+        )
+        if (
+            isinstance(res, dict)
+            and isinstance(res.get("results"), list)
+            and len(res["results"]) == len(regions)
+        ):
+            # Поэтапный профиль batch'а в родителе: декодирование
+            # одно, инференс каждого crop отдельно — видно, уходит
+            # ли время на ONNX, а не на IPC/декодирование.
+            try:
+                from utils import perf_metrics
+
+                t = res.get("timings") or {}
+                if t.get("decode_ms") is not None:
+                    perf_metrics.record(
+                        "ocr_regions_decode_ms", t["decode_ms"]
+                    )
+                rms = t.get("region_ms") or []
+                if rms:
+                    perf_metrics.record(
+                        "ocr_regions_slowest_ms", max(rms)
+                    )
+                    perf_metrics.record(
+                        "ocr_regions_total_ms", sum(rms)
+                    )
+                perf_metrics.incr("ocr_regions_calls")
+                perf_metrics.incr("ocr_regions_count", len(regions))
+            except Exception:
+                pass
+            return res["results"]
+        raise ocr_worker.OcrWorkerError(
+            "worker returned bad payload for ocr_regions_stats"
+        )
+    return _ocr_regions_local(image_bytes, regions)
+
+
+def _ocr_regions_local(
+    image_bytes: bytes,
+    regions: list[tuple[float, float, float, float]],
+    timings_out: dict | None = None,
+) -> list[list[dict[str, Any]]]:
+    """Локальный batch: одно декодирование на все области.
+
+    timings_out — опциональный dict: decode_ms + region_ms[i]
+    (инференс каждой области). Нужен worker-ветке kind
+    ocr_regions_stats для профиля «IPC vs ONNX»."""
+    import time as _t
+
+    t_dec = _t.perf_counter()
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     except Exception:
         return [[] for _ in regions]
-    return [_ocr_region_boxes(img, r) for r in regions]
+    if timings_out is not None:
+        timings_out["decode_ms"] = (_t.perf_counter() - t_dec) * 1000.0
+    out: list[list[dict[str, Any]]] = []
+    region_ms: list[float] = []
+    for r in regions:
+        t_r = _t.perf_counter()
+        out.append(_ocr_region_boxes(img, r))
+        region_ms.append((_t.perf_counter() - t_r) * 1000.0)
+    if timings_out is not None:
+        timings_out["region_ms"] = region_ms
+    return out
 
 
 async def ocr_image_regions_async(
     image_bytes: bytes,
     regions: list[tuple[float, float, float, float]],
+    priority: int = 0,
 ) -> list[list[dict[str, Any]]]:
     """Async-обёртка: targeted OCR нескольких областей."""
     if not regions:
         return []
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
-        OCR_EXECUTOR, _run_ocr_regions, image_bytes, regions
+        OCR_EXECUTOR, _run_ocr_regions, image_bytes, regions, priority
     )
 
 

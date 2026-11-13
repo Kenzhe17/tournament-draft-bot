@@ -99,6 +99,72 @@ def _score_str(score) -> str:
     return "не распознан"
 
 
+def _ms(v) -> str:
+    return f"{v:.0f}" if isinstance(v, (int, float)) else "—"
+
+
+def _timing_field(t: dict | None, title: str) -> str | None:
+    """Поэтапные замеры OCR → строки для embed.
+
+    Очередь = executor wait + worker lock + IPC;
+    Детекция = decode+det; Распознавание = sum rec-прогонов;
+    Парсинг = residual после известных стадий.
+    """
+    if not t:
+        return None
+    # Очередь = ТОЛЬКО ожидание: executor queue + worker gate/lock.
+    # worker_roundtrip_ms (put→get) включает исполнение ONNX в
+    # child — это НЕ очередь, показываем отдельной строкой, чтобы
+    # не было двойного учёта.
+    q_parts = [
+        t.get(k) for k in ("executor_queue_ms", "worker_lock_wait_ms")
+        if t.get(k) is not None
+    ]
+    queue = sum(q_parts) if q_parts else None
+    rtt = t.get("worker_roundtrip_ms")
+    det_parts = [
+        t.get(k) for k in ("decode_ms", "det_ms")
+        if t.get(k) is not None
+    ]
+    det = sum(det_parts) if det_parts else None
+    rec = t.get("recognition_ms")
+    if rec is None:
+        rec_vals = [
+            v for k, v in t.items() if k.endswith("_rec_ms")
+        ]
+        rec = sum(rec_vals) if rec_vals else None
+    parse_ = t.get("parse_ms")
+    if parse_ is None:
+        known = ("decode_ms", "det_ms", "anchors_ms", "cells_ms",
+                 "bands_ms", "score_ms")
+        spent = sum(t.get(k) or 0.0 for k in known)
+        base = t.get("total_ms") or t.get("worker_wall_ms") or 0.0
+        parse_ = max(0.0, base - spent) if base else None
+    total = t.get("total_wall_ms") or t.get("pipeline_ms") or t.get("total_ms")
+    lines = [
+        f"{title}",
+        f"Ожидание очереди: {_ms(queue)} мс",
+        f"Детекция текста: {_ms(det)} мс",
+        f"Распознавание: {_ms(rec)} мс",
+        f"Парсинг: {_ms(parse_)} мс",
+    ]
+    if rtt is not None:
+        lines.append(f"Worker roundtrip (IPC+инференс): {_ms(rtt)} мс")
+    lines.append(f"Общее время: {_ms(total)} мс")
+    extra = []
+    for k, label in (
+        ("anchors_ms", "anchors"), ("cells_ms", "cells"),
+        ("bands_ms", "bands"), ("score_ms", "score"),
+        ("refine_ms", "refine"), ("ocr_boxes_ms", "full_ocr"),
+        ("boxes_ms", "full_ocr"), ("worker_wall_ms", "child_wall"),
+    ):
+        if t.get(k):
+            extra.append(f"{label}={t[k]:.0f}")
+    if extra:
+        lines.append("детали: " + ", ".join(extra))
+    return "\n".join(lines)
+
+
 def _result_summary(res: dict | None) -> dict | None:
     """_classic_pipeline result → плоский dict для embed/сравнения."""
     if not res or "panels" not in res:
@@ -110,6 +176,7 @@ def _result_summary(res: dict | None) -> dict | None:
         "banner": res.get("banner"),
         "top5": res.get("top5"),
         "squad": False,
+        "ocr_timing": res.get("ocr_timing"),
     }
 
 
@@ -142,17 +209,30 @@ def _fast_to_summary(parsed: dict | None) -> dict | None:
         "banner": parsed.get("banner"),
         "top5": parsed.get("top5"),
         "squad": False,
+        "ocr_timing": parsed.get("_ocr_timing"),
     }
 
 
+_DIFF_FIELDS = (
+    ("name", "Игровые ники"),
+    ("secondary_text", "Клан-теги"),
+    ("kills", "K/D/A"), ("deaths", "K/D/A"), ("assists", "K/D/A"),
+    ("dmg", "Damage"),
+)
+
+
 def _diff_results(fast: dict | None, full: dict | None) -> list[str]:
-    """Построчные различия fast vs full. Full — НЕ эталон."""
+    """Построчные различия fast vs full, сгруппированные по
+    категориям (ники / клан-теги / K/D/A / damage / счёт).
+    Full — НЕ эталон точности."""
     if not fast or not full:
         return []
-    diffs: list[str] = []
+    groups: dict[str, list[str]] = {}
     fs, gs = fast.get("score"), full.get("score")
     if fs != gs:
-        diffs.append(f"score: fast {_score_str(fs)} vs full {_score_str(gs)}")
+        groups.setdefault("Счёт", []).append(
+            f"fast {_score_str(fs)} vs full {_score_str(gs)}"
+        )
     for side in ("left", "right"):
         fp = (fast["panels"].get(side) or {}).get("rows") or []
         gp = (full["panels"].get(side) or {}).get("rows") or []
@@ -160,14 +240,25 @@ def _diff_results(fast: dict | None, full: dict | None) -> list[str]:
             fr = fp[i] if i < len(fp) else None
             gr = gp[i] if i < len(gp) else None
             if fr is None or gr is None:
-                diffs.append(f"{side}[{i}]: fast={'нет' if fr is None else 'есть'} full={'нет' if gr is None else 'есть'}")
+                groups.setdefault("Строки", []).append(
+                    f"{side}[{i}]: fast={'нет' if fr is None else 'есть'} "
+                    f"full={'нет' if gr is None else 'есть'}"
+                )
                 continue
-            for f in ("name", "secondary_text", "kills", "deaths", "assists", "dmg"):
+            for f, cat in _DIFF_FIELDS:
                 if fr.get(f) != gr.get(f):
-                    diffs.append(
-                        f"{side}[{i}].{f}: fast={fr.get(f)!r} full={gr.get(f)!r}"
+                    groups.setdefault(cat, []).append(
+                        f"{side}[{i}].{f}: fast={fr.get(f)!r} "
+                        f"full={gr.get(f)!r}"
                     )
-    return diffs
+    out: list[str] = []
+    for cat in ("Игровые ники", "Клан-теги", "K/D/A", "Damage",
+                "Счёт", "Строки"):
+        items = groups.get(cat)
+        if items:
+            out.append(f"**{cat}**")
+            out.extend(f"  {s}" for s in items)
+    return out
 
 
 class OCRDiagCog(commands.Cog):
@@ -262,7 +353,9 @@ class OCRDiagCog(commands.Cog):
                 return None
             reason_box: list[str] = []
             t0 = time.perf_counter()
-            parsed = await fast_cs_ocr.parse_cs_fast(data, reason_out=reason_box)
+            parsed = await fast_cs_ocr.parse_cs_fast(
+                data, reason_out=reason_box, priority=-1
+            )
             timings["fast_ms"] = (time.perf_counter() - t0) * 1000.0
             if parsed is None:
                 fast_status = "fallback"
@@ -288,7 +381,9 @@ class OCRDiagCog(commands.Cog):
 
         async def _full_once() -> dict | None:
             t0 = time.perf_counter()
-            res = await _classic_pipeline(data, need_score=True, fast=False)
+            res = await _classic_pipeline(
+                data, need_score=True, fast=False, priority=-1
+            )
             timings["full_ms"] = (time.perf_counter() - t0) * 1000.0
             return _result_summary(res)
 
@@ -353,6 +448,11 @@ class OCRDiagCog(commands.Cog):
             else:
                 fb = "—"
             embed.add_field(name="Fast OCR", value=fb, inline=False)
+            tf = _timing_field(
+                (fast_sum or {}).get("ocr_timing"), "По этапам (fast)"
+            )
+            if tf:
+                embed.add_field(name="Тайминги", value=tf, inline=False)
         if mode != "fast" or full_sum is not None:
             fv = "не запускался"
             if "full_ms" in timings:
@@ -360,14 +460,26 @@ class OCRDiagCog(commands.Cog):
                 if full_sum is None:
                     fv += " — не распознан"
             embed.add_field(name="Full OCR", value=fv, inline=False)
+            fu = (full_sum or {}).get("ocr_timing") or {}
+            tf2 = _timing_field(fu, "По этапам (full)")
+            if tf2:
+                embed.add_field(name="Тайминги", value=tf2, inline=False)
         embed.add_field(name="E2E (executor+parse)", value=f"{e2e_ms:.0f} мс", inline=False)
 
+        if mode == "compare":
+            embed.add_field(
+                name="ℹ️ Compare",
+                value="Compare запускает fast и full OCR **последовательно** — "
+                "общее время = сумма двух независимых прогонов.",
+                inline=False,
+            )
         if mode == "compare" and fast_sum and full_sum:
             diffs = _diff_results(fast_sum, full_sum)
             if diffs:
                 embed.add_field(
                     name="⚠️ Расхождения Fast vs Full",
-                    value="\n".join(diffs)[:1024],
+                    value="Full OCR — НЕ эталон: сверяйте с фактическими "
+                    "значениями на скриншоте.\n" + "\n".join(diffs)[:900],
                     inline=False,
                 )
             else:

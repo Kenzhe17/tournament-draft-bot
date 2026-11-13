@@ -401,3 +401,108 @@ def test_name_lines_long_nick_truncated():
     items = [_ni(100, 582, long_nick)]
     name, _ = fco._cluster_name_lines(items, pitch=100, row_cy=600)
     assert len(name) <= 32
+
+
+def test_extract_parsed_timings_out(monkeypatch):
+    """timings_out получает поэтапные замеры + агрегаты — канал
+    доставки метрик из worker-child в родительский процесс."""
+    out: dict = {}
+    spec = _spec_all()
+    dt_list = []
+    texts: dict[tuple, tuple[str, float]] = {}
+    orig_pts = []
+    for x0, y0, x1, y1, text in spec:
+        arr = np.array(
+            [[0, 0], [10, 0], [10, 10], [0, 10]], dtype=np.float32
+        )
+        dt_list.append(arr)
+        orig_pts.append(
+            [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+        )
+        texts[(int(x0), int(y0), int(x1), int(y1))] = (text, 0.9)
+    orig = np.asarray(orig_pts, dtype=np.float32)
+    padded = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    monkeypatch.setattr(
+        fco, "_detect_boxes", lambda img: (padded, dt_list, orig)
+    )
+    monkeypatch.setattr(
+        ocr_service, "_get_ocr", lambda: _build_fake_engine(texts)
+    )
+    parsed = fco._extract_parsed(_png_bytes(), timings_out=out)
+    assert parsed is not None
+    for k in (
+        "decode_ms", "det_ms", "anchors_ms", "cells_ms",
+        "bands_ms", "score_ms", "total_ms",
+        "recognition_ms", "parse_ms",
+    ):
+        assert k in out, f"missing timing {k}"
+        assert out[k] >= 0
+    # Служебные ключи не должны утекать в out
+    assert "_out" not in out and "_reason_sink" not in out
+
+
+def test_extract_parsed_timings_out_on_fallback(monkeypatch):
+    """При fallback timings_out тоже заполнен (диагностика причин)."""
+    out: dict = {}
+    reasons: list = []
+    monkeypatch.setattr(
+        fco, "_detect_boxes", lambda img: None
+    )
+    parsed = fco._extract_parsed(
+        _png_bytes(), reason_out=reasons, timings_out=out
+    )
+    assert parsed is None
+    assert "total_ms" in out and "det_ms" in out
+
+
+@pytest.mark.asyncio
+async def test_parse_cs_fast_default_priority_and_timing(monkeypatch):
+    """Боевой вызов parse_cs_fast → priority=1 в worker.call;
+    parsed['_ocr_timing'] содержит executor/lock/rtt/wall без
+    двойного учёта (roundtrip отдельно от очереди)."""
+    from services import fast_cs_ocr, ocr_worker
+
+    seen: dict = {}
+
+    def fake_call(kind, *a, **k):
+        seen.update(k)
+        return {
+            "parsed": {"team_a": [], "team_b": []},
+            "reason": None,
+            "wall_ms": 5.0,
+            "timings": {"decode_ms": 1.0, "total_ms": 5.0},
+            "ok": True,
+        }
+
+    monkeypatch.setattr(ocr_worker, "worker_enabled", lambda: True)
+    monkeypatch.setattr(ocr_worker, "call", fake_call)
+    res = await fast_cs_ocr.parse_cs_fast(b"img")
+    assert seen.get("priority") == 1
+    t = res["_ocr_timing"]
+    for k in (
+        "executor_queue_ms", "worker_lock_wait_ms",
+        "worker_roundtrip_ms", "worker_wall_ms", "total_wall_ms",
+        "decode_ms",
+    ):
+        assert k in t
+    # roundtrip (IPC+инференс) не входит в queue-метрики
+    assert "worker_ipc_ms" not in t
+
+
+@pytest.mark.asyncio
+async def test_parse_cs_fast_diag_priority(monkeypatch):
+    """Явный priority=-1 (диагностика) пробрасывается в call."""
+    from services import fast_cs_ocr, ocr_worker
+
+    seen: dict = {}
+
+    def fake_call(kind, *a, **k):
+        seen.update(k)
+        return {"parsed": None, "reason": "x", "wall_ms": 0.0,
+                "timings": {}, "ok": False}
+
+    monkeypatch.setattr(ocr_worker, "worker_enabled", lambda: True)
+    monkeypatch.setattr(ocr_worker, "call", fake_call)
+    res = await fast_cs_ocr.parse_cs_fast(b"img", priority=-1)
+    assert seen.get("priority") == -1
+    assert res is None

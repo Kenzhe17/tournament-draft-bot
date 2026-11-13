@@ -956,12 +956,18 @@ def _extract_parsed(
     data: bytes,
     t_submit: float | None = None,
     reason_out: list | None = None,
+    timings_out: dict | None = None,
 ) -> dict[str, Any] | None:
     """Sync-версия: bytes → parsed dict (формат parse_cs_results).
 
     t_submit — метка submit в OCR_EXECUTOR (для queue-wait метрики).
     reason_out — необязательный list: причина fallback дописывается
     туда (per-call, без гонки глобального состояния).
+    timings_out — необязательный dict: по завершении (успех или
+    fallback) сюда копируются все stage-тайминги + total_ms +
+    агрегаты recognition_ms/parse_ms. В worker-процессе
+    perf_metrics недоступны родителю — timings_out и есть канал
+    доставки поэтапных замеров в основной процесс.
     """
     import cv2
     from PIL import Image
@@ -970,6 +976,8 @@ def _extract_parsed(
     timings: dict[str, float] = {}
     if reason_out is not None:
         timings["_reason_sink"] = reason_out
+    if timings_out is not None:
+        timings["_out"] = timings_out
     if t_submit is not None:
         timings["queue_ms"] = max(0.0, (t0 - t_submit) * 1000.0)
     if _PANEL_DEBUG:
@@ -1414,10 +1422,11 @@ def _record_metrics(timings: dict, t0: float, *, ok: bool, reason: str = "") -> 
     sink = timings.pop("_reason_sink", None)
     if sink is not None and not ok:
         sink.append(reason)
+    out = timings.pop("_out", None)
+    total = (time.perf_counter() - t0) * 1000.0
     try:
         from utils import perf_metrics
 
-        total = (time.perf_counter() - t0) * 1000.0
         perf_metrics.record("fast_ocr_total_ms", total)
         for k, v in timings.items():
             perf_metrics.record(f"fast_ocr_{k}", v)
@@ -1426,16 +1435,62 @@ def _record_metrics(timings: dict, t0: float, *, ok: bool, reason: str = "") -> 
             perf_metrics.incr("fast_ocr_fallback_" + re.sub(r"\W", "_", reason)[:40])
     except Exception:
         pass
+    if out is not None:
+        out["total_ms"] = total
+        for k, v in timings.items():
+            if not k.startswith("_"):
+                out[k] = v
+        # Агрегаты для диагностики: recognition = все rec-прогоны
+        # (cells det+rect, bands), parse = остаток после известных
+        # стадий (сборка players/баннера/счёта).
+        out["recognition_ms"] = sum(
+            v for k, v in timings.items() if k.endswith("_rec_ms")
+        )
+        known = (
+            "decode_ms", "det_ms", "anchors_ms", "cells_ms",
+            "bands_ms", "score_ms",
+        )
+        spent = sum(
+            v for k, v in timings.items() if k in known
+        )
+        out["parse_ms"] = max(0.0, total - spent)
+
+
+def _record_parent_timing(timing: dict) -> None:
+    """Поэтапные метрики fast OCR в ОСНОВНОМ процессе.
+
+    В worker-режиме stage-тайминги собираются в child и до
+    родителя доходят только через timings_out — perf_metrics
+    самого child'а в родительский PERF-JSON не попадает.
+    """
+    try:
+        from utils import perf_metrics
+
+        for k, v in timing.items():
+            if isinstance(v, (int, float)):
+                perf_metrics.record(f"ocr_fast_{k}", float(v))
+    except Exception:
+        pass
 
 
 async def parse_cs_fast(
-    data: bytes, reason_out: list | None = None
+    data: bytes,
+    reason_out: list | None = None,
+    priority: int = 1,
 ) -> dict[str, Any] | None:
     """Async-обёртка: anchor-based fast OCR → parsed dict или None.
 
     None = fast-путь не сработал → вызывающий код обязан запустить
     полный RapidOCR pipeline (fallback гарантирует точность).
     reason_out — per-call список для причины fallback.
+    priority — >=0 боевой pipeline (default 1), <0 диагностика
+    /ocr: low-priority пропускается gate'ом, пока есть
+    ожидающие обычные/боевые вызовы.
+
+    При успехе parsed содержит "_ocr_timing" — поэтапные замеры
+    (executor_queue/worker_lock_wait/worker_ipc/decode/det/
+    anchors/recognition/cells/bands/score/parse/total_wall),
+    собранные в родительском процессе.
     """
     import asyncio
     import functools
@@ -1447,9 +1502,19 @@ async def parse_cs_fast(
     t_submit = time.perf_counter()
 
     def _run() -> dict[str, Any] | None:
+        t_exec = time.perf_counter()
+        timing: dict[str, float] = {}
+        timing["executor_queue_ms"] = max(
+            0.0, (t_exec - t_submit) * 1000.0
+        )
+        worker_stats: dict = {}
+        stages: dict = {}
         if ocr_worker.worker_enabled():
             try:
-                res = ocr_worker.call("cs_fast", data, retries=1)
+                res = ocr_worker.call(
+                    "cs_fast", data, retries=1,
+                    priority=priority, stats=worker_stats,
+                )
             except ocr_worker.OcrWorkerError as exc:
                 # ONNX в основной процесс не грузим — fast-путь
                 # просто недоступен, полный OCR тоже идёт через
@@ -1473,8 +1538,25 @@ async def parse_cs_fast(
                 )
             except Exception:
                 pass
-            return res.get("parsed")
-        # Локальный путь — только при явном OCR_WORKER_DISABLE=1.
-        return _extract_parsed(data, t_submit, reason_out)
+            stages = dict(res.get("timings") or {})
+            parsed = res.get("parsed")
+        else:
+            # Локальный путь — только при явном OCR_WORKER_DISABLE=1.
+            parsed = _extract_parsed(
+                data, t_submit, reason_out, timings_out=stages
+            )
+        timing.update(stages)
+        timing["worker_lock_wait_ms"] = worker_stats.get("lock_wait_ms", 0.0)
+        # put→get round-trip: IPC + исполнение задачи в child
+        # (включая ONNX-инференс) — в «очередь» НЕ входит.
+        timing["worker_roundtrip_ms"] = worker_stats.get(
+            "roundtrip_ms", 0.0
+        )
+        timing["worker_wall_ms"] = stages.get("total_ms", 0.0)
+        timing["total_wall_ms"] = (time.perf_counter() - t_submit) * 1000.0
+        _record_parent_timing(timing)
+        if parsed is not None:
+            parsed["_ocr_timing"] = timing
+        return parsed
 
     return await loop.run_in_executor(OCR_EXECUTOR, _run)
