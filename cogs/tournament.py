@@ -284,6 +284,15 @@ class TournamentCog(commands.Cog):
         except Exception as exc:
             logger.warning("Format vote cancel failed: %s", exc)
 
+        # Отменить голосование за правила, если турнир удалён
+        # во время RULES_VOTING.
+        try:
+            from services.rules_vote import cancel_rules_vote
+
+            cancel_rules_vote(existing)
+        except Exception as exc:
+            logger.warning("Rules vote cancel failed: %s", exc)
+
         store.delete(interaction.guild_id, interaction.channel_id)
         logger.info("Турнир удален на сервере %s", interaction.guild_id)
 

@@ -1265,101 +1265,137 @@ class StartTournamentButton(discord.ui.Button):
                     pass
                 return
 
-        # Handle automatic formation modes (random / balanced-sr): команды
-        # строятся сразу, драфт пропускается
-        if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
-            if tournament.formation_mode == FormationMode.BALANCED_SR:
-                error = await tournament.distribute_balanced_sr(self.guild_id)
-                if error:
-                    try:
-                        await interaction.response.send_message(error, ephemeral=True)
-                    except discord.NotFound:
-                        pass
-                    return
-            else:
-                # Random mode: distribute randomly and skip draft
-                tournament.distribute_randomly()
-            store.set(tournament)
+        # Обязательная фаза голосования за правила (BRAZIL/KAZAKHSTAN)
+        # до формирования команд. После итогов сервис сам вызовет
+        # launch_tournament_formation — команды не формируются
+        # до завершения голосования.
+        from services.rules_vote import start_rules_vote
 
-            # Initialize betting odds for matches
-            from storage.bet_store import bet_store
-            from utils.embeds import get_team_avg_skill
+        await start_rules_vote(
+            interaction.guild, interaction.channel, tournament,
+            interaction.client,
+        )
 
-            if tournament.size == TournamentSize.EIGHT:
-                # Final match
-                match_id = f"{tournament.id}_final_0"
-                team_a_data = tournament.teams[0] if 0 < len(tournament.teams) else {}
-                team_b_data = tournament.teams[1] if 1 < len(tournament.teams) else {}
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        try:
+            await interaction.response.send_message(
+                replace_emojis(
+                    "🗳 Голосование за правила запущено — 20 секунд. "
+                    "Формирование команд начнётся автоматически."
+                ),
+                ephemeral=True,
+            )
+        except discord.NotFound:
+            pass
+
+
+async def launch_tournament_formation(
+    guild: discord.Guild,
+    channel: discord.TextChannel,
+    tournament: "Tournament",
+    bot: "TournamentBot",
+) -> None:
+    """Сформировать команды и запустить турнир после голосования.
+
+    Вызывается из services.rules_vote после подведения итогов
+    (или из восстановления после рестарта). Повторный запуск
+    защищён проверкой фазы RULES_VOTING на стороне сервиса.
+    """
+    # Handle automatic formation modes (random / balanced-sr): команды
+    # строятся сразу, драфт пропускается
+    if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
+        if tournament.formation_mode == FormationMode.BALANCED_SR:
+            error = await tournament.distribute_balanced_sr(tournament.guild_id)
+            if error:
+                try:
+                    await channel.send(error)
+                except Exception:
+                    pass
+                return
+        else:
+            # Random mode: distribute randomly and skip draft
+            tournament.distribute_randomly()
+        store.set(tournament)
+
+        # Initialize betting odds for matches
+        from storage.bet_store import bet_store
+        from utils.embeds import get_team_avg_skill
+
+        if tournament.size == TournamentSize.EIGHT:
+            # Final match
+            match_id = f"{tournament.id}_final_0"
+            team_a_data = tournament.teams[0] if 0 < len(tournament.teams) else {}
+            team_b_data = tournament.teams[1] if 1 < len(tournament.teams) else {}
+            avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
+            avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
+            captain_a = team_a_data.get("captain", f"П1")
+            captain_b = team_b_data.get("captain", f"П2")
+            name_a = tournament.team_names.get(0, captain_a)
+            name_b = tournament.team_names.get(1, captain_b)
+            await bet_store.initialize_match_odds_db(match_id, name_a, name_b, avg_skill_a, avg_skill_b)
+        elif tournament.size == TournamentSize.SIXTEEN:
+            # Semifinals + final
+            for i, (team_a, team_b) in enumerate(tournament.semifinal_matches):
+                match_id = f"{tournament.id}_semifinal_{i}"
+                team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+                team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
                 avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
                 avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
-                captain_a = team_a_data.get("captain", f"П1")
-                captain_b = team_b_data.get("captain", f"П2")
-                name_a = tournament.team_names.get(0, captain_a)
-                name_b = tournament.team_names.get(1, captain_b)
+                captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+                captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+                name_a = tournament.team_names.get(team_a, captain_a)
+                name_b = tournament.team_names.get(team_b, captain_b)
                 await bet_store.initialize_match_odds_db(match_id, name_a, name_b, avg_skill_a, avg_skill_b)
-            elif tournament.size == TournamentSize.SIXTEEN:
-                # Semifinals + final
-                for i, (team_a, team_b) in enumerate(tournament.semifinal_matches):
-                    match_id = f"{tournament.id}_semifinal_{i}"
-                    team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-                    team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-                    avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
-                    avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
-                    captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-                    captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-                    name_a = tournament.team_names.get(team_a, captain_a)
-                    name_b = tournament.team_names.get(team_b, captain_b)
-                    await bet_store.initialize_match_odds_db(match_id, name_a, name_b, avg_skill_a, avg_skill_b)
-            elif tournament.size == TournamentSize.THIRTY_TWO:
-                # Qualifiers
-                for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
-                    match_id = f"{tournament.id}_qualifier_{i}"
-                    team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-                    team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-                    avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
-                    avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
-                    captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-                    captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-                    name_a = tournament.team_names.get(team_a, captain_a)
-                    name_b = tournament.team_names.get(team_b, captain_b)
-                    await bet_store.initialize_match_odds_db(match_id, name_a, name_b, avg_skill_a, avg_skill_b)
+        elif tournament.size == TournamentSize.THIRTY_TWO:
+            # Qualifiers
+            for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
+                match_id = f"{tournament.id}_qualifier_{i}"
+                team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+                team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+                avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
+                avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
+                captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+                captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+                name_a = tournament.team_names.get(team_a, captain_a)
+                name_b = tournament.team_names.get(team_b, captain_b)
+                await bet_store.initialize_match_odds_db(match_id, name_a, name_b, avg_skill_a, avg_skill_b)
 
-            bot: TournamentBot = interaction.client  # type: ignore[assignment]
-            await bot.update_tournament_message(interaction.guild, tournament)
+        if bot is not None:
+            await bot.update_tournament_message(guild, tournament)
 
-            try:
-                if tournament.formation_mode == FormationMode.BALANCED_SR:
-                    await interaction.response.send_message(
-                        replace_emojis("⚖️ Турнир запущен! Команды сбалансированы по Skill Rating."),
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.response.send_message(
-                        replace_emojis("🎲 Турнир запущен! Игроки распределены случайно."),
-                        ephemeral=True
-                    )
-            except discord.NotFound:
-                pass
-        else:
-            # ELO/SKILL modes: shuffle circles and start draft
-            tournament.shuffle_circles()
-            tournament.start_draft()
+        try:
+            if tournament.formation_mode == FormationMode.BALANCED_SR:
+                await channel.send(
+                    replace_emojis("⚖️ Турнир запущен! Команды сбалансированы по Skill Rating.")
+                )
+            else:
+                await channel.send(
+                    replace_emojis("🎲 Турнир запущен! Игроки распределены случайно.")
+                )
+        except Exception:
+            pass
+    else:
+        # ELO/SKILL modes: shuffle circles and start draft
+        tournament.shuffle_circles()
+        tournament.start_draft()
+        store.set(tournament)
+
+        if bot is not None:
+            await bot.update_tournament_message(guild, tournament)
+
+        # Send first draft message with captain ping
+        first_picker_pos = tournament.current_picker_position()
+        if first_picker_pos is not None:
+            first_captain_name = tournament.captains[tournament.captain_order[first_picker_pos]]
+            first_captain_id = tournament.player_user_ids.get(first_captain_name, 0)
+            if first_captain_id > 0:
+                draft_message = await channel.send(f" <@{first_captain_id}> - ваша очередь выбирать!")
+            else:
+                draft_message = await channel.send(f" {first_captain_name} - ваша очередь выбирать!")
+            tournament.draft_message_id = draft_message.id
             store.set(tournament)
-
-            bot: TournamentBot = interaction.client  # type: ignore[assignment]
-            await bot.update_tournament_message(interaction.guild, tournament)
-
-            # Send first draft message with captain ping
-            first_picker_pos = tournament.current_picker_position()
-            if first_picker_pos is not None:
-                first_captain_name = tournament.captains[tournament.captain_order[first_picker_pos]]
-                first_captain_id = tournament.player_user_ids.get(first_captain_name, 0)
-                if first_captain_id > 0:
-                    draft_message = await interaction.channel.send(f" <@{first_captain_id}> - ваша очередь выбирать!")
-                else:
-                    draft_message = await interaction.channel.send(f" {first_captain_name} - ваша очередь выбирать!")
-                tournament.draft_message_id = draft_message.id
-                store.set(tournament)
 
 
 class ToggleRegistrationButton(discord.ui.Button):

@@ -829,6 +829,16 @@ class TournamentBot(commands.Bot):
         except Exception as exc:
             logger.warning("Format vote restore failed: %s", exc)
 
+        # Голосование за правила (BRAZIL/KAZAKHSTAN) в /tournament
+        # create: persistent кнопки + финализация просроченных и
+        # продолжение турнира после рестарта.
+        try:
+            from services.rules_vote import restore_rules_votes
+
+            await restore_rules_votes(self)
+        except Exception as exc:
+            logger.warning("Rules vote restore failed: %s", exc)
+
         # «📜 Правила» на карточках матчей — статичная кнопка,
         # регистрируем persistent view глобально (custom_id совпадает).
         try:

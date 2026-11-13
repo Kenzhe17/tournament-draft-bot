@@ -656,6 +656,15 @@ async def build_setup_embed(
             elo_dict[player_name] = int(stats.elo)
 
     # Build description based on formation mode
+    ruleset = getattr(tournament, "ruleset", "") or ""
+    rules_line = ""
+    if ruleset:
+        try:
+            from services.rules_vote import ruleset_label
+
+            rules_line = f" Правила: {ruleset_label(ruleset)}\n"
+        except Exception:
+            rules_line = ""
     if tournament.formation_mode == FormationMode.RANDOM:
         # RANDOM mode: show players pool
         current = len(tournament.players_pool)
@@ -683,7 +692,8 @@ async def build_setup_embed(
             f" **Информация о турнире:**\n"
             f" Размер: {tournament.size.value}\n"
             f" Режим формирования: {formation_text}\n"
-            f" Статус регистрации: {status_text}\n\n"
+            f" Статус регистрации: {status_text}\n"
+            f"{rules_line}\n"
             f" **Пул игроков:**\n"
             f" {players_text}\n\n"
             f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
@@ -716,7 +726,8 @@ async def build_setup_embed(
             f" **Информация о турнире:**\n"
             f" Размер: {tournament.size.value}\n"
             f" Режим формирования: {formation_text}\n"
-            f" Статус регистрации: {status_text}\n\n"
+            f" Статус регистрации: {status_text}\n"
+            f"{rules_line}\n"
             + "\n\n".join(circle_sections) + "\n\n"
             f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
@@ -1325,20 +1336,36 @@ async def build_embed_for_phase(
 ) -> discord.Embed:
     """Выбрать нужный embed по текущей фазе."""
     phase = tournament.phase
-    if phase == TournamentPhase.SETUP:
+    if phase in (TournamentPhase.SETUP, TournamentPhase.RULES_VOTING):
         return await build_setup_embed(tournament, guild)
     if phase == TournamentPhase.DRAFT:
-        return await build_draft_embed(tournament, guild)
+        embed = await build_draft_embed(tournament, guild)
     # Skip TEAMS phase - go directly to bracket phases
-    if phase == TournamentPhase.QUALIFIERS:
-        return await build_qualifiers_embed(tournament, guild)
-    if phase == TournamentPhase.SEMIFINALS:
-        return await build_semifinals_embed(tournament, guild)
-    if phase == TournamentPhase.FINAL:
-        return await build_final_embed(tournament, guild)
-    if phase == TournamentPhase.COMPLETE:
-        return await build_winner_embed(tournament, guild)
-    return discord.Embed(title="Ошибка", color=discord.Color.red())
+    elif phase == TournamentPhase.QUALIFIERS:
+        embed = await build_qualifiers_embed(tournament, guild)
+    elif phase == TournamentPhase.SEMIFINALS:
+        embed = await build_semifinals_embed(tournament, guild)
+    elif phase == TournamentPhase.FINAL:
+        embed = await build_final_embed(tournament, guild)
+    elif phase == TournamentPhase.COMPLETE:
+        embed = await build_winner_embed(tournament, guild)
+    else:
+        embed = discord.Embed(title="Ошибка", color=discord.Color.red())
+    # Выбранные правила матча (голосование BRAZIL/KAZAKHSTAN) —
+    # показываем в карточках всех фаз после настройки.
+    ruleset = getattr(tournament, "ruleset", "") or ""
+    if ruleset and len(embed.fields) < 25:
+        try:
+            from services.rules_vote import ruleset_label
+
+            embed.add_field(
+                name="📜 Правила матча",
+                value=ruleset_label(ruleset),
+                inline=False,
+            )
+        except Exception:
+            pass
+    return embed
 
 
 def build_level_up_embed(stats, old_level: int, new_level: int) -> tuple[discord.Embed, discord.File | None]:

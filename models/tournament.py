@@ -33,6 +33,7 @@ class TournamentPhase(str, Enum):
     """Фазы жизненного цикла турнира."""
 
     SETUP = "setup"
+    RULES_VOTING = "rules_voting"
     DRAFT = "draft"
     TEAMS = "teams"
     QUALIFIERS = "qualifiers"
@@ -164,6 +165,11 @@ class Tournament:
     size: TournamentSize = TournamentSize.EIGHT
     registration: RegistrationState = RegistrationState.CLOSED
     formation_mode: FormationMode = FormationMode.DRAFT
+
+    # Выбранные правила матча (BRAZIL/KAZAKHSTAN) — голосование
+    # после «Старт» в /tournament create, до формирования команд.
+    ruleset: str = ""
+    rules_vote: dict = field(default_factory=dict)
     captains: list[str] = field(default_factory=list)  # Display names
     circle1: list[str] = field(default_factory=list)  # Captain circle (display names)
     circle2: list[str] = field(default_factory=list)
@@ -1630,6 +1636,8 @@ class Tournament:
             "size": self.size.value,
             "registration": self.registration.value,
             "formation_mode": self.formation_mode.value,
+            "ruleset": self.ruleset,
+            "rules_vote": self.rules_vote,
             "captains": self.captains,
             "circle1": self.circle1,
             "circle2": self.circle2,
@@ -1696,6 +1704,8 @@ class Tournament:
             # Старые сохранения без ключа — турниры эпохи ELO;
             # не меняем их режим. Новые турниры всегда пишут ключ.
             formation_mode=FormationMode(data.get("formation_mode", "elo")),
+            ruleset=data.get("ruleset", ""),
+            rules_vote=data.get("rules_vote", {}),
             captains=data.get("captains", []),
             circle1=data.get("circle1", []),
             circle2=data.get("circle2", []),

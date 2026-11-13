@@ -359,6 +359,17 @@ def _room_card_view(
         room_data = tournament.final_room or {}
     password = str(room_data.get("password", "") or "")
 
+    # Выбранные правила турнира (голосование BRAZIL/KAZAKHSTAN).
+    rules_line = ""
+    ruleset = str(getattr(tournament, "ruleset", "") or "")
+    if ruleset:
+        try:
+            from services.rules_vote import ruleset_label
+
+            rules_line = f"Правила: {ruleset_label(ruleset)}\n"
+        except Exception:
+            rules_line = ""
+
     view = DesignView(timeout=None)
     lines = [
         "🔓 Комната открыта",
@@ -369,8 +380,11 @@ def _room_card_view(
         name2,
         _roster_line(tournament, team2_data, ping=ping, display=display),
         "",
-        f"Пароль: `{password}`",
     ]
+    if rules_line:
+        lines.append(rules_line.rstrip("\n"))
+        lines.append("")
+    lines.append(f"Пароль: `{password}`")
     view.lines(*lines)
     view.row(
         *_room_data_buttons(
