@@ -89,8 +89,9 @@ def _channel_ids(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_mm_room_notify_goes_to_match_channel():
-    """MM: 1 карточка + 2 отдельных сообщения в канал матча."""
+    """MM: 1 карточка в канал матча; ID — по кнопке, пароль — в тексте."""
     t = _tournament(mm=True)
+    t.qualifier_rooms[0] = {"id": "38765135", "password": "11"}
     match_ch = _Chan(900)
     general = _Chan(1200125075156910181)
     data_ch = _Chan(1561683314480255057)
@@ -101,7 +102,7 @@ async def test_mm_room_notify_goes_to_match_channel():
         bot, t, "qualifier", 0, 0, 1, "38765135", "11"
     )
 
-    # В канал матча: ОДНО V2-сообщение (LayoutView) с кнопками данных
+    # В канал матча: ОДНО V2-сообщение (LayoutView) с кнопкой ID
     assert len(match_ch.sent) == 1
     kw = match_ch.sent[0][1]
     view = kw.get("view")
@@ -110,9 +111,11 @@ async def test_mm_room_notify_goes_to_match_channel():
     text = _view_text(view)
     assert "🔓 Комната открыта" in text
     assert "<@111>" in text and "<@222>" in text  # реальные ping ID
+    assert "Пароль: `11`" in text  # пароль прямо в карточке
+    assert "38765135" not in text  # ID — только по кнопке
     ids = _view_custom_ids(view)
     assert any(i.endswith(":id") for i in ids)
-    assert any(i.endswith(":pass") for i in ids)
+    assert not any(i.endswith(":pass") for i in ids)
     # ID/пароль НЕ отправляются отдельными сообщениями
     assert len(match_ch.sent) == 1
     # Общий канал и канал данных НЕ используются для MM
@@ -122,9 +125,10 @@ async def test_mm_room_notify_goes_to_match_channel():
 
 @pytest.mark.asyncio
 async def test_tournament_room_notify_two_places():
-    """Турнир: карточка+данные в канал результатов, анонс с ролью —
+    """Турнир: карточка в канал результатов, анонс с ролью —
     в канал уведомлений (mention в content, не в embed)."""
     t = _tournament(mm=False)
+    t.qualifier_rooms[0] = {"id": "37736674", "password": "11"}
     general = _Chan(1200125075156910181)
     data_ch = _Chan(1561683314480255057)
     bot = _Bot({1200125075156910181: general,
@@ -178,6 +182,7 @@ def _view_custom_ids(view):
 
 def test_room_card_view_format():
     t = _tournament(mm=True)
+    t.qualifier_rooms[0] = {"id": "38765135", "password": "11"}
     t1 = t.teams[0]
     t2 = t.teams[1]
     view = rm._room_card_view(
@@ -191,11 +196,12 @@ def test_room_card_view_format():
     assert "Данные комнаты" not in text
     assert "CapA" in text and "CapB" in text
     assert "<@111>" in text and "<@222>" in text
-    # Нет сырых ID/пароля в тексте карточки
+    # Пароль — в тексте карточки; ID — только по кнопке
+    assert "Пароль: `11`" in text
     assert "38765135" not in text
     ids = _view_custom_ids(view)
     assert any(i.endswith(":id") for i in ids)
-    assert any(i.endswith(":pass") for i in ids)
+    assert not any(i.endswith(":pass") for i in ids)
 
 
 # ---------------------------------------------------------------------------

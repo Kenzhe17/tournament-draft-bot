@@ -223,8 +223,8 @@ async def _resolve_mm_match_channel(
 
 
 # ---------------------------------------------------------------------------
-# «🔓 Комната открыта»: embed + ephemeral-кнопки данных комнаты.
-# ID/пароль НЕ выводятся сырым текстом — только по кнопке и только
+# «🔓 Комната открыта»: embed + ephemeral-кнопка ID комнаты.
+# Пароль выводится прямо в карточке; ID — только по кнопке и только
 # капитанам команд матча, организаторам и администраторам.
 # ---------------------------------------------------------------------------
 
@@ -290,7 +290,12 @@ def _room_data_buttons(
     team1_index: int,
     team2_index: int,
 ) -> list[discord.ui.Button]:
-    """Кнопки «Получить ID/пароль» — custom_id кодирует контекст."""
+    """Кнопка «Получить ID» — custom_id кодирует контекст.
+
+    Пароль больше не запрашивается кнопкой — он показан в карточке.
+    Суффикс `:id` сохранён для совместимости с persistent-шаблоном
+    и старыми карточками.
+    """
     base = (
         f"rd:{guild_id}:{channel_id}:{match_type}:{match_index}:"
         f"{team1_index}:{team2_index}"
@@ -300,11 +305,6 @@ def _room_data_buttons(
             style=discord.ButtonStyle.secondary,
             label="📋 ID",
             custom_id=f"{base}:id",
-        ),
-        discord.ui.Button(
-            style=discord.ButtonStyle.secondary,
-            label="🔑 Пароль",
-            custom_id=f"{base}:pass",
         ),
     ]
 
@@ -343,13 +343,21 @@ def _room_card_view(
     """Components V2 карточка «🔓 Комната открыта».
 
     Структура: заголовок, имя команды 1, её ростер, имя команды 2,
-    её ростер. ID/пароль — только по кнопкам.
+    её ростер, пароль. ID — только по кнопке.
     ping=True (MM): <@id> пингуют игроков через allowed_mentions.
     ping=False (турниры): обычные имена, AllowedMentions.none().
     Одна отправка = одно уведомление; сообщение не редактируется
     и не пересылается → повторных пингов после рестарта нет.
     """
     from utils.design.layouts import DesignView
+
+    if match_type == "qualifier":
+        room_data = (tournament.qualifier_rooms or {}).get(match_index) or {}
+    elif match_type == "semifinal":
+        room_data = (tournament.semifinal_rooms or {}).get(match_index) or {}
+    else:
+        room_data = tournament.final_room or {}
+    password = str(room_data.get("password", "") or "")
 
     view = DesignView(timeout=None)
     lines = [
@@ -360,6 +368,8 @@ def _room_card_view(
         "",
         name2,
         _roster_line(tournament, team2_data, ping=ping, display=display),
+        "",
+        f"Пароль: `{password}`",
     ]
     view.lines(*lines)
     view.row(
