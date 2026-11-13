@@ -79,13 +79,50 @@ _lock = threading.Lock()          # один запрос за раз
 _last_used = 0.0
 _reaper_started = False
 
-# Bound ожидающих вызовов + приоритет: реальная обработка матчей
-# (priority>0) не должна стоять за диагностикой /ocr (priority<0).
-# _WAITING — все, кто ждёт _lock; _HI_WAITING — из них high-priority.
+# Bound ожидающих вызовов: считается КАЖДЫЙ ожидающий (и боевой,
+# и диагностический) — low-priority не может обойти лимит.
 _WAITING = 0
-_HI_WAITING = 0
 _wait_cond = threading.Condition()
 _MAX_WAITERS = int(os.environ.get("OCR_WORKER_MAX_WAITERS", "16"))
+
+# Строгий приоритет допуска к worker-RPC. threading.Lock сам по
+# себе FIFO и не даёт гарантий «high раньше low»: заявка low,
+# успевшая до high, могла бы держать очередь. Gate — свой
+# condition-based mutex: low (priority<0) пропускается только
+# когда нет ожидающих high (priority>=0). Active high тоже
+# покрыт _gate_active. Starvation low при непрерывном потоке
+# high теоретически возможен — это осознанный trade-off
+# (диагностика подчинена боевой обработке).
+_gate_cond = threading.Condition()
+_gate_active = False
+_gate_hi = 0   # ожидающие priority >= 0
+_gate_lo = 0   # ожидающие priority < 0
+
+
+def _gate_acquire(priority: int) -> None:
+    global _gate_active, _gate_hi, _gate_lo
+    low = priority < 0
+    with _gate_cond:
+        if low:
+            _gate_lo += 1
+        else:
+            _gate_hi += 1
+        try:
+            while _gate_active or (low and _gate_hi > 0):
+                _gate_cond.wait()
+        finally:
+            if low:
+                _gate_lo -= 1
+            else:
+                _gate_hi -= 1
+        _gate_active = True
+
+
+def _gate_release() -> None:
+    global _gate_active
+    with _gate_cond:
+        _gate_active = False
+        _gate_cond.notify_all()
 
 
 def _cgroup_memory_mb() -> float | None:
@@ -188,29 +225,24 @@ def call(
     attempts = max(0, retries) + 1
     last_exc: OcrWorkerError | None = None
     for attempt in range(attempts):
-        # Допуск в очередь ожидания: bound + low-priority yield.
+        # Допуск в очередь ожидания: bound считает всех
+        # ожидающих (high и low) — low-priority не обходит лимит.
         with _wait_cond:
-            while True:
-                if priority < 0 and _HI_WAITING > 0:
-                    _wait_cond.wait(0.05)
-                    continue
-                if _WAITING >= _MAX_WAITERS:
-                    raise OcrWorkerBusy(
-                        f"OCR worker waiters full ({_WAITING})"
-                    )
-                _WAITING += 1
-                if priority > 0:
-                    _HI_WAITING += 1
-                break
-        t_lock = time.perf_counter()
+            if _WAITING >= _MAX_WAITERS:
+                raise OcrWorkerBusy(
+                    f"OCR worker waiters full ({_WAITING})"
+                )
+            _WAITING += 1
+        t_wait = time.perf_counter()
+        _gate_acquire(priority)
         try:
             with _lock:
                 stats["lock_wait_ms"] = (
-                    time.perf_counter() - t_lock
+                    time.perf_counter() - t_wait
                 ) * 1000.0
                 _ensure_proc()
                 seq = next(_seq)
-                t_ipc = time.perf_counter()
+                t_rtt = time.perf_counter()
                 _task_q.put((seq, kind, args))
                 _last_used = time.time()
                 try:
@@ -221,7 +253,11 @@ def call(
                     raise _WorkerTransportError(
                         f"worker timeout kind={kind}"
                     )
-                stats["ipc_ms"] = (time.perf_counter() - t_ipc) * 1000.0
+                # put→get round-trip: IPC + время задачи в child
+                # (включая ONNX-инференс) — НЕ «чистый IPC».
+                stats["roundtrip_ms"] = (
+                    time.perf_counter() - t_rtt
+                ) * 1000.0
                 if got_seq != seq:
                     # Рассинхрон (не должно случаться при одном
                     # клиенте) — считаем worker битым.
@@ -243,10 +279,9 @@ def call(
                 _kill_proc()
             time.sleep(0.2 * (attempt + 1))
         finally:
+            _gate_release()
             with _wait_cond:
                 _WAITING -= 1
-                if priority > 0:
-                    _HI_WAITING -= 1
                 _wait_cond.notify_all()
     assert last_exc is not None
     if isinstance(last_exc, _WorkerTransportError):
@@ -361,10 +396,12 @@ def _dispatch(kind: str, args: tuple) -> Any:
 
         return _run_ocr_local(*args)
 
-    if kind == "ocr_regions":
+    if kind == "ocr_regions_stats":
         from services.ocr_service import _ocr_regions_local
 
-        return _ocr_regions_local(*args)
+        timings_out: dict = {}
+        results = _ocr_regions_local(*args, timings_out=timings_out)
+        return {"results": results, "timings": timings_out}
 
     if kind == "ocr_cyr_region":
         from services.ocr_service import _run_ocr_cyrillic_region_local

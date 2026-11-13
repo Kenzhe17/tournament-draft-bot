@@ -90,8 +90,13 @@ def _match_label(match_type: str, match_index: int) -> str:
     return f"Отборочный #{match_index + 1}"
 
 
-def _ocr_boxes(data: bytes, priority: int = 0, stats: dict | None = None) -> list:
-    """Запустить OCR и вернуть текстовые боксы (executor)."""
+def _ocr_boxes(
+    data: bytes, priority: int = 1, stats: dict | None = None
+) -> list:
+    """Запустить OCR и вернуть текстовые боксы (executor).
+
+    priority=1 — боевой pipeline (скриншоты матчей) по умолчанию;
+    диагностика передаёт -1 явно."""
     from services.ocr_service import _run_ocr
 
     return _run_ocr(data, priority=priority, stats=stats) or []
@@ -1165,7 +1170,7 @@ class OCRUploadCog(commands.Cog):
             ]
             if _cyr_pairs:
                 _cyr_names = await ocr_cyrillic_regions(
-                    data, [r for _, r in _cyr_pairs]
+                    data, [r for _, r in _cyr_pairs], priority=1
                 )
                 for (side_name, _), cname in zip(_cyr_pairs, _cyr_names):
                     if cname:
@@ -1810,7 +1815,7 @@ async def _ocr_boxes_cached(data: bytes, priority: int = 0) -> list:
         perf_metrics.record(
             "ocr_boxes_ms", (_time.perf_counter() - _t0) * 1000.0
         )
-        for _k in ("lock_wait_ms", "ipc_ms"):
+        for _k in ("lock_wait_ms", "roundtrip_ms"):
             _v = _wstats.get(_k)
             if _v is not None:
                 perf_metrics.record(f"ocr_worker_{_k}", _v)
@@ -1821,7 +1826,7 @@ async def _ocr_boxes_cached(data: bytes, priority: int = 0) -> list:
     return boxes
 
 
-async def _fast_parse_cs(data: bytes, *, enabled: bool = True, priority: int = 0):
+async def _fast_parse_cs(data: bytes, *, enabled: bool = True, priority: int = 1):
     """Anchor-based fast OCR → parsed dict (формат cs_parser) или None.
 
     None — fast-путь не применим/не прошёл валидацию → вызывать
@@ -1844,7 +1849,7 @@ async def _fast_parse_cs(data: bytes, *, enabled: bool = True, priority: int = 0
 
 
 async def _refine_parsed_rows(
-    data: bytes, parsed: dict, priority: int = 0
+    data: bytes, parsed: dict, priority: int = 1
 ) -> None:
     """Targeted re-OCR строк с пропущенными полями (ник/K/D/A/DMG).
 
@@ -1912,7 +1917,7 @@ async def _classic_pipeline(
     data: bytes,
     need_score: bool = True,
     fast: bool = True,
-    priority: int = 0,
+    priority: int = 1,
 ) -> dict | None:
     """Общий классический пайплайн: OCR → parse → score fallback →
     winner detect → cyrillic names → refine строк. Возвращает
@@ -1922,7 +1927,7 @@ async def _classic_pipeline(
     need_score=False (rooms/Ranked): счёт раундов в итогах не
     используется — пропускаем лишний OCR-проход шапки.
     fast=False — только полный RapidOCR (диагностика /ocr mode=full).
-    priority — >0 боевой pipeline, <0 диагностика /ocr.
+    priority — >=0 боевой pipeline (default 1), <0 диагностика /ocr.
     """
     from services.ocr_service import (
         OCR_EXECUTOR,
@@ -1950,7 +1955,11 @@ async def _classic_pipeline(
         # winner-диагностики (полный det+rec не нужен).
         boxes = parsed.pop("_rec_boxes", []) or []
     else:
+        _t_boxes = time.perf_counter()
         boxes = await _ocr_boxes_cached(data, priority=priority)
+        ocr_timing["boxes_ms"] = (
+            time.perf_counter() - _t_boxes
+        ) * 1000.0
         if not boxes:
             return None
 

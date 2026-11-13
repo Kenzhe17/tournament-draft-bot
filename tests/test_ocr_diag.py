@@ -292,3 +292,37 @@ class TestRunModes:
         await cog.ocr.callback(cog, ix, image=_Att(), mode="compare")
         assert ix.embed is not None
         assert called == []
+
+
+def test_timing_field_queue_excludes_roundtrip():
+    """«Ожидание очереди» = executor + lock wait; roundtrip
+    (IPC+инференс) — отдельная строка, двойного учёта нет."""
+    from cogs.ocr_diag import _timing_field
+
+    t = {
+        "executor_queue_ms": 10.0,
+        "worker_lock_wait_ms": 5.0,
+        "worker_roundtrip_ms": 9000.0,
+        "decode_ms": 100.0,
+        "det_ms": 200.0,
+        "recognition_ms": 3000.0,
+        "parse_ms": 500.0,
+        "total_wall_ms": 9500.0,
+    }
+    s = _timing_field(t, "X")
+    assert "Ожидание очереди: 15 мс" in s
+    assert "Worker roundtrip (IPC+инференс): 9000 мс" in s
+    assert "Распознавание: 3000 мс" in s
+    assert "Общее время: 9500 мс" in s
+
+
+def test_timing_field_missing_keys_show_dash():
+    """Full-путь без stage-ключей — прочерки, не нули."""
+    from cogs.ocr_diag import _timing_field
+
+    s = _timing_field(
+        {"pipeline_ms": 42000.0, "refine_ms": 800.0}, "F"
+    )
+    assert "Детекция текста: — мс" in s
+    assert "Общее время: 42000 мс" in s
+    assert "refine=800" in s

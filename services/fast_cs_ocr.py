@@ -1476,15 +1476,16 @@ def _record_parent_timing(timing: dict) -> None:
 async def parse_cs_fast(
     data: bytes,
     reason_out: list | None = None,
-    priority: int = 0,
+    priority: int = 1,
 ) -> dict[str, Any] | None:
     """Async-обёртка: anchor-based fast OCR → parsed dict или None.
 
     None = fast-путь не сработал → вызывающий код обязан запустить
     полный RapidOCR pipeline (fallback гарантирует точность).
     reason_out — per-call список для причины fallback.
-    priority — >0 боевой pipeline, <0 диагностика /ocr (ждёт
-    high-priority вызовы у worker-lock'а).
+    priority — >=0 боевой pipeline (default 1), <0 диагностика
+    /ocr: low-priority пропускается gate'ом, пока есть
+    ожидающие обычные/боевые вызовы.
 
     При успехе parsed содержит "_ocr_timing" — поэтапные замеры
     (executor_queue/worker_lock_wait/worker_ipc/decode/det/
@@ -1546,7 +1547,11 @@ async def parse_cs_fast(
             )
         timing.update(stages)
         timing["worker_lock_wait_ms"] = worker_stats.get("lock_wait_ms", 0.0)
-        timing["worker_ipc_ms"] = worker_stats.get("ipc_ms", 0.0)
+        # put→get round-trip: IPC + исполнение задачи в child
+        # (включая ONNX-инференс) — в «очередь» НЕ входит.
+        timing["worker_roundtrip_ms"] = worker_stats.get(
+            "roundtrip_ms", 0.0
+        )
         timing["worker_wall_ms"] = stages.get("total_ms", 0.0)
         timing["total_wall_ms"] = (time.perf_counter() - t_submit) * 1000.0
         _record_parent_timing(timing)

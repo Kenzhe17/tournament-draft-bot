@@ -538,16 +538,39 @@ def _run_ocr_regions(
     """
     if ocr_worker.worker_enabled():
         res = ocr_worker.call(
-            "ocr_regions", image_bytes, regions, priority=priority
+            "ocr_regions_stats", image_bytes, regions, priority=priority
         )
         if (
-            isinstance(res, list)
-            and len(res) == len(regions)
-            and all(isinstance(r, list) for r in res)
+            isinstance(res, dict)
+            and isinstance(res.get("results"), list)
+            and len(res["results"]) == len(regions)
         ):
-            return res
+            # Поэтапный профиль batch'а в родителе: декодирование
+            # одно, инференс каждого crop отдельно — видно, уходит
+            # ли время на ONNX, а не на IPC/декодирование.
+            try:
+                from utils import perf_metrics
+
+                t = res.get("timings") or {}
+                if t.get("decode_ms") is not None:
+                    perf_metrics.record(
+                        "ocr_regions_decode_ms", t["decode_ms"]
+                    )
+                rms = t.get("region_ms") or []
+                if rms:
+                    perf_metrics.record(
+                        "ocr_regions_slowest_ms", max(rms)
+                    )
+                    perf_metrics.record(
+                        "ocr_regions_total_ms", sum(rms)
+                    )
+                perf_metrics.incr("ocr_regions_calls")
+                perf_metrics.incr("ocr_regions_count", len(regions))
+            except Exception:
+                pass
+            return res["results"]
         raise ocr_worker.OcrWorkerError(
-            "worker returned bad payload for ocr_regions"
+            "worker returned bad payload for ocr_regions_stats"
         )
     return _ocr_regions_local(image_bytes, regions)
 
@@ -555,13 +578,31 @@ def _run_ocr_regions(
 def _ocr_regions_local(
     image_bytes: bytes,
     regions: list[tuple[float, float, float, float]],
+    timings_out: dict | None = None,
 ) -> list[list[dict[str, Any]]]:
-    """Локальный batch: одно декодирование на все области."""
+    """Локальный batch: одно декодирование на все области.
+
+    timings_out — опциональный dict: decode_ms + region_ms[i]
+    (инференс каждой области). Нужен worker-ветке kind
+    ocr_regions_stats для профиля «IPC vs ONNX»."""
+    import time as _t
+
+    t_dec = _t.perf_counter()
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     except Exception:
         return [[] for _ in regions]
-    return [_ocr_region_boxes(img, r) for r in regions]
+    if timings_out is not None:
+        timings_out["decode_ms"] = (_t.perf_counter() - t_dec) * 1000.0
+    out: list[list[dict[str, Any]]] = []
+    region_ms: list[float] = []
+    for r in regions:
+        t_r = _t.perf_counter()
+        out.append(_ocr_region_boxes(img, r))
+        region_ms.append((_t.perf_counter() - t_r) * 1000.0)
+    if timings_out is not None:
+        timings_out["region_ms"] = region_ms
+    return out
 
 
 async def ocr_image_regions_async(

@@ -112,16 +112,27 @@ def _timing_field(t: dict | None, title: str) -> str | None:
     """
     if not t:
         return None
-    queue = sum(
-        t.get(k) or 0.0
-        for k in ("executor_queue_ms", "worker_lock_wait_ms", "worker_ipc_ms")
-    )
-    det = (t.get("decode_ms") or 0.0) + (t.get("det_ms") or 0.0)
+    # Очередь = ТОЛЬКО ожидание: executor queue + worker gate/lock.
+    # worker_roundtrip_ms (put→get) включает исполнение ONNX в
+    # child — это НЕ очередь, показываем отдельной строкой, чтобы
+    # не было двойного учёта.
+    q_parts = [
+        t.get(k) for k in ("executor_queue_ms", "worker_lock_wait_ms")
+        if t.get(k) is not None
+    ]
+    queue = sum(q_parts) if q_parts else None
+    rtt = t.get("worker_roundtrip_ms")
+    det_parts = [
+        t.get(k) for k in ("decode_ms", "det_ms")
+        if t.get(k) is not None
+    ]
+    det = sum(det_parts) if det_parts else None
     rec = t.get("recognition_ms")
     if rec is None:
-        rec = sum(
+        rec_vals = [
             v for k, v in t.items() if k.endswith("_rec_ms")
-        )
+        ]
+        rec = sum(rec_vals) if rec_vals else None
     parse_ = t.get("parse_ms")
     if parse_ is None:
         known = ("decode_ms", "det_ms", "anchors_ms", "cells_ms",
@@ -136,13 +147,16 @@ def _timing_field(t: dict | None, title: str) -> str | None:
         f"Детекция текста: {_ms(det)} мс",
         f"Распознавание: {_ms(rec)} мс",
         f"Парсинг: {_ms(parse_)} мс",
-        f"Общее время: {_ms(total)} мс",
     ]
+    if rtt is not None:
+        lines.append(f"Worker roundtrip (IPC+инференс): {_ms(rtt)} мс")
+    lines.append(f"Общее время: {_ms(total)} мс")
     extra = []
     for k, label in (
         ("anchors_ms", "anchors"), ("cells_ms", "cells"),
         ("bands_ms", "bands"), ("score_ms", "score"),
         ("refine_ms", "refine"), ("ocr_boxes_ms", "full_ocr"),
+        ("boxes_ms", "full_ocr"), ("worker_wall_ms", "child_wall"),
     ):
         if t.get(k):
             extra.append(f"{label}={t[k]:.0f}")

@@ -453,3 +453,56 @@ def test_extract_parsed_timings_out_on_fallback(monkeypatch):
     )
     assert parsed is None
     assert "total_ms" in out and "det_ms" in out
+
+
+@pytest.mark.asyncio
+async def test_parse_cs_fast_default_priority_and_timing(monkeypatch):
+    """Боевой вызов parse_cs_fast → priority=1 в worker.call;
+    parsed['_ocr_timing'] содержит executor/lock/rtt/wall без
+    двойного учёта (roundtrip отдельно от очереди)."""
+    from services import fast_cs_ocr, ocr_worker
+
+    seen: dict = {}
+
+    def fake_call(kind, *a, **k):
+        seen.update(k)
+        return {
+            "parsed": {"team_a": [], "team_b": []},
+            "reason": None,
+            "wall_ms": 5.0,
+            "timings": {"decode_ms": 1.0, "total_ms": 5.0},
+            "ok": True,
+        }
+
+    monkeypatch.setattr(ocr_worker, "worker_enabled", lambda: True)
+    monkeypatch.setattr(ocr_worker, "call", fake_call)
+    res = await fast_cs_ocr.parse_cs_fast(b"img")
+    assert seen.get("priority") == 1
+    t = res["_ocr_timing"]
+    for k in (
+        "executor_queue_ms", "worker_lock_wait_ms",
+        "worker_roundtrip_ms", "worker_wall_ms", "total_wall_ms",
+        "decode_ms",
+    ):
+        assert k in t
+    # roundtrip (IPC+инференс) не входит в queue-метрики
+    assert "worker_ipc_ms" not in t
+
+
+@pytest.mark.asyncio
+async def test_parse_cs_fast_diag_priority(monkeypatch):
+    """Явный priority=-1 (диагностика) пробрасывается в call."""
+    from services import fast_cs_ocr, ocr_worker
+
+    seen: dict = {}
+
+    def fake_call(kind, *a, **k):
+        seen.update(k)
+        return {"parsed": None, "reason": "x", "wall_ms": 0.0,
+                "timings": {}, "ok": False}
+
+    monkeypatch.setattr(ocr_worker, "worker_enabled", lambda: True)
+    monkeypatch.setattr(ocr_worker, "call", fake_call)
+    res = await fast_cs_ocr.parse_cs_fast(b"img", priority=-1)
+    assert seen.get("priority") == -1
+    assert res is None
