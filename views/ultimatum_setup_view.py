@@ -3,7 +3,7 @@
 import logging
 
 import discord
-from utils.design import compose, smart_view
+from utils.design import compose
 
 from discord.ext import commands
 
@@ -82,10 +82,20 @@ class UltimatumJoinButton(discord.ui.Button):
             # VAC — временная блокировка участия в турнирах
             from services import vac_service
             from services.vac_service import vac_blocked_text
-            vac = await vac_service.get_active_vac(self.guild_id, interaction.user.id)
+            try:
+                vac = await vac_service.check_vac(self.guild_id, interaction.user.id)
+            except vac_service.VacStoreUnavailable:
+                await interaction.response.send_message(
+                    "⚠️ Сервис VAC временно недоступен. Попробуйте позже.",
+                    ephemeral=True
+                )
+                return
             if vac is not None:
                 await interaction.response.send_message(
-                    vac_blocked_text(int(vac["expires_at"].timestamp())),
+                    vac_blocked_text(
+                        int(vac["expires_at"].timestamp()),
+                        reason=vac.get("reason"), level=vac.get("level"),
+                    ),
                     ephemeral=True
                 )
                 return
@@ -233,6 +243,30 @@ class UltimatumOrgMenuButton(discord.ui.Button):
         await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
+async def update_setup_message(
+    bot, guild_id: int, channel_id: int, tournament
+) -> None:
+    """Обновить карточку регистрации по сохранённым ID (без history-scan)."""
+    try:
+        channel = bot.get_channel(channel_id) or (
+            bot.get_channel(tournament.setup_channel_id)
+            if tournament and tournament.setup_channel_id else None
+        )
+        message_id = tournament.setup_message_id if tournament else None
+        if not channel or not message_id:
+            return
+        from cogs.ultimatum import UltimatumCog
+        cog = bot.get_cog('UltimatumCog')
+        if not cog:
+            return
+        new_embed = await cog._build_tournament_embed(tournament)
+        new_view = await build_ultimatum_setup_view(guild_id, channel_id, tournament)
+        message = await channel.fetch_message(message_id)
+        await message.edit(view=compose(new_embed, new_view))
+    except Exception as e:
+        logger.error(f"Error updating tournament message: {e}", exc_info=True)
+
+
 class UltimatumOrgMenuView(discord.ui.View):
     """View for org menu options."""
 
@@ -270,12 +304,23 @@ class UltimatumOrgMenuView(discord.ui.View):
         self.add_item(remove_btn)
 
     async def _vac_sweep(self, interaction: discord.Interaction) -> bool:
-        """True — были исключены VAC-игроки, старт нужно повторить."""
+        """True — были исключены VAC-игроки, старт нужно повторить.
+
+        При недоступности VAC-хранилища возвращает "unavailable" —
+        вызывающий код обязан прервать операцию.
+        """
         from services import vac_service
         players = await ultimatum_store.get_players(self.tournament.id)
-        vac_ids = await vac_service.vac_active_ids(
-            self.guild_id, [p.discord_id for p in players]
-        )
+        try:
+            vac_ids = await vac_service.vac_active_ids(
+                self.guild_id, [p.discord_id for p in players]
+            )
+        except vac_service.VacStoreUnavailable:
+            await interaction.followup.send(
+                "⚠️ Сервис VAC временно недоступен. Старт отменён, попробуйте позже.",
+                ephemeral=True
+            )
+            return "unavailable"
         if not vac_ids:
             return False
         for pid in vac_ids:
@@ -290,25 +335,34 @@ class UltimatumOrgMenuView(discord.ui.View):
         )
         return True
 
+    async def _fresh_tournament(self):
+        return await ultimatum_store.get_tournament(self.tournament.id)
+
     async def start_callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
         from ultimatum.tournament import UltimatumTournament
         tournament_logic = UltimatumTournament(ultimatum_store)
 
-        if await self._vac_sweep(interaction):
-            return
-
-        players = await ultimatum_store.get_players(self.tournament.id)
-        if len(players) != 16:
+        # Актуальный статус из БД — view мог устареть.
+        self.tournament = await self._fresh_tournament() or self.tournament
+        if self.tournament.status == TournamentStatus.COMPLETED or                 self.tournament.status == TournamentStatus.CANCELLED:
             await interaction.followup.send(
-                f"❌ Нужно 16 игроков для старта. Сейчас: {len(players)}",
+                f"❌ Турнир уже завершён ({self.tournament.status.value}).",
                 ephemeral=True
             )
             return
 
+        sweep = await self._vac_sweep(interaction)
+        if sweep:
+            return
+
         try:
-            await tournament_logic.start_tournament(self.tournament.id, interaction.client)
+            # begin_tournament внутри атомарно проверяет статус и 16 игроков.
+            await tournament_logic.start_tournament(
+                self.tournament.id, interaction.client
+            )
+            self.tournament = await self._fresh_tournament() or self.tournament
             await interaction.followup.send("✅ Турнир начался!", ephemeral=True)
         except Exception as e:
             logger.error(f"Error starting tournament: {e}", exc_info=True)
@@ -316,20 +370,42 @@ class UltimatumOrgMenuView(discord.ui.View):
 
     async def toggle_open_callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        
+
+        self.tournament = await self._fresh_tournament() or self.tournament
+        if self.tournament.status != TournamentStatus.REGISTRATION:
+            await interaction.followup.send(
+                "❌ Открыть/закрыть регистрацию можно только во время регистрации.",
+                ephemeral=True
+            )
+            return
+
         new_state = not self.tournament.is_open
         await ultimatum_store.set_tournament_open(self.tournament.id, new_state)
+        self.tournament = await self._fresh_tournament() or self.tournament
+
         await interaction.followup.send(
             f"✅ Турнир {'открыт' if new_state else 'закрыт'}",
             ephemeral=True
         )
 
+        # Обновить карточку регистрации по сохранённому ID.
+        await update_setup_message(
+            interaction.client, self.guild_id, self.channel_id, self.tournament
+        )
+
     async def remove_player_callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        
-        # Show select menu with players
+
+        self.tournament = await self._fresh_tournament() or self.tournament
+        if self.tournament.status != TournamentStatus.REGISTRATION:
+            await interaction.followup.send(
+                "❌ Удалять игроков можно только во время регистрации.",
+                ephemeral=True
+            )
+            return
+
         players = await ultimatum_store.get_players(self.tournament.id)
-        
+
         if not players:
             await interaction.followup.send("Нет игроков в турнире", ephemeral=True)
             return
@@ -344,119 +420,16 @@ class UltimatumOrgMenuView(discord.ui.View):
 
         select = UltimatumRemovePlayerSelect(self.guild_id, self.channel_id, self.tournament.id)
         select.options = options
-        
+
         view = discord.ui.View()
         view.add_item(select)
-        
+
         embed = discord.Embed(
             title="🗑️ Удалить игрока",
             description="Выберите игрока для удаления из турнира",
             color=discord.Color.red()
         )
-        
-        await interaction.followup.send( view=compose(embed, view), ephemeral=True)
 
-    async def start_callback(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-
-        from ultimatum.tournament import UltimatumTournament
-        tournament_logic = UltimatumTournament(ultimatum_store)
-
-        if await self._vac_sweep(interaction):
-            return
-
-        players = await ultimatum_store.get_players(self.tournament.id)
-        if len(players) != 16:
-            await interaction.followup.send(
-                f"❌ Нужно 16 игроков для старта. Сейчас: {len(players)}",
-                ephemeral=True
-            )
-            return
-
-        try:
-            await tournament_logic.start_tournament(self.tournament.id, interaction.client)
-            await interaction.followup.send("✅ Турнир начался!", ephemeral=True)
-
-            # Delete the tournament setup message
-            try:
-                channel = interaction.client.get_channel(self.channel_id)
-                if channel:
-                    async for msg in channel.history(limit=10):
-                        if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
-                            await msg.delete()
-                            logger.info("Deleted tournament setup message after start")
-                            break
-            except Exception as e:
-                logger.error(f"Error deleting tournament message: {e}", exc_info=True)
-        except Exception as e:
-            logger.error(f"Error starting tournament: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Ошибка: {str(e)}", ephemeral=True)
-
-    async def toggle_open_callback(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        
-        new_state = not self.tournament.is_open
-        await ultimatum_store.set_tournament_open(self.tournament.id, new_state)
-        
-        # Reload tournament to get updated state
-        self.tournament = await ultimatum_store.get_tournament(self.tournament.id)
-        
-        await interaction.followup.send(
-            f"✅ Турнир {'открыт' if new_state else 'закрыт'}",
-            ephemeral=True
-        )
-        
-        # Update tournament message
-        try:
-            from cogs.ultimatum import UltimatumCog
-            cog = interaction.client.get_cog('UltimatumCog')
-            if cog:
-                new_embed = await cog._build_tournament_embed(self.tournament)
-                # Find and update tournament message
-                channel = interaction.client.get_channel(self.channel_id)
-                if channel:
-                    async for msg in channel.history(limit=10):
-                        if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
-                            # Сообщение отправлено с setup-view — без view
-                            # кнопки регистрации пропадут.
-                            new_view = await build_ultimatum_setup_view(
-                                self.guild_id, self.channel_id, self.tournament
-                            )
-                            await msg.edit( view=compose(new_embed, new_view))
-                            break
-        except Exception as e:
-            logger.error(f"Error updating tournament message after toggle: {e}", exc_info=True)
-
-    async def remove_player_callback(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        
-        # Show select menu with players
-        players = await ultimatum_store.get_players(self.tournament.id)
-        
-        if not players:
-            await interaction.followup.send("Нет игроков в турнире", ephemeral=True)
-            return
-
-        options = [
-            discord.SelectOption(
-                label=f"{player.username} ({player.discord_id})",
-                value=str(player.discord_id)
-            )
-            for player in players
-        ]
-
-        select = UltimatumRemovePlayerSelect(self.guild_id, self.channel_id, self.tournament.id)
-        select.options = options
-        
-        view = discord.ui.View()
-        view.add_item(select)
-        
-        embed = discord.Embed(
-            title="🗑️ Удалить игрока",
-            description="Выберите игрока для удаления из турнира",
-            color=discord.Color.red()
-        )
-        
         await interaction.followup.send( view=compose(embed, view), ephemeral=True)
 
 
@@ -474,30 +447,25 @@ class UltimatumRemovePlayerSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        
+
+        tournament = await ultimatum_store.get_tournament(self.tournament_id)
+        if not tournament or tournament.status != TournamentStatus.REGISTRATION:
+            await interaction.followup.send(
+                "❌ Удалять игроков можно только во время регистрации.",
+                ephemeral=True
+            )
+            return
+
         discord_id = int(self.values[0])
-        
+
         await ultimatum_store.remove_player(self.tournament_id, discord_id)
-        
+
         await interaction.followup.send("✅ Игрок удален", ephemeral=True)
-        
-        # Update original tournament message
-        try:
-            tournament = await ultimatum_store.get_tournament(self.tournament_id)
-            from cogs.ultimatum import UltimatumCog
-            cog = interaction.client.get_cog('UltimatumCog')
-            if cog:
-                new_embed = await cog._build_tournament_embed(tournament)
-                new_view = await build_ultimatum_setup_view(self.guild_id, self.channel_id, tournament)
-                # Get the tournament message from the channel
-                channel = interaction.client.get_channel(self.channel_id)
-                if channel:
-                    async for msg in channel.history(limit=10):
-                        if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
-                            await msg.edit( view=compose(new_embed, new_view))
-                            break
-        except Exception as e:
-            logger.error(f"Error updating tournament message after player removal: {e}", exc_info=True)
+
+        # Обновить карточку регистрации по сохранённому ID.
+        await update_setup_message(
+            interaction.client, self.guild_id, self.channel_id, tournament
+        )
 
 
 class UltimatumStartButton(discord.ui.Button):
@@ -523,10 +491,11 @@ class UltimatumStartButton(discord.ui.Button):
                 )
                 return
 
-            # Allow start from REGISTRATION or READY status
-            if tournament.status != TournamentStatus.REGISTRATION:
+            if tournament.status in (
+                TournamentStatus.COMPLETED, TournamentStatus.CANCELLED
+            ):
                 await interaction.response.send_message(
-                    f"❌ Турнир не в фазе регистрации. Текущий статус: {tournament.status.value}",
+                    f"❌ Турнир уже завершён ({tournament.status.value}).",
                     ephemeral=True
                 )
                 return
@@ -534,9 +503,16 @@ class UltimatumStartButton(discord.ui.Button):
             # VAC: исключить заблокированных до старта
             from services import vac_service
             players = await ultimatum_store.get_players(tournament.id)
-            vac_ids = await vac_service.vac_active_ids(
-                interaction.guild_id, [p.discord_id for p in players]
-            )
+            try:
+                vac_ids = await vac_service.vac_active_ids(
+                    interaction.guild_id, [p.discord_id for p in players]
+                )
+            except vac_service.VacStoreUnavailable:
+                await interaction.response.send_message(
+                    "⚠️ Сервис VAC временно недоступен. Старт отменён, попробуйте позже.",
+                    ephemeral=True
+                )
+                return
             if vac_ids:
                 for pid in vac_ids:
                     try:
@@ -550,20 +526,12 @@ class UltimatumStartButton(discord.ui.Button):
                 )
                 return
 
-            # Check if tournament has enough players
-            players = await ultimatum_store.get_players(tournament.id)
-            if len(players) != 16:
-                await interaction.response.send_message(
-                    f"❌ Нужно 16 игроков для старта, сейчас {len(players)}.",
-                    ephemeral=True
-                )
-                return
-
             # Import tournament logic here to avoid circular import
             from ultimatum.tournament import UltimatumTournament
             tournament_logic = UltimatumTournament(ultimatum_store)
 
-            # Start tournament
+            # Start tournament (идемпотентно: публикация карточки раунда
+            # и удаление карточки регистрации внутри start_tournament).
             await tournament_logic.start_tournament(tournament.id, interaction.client)
 
             await interaction.response.send_message(
@@ -571,51 +539,17 @@ class UltimatumStartButton(discord.ui.Button):
                 ephemeral=True
             )
 
-            # Update the embed and send round view
-            try:
-                from cogs.ultimatum import UltimatumCog
-                from views.ultimatum_view import build_ultimatum_round_embed, build_ultimatum_round_view
-
-                cog = interaction.client.get_cog('UltimatumCog')
-                if cog:
-                    tournament = await ultimatum_store.get_tournament(tournament.id)
-                    # Build round embed for round 1
-                    new_embed = await build_ultimatum_round_embed(tournament.id, 1, interaction.guild)
-                    new_view = await build_ultimatum_round_view(interaction.client, tournament.id, 1)
-                    
-                    logger.info(
-                        "Built round embed for tournament %s round 1: %s",
-                        tournament.id, getattr(new_embed, "title", ""),
-                    )
-                    
-                    # Send new message with round embed and view instead of editing
-                    round_message = await interaction.channel.send( view=compose(new_embed, new_view))
-                    logger.info(f"Sent round message: {round_message.id}")
-                    
-                    # Track the round message for future updates
-                    from views.ultimatum_view import round_messages
-                    round_messages[interaction.guild_id] = (interaction.channel_id, round_message.id)
-                    
-                    # Delete old setup message
-                    await interaction.message.delete()
-                    logger.info("Deleted old setup message")
-                else:
-                    # Fallback: just clear items
-                    self.view.clear_items()
-                    await interaction.message.edit(view=smart_view(interaction.message, self.view))
-            except discord.NotFound:
-                pass
-            except Exception as e:
-                logger.error(f"Error updating tournament message after start: {e}", exc_info=True)
-
             logger.info(f"Ultimatum tournament {tournament.id} started by {interaction.user.id}")
 
         except Exception as e:
             logger.error(f"Error in UltimatumStartButton callback: {e}", exc_info=True)
-            await interaction.response.send_message(
-                "❌ Произошла ошибка при старте турнира.",
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    "❌ Произошла ошибка при старте турнира.",
+                    ephemeral=True
+                )
+            except Exception:
+                logger.exception("UltimatumStartButton error reply failed")
 
 
 async def build_ultimatum_setup_view(guild_id: int, channel_id: int, tournament=None) -> discord.ui.View:

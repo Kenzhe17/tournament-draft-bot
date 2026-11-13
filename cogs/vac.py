@@ -264,7 +264,14 @@ class VacCog(commands.Cog):
             return
 
         guild_id = interaction.guild.id
-        existing = await vac_service.get_active_vac(guild_id, player.id)
+        try:
+            existing = await vac_service.get_active_vac(guild_id, player.id)
+        except vac_service.VacStoreUnavailable:
+            await interaction.response.send_message(
+                "⚠️ Сервис VAC временно недоступен. Попробуйте позже.",
+                ephemeral=True,
+            )
+            return
         if existing is not None:
             ts = int(existing["expires_at"].timestamp())
             await interaction.response.send_message(

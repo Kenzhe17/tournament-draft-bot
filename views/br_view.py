@@ -254,9 +254,16 @@ class StartBRButton(Button):
 
         # VAC: исключить заблокированных до формирования команд
         from services import vac_service
-        vac_ids = await vac_service.vac_active_ids(
-            self.guild_id, [p["id"] for p in tournament.players]
-        )
+        try:
+            vac_ids = await vac_service.vac_active_ids(
+                self.guild_id, [p["id"] for p in tournament.players]
+            )
+        except vac_service.VacStoreUnavailable:
+            await interaction.response.send_message(
+                "⚠️ Сервис VAC временно недоступен. Старт отменён, попробуйте позже.",
+                ephemeral=True
+            )
+            return
         if vac_ids:
             before = len(tournament.players)
             tournament.players = [p for p in tournament.players if p["id"] not in vac_ids]
@@ -408,7 +415,14 @@ class JoinBRButton(Button):
 
         # VAC — временная блокировка участия в турнирах
         from services import vac_service
-        vac = await vac_service.check_vac(self.guild_id, user_id)
+        try:
+            vac = await vac_service.check_vac(self.guild_id, user_id)
+        except vac_service.VacStoreUnavailable:
+            await interaction.response.send_message(
+                "⚠️ Сервис VAC временно недоступен. Попробуйте позже.",
+                ephemeral=True
+            )
+            return
         if vac is not None:
             ts = int(vac["expires_at"].timestamp())
             await interaction.response.send_message(
@@ -671,10 +685,17 @@ class RegisterTeamButton(Button):
         # VAC — ни один участник команды не должен быть заблокирован
         from services import vac_service
         vac_members = []
-        for member_id in team.members:
-            vac = await vac_service.check_vac(self.guild_id, member_id)
-            if vac is not None:
-                vac_members.append((member_id, vac))
+        try:
+            for member_id in team.members:
+                vac = await vac_service.check_vac(self.guild_id, member_id)
+                if vac is not None:
+                    vac_members.append((member_id, vac))
+        except vac_service.VacStoreUnavailable:
+            await interaction.response.send_message(
+                "⚠️ Сервис VAC временно недоступен. Попробуйте позже.",
+                ephemeral=True
+            )
+            return
         if vac_members:
             parts = []
             for member_id, vac in vac_members:

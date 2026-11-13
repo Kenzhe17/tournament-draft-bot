@@ -44,18 +44,23 @@ def parse_duration(text: str) -> timedelta | None:
     return delta
 
 
+class VacStoreUnavailable(Exception):
+    """VAC-хранилище недоступно — регистрацию нужно отклонить
+    временной ошибкой, а не считать игрока незаблокированным."""
+
+
 async def check_vac(guild_id: int, user_id: int) -> dict | None:
     """Единый API проверки VAC. Возвращает активную запись или None.
 
     Запись содержит expires_at, reason, level (если выдан
-    автоматически), issued_at. При сбое БД — fail-open (None),
-    чтобы PG-аутедж не ломал регистрацию.
+    автоматически), issued_at. При сбое БД бросает
+    VacStoreUnavailable — fail-closed для точек входа.
     """
     try:
         return await vac_store.get_active(guild_id, user_id)
-    except Exception:
+    except Exception as e:
         logger.exception("vac check_vac failed")
-        return None
+        raise VacStoreUnavailable(str(e)) from e
 
 
 async def is_vac_active(guild_id: int, user_id: int) -> bool:
@@ -76,7 +81,10 @@ async def issue_vac(
 
     Возвращает (запись|None, ошибка|None).
     """
-    existing = await check_vac(guild_id, user_id)
+    try:
+        existing = await check_vac(guild_id, user_id)
+    except VacStoreUnavailable:
+        return None, "store_error"
     if existing:
         return None, "already_active"
     expires_at = datetime.now(timezone.utc) + duration
@@ -120,14 +128,15 @@ async def revoke_vac(guild_id: int, user_id: int, revoked_by: int) -> dict | Non
 
 
 async def vac_active_ids(guild_id: int, user_ids) -> set[int]:
-    """Множество user_id с активным VAC из переданного списка."""
+    """Множество user_id с активным VAC из переданного списка.
+
+    При сбое VAC-хранилища бросает VacStoreUnavailable — вызывающий
+    код обязан прервать операцию, а не пропускать проверку.
+    """
     out: set[int] = set()
     for uid in user_ids:
-        try:
-            if await check_vac(guild_id, int(uid)) is not None:
-                out.add(int(uid))
-        except Exception:
-            logger.exception("vac_active_ids failed for %s", uid)
+        if await check_vac(guild_id, int(uid)) is not None:
+            out.add(int(uid))
     return out
 
 

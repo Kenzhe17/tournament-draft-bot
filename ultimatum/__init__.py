@@ -142,6 +142,21 @@ BEGIN
         ALTER TABLE ultimatum_tournaments ADD COLUMN is_open BOOLEAN DEFAULT FALSE;
     END IF;
 END $$;
+
+-- Migration: IDs сообщений Discord (карточка регистрации и текущего раунда).
+-- Нужны вместо поиска embed по тексту заголовка.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ultimatum_tournaments' AND column_name = 'setup_channel_id'
+    ) THEN
+        ALTER TABLE ultimatum_tournaments ADD COLUMN setup_channel_id BIGINT;
+        ALTER TABLE ultimatum_tournaments ADD COLUMN setup_message_id BIGINT;
+        ALTER TABLE ultimatum_tournaments ADD COLUMN round_channel_id BIGINT;
+        ALTER TABLE ultimatum_tournaments ADD COLUMN round_message_id BIGINT;
+    END IF;
+END $$;
 """
 
 # Elo Rating System Schema
