@@ -276,6 +276,14 @@ class TournamentCog(commands.Cog):
             except Exception as e:
                 logger.warning(f"Не удалось удалить сообщение турнира: {e}")
 
+        # Отключить голосование за формат в MM-матчах этого турнира
+        try:
+            from services.format_vote import cancel_open_format_votes
+
+            cancel_open_format_votes(existing)
+        except Exception as exc:
+            logger.warning("Format vote cancel failed: %s", exc)
+
         store.delete(interaction.guild_id, interaction.channel_id)
         logger.info("Турнир удален на сервере %s", interaction.guild_id)
 

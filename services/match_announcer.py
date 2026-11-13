@@ -213,11 +213,23 @@ def _match_started_view(
             )
         )
         view.sep()
+    # Строка формата матча (голосование Brazil/Kazakhstan):
+    # «Голосование» пока идёт, флаг формата после завершения.
+    format_label = ""
+    try:
+        from services.format_vote import match_format_label
+
+        format_label = match_format_label(
+            tournament, match_type, match_index
+        )
+    except Exception:
+        format_label = ""
     view.text(
         "**ИНФОРМАЦИЯ О МАТЧЕ**\n"
         "**Режим:** CS 4×4\n"
         "**Тип:** Ranked\n"
         f"**Начало:** <t:{int(started_at or time.time())}:t>"
+        + (f"\n**Формат:** {format_label}" if format_label else "")
     )
     view.sep()
 
@@ -341,6 +353,13 @@ async def update_match_card(
         result_url=result_url,
         started_at=float(meta.get("started_at") or 0) or None,
     )
+    # Текущее состояние карточки — нужно финализации голосования
+    # за формат, чтобы пересобрать карточку без потери state.
+    meta["card_state"] = state
+    try:
+        store.set(tournament)
+    except Exception:
+        pass
     try:
         msg = await channel.fetch_message(int(meta["card_message_id"]))
         # Вложения не трогаем — match_found.png остаётся на месте
@@ -1145,6 +1164,32 @@ async def announce_phase_matches(
             if channel is not None and is_mm:
                 # V2-карточка «Матч начался» + PNG «Найден матч»
                 started_at = time.time()
+                # Голосование за формат (8v8 CS 4×4): состояние
+                # готовится ДО карточки — строка «Формат:
+                # Голосование» попадает в основной embed; само
+                # CV2-сообщение отправляется после карточки.
+                # meta match_channels регистрируется заранее —
+                # card_message_id допишется после send ниже.
+                try:
+                    mc_pre = tournament.match_channels.setdefault(
+                        str(channel.id), {}
+                    )
+                    mc_pre.update({
+                        "match_type": match_type,
+                        "match_index": match_index,
+                        "has_png": card_png is not None,
+                        "started_at": started_at,
+                    })
+                    from services.format_vote import prepare_format_vote
+
+                    prepare_format_vote(
+                        tournament, match_type, match_index,
+                        channel.id,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Format vote prepare failed: %s", exc
+                    )
                 view = _match_started_view(
                     tournament, number, label, name_a, name_b, t1, t2,
                     match_type, match_index,
@@ -1211,6 +1256,21 @@ async def announce_phase_matches(
                     bound.append(pair)
                 tournament.match_channels[str(channel.id)] = mc_entry
                 store.set(tournament)
+                # CV2-голосование за формат — отдельным сообщением
+                # сразу после карточки матча в том же канале.
+                try:
+                    from services.format_vote import (
+                        start_format_vote_message,
+                    )
+
+                    await start_format_vote_message(
+                        guild, tournament, match_type, match_index,
+                        channel, bot=bot,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Format vote start failed: %s", exc
+                    )
                 logger.info(
                     "Match #%d channel %s announced (%s)",
                     number, channel.id, label,

@@ -818,6 +818,17 @@ class TournamentBot(commands.Bot):
                     tournament.id, exc,
                 )
 
+        # Голосование за формат (Brazil/Kazakhstan) в MM-матчах:
+        # persistent кнопки + таймеры/финализация просроченных
+        # голосований после рестарта. Один проход по всем
+        # турнирам — вызывается вне цикла store.all() выше.
+        try:
+            from services.format_vote import restore_format_votes
+
+            await restore_format_votes(self)
+        except Exception as exc:
+            logger.warning("Format vote restore failed: %s", exc)
+
         # «📜 Правила» на карточках матчей — статичная кнопка,
         # регистрируем persistent view глобально (custom_id совпадает).
         try:
