@@ -34,6 +34,12 @@ from services.format_vote import _FORMATS  # noqa: E402
 
 _LOCKS: dict[str, asyncio.Lock] = {}
 _TIMERS: dict[str, asyncio.Task] = {}
+_UI_TASKS: dict[str, asyncio.Task] = {}
+_WATCHDOG: asyncio.Task | None = None
+_UI_DEBOUNCE_S = 0.6
+_WATCHDOG_S = 12.0
+_TIMER_RETRY_S = 5.0
+_UI_SYNC_MAX_ATTEMPTS = 20
 
 
 def _lock(key: str) -> asyncio.Lock:
@@ -272,49 +278,44 @@ async def handle_rules_vote_click(
             )
             return
         if time.time() > float(rv.get("vote_deadline") or 0):
-            # Протухшее голосование — финализируем перед ответом.
-            await finalize_rules_vote(
-                interaction.guild, tournament
-            )
-            await _ephemeral(
-                interaction, "ℹ️ Голосование уже завершено."
-            )
-            return
-        uid = int(getattr(interaction.user, "id", 0) or 0)
-        if uid not in participant_uids(tournament):
-            await _ephemeral(
-                interaction,
-                "Вы не являетесь участником этого турнира",
-            )
-            return
-        votes = rv.setdefault("votes", {})
-        if str(uid) in votes or uid in votes:
-            await _ephemeral(
-                interaction,
-                "Вы уже проголосовали за правила",
-            )
-            return
-        votes[str(uid)] = fmt
-        store.set(tournament)
-        await _mirror_to_pg(tournament, rv)
-
-        # Обновить сообщение голосования (один edit на голос).
-        try:
-            vch_id = int(rv.get("vote_channel_id") or cid)
-            vch = interaction.guild.get_channel(vch_id)
-            if vch is None:
-                vch = await interaction.guild.fetch_channel(vch_id)
-            mid = int(rv.get("vote_message_id") or 0)
-            if vch is not None and mid:
-                msg = await vch.fetch_message(mid)
-                await msg.edit(
-                    view=build_rules_vote_view(tournament, rv)
+            expired = True
+        else:
+            expired = False
+            uid = int(getattr(interaction.user, "id", 0) or 0)
+            if uid not in participant_uids(tournament):
+                await _ephemeral(
+                    interaction,
+                    "Вы не являетесь участником этого турнира",
                 )
-        except Exception as exc:
-            logger.warning("Rules vote update failed: %s", exc)
+                return
+            votes = rv.setdefault("votes", {})
+            if str(uid) in votes or uid in votes:
+                await _ephemeral(
+                    interaction,
+                    "Вы уже проголосовали за правила",
+                )
+                return
+            votes[str(uid)] = fmt
+            store.set(tournament)
+            await _mirror_to_pg(tournament, rv)
+            logger.info(
+                "rules_vote_cast tournament=%s user=%s fmt=%s "
+                "votes=%d deadline=%.0f",
+                getattr(tournament, "id", "?"), uid, fmt,
+                len(votes), float(rv.get("vote_deadline") or 0),
+            )
 
-        # Досрочного завершения нет — ждём таймер (ТЗ).
-        await _ephemeral(interaction, "✅ Голос учтён.")
+    # Вне lock: ответ и Discord-обновления не держат состояние.
+    if expired:
+        await _ephemeral(
+            interaction, "ℹ️ Голосование уже завершено."
+        )
+        await finalize_rules_vote(interaction.guild, tournament)
+        return
+
+    # Ответ — до долгих PATCH; досрочного завершения нет (ТЗ).
+    await _ephemeral(interaction, "✅ Голос учтён.")
+    _schedule_vote_ui(key, interaction.guild, tournament)
 
 
 async def _ephemeral(interaction: discord.Interaction,
@@ -341,23 +342,80 @@ def _schedule_timer(guild_id: int, channel_id: int) -> None:
     _TIMERS[key] = task
 
 
+def _cancel_vote_ui(key: str) -> None:
+    task = _UI_TASKS.pop(key, None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
+def _schedule_vote_ui(
+    key: str, guild, tournament
+) -> None:
+    """Debounced обновление карточки: серия голосов → один PATCH."""
+    _cancel_vote_ui(key)
+
+    async def _run() -> None:
+        try:
+            await asyncio.sleep(_UI_DEBOUNCE_S)
+            fresh = store.get(
+                int(getattr(tournament, "guild_id", 0) or 0),
+                int(getattr(tournament, "channel_id", 0) or 0),
+            ) or tournament
+            rv = get_vote(fresh)
+            if rv is None or rv.get("vote_status") != "open":
+                return
+            try:
+                g = guild
+                if g is None:
+                    g = _bot_guild(
+                        int(getattr(fresh, "guild_id", 0) or 0)
+                    )
+                vch_id = int(rv.get("vote_channel_id") or 0)
+                mid = int(rv.get("vote_message_id") or 0)
+                if g is not None and vch_id and mid:
+                    vch = g.get_channel(vch_id)
+                    if vch is None:
+                        vch = await g.fetch_channel(vch_id)
+                    msg = await vch.fetch_message(mid)
+                    await msg.edit(
+                        view=build_rules_vote_view(fresh, rv)
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Rules vote UI debounce edit failed: %s", exc
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Rules vote UI task failed: %s", key)
+        finally:
+            _UI_TASKS.pop(key, None)
+
+    _UI_TASKS[key] = asyncio.create_task(_run())
+
+
 async def _vote_timer(guild_id: int, channel_id: int) -> None:
     key = _key(guild_id, channel_id)
     try:
         while True:
-            tournament = store.get(guild_id, channel_id)
-            rv = get_vote(tournament) if tournament is not None else None
-            if rv is None or rv.get("vote_status") != "open":
-                return
-            remain = float(rv.get("vote_deadline") or 0) - time.time()
-            if remain <= 0:
-                await finalize_rules_vote(None, tournament)
-                return
-            await asyncio.sleep(min(remain + 0.5, 30.0))
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.exception("Rules vote timer failed: %s", key)
+            try:
+                tournament = store.get(guild_id, channel_id)
+                rv = get_vote(tournament) if tournament is not None else None
+                if rv is None or rv.get("vote_status") != "open":
+                    return
+                remain = float(rv.get("vote_deadline") or 0) - time.time()
+                if remain <= 0:
+                    await finalize_rules_vote(None, tournament)
+                    return
+                await asyncio.sleep(min(remain + 0.5, 30.0))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Сбой не убивает таймер — повтор через паузу.
+                logger.exception(
+                    "rules_vote_timer_failed key=%s", key
+                )
+                await asyncio.sleep(_TIMER_RETRY_S)
     finally:
         _TIMERS.pop(key, None)
 
@@ -387,35 +445,90 @@ async def finalize_rules_vote(
         rv["vote_status"] = "done"
         rv["tie"] = b == k and b > 0  # 0:0 — не «равенство», а дефолт
         rv["closed_at"] = time.time()
+        rv["ui_synced"] = False
+        rv["ui_sync_attempts"] = 0
         fresh.ruleset = selected
         store.set(fresh)
         await _mirror_to_pg(fresh, rv)
-
-        # CV2-сообщение → финальный вид.
-        try:
-            if guild is None:
-                guild = _bot_guild(gid)
-            vch_id = int(rv.get("vote_channel_id") or cid)
-            mid = int(rv.get("vote_message_id") or 0)
-            if guild is not None and vch_id and mid:
-                vch = guild.get_channel(vch_id)
-                if vch is None:
-                    vch = await guild.fetch_channel(vch_id)
-                msg = await vch.fetch_message(mid)
-                await msg.edit(
-                    view=build_rules_vote_view(fresh, rv)
-                )
-        except Exception as exc:
-            logger.warning("Rules vote final edit failed: %s", exc)
-
         logger.info(
-            "Rules vote finalized %s: %s (brazil=%s kazakhstan=%s)",
+            "rules_vote_finalized tournament=%s ruleset=%s "
+            "brazil=%s kazakhstan=%s deadline=%.0f",
             getattr(fresh, "id", "?"), selected, b, k,
+            float(rv.get("vote_deadline") or 0),
         )
+
+    # UI-синхронизация ВНЕ lock — сбой Discord API не откатывает итог.
+    _cancel_vote_ui(key)
+    await _sync_vote_ui(guild, fresh, rv)
 
     # Формирование команд — после выхода из лока (может быть долго).
     await _continue_tournament_start(guild, fresh)
     return True
+
+
+async def _sync_vote_ui(
+    guild, tournament, rv: dict
+) -> bool:
+    """Финальная CV2-карточка + флаг ui_synced для watchdog-повторов.
+
+    ui_synced=True ТОЛЬКО после подтверждённого msg.edit: пропуск
+    ветки (нет guild/channel/message_id) — это несинхронизированное
+    состояние, а не успех. Удалённое сообщение (404) — даём up:
+    attempts выставляются в максимум, watchdog не долбит Discord
+    по несуществующему сообщению бесконечно.
+    """
+    ok = False
+    reason = ""
+    try:
+        if guild is None:
+            guild = _bot_guild(
+                int(getattr(tournament, "guild_id", 0) or 0)
+            )
+        vch_id = int(rv.get("vote_channel_id") or 0)
+        mid = int(rv.get("vote_message_id") or 0)
+        if guild is None:
+            reason = "guild unavailable"
+        elif not vch_id or not mid:
+            reason = "vote message ref missing"
+        else:
+            vch = guild.get_channel(vch_id)
+            if vch is None:
+                vch = await guild.fetch_channel(vch_id)
+            msg = await vch.fetch_message(mid)
+            await msg.edit(
+                view=build_rules_vote_view(tournament, rv)
+            )
+            ok = True
+    except discord.NotFound:
+        reason = "vote message deleted"
+        # Бессмысленно повторять: сообщение удалено навсегда.
+        rv["ui_sync_attempts"] = _UI_SYNC_MAX_ATTEMPTS
+        logger.warning(
+            "rules_vote_ui_sync_gone tournament=%s: message %s "
+            "deleted — retries disabled",
+            getattr(tournament, "id", "?"), rv.get("vote_message_id"),
+        )
+    except Exception as exc:
+        reason = str(exc)
+        logger.warning(
+            "rules_vote_ui_sync_failed tournament=%s: %s",
+            getattr(tournament, "id", "?"), exc,
+        )
+    rv["ui_sync_attempts"] = (
+        _UI_SYNC_MAX_ATTEMPTS
+        if reason == "vote message deleted"
+        else int(rv.get("ui_sync_attempts") or 0) + 1
+    )
+    rv["ui_synced"] = ok
+    if reason and not ok:
+        rv["ui_sync_last_error"] = reason[:200]
+    store.set(tournament)
+    if ok:
+        logger.info(
+            "rules_vote_ui_synced tournament=%s",
+            getattr(tournament, "id", "?"),
+        )
+    return ok
 
 
 async def _continue_tournament_start(
@@ -424,20 +537,38 @@ async def _continue_tournament_start(
 ) -> None:
     """Запустить существующее формирование команд после голосования.
 
-    Защита от повторного запуска: formation-функции сами переводят
-    фазу из RULES_VOTING; если фаза уже не RULES_VOTING — выходим.
+    Запуск СТРОГО однократный: атомарный флаг ``formation_started``
+    выставляется под _lock до вызова launch — параллельные
+    финализация/watchdog/restore не могут запустить формирование
+    дважды (двойное распределение игроков, повторные матчи).
+    При падении launch до смены фазы флаг сбрасывается — watchdog
+    повторит; если фаза уже сменилась — проверка фазы отсекает
+    повторы сама.
     """
-    try:
-        if getattr(tournament, "phase", None) != TournamentPhase.RULES_VOTING:
+    gid = int(getattr(tournament, "guild_id", 0) or 0)
+    cid = int(getattr(tournament, "channel_id", 0) or 0)
+    key = _key(gid, cid)
+    async with _lock(key):
+        fresh = store.get(gid, cid) or tournament
+        if getattr(fresh, "phase", None) != TournamentPhase.RULES_VOTING:
             return
+        rv = get_vote(fresh)
+        if rv is not None and rv.get("formation_started"):
+            return
+        if rv is not None:
+            rv["formation_started"] = True
+        store.set(fresh)
+        tournament = fresh
+    try:
         if guild is None:
             guild = _bot_guild(int(getattr(tournament, "guild_id", 0) or 0))
         if guild is None:
-            logger.warning(
-                "Rules vote continue: guild %s not found",
-                getattr(tournament, "guild_id", "?"),
+            # guild временно недоступен — считаем сбоем запуска:
+            # флаг сбросится в except, watchdog повторит позже.
+            raise RuntimeError(
+                f"guild {getattr(tournament, 'guild_id', '?')} "
+                "not found"
             )
-            return
         channel_id = int(getattr(tournament, "channel_id", 0) or 0)
         channel = guild.get_channel(channel_id)
         if channel is None:
@@ -445,11 +576,42 @@ async def _continue_tournament_start(
         bot = _bot_instance()
         from views.setup_view import launch_tournament_formation
 
+        logger.info(
+            "rules_vote_continue_started tournament=%s",
+            getattr(tournament, "id", "?"),
+        )
         await launch_tournament_formation(
             guild, channel, tournament, bot
         )
+        logger.info(
+            "rules_vote_continue_completed tournament=%s",
+            getattr(tournament, "id", "?"),
+        )
     except Exception:
-        logger.exception("Rules vote continue failed")
+        # Сбой до смены фазы — сбрасываем formation_started, чтобы
+        # watchdog/restore могли повторить запуск. Если launch успел
+        # перевести фазу — проверка фазы в начале функции отсекает
+        # повторы, флаг безвреден.
+        try:
+            async with _lock(key):
+                f2 = store.get(gid, cid)
+                rv2 = get_vote(f2) if f2 is not None else None
+                if (
+                    rv2 is not None
+                    and getattr(f2, "phase", None)
+                    == TournamentPhase.RULES_VOTING
+                ):
+                    rv2["formation_started"] = False
+                    store.set(f2)
+        except Exception:
+            logger.exception(
+                "rules_vote_continue_reset_failed tournament=%s",
+                getattr(tournament, "id", "?"),
+            )
+        logger.exception(
+            "rules_vote_continue_failed tournament=%s",
+            getattr(tournament, "id", "?"),
+        )
 
 
 def _bot_instance():
@@ -527,6 +689,89 @@ async def restore_rules_votes(bot) -> None:
         ) == TournamentPhase.RULES_VOTING:
             # Итог зафиксирован, но формирование не стартовало.
             await _continue_tournament_start(bot.get_guild(gid), tournament)
+        elif (
+            status == "done"
+            and not rv.get("ui_synced")
+            and int(rv.get("ui_sync_attempts") or 0)
+            < _UI_SYNC_MAX_ATTEMPTS
+        ):
+            await _sync_vote_ui(bot.get_guild(gid), tournament, rv)
+    ensure_rules_vote_watchdog()
+
+
+# ---------------------------------------------------------------------------
+# Watchdog: гарантия завершения при потере таймера/сбоях API
+# ---------------------------------------------------------------------------
+
+def ensure_rules_vote_watchdog() -> None:
+    """Идемпотентный запуск периодической проверки голосований."""
+    global _WATCHDOG
+    if _WATCHDOG is not None and not _WATCHDOG.done():
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    _WATCHDOG = loop.create_task(_watchdog_loop())
+
+
+async def _watchdog_loop() -> None:
+    while True:
+        try:
+            await asyncio.sleep(_WATCHDOG_S)
+            now = time.time()
+            recovered = 0
+            for tournament in store.all():
+                rv = get_vote(tournament)
+                if rv is None:
+                    continue
+                status = rv.get("vote_status")
+                gid = int(getattr(tournament, "guild_id", 0) or 0)
+                try:
+                    if status == "open" and now > float(
+                        rv.get("vote_deadline") or 0
+                    ):
+                        logger.warning(
+                            "rules_vote_watchdog_recovered "
+                            "tournament=%s",
+                            getattr(tournament, "id", "?"),
+                        )
+                        recovered += 1
+                        await finalize_rules_vote(
+                            _bot_guild(gid), tournament
+                        )
+                    elif status == "done" and getattr(
+                        tournament, "phase", None
+                    ) == TournamentPhase.RULES_VOTING:
+                        # Итог есть, формирование не выполнено.
+                        await _continue_tournament_start(
+                            _bot_guild(gid), tournament
+                        )
+                    elif (
+                        status == "done"
+                        and not rv.get("ui_synced")
+                        and int(rv.get("ui_sync_attempts") or 0)
+                        < _UI_SYNC_MAX_ATTEMPTS
+                    ):
+                        await _sync_vote_ui(
+                            _bot_guild(gid), tournament, rv
+                        )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception(
+                        "rules_vote_watchdog_item_failed "
+                        "tournament=%s", getattr(tournament, "id", "?"),
+                    )
+            if recovered:
+                from utils import perf_metrics
+
+                perf_metrics.incr("rules_votes_watchdog_recovered",
+                                  recovered)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("rules_vote_watchdog_failed")
 
 
 async def _mirror_to_pg(tournament, rv: dict) -> None:
