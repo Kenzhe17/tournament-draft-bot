@@ -409,6 +409,60 @@ class UltimatumStore:
                 datetime.now(), match_id
             )
 
+    async def complete_match_atomic(
+        self,
+        match_id: int,
+        winner_id: int,
+        loser_id: int,
+    ) -> bool:
+        """Транзакционно завершить матч и обновить статистику игроков.
+
+        SELECT ... FOR UPDATE на строке матча сериализует конкурентные
+        подтверждения: только один вызов увидит PENDING и применит
+        изменения. Возвращает True, если этот вызов завершил матч.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT status FROM ultimatum_matches WHERE id = $1 FOR UPDATE",
+                    match_id
+                )
+                if row is None:
+                    raise ValueError("Match not found")
+                if row["status"] == MatchStatus.COMPLETED.value:
+                    return False
+                await conn.execute(
+                    """
+                    UPDATE ultimatum_matches
+                    SET winner_id = $1, loser_id = $2, status = $3,
+                        completed_at = NOW()
+                    WHERE id = $4
+                    """,
+                    winner_id, loser_id, MatchStatus.COMPLETED.value, match_id
+                )
+                await conn.execute(
+                    """
+                    UPDATE ultimatum_players
+                    SET wins = wins + 1
+                    WHERE tournament_id = (
+                        SELECT tournament_id FROM ultimatum_matches WHERE id = $1
+                    ) AND discord_id = $2
+                    """,
+                    match_id, winner_id
+                )
+                await conn.execute(
+                    """
+                    UPDATE ultimatum_players
+                    SET losses = losses + 1
+                    WHERE tournament_id = (
+                        SELECT tournament_id FROM ultimatum_matches WHERE id = $1
+                    ) AND discord_id = $2
+                    """,
+                    match_id, loser_id
+                )
+                return True
+
     async def get_match_by_id(self, match_id: int) -> Optional[Match]:
         """Get match by database ID."""
         pool = await get_pool()
@@ -699,9 +753,9 @@ class UltimatumStore:
             )
 
     async def set_round_message(
-        self, tournament_id: str, channel_id: int, message_id: int
+        self, tournament_id: str, channel_id: int, message_id: int | None
     ) -> None:
-        """Запомнить сообщение карточки текущего раунда."""
+        """Запомнить сообщение карточки текущего раунда (None — сброс)."""
         pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(

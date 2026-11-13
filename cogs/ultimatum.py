@@ -42,7 +42,7 @@ class UltimatumCog(commands.Cog):
                 tourney.add_command(ultimatum_group)
             except Exception as e:
                 logger.warning("Не удалось добавить ultimatum_group: %s", e)
-        bind_commands(ultimatum_group, self, ["create", "delete", "test_fill"])
+        bind_commands(ultimatum_group, self, ["create", "delete", "test_fill", "resync"])
 
     @ultimatum_group.command(name="create", description="Create new Ultimatum tournament")
     @app_commands.checks.has_permissions(administrator=True)

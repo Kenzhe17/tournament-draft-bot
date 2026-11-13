@@ -1,5 +1,6 @@
 """Tournament logic for Ultimatum Solo."""
 
+import asyncio
 import logging
 from typing import List, Optional
 
@@ -15,6 +16,17 @@ from ultimatum.elo_store import elo_store
 from config import ULT_ROLE_ID
 
 logger = logging.getLogger(__name__)
+
+# Сериализация публикации карточек по турниру (in-process).
+_PUBLISH_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _publish_lock(tournament_id: str) -> asyncio.Lock:
+    lock = _PUBLISH_LOCKS.get(tournament_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _PUBLISH_LOCKS[tournament_id] = lock
+    return lock
 
 
 def _log_event(
@@ -69,23 +81,31 @@ class UltimatumTournament:
                 f"Cannot start tournament from status {tournament.status.value}"
             )
 
+        # Актуальное состояние после begin_tournament.
+        tournament = await self.store.get_tournament(tournament_id)
+        if tournament is None:
+            raise ValueError("Tournament not found")
+
         players = await self.store.get_players(tournament_id)
         logger.info(f"Tournament {tournament_id} started with {len(players)} players")
 
-        # Первый раунд и матчи — идемпотентно.
-        await self.create_round(tournament_id, 1, bot)
+        round_number = tournament.current_round or 1
 
-        # Если статус остался IN_PROGRESS (матчи уже существовали при
-        # resume) — доводим до ROUND_IN_PROGRESS.
-        tournament = await self.store.get_tournament(tournament_id)
-        if tournament and tournament.status == TournamentStatus.IN_PROGRESS:
-            await self.store.update_tournament_status(
-                tournament_id, TournamentStatus.ROUND_IN_PROGRESS,
-                current_round=1,
-            )
+        # Создаём раунд только если турнир реально в фазе IN_PROGRESS
+        # (свежий старт или крах между begin и созданием матчей).
+        # Для ROUND_IN_PROGRESS/ROUND_COMPLETED/GRAND_FINAL — только
+        # восстановление UI, текущий раунд и статус не трогаем.
+        if tournament.status == TournamentStatus.IN_PROGRESS:
+            await self.create_round(tournament_id, round_number, bot)
+            tournament = await self.store.get_tournament(tournament_id)
+            if tournament and tournament.status == TournamentStatus.IN_PROGRESS:
+                await self.store.update_tournament_status(
+                    tournament_id, TournamentStatus.ROUND_IN_PROGRESS,
+                    current_round=round_number,
+                )
 
-        # Публикация карточки раунда — идемпотентно, по сохранённым ID.
-        await self.publish_round_message(tournament_id, 1, bot)
+        # Публикация карточки актуального раунда — идемпотентно.
+        await self.publish_round_message(tournament_id, round_number, bot)
 
     async def publish_round_message(
         self, tournament_id: str, round_number: int, bot=None
@@ -95,7 +115,21 @@ class UltimatumTournament:
         Не ищет сообщения по заголовкам: использует round_channel_id /
         round_message_id из БД. Карточка регистрации удаляется только
         после успешной публикации карточки раунда.
+
+        Публикация сериализована per-tournament lock'ом; состояние
+        перечитывается из БД внутри lock'а. Если round_message_id не
+        сохранён (крах между channel.send() и записью ID), перед
+        повторной отправкой ищется уже отправленная карточка в
+        известном канале — дубль не создаётся.
         """
+        async with _publish_lock(tournament_id):
+            await self._publish_round_message_locked(
+                tournament_id, round_number, bot
+            )
+
+    async def _publish_round_message_locked(
+        self, tournament_id: str, round_number: int, bot=None
+    ) -> None:
         tournament = await self.store.get_tournament(tournament_id)
         if not tournament:
             return
@@ -150,7 +184,10 @@ class UltimatumTournament:
                 await self._delete_setup_message(tournament, guild)
                 return
             except discord.NotFound:
-                pass  # сообщение удалено — отправим новое ниже
+                # ID сохранён, но сообщение удалено — сбрасываем ссылку
+                # и идём по пути «поиск/отправка».
+                await self.store.set_round_message(tournament_id, channel.id, None)
+                tournament.round_message_id = None
             except Exception:
                 logger.exception(
                     "ultimatum_round_message_edit_failed tid=%s", tournament_id
@@ -162,6 +199,32 @@ class UltimatumTournament:
                     reason="edit_failed",
                 )
                 return
+
+        # round_message_id не сохранён (или сообщение удалено):
+        # сначала ищем уже отправленную карточку в этом канале —
+        # закрывает окно «send() прошёл, set_round_message() упал».
+        adopted = await self._find_round_card(channel, bot)
+        if adopted is not None:
+            await self.store.set_round_message(
+                tournament_id, channel.id, adopted.id
+            )
+            try:
+                await adopted.edit(view=compose(new_embed, new_view))
+            except Exception:
+                logger.exception(
+                    "ultimatum_round_message_adopt_edit_failed tid=%s",
+                    tournament_id,
+                )
+            round_messages[guild.id] = (channel.id, adopted.id)
+            _log_event(
+                "round_message_sent", tournament_id,
+                guild_id=guild.id, phase=tournament.status.value,
+                round_number=round_number,
+                channel_id=channel.id, message_id=adopted.id,
+                action="adopted",
+            )
+            await self._delete_setup_message(tournament, guild)
+            return
 
         # Карточки нет — отправляем новую и сохраняем ID.
         try:
@@ -189,6 +252,25 @@ class UltimatumTournament:
 
         # Только после успешной публикации удаляем карточку регистрации.
         await self._delete_setup_message(tournament, guild)
+
+    async def _find_round_card(self, channel, bot):
+        """Найти уже отправленную карточку раунда в известном канале.
+
+        Ограниченный scan (последние 30 сообщений) — только для
+        восстановления после сбоя между send() и сохранением ID.
+        Карточка раунда отличается от регистрации описанием « Матчи:».
+        """
+        try:
+            async for msg in channel.history(limit=30):
+                if msg.author != bot.user or not msg.embeds:
+                    continue
+                emb = msg.embeds[0]
+                desc = emb.description or ""
+                if "УЛЬТИМАТУМ" in (emb.title or "") and "Матчи:" in desc:
+                    return msg
+        except Exception:
+            logger.exception("ultimatum_round_card_scan_failed")
+        return None
 
     async def _delete_setup_message(self, tournament, guild) -> None:
         """Удалить карточку регистрации по сохранённому ID (если ещё жива)."""
@@ -312,41 +394,26 @@ class UltimatumTournament:
 
         logger.info(f"Match details: tournament_id={match.tournament_id}, round={match.round_number}, type={match.match_type}")
 
-        # Идемпотентность: повторное завершение не должно дважды
-        # начислять статистику и ELO.
-        if match.status == MatchStatus.COMPLETED:
+        # Транзакционное завершение: FOR UPDATE на матче + статистика
+        # игроков атомарно. Конкурентный вызов получит False.
+        claimed = await self.store.complete_match_atomic(
+            match_id, winner_id, loser_id
+        )
+        if not claimed:
             logger.info(f"Match {match_id} already completed, skipping")
             return
 
-        # Update match in database
-        await self.store.complete_match(match_id, winner_id, loser_id)
-
-        # Get players
+        # Get players (статистика уже обновлена атомарно)
         winner = await self.store.get_player_by_discord_id(match.tournament_id, winner_id)
         loser = await self.store.get_player_by_discord_id(match.tournament_id, loser_id)
 
         if not winner or not loser:
-            raise ValueError("Player not found")
-
-        # Update player stats (wins/losses)
-        await self.store.update_player_stats(
-            match.tournament_id,
-            winner_id,
-            winner.wins + 1,
-            winner.losses
-        )
-
-        await self.store.update_player_stats(
-            match.tournament_id,
-            loser_id,
-            loser.wins,
-            loser.losses + 1
-        )
-
-        logger.info(f"Player stats updated: winner={winner_id} ({winner.wins+1}:{winner.losses}), loser={loser_id} ({loser.wins}:{loser.losses+1})")
+            logger.error(f"Player not found for completed match {match_id}")
+        else:
+            logger.info(f"Player stats updated: winner={winner_id} ({winner.wins}:{winner.losses}), loser={loser_id} ({loser.wins}:{loser.losses})")
 
         # Check if loser should be eliminated (2 losses)
-        if loser.losses + 1 >= 2:
+        if loser and loser.losses >= 2:
             logger.info(f"Player {loser_id} eliminated (2 losses)")
             await self.eliminate_player(match.tournament_id, loser_id, match.round_number, bot)
 
@@ -358,8 +425,8 @@ class UltimatumTournament:
                     match.tournament_id,
                     winner_id,
                     loser_id,
-                    winner.username,
-                    loser.username
+                    winner.username if winner else str(winner_id),
+                    loser.username if loser else str(loser_id)
                 )
                 logger.info(f"Elo updated for match {match_id}")
             except Exception as e:

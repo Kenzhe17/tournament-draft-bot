@@ -353,9 +353,13 @@ class UltimatumOrgMenuView(discord.ui.View):
             )
             return
 
-        sweep = await self._vac_sweep(interaction)
-        if sweep:
-            return
+        # VAC-sweep с удалением игроков — только во время регистрации.
+        # Для уже запущенного турнира «Старт» — безопасная повторная
+        # синхронизация UI (start_tournament идемпотентен).
+        if self.tournament.status == TournamentStatus.REGISTRATION:
+            sweep = await self._vac_sweep(interaction)
+            if sweep:
+                return
 
         try:
             # begin_tournament внутри атомарно проверяет статус и 16 игроков.
@@ -500,31 +504,33 @@ class UltimatumStartButton(discord.ui.Button):
                 )
                 return
 
-            # VAC: исключить заблокированных до старта
+            # VAC: исключить заблокированных до старта — только в
+            # фазе регистрации; после старта sweep не трогает состав.
             from services import vac_service
-            players = await ultimatum_store.get_players(tournament.id)
-            try:
-                vac_ids = await vac_service.vac_active_ids(
-                    interaction.guild_id, [p.discord_id for p in players]
-                )
-            except vac_service.VacStoreUnavailable:
-                await interaction.response.send_message(
-                    "⚠️ Сервис VAC временно недоступен. Старт отменён, попробуйте позже.",
-                    ephemeral=True
-                )
-                return
-            if vac_ids:
-                for pid in vac_ids:
-                    try:
-                        await ultimatum_store.remove_player(tournament.id, pid)
-                    except Exception:
-                        logger.exception("VAC: failed to remove player %s", pid)
-                await interaction.response.send_message(
-                    "⚠️ Перед стартом исключены игроки с активным VAC. "
-                    "Нажмите «Старт» ещё раз.",
-                    ephemeral=True
-                )
-                return
+            if tournament.status == TournamentStatus.REGISTRATION:
+                players = await ultimatum_store.get_players(tournament.id)
+                try:
+                    vac_ids = await vac_service.vac_active_ids(
+                        interaction.guild_id, [p.discord_id for p in players]
+                    )
+                except vac_service.VacStoreUnavailable:
+                    await interaction.response.send_message(
+                        "⚠️ Сервис VAC временно недоступен. Старт отменён, попробуйте позже.",
+                        ephemeral=True
+                    )
+                    return
+                if vac_ids:
+                    for pid in vac_ids:
+                        try:
+                            await ultimatum_store.remove_player(tournament.id, pid)
+                        except Exception:
+                            logger.exception("VAC: failed to remove player %s", pid)
+                    await interaction.response.send_message(
+                        "⚠️ Перед стартом исключены игроки с активным VAC. "
+                        "Нажмите «Старт» ещё раз.",
+                        ephemeral=True
+                    )
+                    return
 
             # Import tournament logic here to avoid circular import
             from ultimatum.tournament import UltimatumTournament
@@ -532,10 +538,12 @@ class UltimatumStartButton(discord.ui.Button):
 
             # Start tournament (идемпотентно: публикация карточки раунда
             # и удаление карточки регистрации внутри start_tournament).
+            already_started = tournament.status != TournamentStatus.REGISTRATION
             await tournament_logic.start_tournament(tournament.id, interaction.client)
 
             await interaction.response.send_message(
-                "✅ Турнир начался!",
+                "✅ Карточка турнира синхронизирована."
+                if already_started else "✅ Турнир начался!",
                 ephemeral=True
             )
 

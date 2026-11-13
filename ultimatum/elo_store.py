@@ -98,6 +98,28 @@ class EloStore:
 
         async with pool.acquire() as conn:
             async with conn.transaction():
+                # Advisory lock по match_id сериализует конкурентные
+                # начисления ELO за один матч.
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext($1))",
+                    f"ult_elo_match:{match_id}",
+                )
+                # ELO для этого матча уже начислялось — повтор не применяем.
+                already = await conn.fetchval(
+                    "SELECT COUNT(*) FROM elo_history WHERE match_id = $1",
+                    match_id,
+                )
+                if already:
+                    logger.info(
+                        f"Elo already recorded for match {match_id}, skipping"
+                    )
+                    return EloResult(
+                        winner_new_elo=0, loser_new_elo=0,
+                        winner_change=0, loser_change=0,
+                        winner_expected=0.0, loser_expected=0.0,
+                        k_factor=0,
+                    )
+
                 # Get or create both players
                 winner = await self.get_or_create_player(winner_id, winner_username)
                 loser = await self.get_or_create_player(loser_id, loser_username)

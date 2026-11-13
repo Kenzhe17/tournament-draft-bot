@@ -336,3 +336,251 @@ async def test_vac_fail_closed_on_store_error(pg_pool, monkeypatch):
         await vac_service.check_vac(GUILD, 1)
     with pytest.raises(vac_service.VacStoreUnavailable):
         await vac_service.vac_active_ids(GUILD, [1, 2])
+
+
+# ------------------------------------------- повторный Start на поздних фазах
+
+@pytest.mark.asyncio
+async def test_repeat_start_keeps_round2(pg_pool):
+    """Повторный «Старт» на ROUND_IN_PROGRESS не трогает текущий раунд,
+    не пересоздаёт матчи и не откатывает статус."""
+    tid = await _mk_tournament(16)
+    logic = _logic()
+    await logic.start_tournament(tid, bot=None)
+    assert await _match_count(tid, 1) == 8
+
+    # Имитируем переход ко 2-му раунду.
+    pairs = [(1000 + i, 1001 + i) for i in range(4)]
+    await ultimatum_store.ensure_round_with_matches(tid, 2, pairs)
+    await ultimatum_store.update_tournament_status(
+        tid, TournamentStatus.ROUND_IN_PROGRESS, current_round=2
+    )
+
+    await logic.start_tournament(tid, bot=None)
+
+    t = await ultimatum_store.get_tournament(tid)
+    assert t.status == TournamentStatus.ROUND_IN_PROGRESS
+    assert t.current_round == 2
+    assert await _match_count(tid, 1) == 8
+    assert await _match_count(tid, 2) == 4  # не пересоздано
+
+
+@pytest.mark.asyncio
+async def test_repeat_start_grand_final_unchanged(pg_pool):
+    tid = await _mk_tournament(16)
+    logic = _logic()
+    await logic.start_tournament(tid, bot=None)
+    await ultimatum_store.update_tournament_status(
+        tid, TournamentStatus.GRAND_FINAL, current_round=4
+    )
+
+    await logic.start_tournament(tid, bot=None)
+
+    t = await ultimatum_store.get_tournament(tid)
+    assert t.status == TournamentStatus.GRAND_FINAL
+    assert t.current_round == 4
+    assert await _match_count(tid, 1) == 8
+
+
+@pytest.mark.asyncio
+async def test_start_completed_rejected(pg_pool):
+    tid = await _mk_tournament(16)
+    logic = _logic()
+    await logic.start_tournament(tid, bot=None)
+    await ultimatum_store.update_tournament_status(tid, TournamentStatus.COMPLETED)
+
+    with pytest.raises(ValueError):
+        await logic.start_tournament(tid, bot=None)
+    assert await _match_count(tid, 1) == 8
+
+
+# ------------------------------------------------- конкурентный complete_match
+
+@pytest.mark.asyncio
+async def test_concurrent_complete_match_single_apply(pg_pool):
+    """Два обработчика одновременно завершают один матч — статистика
+    и ELO применяются ровно один раз."""
+    tid = await _mk_tournament(16)
+    logic = _logic()
+    await logic.start_tournament(tid, bot=None)
+
+    m = (await ultimatum_store.get_matches(tid, 1))[0]
+    w, l = m.player1_id, m.player2_id
+
+    await asyncio.gather(
+        logic.complete_match(m.id, w, l, bot=None),
+        logic.complete_match(m.id, l, w, bot=None),  # даже с обратным исходом
+    )
+
+    async with pg_pool.acquire() as conn:
+        wins = await conn.fetch(
+            "SELECT discord_id, wins, losses FROM ultimatum_players "
+            "WHERE tournament_id=$1 AND discord_id IN ($2,$3)",
+            tid, w, l,
+        )
+        elo_rows = await conn.fetchval(
+            "SELECT COUNT(*) FROM elo_history WHERE match_id=$1", m.id
+        )
+        mrow = await conn.fetchrow(
+            "SELECT status, winner_id FROM ultimatum_matches WHERE id=$1", m.id
+        )
+
+    by_id = {r["discord_id"]: r for r in wins}
+    # Ровно один победитель и один проигравший — без двойного учёта.
+    assert sum(r["wins"] for r in wins) == 1
+    assert sum(r["losses"] for r in wins) == 1
+    assert elo_rows == 2
+    assert mrow["status"] == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_complete_match_recovers_after_claim(pg_pool):
+    """Повторный вызов после завершения — no-op, данные не меняются."""
+    tid = await _mk_tournament(16)
+    logic = _logic()
+    await logic.start_tournament(tid, bot=None)
+    m = (await ultimatum_store.get_matches(tid, 1))[0]
+
+    await logic.complete_match(m.id, m.player1_id, m.player2_id, bot=None)
+    await logic.complete_match(m.id, m.player1_id, m.player2_id, bot=None)
+
+    p1 = await ultimatum_store.get_player_by_discord_id(tid, m.player1_id)
+    assert p1.wins == 1 and p1.losses == 0
+
+
+# ------------------------------------------- publish_round_message (fakes)
+
+class _FakeEmbed:
+    def __init__(self, title, description):
+        self.title = title
+        self.description = description
+
+
+class _FakeMessage:
+    def __init__(self, mid, author, embeds=()):
+        self.id = mid
+        self.author = author
+        self.embeds = list(embeds)
+        self.edits = 0
+
+    async def edit(self, **kwargs):
+        self.edits += 1
+
+
+class _FakeChannel:
+    def __init__(self, cid, history_msgs=()):
+        self.id = cid
+        self._history = list(history_msgs)
+        self.sent = []
+
+    async def history(self, limit=50):
+        for m in self._history[:limit]:
+            yield m
+
+    async def fetch_message(self, mid):
+        for m in self.sent:
+            if m.id == mid:
+                return m
+        for m in self._history:
+            if m.id == mid:
+                return m
+        import discord as _d
+        raise _d.NotFound(_FakeResponse(), "not found")
+
+    async def send(self, **kwargs):
+        msg = _FakeMessage(9000 + len(self.sent), _FakeBot.user)
+        self.sent.append(msg)
+        return msg
+
+
+class _FakeResponse:
+    status = 404
+    reason = "Unknown Message"
+
+
+class _FakeBot:
+    user = type("U", (), {"id": 1, "__eq__": lambda s, o: getattr(o, "id", None) == 1})()
+
+    def __init__(self, channel):
+        self._channel = channel
+        self.guild_id = GUILD
+
+    def get_guild(self, gid):
+        return _FakeGuild(self)
+
+
+class _FakeGuild:
+    def __init__(self, bot):
+        self.id = GUILD
+        self._bot = bot
+
+    def get_channel(self, cid):
+        return self._bot._channel if cid == self._bot._channel.id else None
+
+    def get_member(self, uid):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_publish_adopts_existing_card_no_duplicate(pg_pool):
+    """Крах между channel.send() и set_round_message(): карточка уже
+    отправлена — publish находит её и НЕ создаёт дубль."""
+    tid = await _mk_tournament(16)
+    logic = _logic()
+    await logic.start_tournament(tid, bot=None)
+
+    chan = _FakeChannel(555)
+    existing = _FakeMessage(
+        7777, _FakeBot.user,
+        embeds=[_FakeEmbed(" 16 | УЛЬТИМАТУМ СОЛО", " Матчи:")],
+    )
+    chan._history.append(existing)
+    bot = _FakeBot(chan)
+
+    await ultimatum_store.set_round_channel(tid, chan.id)
+    await logic.publish_round_message(tid, 1, bot)
+
+    assert len(chan.sent) == 0           # дубль не отправлен
+    t = await ultimatum_store.get_tournament(tid)
+    assert t.round_message_id == 7777    # ID усыновлён
+    assert existing.edits == 1
+
+
+@pytest.mark.asyncio
+async def test_publish_send_once_then_edit(pg_pool):
+    """Первый publish отправляет карточку и сохраняет ID;
+    повторный — редактирует то же сообщение."""
+    tid = await _mk_tournament(16)
+    logic = _logic()
+    await logic.start_tournament(tid, bot=None)
+
+    chan = _FakeChannel(556)
+    bot = _FakeBot(chan)
+    await ultimatum_store.set_round_channel(tid, chan.id)
+
+    await logic.publish_round_message(tid, 1, bot)
+    await logic.publish_round_message(tid, 1, bot)
+
+    assert len(chan.sent) == 1
+    t = await ultimatum_store.get_tournament(tid)
+    assert t.round_message_id == chan.sent[0].id
+    assert chan.sent[0].edits == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_publish_single_send(pg_pool):
+    """Параллельные publish сериализуются — одна отправка."""
+    tid = await _mk_tournament(16)
+    logic = _logic()
+    await logic.start_tournament(tid, bot=None)
+
+    chan = _FakeChannel(557)
+    bot = _FakeBot(chan)
+    await ultimatum_store.set_round_channel(tid, chan.id)
+
+    await asyncio.gather(
+        logic.publish_round_message(tid, 1, bot),
+        logic.publish_round_message(tid, 1, bot),
+        logic.publish_round_message(tid, 1, bot),
+    )
+    assert len(chan.sent) == 1
