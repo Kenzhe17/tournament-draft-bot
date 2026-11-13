@@ -662,7 +662,7 @@ async def build_setup_embed(
         try:
             from services.rules_vote import ruleset_label
 
-            rules_line = f" Правила: {ruleset_label(ruleset)}\n"
+            rules_line = f" Формат: {ruleset_label(ruleset)}\n"
         except Exception:
             rules_line = ""
     if tournament.formation_mode == FormationMode.RANDOM:
@@ -1359,7 +1359,7 @@ async def build_embed_for_phase(
             from services.rules_vote import ruleset_label
 
             embed.add_field(
-                name="📜 Правила матча",
+                name="🎮 Формат",
                 value=ruleset_label(ruleset),
                 inline=False,
             )

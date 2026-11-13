@@ -648,7 +648,7 @@ class TestFormationIdempotent:
 
 
 class TestSyncVoteUi:
-    """ui_synced=True только после реального msg.edit."""
+    """После done сообщение голосования УДАЛЯЕТСЯ (не edit)."""
 
     def _rv(self):
         return {
@@ -659,15 +659,16 @@ class TestSyncVoteUi:
         }
 
     @pytest.mark.asyncio
-    async def test_missing_refs_not_synced(self, env):
+    async def test_missing_refs_synced(self, env):
+        """Нет ссылки на сообщение — удалять нечего → synced."""
         rv = self._rv()
         rv["vote_channel_id"] = 0
         rv["vote_message_id"] = 0
         guild = SimpleNamespace(id=1, get_channel=lambda cid: None)
         ok = await rv_mod._sync_vote_ui(guild, env.tournament, rv)
-        assert ok is False
-        assert rv["ui_synced"] is False
-        assert "ref missing" in rv.get("ui_sync_last_error", "")
+        assert ok is True
+        assert rv["ui_synced"] is True
+        assert rv["vote_message_deleted"] is True
 
     @pytest.mark.asyncio
     async def test_guild_unavailable_not_synced(self, env, monkeypatch):
@@ -679,31 +680,29 @@ class TestSyncVoteUi:
         assert "guild" in rv.get("ui_sync_last_error", "")
 
     @pytest.mark.asyncio
-    async def test_success_marks_synced(self, env, monkeypatch):
-        edited = []
+    async def test_success_deletes_message(self, env):
+        deleted = []
 
         class _Msg:
-            async def edit(self, **kw):
-                edited.append(1)
+            async def delete(self):
+                deleted.append(1)
 
         class _Vch:
             async def fetch_message(self, mid):
                 return _Msg()
 
         guild = SimpleNamespace(id=1, get_channel=lambda cid: _Vch())
-        monkeypatch.setattr(
-            rv_mod, "build_rules_vote_view", lambda t, r: object()
-        )
         rv = self._rv()
         ok = await rv_mod._sync_vote_ui(guild, env.tournament, rv)
         assert ok is True
         assert rv["ui_synced"] is True
-        assert edited == [1]
+        assert rv["vote_message_deleted"] is True
+        assert deleted == [1]
 
     @pytest.mark.asyncio
-    async def test_edit_failure_not_synced(self, env, monkeypatch):
+    async def test_delete_failure_not_synced(self, env):
         class _Msg:
-            async def edit(self, **kw):
+            async def delete(self):
                 raise RuntimeError("discord 500")
 
         class _Vch:
@@ -711,17 +710,16 @@ class TestSyncVoteUi:
                 return _Msg()
 
         guild = SimpleNamespace(id=1, get_channel=lambda cid: _Vch())
-        monkeypatch.setattr(
-            rv_mod, "build_rules_vote_view", lambda t, r: object()
-        )
         rv = self._rv()
         ok = await rv_mod._sync_vote_ui(guild, env.tournament, rv)
         assert ok is False
         assert rv["ui_synced"] is False
+        assert rv.get("vote_message_deleted") is not True
         assert rv["ui_sync_attempts"] == 1
 
     @pytest.mark.asyncio
-    async def test_deleted_message_gives_up(self, env, monkeypatch):
+    async def test_not_found_counts_as_deleted(self, env):
+        """404 при fetch/delete — сообщение уже удалено → успех."""
         import discord
 
         class _Vch:
@@ -731,12 +729,18 @@ class TestSyncVoteUi:
                 )
 
         guild = SimpleNamespace(id=1, get_channel=lambda cid: _Vch())
-        monkeypatch.setattr(
-            rv_mod, "build_rules_vote_view", lambda t, r: object()
-        )
         rv = self._rv()
         ok = await rv_mod._sync_vote_ui(guild, env.tournament, rv)
-        assert ok is False
-        assert rv["ui_synced"] is False
-        # attempts в потолок — watchdog не повторяет вечно
-        assert rv["ui_sync_attempts"] >= rv_mod._UI_SYNC_MAX_ATTEMPTS
+        assert ok is True
+        assert rv["ui_synced"] is True
+        assert rv["vote_message_deleted"] is True
+
+    @pytest.mark.asyncio
+    async def test_no_repeat_delete_when_flagged(self, env):
+        """vote_message_deleted=True → DELETE не повторяется."""
+        rv = self._rv()
+        rv["vote_message_deleted"] = True
+        guild = SimpleNamespace(id=1, get_channel=lambda cid: None)
+        ok = await rv_mod._sync_vote_ui(guild, env.tournament, rv)
+        assert ok is True
+        assert rv["ui_synced"] is True

@@ -105,6 +105,10 @@ class FinalView(discord.ui.View):
 
             self.add_item(RoomButton("final", 0, team_a, team_b, name_a, name_b, is_admin=False))
 
+        from views.tournament_info_buttons import add_tournament_info_buttons
+
+        add_tournament_info_buttons(self, guild_id, channel_id)
+
         # Скриншот финала загружается только рабочей карточкой
         # матча в канале результатов — кнопки «📸 Финал» в
         # публичной сетке нет.

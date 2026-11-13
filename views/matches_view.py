@@ -1333,6 +1333,10 @@ class QualifiersView(discord.ui.View):
 
                 self.add_item(RoomButton("qualifier", i, team_a, team_b, name_a, name_b, is_admin=False))
 
+        from views.tournament_info_buttons import add_tournament_info_buttons
+
+        add_tournament_info_buttons(self, guild_id, channel_id)
+
         # Комнаты — через RoomButton; скриншоты загружаются
         # только рабочей карточкой матча в канале результатов
         # (MatchScreenshotButton из публичной сетки убран).
@@ -1368,6 +1372,10 @@ class SemifinalsView(discord.ui.View):
                 name_b = tournament.team_names.get(team_b, captain_b)
 
                 self.add_item(RoomButton("semifinal", i, team_a, team_b, name_a, name_b, is_admin=False))
+
+        from views.tournament_info_buttons import add_tournament_info_buttons
+
+        add_tournament_info_buttons(self, guild_id, channel_id)
 
         # Скриншоты загружаются только рабочей карточкой матча
         # в канале результатов — кнопок «📸 Игра N» в публичной

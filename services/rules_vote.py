@@ -469,14 +469,19 @@ async def finalize_rules_vote(
 async def _sync_vote_ui(
     guild, tournament, rv: dict
 ) -> bool:
-    """Финальная CV2-карточка + флаг ui_synced для watchdog-повторов.
+    """Удаление сообщения голосования после фиксации результата.
 
-    ui_synced=True ТОЛЬКО после подтверждённого msg.edit: пропуск
-    ветки (нет guild/channel/message_id) — это несинхронизированное
-    состояние, а не успех. Удалённое сообщение (404) — даём up:
-    attempts выставляются в максимум, watchdog не долбит Discord
-    по несуществующему сообщению бесконечно.
+    Итог уже сохранён (selected_ruleset/vote_status=done) — здесь
+    только Discord-очистка: карточка голосования удаляется, финальная
+    карточка «ГОЛОСОВАНИЕ ЗАВЕРШЕНО» в канале не остаётся.
+    NotFound/отсутствие ссылки — успех; ошибки → ui_synced=False,
+    watchdog повторит. Флаг vote_message_deleted исключает
+    повторные DELETE.
     """
+    if rv.get("vote_message_deleted"):
+        rv["ui_synced"] = True
+        store.set(tournament)
+        return True
     ok = False
     reason = ""
     try:
@@ -490,35 +495,31 @@ async def _sync_vote_ui(
             reason = "guild unavailable"
         elif not vch_id or not mid:
             reason = "vote message ref missing"
+            rv["vote_message_deleted"] = True
+            ok = True  # удалять нечего — считаем синхронизированным
         else:
             vch = guild.get_channel(vch_id)
             if vch is None:
                 vch = await guild.fetch_channel(vch_id)
             msg = await vch.fetch_message(mid)
-            await msg.edit(
-                view=build_rules_vote_view(tournament, rv)
-            )
+            await msg.delete()
+            rv["vote_message_deleted"] = True
             ok = True
+            logger.info(
+                "rules_vote_message_deleted tournament=%s msg=%s",
+                getattr(tournament, "id", "?"), mid,
+            )
     except discord.NotFound:
-        reason = "vote message deleted"
-        # Бессмысленно повторять: сообщение удалено навсегда.
-        rv["ui_sync_attempts"] = _UI_SYNC_MAX_ATTEMPTS
-        logger.warning(
-            "rules_vote_ui_sync_gone tournament=%s: message %s "
-            "deleted — retries disabled",
-            getattr(tournament, "id", "?"), rv.get("vote_message_id"),
-        )
+        reason = "vote message already gone"
+        rv["vote_message_deleted"] = True
+        ok = True
     except Exception as exc:
         reason = str(exc)
         logger.warning(
             "rules_vote_ui_sync_failed tournament=%s: %s",
             getattr(tournament, "id", "?"), exc,
         )
-    rv["ui_sync_attempts"] = (
-        _UI_SYNC_MAX_ATTEMPTS
-        if reason == "vote message deleted"
-        else int(rv.get("ui_sync_attempts") or 0) + 1
-    )
+    rv["ui_sync_attempts"] = int(rv.get("ui_sync_attempts") or 0) + 1
     rv["ui_synced"] = ok
     if reason and not ok:
         rv["ui_sync_last_error"] = reason[:200]
