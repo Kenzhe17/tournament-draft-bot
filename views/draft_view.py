@@ -190,25 +190,21 @@ class PlayerSelect(discord.ui.Select):
             await bot.update_tournament_message(interaction.guild, tournament)
             mark("message_update")
 
-            # Housekeeping пинг-сообщения капитана: одно bulk-delete
-            # вместо fetch+delete, затем новый пинг и сохранение id.
+            # Housekeeping пинг-сообщения капитана: прямое удаление по
+            # известному ID через HTTP API — один DELETE-запрос без
+            # fetch и без ограничений bulk-delete (возраст/пины).
             try:
                 if tournament.draft_message_id > 0:
                     try:
-                        await interaction.channel.delete_messages(
-                            [tournament.draft_message_id]
+                        await bot.http.delete_message(
+                            interaction.channel.id,
+                            tournament.draft_message_id,
                         )
-                    except Exception:  # noqa: BLE001 - fallback ниже
-                        try:
-                            old_message = await interaction.channel.fetch_message(
-                                tournament.draft_message_id
-                            )
-                            await old_message.delete()
-                        except Exception as exc:  # noqa: BLE001
-                            # Message might not exist or already deleted
-                            logger.debug(
-                                "Old draft ping delete failed: %s", exc
-                            )
+                    except Exception as exc:  # noqa: BLE001
+                        # Сообщение могло быть уже удалено — не критично
+                        logger.debug(
+                            "Old draft ping delete failed: %s", exc
+                        )
 
                 if not draft_complete:
                     next_picker_pos = tournament.current_picker_position()

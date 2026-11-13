@@ -223,6 +223,7 @@ class _ChanCounted(_Chan):
 
     def __init__(self):
         super().__init__()
+        self.id = 2
         self.bulk_deletes = []
         self.fetches = 0
         self.sends = 0
@@ -342,9 +343,9 @@ class TestDraftPickConcurrency:
                    for f in ix.followups)
 
     @pytest.mark.asyncio
-    async def test_single_bulk_delete_no_fetch(self, pick_env):
-        """Удаление старого пинг-сообщения — один delete_messages,
-        без fetch_message."""
+    async def test_single_http_delete_no_fetch(self, pick_env):
+        """Удаление старого пинг-сообщения — один http.delete_message
+        по известному ID, без fetch_message и без bulk-delete."""
         t = _mk()
         t.draft_message_id = 555
         pick_env.tournament = t
@@ -352,14 +353,26 @@ class TestDraftPickConcurrency:
         sel._values = [t.available[str(t.current_circle)][0]]
 
         chan = _ChanCounted()
-        bot = pick_env.ix.client
-        ix = _Ix(chan, bot)
+        deleted = []
+
+        class _Http:
+            async def delete_message(self, channel_id, message_id, **kw):
+                deleted.append((channel_id, message_id))
+
+        class _Bot:
+            http = _Http()
+
+            async def update_tournament_message(self, guild, tt, **kw):
+                pick_env.updates += 1
+
+        ix = _Ix(chan, _Bot())
         await sel.callback(ix)
 
-        assert chan.bulk_deletes == [555]
-        assert chan.fetches == 0  # fetch+delete заменён bulk-delete
-        assert chan.sends == 1    # ровно один новый пинг
-        assert pick_env.updates == 1  # ровно один edit главного embed
+        assert deleted == [(2, 555)]
+        assert chan.fetches == 0
+        assert chan.bulk_deletes == []  # bulk-delete не используется
+        assert chan.sends == 1          # ровно один новый пинг
+        assert pick_env.updates == 1    # ровно один edit главного embed
 
     @pytest.mark.asyncio
     async def test_metrics_recorded(self, pick_env, monkeypatch):
