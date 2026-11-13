@@ -1,7 +1,11 @@
 """Рендерер графической карточки профиля 1920x1080 — Player Profile V2.
 
-Новая реализация: SVG-сцена собирается в Python из реальных данных,
-затем рендерится в PNG через Playwright/Chromium (viewport 1920x1080).
+SVG-сцена собирается в Python из реальных данных, затем растеризуется
+в PNG. Два backend'а (PNG_RENDER_BACKEND):
+
+- ``native``/``auto`` — resvg (Rust) напрямую из SVG: без браузера,
+  ~10–50 МБ RSS, миллисекунды;
+- ``chromium`` — Playwright/Chromium (viewport 1920x1080), legacy.
 
 Вся типографика — Inter (variable font, в assets_ds_server/fonts).
 Вёрстка повторяет шаблон riz3_profile_v2: CSS/SVG Grid-зоны,
@@ -18,6 +22,7 @@ import io
 import logging
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -260,7 +265,7 @@ def build_profile_svg(data: dict, avatar_png: bytes | None = None,
     if avatar_uri:
         _img(
             105, 239, 130, 130, avatar_uri,
-            extra='clip-path="url(#avatarClip)" preserveAspectRatio="xMidYMid slice"',
+            extra='clip-path="url(#avatarClip)"',
             preserve="xMidYMid slice",
         )
     else:
@@ -620,14 +625,112 @@ async def shutdown_profile_renderer() -> None:
     _browser = _playwright = None
 
 
+# ---------------------------------------------------------------------------
+# Native backend: SVG → resvg (без браузера)
+# ---------------------------------------------------------------------------
+
+# CPU-bound растеризация — в отдельном ограниченном executor,
+# event loop не блокируется. 2 воркера — как у OCR.
+PNG_EXECUTOR = ThreadPoolExecutor(max_workers=2,
+                                  thread_name_prefix="png-native")
+
+# SVG <text> не задаёт font-family (он пришёл из HTML/CSS).
+# resvg применяет style_sheet при парсинге — возвращаем Inter.
+_RESvg_STYLE = "svg text{font-family:'Inter','DejaVu Sans',sans-serif}"
+
+
+def _resvg_font_files() -> list[str]:
+    # Только Inter: SVG-текст профиля использует одно семейство,
+    # лишние шрифты замедляют загрузку fontdb на каждый рендер.
+    # DejaVu/RussoOne не нужны — глифы покрыты Inter (latin+cyrillic).
+    return [str(INTER_FONT_PATH)] if INTER_FONT_PATH.exists() else []
+
+
+def _svg_to_png_native(svg: str) -> bytes:
+    """SVG → PNG 1920x1080 через resvg. Синхронно, CPU-bound."""
+    import resvg_py
+
+    return resvg_py.svg_to_bytes(
+        svg_string=svg,
+        font_files=_resvg_font_files(),
+        style_sheet=_RESvg_STYLE,
+        skip_system_fonts=True,
+    )
+
+
+def _png_backend() -> str:
+    """PNG_RENDER_BACKEND: native | chromium | auto (default)."""
+    return os.environ.get("PNG_RENDER_BACKEND", "auto").strip().lower()
+
+
+def _record_render_metric(native: bool, render_ms: float) -> None:
+    try:
+        from utils import perf_metrics
+
+        perf_metrics.record(
+            "profile_render_native_ms" if native
+            else "profile_render_ms", render_ms)
+        perf_metrics.incr(
+            "profile_renders_native" if native else "profile_renders")
+    except Exception:
+        pass
+
+
+def _record_fallback() -> None:
+    try:
+        from utils import perf_metrics
+
+        perf_metrics.incr("png_render_fallbacks")
+    except Exception:
+        pass
+
+
 async def render_profile_png_async(data: dict,
                                    avatar_png: bytes | None = None,
                                    badge_png: bytes | None = None) -> bytes:
-    """Собрать SVG → HTML → скриншот Chromium 1920x1080 → PNG bytes.
+    """Собрать PNG профиля 1920x1080.
 
-    Сигнатура сохранена совместимой с прежним рендерером:
-    data — словарь collect_profile_data, avatar/badge — PNG bytes.
+    backend=auto/native → resvg; backend=chromium → Playwright.
+    auto при сбое native откатывается на chromium (лог + метрика).
     """
+    backend = _png_backend()
+    if backend != "chromium":
+        try:
+            return await _render_profile_png_native(
+                data, avatar_png, badge_png)
+        except Exception:
+            if backend == "native":
+                raise
+            logger.warning(
+                "Native profile render failed — falling back to "
+                "chromium", exc_info=True)
+            _record_fallback()
+    return await _render_profile_png_chromium(
+        data, avatar_png, badge_png)
+
+
+async def _render_profile_png_native(
+    data: dict,
+    avatar_png: bytes | None = None,
+    badge_png: bytes | None = None,
+) -> bytes:
+    import time
+
+    t0 = time.monotonic()
+    svg = build_profile_svg(data, avatar_png, badge_png)
+    loop = asyncio.get_running_loop()
+    png = await loop.run_in_executor(PNG_EXECUTOR, _svg_to_png_native, svg)
+    render_ms = (time.monotonic() - t0) * 1000
+    _record_render_metric(native=True, render_ms=render_ms)
+    logger.info("Profile PNG rendered natively in %.0fms", render_ms)
+    return png
+
+
+async def _render_profile_png_chromium(
+    data: dict,
+    avatar_png: bytes | None = None,
+    badge_png: bytes | None = None,
+) -> bytes:
     import time
 
     async with CARD_RENDER_SEM:
