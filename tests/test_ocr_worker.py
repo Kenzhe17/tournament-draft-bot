@@ -105,3 +105,98 @@ def test_call_retries_on_transport_failure(monkeypatch):
     with pytest.raises(ocr_worker.OcrWorkerError):
         ocr_worker.call("no_such_kind", retries=2)
     assert len(killed) >= 2
+
+
+def test_final_transport_failure_kills_child(monkeypatch):
+    """Исчерпание retry на таймауте → зависший child убит,
+    IPC-ресурсы освобождены (_proc/_task_q/_res_q = None) —
+    не ждём idle-репера."""
+    import queue as _queue
+
+    real_ensure = ocr_worker._ensure_proc
+
+    class _HungResQ:
+        def put(self, *a, **k):
+            pass
+
+        def get(self, timeout=None):
+            raise _queue.Empty()
+
+    def fake_ensure():
+        real_ensure()
+        ocr_worker._res_q = _HungResQ()
+
+    monkeypatch.setattr(ocr_worker, "_ensure_proc", fake_ensure)
+    with pytest.raises(ocr_worker.OcrWorkerError):
+        ocr_worker.call("echo", "x", retries=1)
+    assert ocr_worker._proc is None
+    assert ocr_worker._task_q is None
+    assert ocr_worker._res_q is None
+
+
+def test_task_error_keeps_healthy_child():
+    """Ошибка уровня задачи (ok=False) — НЕ транспортный сбой:
+    после финальной неудачи здоровый child НЕ убивается."""
+    ocr_worker.call("echo", "warm")
+    proc = ocr_worker._proc
+    with pytest.raises(ocr_worker.OcrWorkerError):
+        ocr_worker.call("no_such_kind", retries=0)
+    # child жив — следующий вызов не платит за respawn+загрузку.
+    assert ocr_worker._proc is proc
+    assert ocr_worker.call("echo", "after") == ("after",)
+
+
+def test_run_ocr_propagates_worker_error(monkeypatch):
+    """OcrWorkerError не маскируется пустым результатом:
+    [] — валидный ответ OCR, недоступный worker — исключение."""
+    from services import ocr_service
+
+    monkeypatch.setattr(ocr_worker, "worker_enabled", lambda: True)
+
+    def boom(*a, **k):
+        raise ocr_worker.OcrWorkerError("dead")
+
+    monkeypatch.setattr(ocr_worker, "call", boom)
+    with pytest.raises(ocr_worker.OcrWorkerError):
+        ocr_service._run_ocr(b"png")
+    with pytest.raises(ocr_worker.OcrWorkerError):
+        ocr_service._run_ocr_cyrillic_region(b"png", (0, 0, 1, 1))
+    with pytest.raises(ocr_worker.OcrWorkerError):
+        ocr_service._run_ocr_cyrillic_regions(b"png", [(0, 0, 1, 1)])
+
+
+def test_run_ocr_empty_result_still_valid(monkeypatch):
+    """Пустой список от worker'а — валидный результат, не ошибка."""
+    from services import ocr_service
+
+    monkeypatch.setattr(ocr_worker, "worker_enabled", lambda: True)
+    monkeypatch.setattr(ocr_worker, "call", lambda *a, **k: [])
+    assert ocr_service._run_ocr(b"png") == []
+
+
+def test_ocr_executor_queue_bounded(monkeypatch):
+    """OCR_EXECUTOR: не более OCR_MAX_PENDING задач
+    (выполняемых + ожидающих) — избыток = OcrWorkerError."""
+    import threading
+
+    from services import ocr_service
+
+    monkeypatch.setattr(ocr_service, "_OCR_MAX_PENDING", 1)
+    gate = threading.Event()
+
+    def slow():
+        gate.wait(5)
+        return []
+
+    f = ocr_service.OCR_EXECUTOR.submit(slow)
+    try:
+        with pytest.raises(
+            ocr_worker.OcrWorkerError, match="queue is full"
+        ):
+            ocr_service.OCR_EXECUTOR.submit(lambda: [])
+    finally:
+        gate.set()
+        f.result(timeout=10)
+    # Слот освобождён по done_callback — новые задачи проходят.
+    f2 = ocr_service.OCR_EXECUTOR.submit(lambda: 1)
+    assert f2.result(timeout=10) == 1

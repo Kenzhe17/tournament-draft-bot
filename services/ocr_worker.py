@@ -41,6 +41,15 @@ class OcrWorkerError(RuntimeError):
     """Worker недоступен/упал/таймаут — caller решает fallback."""
 
 
+class _WorkerTransportError(OcrWorkerError):
+    """Транспортный сбой (таймаут/рассинхрон/падение child) —
+    процесс под вопросом, после финальной неудачи убивается.
+
+    Ошибки уровня задачи (ok=False payload) — НЕ транспортные:
+    child жив и здоров, убивать его после retry не нужно.
+    """
+
+
 def is_worker_child() -> bool:
     return os.environ.get(_CHILD_ENV) == "1"
 
@@ -129,13 +138,13 @@ def call(
                         timeout=timeout or _TIMEOUT_S
                     )
                 except queue.Empty:
-                    raise OcrWorkerError(
+                    raise _WorkerTransportError(
                         f"worker timeout kind={kind}"
                     )
                 if got_seq != seq:
                     # Рассинхрон (не должно случаться при одном
                     # клиенте) — считаем worker битым.
-                    raise OcrWorkerError("worker seq mismatch")
+                    raise _WorkerTransportError("worker seq mismatch")
                 _last_used = time.time()
                 if not ok:
                     raise OcrWorkerError(str(payload))
@@ -153,6 +162,12 @@ def call(
                 _kill_proc()
             time.sleep(0.2 * (attempt + 1))
     assert last_exc is not None
+    if isinstance(last_exc, _WorkerTransportError):
+        # Финальный транспортный сбой: child мог зависнуть
+        # (timeout) — убиваем процесс и освобождаем IPC-ресурсы
+        # сразу, не дожидаясь idle-репера (тот спит до _IDLE_S).
+        with _lock:
+            _kill_proc()
     raise last_exc
 
 

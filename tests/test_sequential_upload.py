@@ -1598,3 +1598,47 @@ class TestRoomCompletionGate:
         view2 = _room_view(env)
         assert not self._buttons(view2, "rooms_file_add")
         assert self._buttons(view2, "rooms_file_done")
+
+
+class TestOcrWorkerFailure:
+    """Инфраструктурный сбой OCR worker'а — отдельный код
+    ocr_unavailable: файл не принят, сессия и матч не тронуты,
+    повторная загрузка работает без двойного начисления."""
+
+    @pytest.mark.asyncio
+    async def test_worker_error_returns_unavailable(self, env, monkeypatch):
+        from services import ocr_worker
+
+        async def boom(data, need_score=True):
+            raise ocr_worker.OcrWorkerError("worker dead")
+
+        monkeypatch.setattr(up, "_classic_pipeline", boom)
+        res = await _file(env, 1, "classic1")
+        assert res == "ocr_unavailable"
+        # Файл НЕ принят: комнаты/панели не созданы, сессия жива.
+        assert env.session.get("status") == "collecting"
+        assert not (env.session.get("rooms") or [])
+        assert env.session.get("rooms_received") == 0
+
+    @pytest.mark.asyncio
+    async def test_retry_after_worker_error(self, env, monkeypatch):
+        """После ocr_unavailable тот же файл принимается при
+        восстановлении worker'а — без дубликатов и дабл-статистики."""
+        from services import ocr_worker
+
+        calls = {"n": 0}
+
+        async def flaky(data, need_score=True):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise ocr_worker.OcrWorkerError("dead")
+            return _classic_pipe("R")
+
+        monkeypatch.setattr(up, "_classic_pipeline", flaky)
+        assert await _file(env, 1, "classic1") == "ocr_unavailable"
+        assert await _file(env, 1, "classic1") == "ok"
+        room = env.session["rooms"][0]
+        assert len(room["pending"]) == 1
+        # Повтор того же SHA — дедуп, а не вторая загрузка.
+        assert await _file(env, 1, "classic1") == "dup"
+        assert len(room["pending"]) == 1

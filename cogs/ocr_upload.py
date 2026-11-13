@@ -29,6 +29,7 @@ from config import (
     OCR_RESULT_CHANNEL_ID as _OCR_RESULT_CHANNEL_ID,
 )
 from storage.json_store import store
+from services import ocr_worker
 from views.ocr_match_view import (
     OCR_STATS_CHANNEL_ID,
     OCRPublicView,
@@ -1354,6 +1355,27 @@ class OCRUploadCog(commands.Cog):
                 )
             except Exception as exc:
                 logger.warning("Match card processing update failed: %s", exc)
+        except ocr_worker.OcrWorkerError as exc:
+            # Инфраструктурный сбой OCR (worker недоступен после
+            # всех retry): это НЕ «не распознал таблицу» — пустой
+            # результат не пишем, матч не подтверждаем, K/D/A и
+            # ELO не трогаем. Клейм откатываем, сессия остаётся —
+            # пользователь повторяет отправку того же скриншота.
+            logger.error("OCR worker unavailable: %s", exc)
+            async with _room_lock(key, getattr(tournament, "id", "") or ""):
+                tournament = (
+                    store.get(message.guild.id, tchannel_id) or tournament
+                )
+                _release_pending_upload_claim(
+                    tournament, key, message.author.id
+                )
+            await message.reply(
+                replace_emojis(
+                    "⚠️ Сервис распознавания временно недоступен. "
+                    "Повторите обработку — скриншот можно отправить "
+                    "ещё раз."
+                )
+            )
         except Exception:
             logger.exception("OCR upload processing failed")
             async with _room_lock(key, getattr(tournament, "id", "") or ""):
@@ -3264,6 +3286,14 @@ async def process_room_file(
     gen = session.get("gen", 1)
     try:
         pipe = await _classic_pipeline(item["data"], need_score=False)
+    except ocr_worker.OcrWorkerError as exc:
+        # Инфраструктурный сбой — не «плохой скриншот»: комнату
+        # не трогаем содержательно, файл не принят, сессия жива
+        # для повтора. Отличный от parse_fail код — пользователь
+        # видит «сервис недоступен», а не «проверьте экран».
+        logger.error("Seq room OCR worker unavailable: %s", exc)
+        _drop_empty_room(rooms, room)
+        return "ocr_unavailable"
     except Exception:
         logger.exception("Seq room file OCR pipeline failed")
         _drop_empty_room(rooms, room)
@@ -3974,6 +4004,10 @@ async def process_room_bundle(
         for it in items:
             pipe = await _classic_pipeline(it["data"], need_score=False)
             pipes.append(pipe)
+    except ocr_worker.OcrWorkerError as exc:
+        logger.error("Room bundle OCR worker unavailable: %s", exc)
+        _drop_empty_room(rooms, room)
+        return "ocr_unavailable"
     except Exception:
         logger.exception("Room bundle OCR pipeline failed")
         _drop_empty_room(rooms, room)
@@ -4697,7 +4731,8 @@ async def _rooms_claim_bundle(
 # собой команду-победителя, а карточка матча не должна терять
 # кнопку отправки.
 _BUNDLE_REJECT_CODES = frozenset(
-    {"invalid", "invalid_mix", "parse_fail", "error", "dup"}
+    {"invalid", "invalid_mix", "parse_fail", "error", "dup",
+     "ocr_unavailable"}
 )
 
 
@@ -5385,6 +5420,11 @@ async def _accept_room_file(
             "Ранее принятые скриншоты комнаты сохранены — "
             "повторите загрузку кнопкой «Добавить скриншот»."
         ),
+        "ocr_unavailable": (
+            "⚠️ Сервис распознавания временно недоступен. "
+            "Повторите обработку — скриншот можно отправить "
+            "ещё раз, статистика и матч не изменены."
+        ),
         "cancelled": "⚠️ Сессия загрузки была отменена.",
         "sha_mismatch": (
             "❌ Файлы не совпадают с исходными скриншотами этой "
@@ -5421,6 +5461,7 @@ _BUNDLE_RESULT_SHORT = {
     "room_full": "комната уже заполнена",
     "room_done": "комната уже завершена",
     "parse_fail": "не удалось распознать таблицу",
+    "ocr_unavailable": "сервис распознавания недоступен — повторите",
     "shot_pending": "принят, но файл не сохранился — повторите",
     "publish_fail": "статистика сохранена, интерфейс не опубликован",
     "cancelled": "сессия отменена",
