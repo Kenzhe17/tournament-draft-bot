@@ -2069,6 +2069,56 @@ def _room_has_panels(room: dict) -> bool:
     return bool(room.get("panels"))
 
 
+def _room_files_totals(room: dict) -> tuple[int, int]:
+    """(принято, требуется) скриншотов для итогов сессии.
+
+    collecting-комната — канонический room_file_progress. После
+    «Завершить комнату» pending очищается — считаем по kind и
+    sha/shas: classic/mixed минимум 1 файл, squad — 2. Неизвестный
+    kind с panels → required=accepted (не занижаем denominator).
+    """
+    if _room_has_panels(room):
+        shas = {str(s) for s in room.get("shas") or []}
+        if room.get("sha"):
+            shas.add(str(room["sha"]))
+        accepted = len(shas)
+        kind = room.get("kind")
+        if kind == "squad":
+            required = 2
+        elif kind in ("classic", "mixed"):
+            required = 1
+        else:
+            required = accepted
+        return accepted, required
+    accepted, required, _rem, _cf = room_file_progress(room)
+    return accepted, required
+
+
+def _session_files_totals(session: dict) -> tuple[int, int]:
+    """Сумма (принято, требуется) скриншотов по ВСЕМ комнатам матча.
+
+    Комната без записи эквивалентна пустой collecting-комнате:
+    room_required_files({}) → 2 — канонический лимит неизвестного
+    типа, а не произвольная константа: при появлении classic-файла
+    требование комнаты пересчитывается в 1.
+    """
+    expected = int(session.get("rooms_expected") or 0)
+    by_idx = {
+        int(r.get("room_index", 0)): r
+        for r in session.get("rooms") or []
+    }
+    accepted = required = 0
+    for i in range(1, expected + 1):
+        room = by_idx.get(i)
+        if room is None:
+            required += room_required_files({})
+            continue
+        a, r = _room_files_totals(room)
+        accepted += a
+        required += r
+    return accepted, required
+
+
 def _rooms_completed_count(session: dict) -> int:
     return sum(
         1 for r in session.get("rooms") or [] if _room_has_panels(r)
@@ -2847,6 +2897,11 @@ async def _ensure_room_collect_message(
         f"{rooms_part}Скриншоты комнаты {room['room_index']}: "
         f"{accepted}/{required} — {suffix}"
     )
+    if sess_total > 0:
+        tot_a, tot_r = _session_files_totals(session)
+        lines.append(
+            f"Всего принятых скриншотов: {tot_a}/{tot_r}"
+        )
     text = replace_emojis("\n".join(lines))
     # В content только <@id> капитанов — пингуются исключительно
     # они; роли и @everyone отключены.
