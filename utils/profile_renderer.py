@@ -504,19 +504,52 @@ def _render_finished() -> None:
 
 
 async def _close_browser() -> None:
-    """Закрыть Chromium под _browser_lock (не во время launch).
+    """Безусловно закрыть Chromium (shutdown/тесты).
 
-    Драйвер playwright сохраняем — следующему _get_browser()
-    нужен только chromium.launch, без нового start().
+    Detach (_browser = None) выполняется под _browser_lock ДО
+    close(): _get_browser() больше никогда не вернёт закрывающийся
+    экземпляр — он либо уже отсоединён, либо ещё не началось
+    закрытие. Сам close() — вне лока, чтобы launch не ждал
+    завершения чужого close.
     """
     global _browser
     async with _browser_lock:
+        b = _browser
+        _browser = None
+    if b is not None:
         try:
-            if _browser is not None:
-                await _browser.close()
+            await b.close()
         except Exception:
             pass
+
+
+async def _close_browser_if_idle() -> bool:
+    """Закрыть Chromium, только если idle-условия ещё верны.
+
+    Вся проверка stale — ПОД _browser_lock: решение не может
+    устареть между проверкой и close. _render_started()
+    инкрементит _active_renders и обновляет _last_browser_used
+    синхронно ДО _get_browser(), поэтому начавшийся рендер
+    всегда виден reaper'у. Detach до close() — _get_browser()
+    не вернёт закрывающийся браузер: новые рендеры получат
+    свежий launch. Возвращает True, если браузер закрыт.
+    """
+    global _browser
+    async with _browser_lock:
+        if (
+            _browser is None
+            or _active_renders > 0
+            or time.monotonic() - _last_browser_used
+            <= IDLE_CLOSE_SECONDS
+        ):
+            return False
+        b = _browser
         _browser = None
+    try:
+        await b.close()
+    except Exception:
+        pass
+    return True
 
 
 async def _idle_reaper() -> None:
@@ -524,18 +557,8 @@ async def _idle_reaper() -> None:
     while True:
         try:
             await asyncio.sleep(_REAPER_INTERVAL)
-            stale = (
-                _browser is not None
-                and _active_renders == 0
-                and time.monotonic() - _last_browser_used
-                > IDLE_CLOSE_SECONDS
-            )
-            if stale:
-                logger.info(
-                    "Profile renderer: Chromium idle %.0fs — closing",
-                    time.monotonic() - _last_browser_used,
-                )
-                await _close_browser()
+            if await _close_browser_if_idle():
+                logger.info("Profile renderer: Chromium idle — closed")
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -589,7 +612,12 @@ async def _launch_browser():
 
 
 async def _get_browser():
-    """Переиспользуемый Chromium-инстанс на процесс."""
+    """Переиспользуемый Chromium-инстанс на процесс.
+
+    Контракт: вызывать только из рендер-путей, которые до этого
+    вызвали _render_started() — иначе idle-reaper может закрыть
+    браузер, не зная об активном потребителе.
+    """
     global _browser, _last_browser_used
     _last_browser_used = time.monotonic()
     _ensure_reaper()

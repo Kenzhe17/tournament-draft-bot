@@ -161,9 +161,25 @@ def pr(monkeypatch):
     monkeypatch.setattr(m, "_last_browser_used", time.monotonic())
     monkeypatch.setattr(m, "_active_renders", 0)
     monkeypatch.setattr(m, "IDLE_CLOSE_SECONDS", 0.05)
-    monkeypatch.setattr(m, "_REAPER_INTERVAL", 0.02)
+    # Reaper по умолчанию «спит» — тесты сами дёргают
+    # _close_browser_if_idle/_idle_reaper с явным интервалом.
+    monkeypatch.setattr(m, "_REAPER_INTERVAL", 3600.0)
     monkeypatch.setattr(m, "_idle_reaper_task", None)
     return m
+
+
+async def _run_reaper_ticks(pr, monkeypatch, seconds=0.15):
+    """Запустить настоящий reaper-loop с быстрым интервалом."""
+    monkeypatch.setattr(pr, "_REAPER_INTERVAL", 0.02)
+    task = asyncio.create_task(pr._idle_reaper())
+    try:
+        await asyncio.sleep(seconds)
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 class TestProfileIdleReaper:
@@ -176,50 +192,36 @@ class TestProfileIdleReaper:
         assert b.closed
 
     @pytest.mark.asyncio
-    async def test_idle_reaper_auto_closes_stale_browser(self, pr):
+    async def test_idle_reaper_auto_closes_stale_browser(
+        self, pr, monkeypatch
+    ):
         """Reaper реально закрывает браузер после idle-таймаута."""
         b = _FakeBrowser()
         pr._browser = b
         pr._playwright = object()
         pr._last_browser_used = time.monotonic() - 999  # давным-давно
 
-        task = asyncio.create_task(pr._idle_reaper())
-        try:
-            for _ in range(100):
-                if b.closed:
-                    break
-                await asyncio.sleep(0.01)
-        finally:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        await _run_reaper_ticks(pr, monkeypatch, seconds=0.3)
         assert b.closed
         assert pr._browser is None
 
     @pytest.mark.asyncio
-    async def test_idle_reaper_keeps_fresh_browser(self, pr):
+    async def test_idle_reaper_keeps_fresh_browser(
+        self, pr, monkeypatch
+    ):
         b = _FakeBrowser()
         pr._browser = b
         pr._playwright = object()
         pr._last_browser_used = time.monotonic()  # только что
         pr.IDLE_CLOSE_SECONDS = 60.0  # свежий ≠ stale при коротком пороге
 
-        task = asyncio.create_task(pr._idle_reaper())
-        try:
-            await asyncio.sleep(0.1)  # несколько тиков reaper
-            assert not b.closed
-        finally:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        await _run_reaper_ticks(pr, monkeypatch, seconds=0.1)
         assert not b.closed
 
     @pytest.mark.asyncio
-    async def test_idle_reaper_skips_active_render(self, pr):
+    async def test_idle_reaper_skips_active_render(
+        self, pr, monkeypatch
+    ):
         """Браузер не закрывается, пока идёт рендер — даже если idle."""
         b = _FakeBrowser()
         pr._browser = b
@@ -227,30 +229,11 @@ class TestProfileIdleReaper:
         pr._last_browser_used = time.monotonic() - 999
         pr._active_renders = 1
 
-        task = asyncio.create_task(pr._idle_reaper())
-        try:
-            await asyncio.sleep(0.1)
-            assert not b.closed
-        finally:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        await _run_reaper_ticks(pr, monkeypatch, seconds=0.1)
+        assert not b.closed
         # Рендер завершился → следующий тик закрывает браузер.
         pr._active_renders = 0
-        task = asyncio.create_task(pr._idle_reaper())
-        try:
-            for _ in range(100):
-                if b.closed:
-                    break
-                await asyncio.sleep(0.01)
-        finally:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        await _run_reaper_ticks(pr, monkeypatch, seconds=0.3)
         assert b.closed
 
 
@@ -387,6 +370,153 @@ class TestBrowserLifecycle:
         assert pr._active_renders == 1
         pr._render_finished()
         assert pr._active_renders == 0
+
+    @pytest.mark.asyncio
+    async def test_close_in_progress_new_render_gets_fresh_browser(
+        self, pr, monkeypatch
+    ):
+        """Гонка: idle-close уже начался → новый рендер.
+
+        Reaper отсоединил браузер (_browser=None) и «закрывает»
+        его; параллельный _get_browser() НЕ должен получить
+        закрывающийся экземпляр — только свежий launch.
+        """
+        starts, ctx = _install_fake_playwright(monkeypatch)
+        b1 = await pr._get_browser()
+        pr._last_browser_used = time.monotonic() - 9999
+
+        close_started = asyncio.Event()
+        release_close = asyncio.Event()
+        orig_close = b1.close
+
+        async def slow_close():
+            close_started.set()
+            await release_close.wait()
+            await orig_close()
+
+        b1.close = slow_close
+
+        closer = asyncio.create_task(pr._close_browser_if_idle())
+        await asyncio.wait_for(close_started.wait(), timeout=2)
+        # Detach произошёл ДО close: глобально браузера уже нет,
+        # но b1 физически ещё «закрывается».
+        assert pr._browser is None
+
+        pr._render_started()
+        try:
+            # Не ждёт завершения чужого close (лок свободен) —
+            # сразу получает новый браузер.
+            b2 = await asyncio.wait_for(pr._get_browser(), timeout=2)
+        finally:
+            pr._render_finished()
+        assert b2 is not b1
+        assert not b2.closed
+        assert ctx.driver.chromium.launch_count == 2
+
+        release_close.set()
+        assert await closer is True
+        assert b1.closed
+        assert pr._browser is b2
+
+    @pytest.mark.asyncio
+    async def test_render_started_before_check_aborts_close(
+        self, pr, monkeypatch
+    ):
+        """Рендер начался ДО проверки reaper'а → close отменяется."""
+        starts, ctx = _install_fake_playwright(monkeypatch)
+        b1 = await pr._get_browser()
+        pr._last_browser_used = time.monotonic() - 9999
+
+        pr._render_started()
+        try:
+            # stale по времени, но _active_renders=1 → не закрываем
+            assert await pr._close_browser_if_idle() is False
+            assert pr._browser is b1
+            assert not b1.closed
+            # И _get_browser отдаёт ЖИВОЙ экземпляр, не закрытый.
+            assert await pr._get_browser() is b1
+            assert not b1.closed
+        finally:
+            pr._render_finished()
+
+
+class TestRealChromiumLifecycle:
+    """Настоящий Chromium/Playwright: launch→idle→close→launch
+    циклы и контроль дочерних процессов (без mock-драйвера)."""
+
+    @pytest.mark.asyncio
+    async def test_real_cycles_no_process_accumulation(self, pr):
+        psutil = pytest.importorskip("psutil")
+        pytest.importorskip("playwright.async_api")
+        import os
+
+        proc = psutil.Process(os.getpid())
+
+        async def child_count() -> int:
+            # Даём ОС перевести завершённые процессы в zombie-free
+            # состояние перед подсчётом.
+            await asyncio.sleep(0.3)
+            return len(proc.children(recursive=True))
+
+        try:
+            # Цикл 1: launch → idle-close → счётчик «холостых» детей
+            b1 = await pr._get_browser()
+            assert b1.is_connected()
+            pr._last_browser_used = time.monotonic() - 9999
+            assert await pr._close_browser_if_idle() is True
+            assert not b1.is_connected()
+            c_idle1 = await child_count()
+
+            # Цикл 2: launch → реальный PNG-рендер → idle-close
+            png = await pr.render_profile_png_async({})
+            assert png[:8] == b"\x89PNG\r\n\x1a\n"
+            pr._last_browser_used = time.monotonic() - 9999
+            assert await pr._close_browser_if_idle() is True
+            c_idle2 = await child_count()
+
+            # Драйвер playwright жив (1 node-процесс), браузеры
+            # закрыты — число дочерних процессов не растёт
+            # между циклами. Допуск ±2 на transient helper'ы.
+            assert abs(c_idle2 - c_idle1) <= 2, (c_idle1, c_idle2)
+
+            # Рендер после idle-close — свежий launch, PNG валиден.
+            png2 = await pr.render_profile_png_async({})
+            assert png2[:8] == b"\x89PNG\r\n\x1a\n"
+        finally:
+            await pr.shutdown_profile_renderer()
+
+    @pytest.mark.asyncio
+    async def test_real_render_survives_idle_close_attempts(self, pr):
+        """Конкурентно: PNG-рендер vs попытки idle-close.
+
+        Рендер держит _active_renders>0 → reaper обязан
+        отказаться от закрытия; даже если close «проскочил»
+        между попытками, _get_browser отдаёт живой/свежий
+        экземпляр — PNG генерируется успешно.
+        """
+        pytest.importorskip("playwright.async_api")
+        await pr._get_browser()  # прогрев launch
+        pr._last_browser_used = time.monotonic() - 9999
+
+        stop = asyncio.Event()
+
+        async def spam_close():
+            while not stop.is_set():
+                await pr._close_browser_if_idle()
+                await asyncio.sleep(0.005)
+
+        task = asyncio.create_task(spam_close())
+        try:
+            png = await pr.render_profile_png_async({})
+        finally:
+            stop.set()
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        assert png[:8] == b"\x89PNG\r\n\x1a\n"
+        await pr.shutdown_profile_renderer()
 
 
 class TestPerfMetricsMemory:
