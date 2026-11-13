@@ -70,6 +70,10 @@ class UltimatumStore:
                 started_at=row["started_at"],
                 completed_at=row["completed_at"],
                 created_by=row["created_by"],
+                setup_channel_id=row.get("setup_channel_id"),
+                setup_message_id=row.get("setup_message_id"),
+                round_channel_id=row.get("round_channel_id"),
+                round_message_id=row.get("round_message_id"),
             )
 
     async def get_active_tournament(self, guild_id: int) -> Optional[Tournament]:
@@ -103,6 +107,10 @@ class UltimatumStore:
                 started_at=row["started_at"],
                 completed_at=row["completed_at"],
                 created_by=row["created_by"],
+                setup_channel_id=row.get("setup_channel_id"),
+                setup_message_id=row.get("setup_message_id"),
+                round_channel_id=row.get("round_channel_id"),
+                round_message_id=row.get("round_message_id"),
             )
 
     async def update_tournament_status(
@@ -401,6 +409,60 @@ class UltimatumStore:
                 datetime.now(), match_id
             )
 
+    async def complete_match_atomic(
+        self,
+        match_id: int,
+        winner_id: int,
+        loser_id: int,
+    ) -> bool:
+        """Транзакционно завершить матч и обновить статистику игроков.
+
+        SELECT ... FOR UPDATE на строке матча сериализует конкурентные
+        подтверждения: только один вызов увидит PENDING и применит
+        изменения. Возвращает True, если этот вызов завершил матч.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT status FROM ultimatum_matches WHERE id = $1 FOR UPDATE",
+                    match_id
+                )
+                if row is None:
+                    raise ValueError("Match not found")
+                if row["status"] == MatchStatus.COMPLETED.value:
+                    return False
+                await conn.execute(
+                    """
+                    UPDATE ultimatum_matches
+                    SET winner_id = $1, loser_id = $2, status = $3,
+                        completed_at = NOW()
+                    WHERE id = $4
+                    """,
+                    winner_id, loser_id, MatchStatus.COMPLETED.value, match_id
+                )
+                await conn.execute(
+                    """
+                    UPDATE ultimatum_players
+                    SET wins = wins + 1
+                    WHERE tournament_id = (
+                        SELECT tournament_id FROM ultimatum_matches WHERE id = $1
+                    ) AND discord_id = $2
+                    """,
+                    match_id, winner_id
+                )
+                await conn.execute(
+                    """
+                    UPDATE ultimatum_players
+                    SET losses = losses + 1
+                    WHERE tournament_id = (
+                        SELECT tournament_id FROM ultimatum_matches WHERE id = $1
+                    ) AND discord_id = $2
+                    """,
+                    match_id, loser_id
+                )
+                return True
+
     async def get_match_by_id(self, match_id: int) -> Optional[Match]:
         """Get match by database ID."""
         pool = await get_pool()
@@ -644,6 +706,244 @@ class UltimatumStore:
                 """,
                 tournament_id, discord_id
             )
+
+    # ------------------------------------------------------------------
+    # Жизненный цикл старта и ID Discord-сообщений
+    # ------------------------------------------------------------------
+
+    async def set_setup_message(
+        self, tournament_id: str, channel_id: int, message_id: int
+    ) -> None:
+        """Запомнить сообщение карточки регистрации."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ultimatum_tournaments
+                SET setup_channel_id = $1, setup_message_id = $2
+                WHERE id = $3
+                """,
+                channel_id, message_id, tournament_id
+            )
+
+    async def clear_setup_message(self, tournament_id: str) -> None:
+        """Сбросить ссылку на карточку регистрации (после удаления)."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ultimatum_tournaments
+                SET setup_channel_id = NULL, setup_message_id = NULL
+                WHERE id = $1
+                """,
+                tournament_id
+            )
+
+    async def set_round_channel(self, tournament_id: str, channel_id: int) -> None:
+        """Привязать канал карточки раунда (для resync старых турниров)."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ultimatum_tournaments
+                SET round_channel_id = $1
+                WHERE id = $2
+                """,
+                channel_id, tournament_id
+            )
+
+    async def set_round_message(
+        self, tournament_id: str, channel_id: int, message_id: int | None
+    ) -> None:
+        """Запомнить сообщение карточки текущего раунда (None — сброс)."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ultimatum_tournaments
+                SET round_channel_id = $1, round_message_id = $2
+                WHERE id = $3
+                """,
+                channel_id, message_id, tournament_id
+            )
+
+    async def begin_tournament(self, tournament_id: str) -> str:
+        """Атомарный переход REGISTRATION -> IN_PROGRESS.
+
+        SELECT ... FOR UPDATE на строке турнира сериализует параллельные
+        нажатия «Старт». Возвращает:
+        - "started"  — переход выполнен этим вызовом;
+        - "resumed"  — турнир уже запущен (идемпотентный повтор);
+        - "invalid"  — статус не позволяет старт (COMPLETED/CANCELLED/DRAFT).
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT status FROM ultimatum_tournaments WHERE id = $1 FOR UPDATE",
+                    tournament_id
+                )
+                if not row:
+                    raise ValueError("Tournament not found")
+                status = row["status"]
+                if status == TournamentStatus.REGISTRATION.value:
+                    count = await conn.fetchval(
+                        "SELECT COUNT(*) FROM ultimatum_players WHERE tournament_id = $1",
+                        tournament_id
+                    )
+                    if count != 16:
+                        raise ValueError(f"Need exactly 16 players, got {count}")
+                    await conn.execute(
+                        """
+                        UPDATE ultimatum_tournaments
+                        SET status = $1, current_round = 1,
+                            started_at = COALESCE(started_at, NOW())
+                        WHERE id = $2
+                        """,
+                        TournamentStatus.IN_PROGRESS.value, tournament_id
+                    )
+                    return "started"
+                if status in (
+                    TournamentStatus.IN_PROGRESS.value,
+                    TournamentStatus.ROUND_IN_PROGRESS.value,
+                    TournamentStatus.ROUND_COMPLETED.value,
+                    TournamentStatus.GRAND_FINAL.value,
+                ):
+                    return "resumed"
+                return "invalid"
+
+    async def round_match_count(self, tournament_id: str, round_number: int) -> int:
+        """Количество матчей раунда (для идемпотентных проверок)."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return await conn.fetchval(
+                """
+                SELECT COUNT(*) FROM ultimatum_matches
+                WHERE tournament_id = $1 AND round_number = $2
+                """,
+                tournament_id, round_number
+            ) or 0
+
+    async def ensure_round_with_matches(
+        self,
+        tournament_id: str,
+        round_number: int,
+        pairs: List[tuple],
+    ) -> dict:
+        """Идемпотентно создать раунд и его матчи в одной транзакции.
+
+        Блокирует строку турнира FOR UPDATE — параллельные вызовы
+        сериализуются; внутри повторно проверяется наличие матчей,
+        поэтому дубли невозможны. Возвращает
+        {"round_created": bool, "matches_created": bool, "match_count": int}.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.fetchrow(
+                    "SELECT id FROM ultimatum_tournaments WHERE id = $1 FOR UPDATE",
+                    tournament_id
+                )
+                existing_round = await conn.fetchrow(
+                    """
+                    SELECT id FROM ultimatum_rounds
+                    WHERE tournament_id = $1 AND round_number = $2
+                    """,
+                    tournament_id, round_number
+                )
+                round_created = False
+                if existing_round is None:
+                    await conn.execute(
+                        """
+                        INSERT INTO ultimatum_rounds (tournament_id, round_number, status)
+                        VALUES ($1, $2, $3)
+                        """,
+                        tournament_id, round_number, RoundStatus.PENDING.value
+                    )
+                    round_created = True
+
+                match_count = await conn.fetchval(
+                    """
+                    SELECT COUNT(*) FROM ultimatum_matches
+                    WHERE tournament_id = $1 AND round_number = $2
+                    """,
+                    tournament_id, round_number
+                ) or 0
+                if match_count > 0:
+                    return {
+                        "round_created": round_created,
+                        "matches_created": False,
+                        "match_count": match_count,
+                    }
+
+                for p1_id, p2_id in pairs:
+                    await conn.execute(
+                        """
+                        INSERT INTO ultimatum_matches
+                        (tournament_id, round_number, player1_id, player2_id,
+                         match_type, status)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                        """,
+                        tournament_id, round_number, p1_id, p2_id,
+                        MatchType.NORMAL.value, MatchStatus.PENDING.value
+                    )
+                    await conn.execute(
+                        """
+                        INSERT INTO ultimatum_match_history
+                        (tournament_id, player1_id, player2_id, round_number)
+                        VALUES ($1, $2, $3, $4)
+                        """,
+                        tournament_id, p1_id, p2_id, round_number
+                    )
+
+                await conn.execute(
+                    """
+                    UPDATE ultimatum_rounds SET status = $1
+                    WHERE tournament_id = $2 AND round_number = $3
+                    """,
+                    RoundStatus.IN_PROGRESS.value, tournament_id, round_number
+                )
+                return {
+                    "round_created": round_created,
+                    "matches_created": True,
+                    "match_count": len(pairs),
+                }
+
+    async def list_unfinished_tournaments(self) -> List[Tournament]:
+        """Все незавершённые турниры (для восстановления после рестарта)."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM ultimatum_tournaments
+                WHERE status IN ($1, $2, $3, $4, $5)
+                ORDER BY created_at
+                """,
+                TournamentStatus.REGISTRATION.value,
+                TournamentStatus.IN_PROGRESS.value,
+                TournamentStatus.ROUND_IN_PROGRESS.value,
+                TournamentStatus.ROUND_COMPLETED.value,
+                TournamentStatus.GRAND_FINAL.value,
+            )
+            return [
+                Tournament(
+                    id=row["id"],
+                    name=row["name"],
+                    guild_id=row["guild_id"],
+                    status=TournamentStatus(row["status"]),
+                    current_round=row["current_round"],
+                    is_open=row.get("is_open", False),
+                    created_at=row["created_at"],
+                    started_at=row["started_at"],
+                    completed_at=row["completed_at"],
+                    created_by=row["created_by"],
+                    setup_channel_id=row.get("setup_channel_id"),
+                    setup_message_id=row.get("setup_message_id"),
+                    round_channel_id=row.get("round_channel_id"),
+                    round_message_id=row.get("round_message_id"),
+                )
+                for row in rows
+            ]
 
 
 # Global store instance

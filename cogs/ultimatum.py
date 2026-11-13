@@ -14,8 +14,9 @@ from ultimatum.models import TournamentStatus, PlayerStatus, Tournament
 from ultimatum.store import ultimatum_store
 from ultimatum.tournament import UltimatumTournament
 from ultimatum.elo_store import elo_store
-from views.ultimatum_view import build_ultimatum_round_embed, build_ultimatum_round_view
-from views.ultimatum_setup_view import build_ultimatum_setup_view
+from views.ultimatum_view import build_ultimatum_round_view
+from views.ultimatum_setup_view import build_ultimatum_setup_view, update_setup_message
+from ultimatum.tournament import _log_event
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class UltimatumCog(commands.Cog):
                 tourney.add_command(ultimatum_group)
             except Exception as e:
                 logger.warning("Не удалось добавить ultimatum_group: %s", e)
-        bind_commands(ultimatum_group, self, ["create", "delete", "test_fill"])
+        bind_commands(ultimatum_group, self, ["create", "delete", "test_fill", "resync"])
 
     @ultimatum_group.command(name="create", description="Create new Ultimatum tournament")
     @app_commands.checks.has_permissions(administrator=True)
@@ -86,6 +87,16 @@ class UltimatumCog(commands.Cog):
         embed = await self._build_tournament_embed(tournament)
         view = await build_ultimatum_setup_view(interaction.guild_id, interaction.channel_id, tournament)
         message = await interaction.channel.send( view=compose(embed, view))
+
+        # Запоминаем ID карточки регистрации — вместо поиска по заголовку.
+        await ultimatum_store.set_setup_message(
+            tournament.id, interaction.channel_id, message.id
+        )
+        _log_event(
+            "created", tournament.id,
+            guild_id=interaction.guild_id, phase=tournament.status.value,
+            channel_id=interaction.channel_id, message_id=message.id,
+        )
 
         logger.info(f"Tournament created: {tournament.id} by {interaction.user.id}")
 
@@ -155,20 +166,10 @@ class UltimatumCog(commands.Cog):
         # Update the tournament message to show new players
         try:
             tournament = await ultimatum_store.get_tournament(tournament.id)
-            embed = await self._build_tournament_embed(tournament)
-            # Find the setup message and update it
-            messages = interaction.channel.history(limit=10)
-            async for msg in messages:
-                if msg.author == interaction.client.user and msg.embeds:
-                    # Check if this is the tournament embed
-                    if tournament.name in msg.embeds[0].title or "УЛЬТИМАТУМ СОЛО" in msg.embeds[0].title:
-                        # Сообщение отправлено с setup-view — без view
-                        # кнопка регистрации пропадёт.
-                        setup_view = await build_ultimatum_setup_view(
-                            interaction.guild_id, interaction.channel_id, tournament
-                        )
-                        await msg.edit( view=compose(embed, setup_view))
-                        break
+            await update_setup_message(
+                interaction.client, interaction.guild_id,
+                interaction.channel_id, tournament
+            )
         except Exception as e:
             logger.error(f"Error updating tournament message after test fill: {e}")
 
@@ -215,6 +216,197 @@ class UltimatumCog(commands.Cog):
         )
 
         logger.info(f"Tournament {tournament.id} deleted by {interaction.user.id}")
+
+    @ultimatum_group.command(
+        name="resync",
+        description="Восстановить карточку раундаUltimatum (после сбоя публикации)"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(
+        channel="Канал с карточкой турнира (для турниров без сохранённых ID)"
+    )
+    async def resync_tournament(
+        self,
+        interaction: discord.Interaction,
+        channel: Optional[discord.TextChannel] = None,
+    ) -> None:
+        """Довести публикацию карточки раунда до конца.
+
+        Идемпотентно: не создаёт новых матчей, только восстанавливает
+        Discord-сообщение и привязывает его к турниру.
+        """
+        await interaction.response.defer(ephemeral=True)
+        tournament = await ultimatum_store.get_active_tournament(interaction.guild_id)
+        if not tournament:
+            await interaction.followup.send(
+                "❌ Нет активного турнира.", ephemeral=True
+            )
+            return
+
+        if channel is not None and not tournament.round_channel_id:
+            await ultimatum_store.set_round_channel(tournament.id, channel.id)
+            tournament = await ultimatum_store.get_tournament(tournament.id)
+
+        round_number = tournament.current_round or 1
+        try:
+            await self.tournament_logic.publish_round_message(
+                tournament.id, round_number, self.bot
+            )
+        except Exception as e:
+            logger.error(f"resync publish failed: {e}", exc_info=True)
+            await interaction.followup.send(
+                f"❌ Ошибка публикации: {e}", ephemeral=True
+            )
+            return
+
+        # Для старых турниров без setup_message_id — найти и удалить
+        # устаревшую карточку регистрации в указанном канале.
+        removed_setup = False
+        if not tournament.setup_message_id:
+            target = channel or (
+                interaction.guild.get_channel(tournament.round_channel_id)
+                if tournament.round_channel_id else None
+            )
+            if target is not None:
+                try:
+                    async for msg in target.history(limit=50):
+                        if msg.author != self.bot.user or not msg.embeds:
+                            continue
+                        emb = msg.embeds[0]
+                        text = f"{emb.title or ''} {emb.description or ''}"
+                        if "УЛЬТИМАТУМ" in text and "регистрац" in text.lower():
+                            await msg.delete()
+                            removed_setup = True
+                            break
+                except Exception as e:
+                    logger.error(f"resync setup cleanup failed: {e}", exc_info=True)
+
+        fresh = await ultimatum_store.get_tournament(tournament.id)
+        await interaction.followup.send(
+            f"✅ Синхронизация завершена.\n"
+            f"Статус: {fresh.status.value}, раунд: {fresh.current_round}\n"
+            f"Карточка раунда: "
+            f"{'<#' + str(fresh.round_channel_id) + '> сообщение ' + str(fresh.round_message_id) if fresh.round_message_id else 'не привязана'}\n"
+            f"Устаревшая карточка регистрации: "
+            f"{'удалена' if removed_setup else 'не найдена/уже удалена'}",
+            ephemeral=True
+        )
+        _log_event(
+            "ui_sync_failed" if not fresh.round_message_id else "round_message_sent",
+            tournament.id,
+            guild_id=interaction.guild_id, phase=fresh.status.value,
+            round_number=round_number,
+            channel_id=fresh.round_channel_id,
+            message_id=fresh.round_message_id,
+        )
+
+    # ------------------------------------------------------------------
+    # Восстановление после рестарта
+    # ------------------------------------------------------------------
+
+    @commands.Cog.listener()
+    async def on_ready(self) -> None:
+        """Идемпотентное восстановление незавершённых турниров."""
+        await self.recover_tournaments()
+
+    async def recover_tournaments(self) -> None:
+        try:
+            tournaments = await ultimatum_store.list_unfinished_tournaments()
+        except Exception:
+            logger.exception("ultimatum_recovery_list_failed")
+            return
+        for t in tournaments:
+            _log_event(
+                "recovery_started", t.id,
+                guild_id=t.guild_id, phase=t.status.value,
+                round_number=t.current_round,
+            )
+            try:
+                await self._recover_tournament(t)
+            except Exception:
+                logger.exception("ultimatum_recovery_failed tid=%s", t.id)
+                _log_event(
+                    "ui_sync_failed", t.id, guild_id=t.guild_id,
+                    phase=t.status.value, round_number=t.current_round,
+                    reason="recovery_exception",
+                )
+            else:
+                _log_event(
+                    "recovery_completed", t.id,
+                    guild_id=t.guild_id, phase=t.status.value,
+                    round_number=t.current_round,
+                )
+
+    async def _recover_tournament(self, tournament: Tournament) -> None:
+        guild = self.bot.get_guild(tournament.guild_id)
+        if not guild:
+            return
+
+        if tournament.status == TournamentStatus.REGISTRATION:
+            await self._recover_setup_card(tournament, guild)
+            return
+
+        # Начавшийся турнир — гарантируем карточку текущего раунда.
+        round_number = tournament.current_round or 1
+        channel = None
+        if tournament.round_channel_id:
+            channel = guild.get_channel(tournament.round_channel_id)
+        if channel is None and tournament.setup_channel_id:
+            channel = guild.get_channel(tournament.setup_channel_id)
+
+        message_alive = False
+        if channel is not None and tournament.round_message_id:
+            try:
+                await channel.fetch_message(tournament.round_message_id)
+                message_alive = True
+            except discord.NotFound:
+                message_alive = False
+
+        if message_alive:
+            # Сообщение живо — только перевешиваем view для interaction'ов.
+            from views.ultimatum_view import round_messages
+            view = await build_ultimatum_round_view(
+                self.bot, tournament.id, round_number
+            )
+            self.bot.add_view(view, message_id=tournament.round_message_id)
+            round_messages[guild.id] = (channel.id, tournament.round_message_id)
+            return
+
+        await self.tournament_logic.publish_round_message(
+            tournament.id, round_number, self.bot
+        )
+        fresh = await ultimatum_store.get_tournament(tournament.id)
+        if fresh and fresh.round_message_id:
+            view = await build_ultimatum_round_view(
+                self.bot, tournament.id, round_number
+            )
+            self.bot.add_view(view, message_id=fresh.round_message_id)
+
+    async def _recover_setup_card(self, tournament: Tournament, guild) -> None:
+        """Регистрация: восстановить view; при удалённой карточке — пересоздать."""
+        if not tournament.setup_channel_id or not tournament.setup_message_id:
+            return
+        channel = guild.get_channel(tournament.setup_channel_id)
+        if channel is None:
+            return
+        try:
+            await channel.fetch_message(tournament.setup_message_id)
+        except discord.NotFound:
+            # Карточка удалена — отправляем новую в тот же канал.
+            embed = await self._build_tournament_embed(tournament)
+            view = await build_ultimatum_setup_view(
+                tournament.guild_id, channel.id, tournament
+            )
+            message = await channel.send(view=compose(embed, view))
+            await ultimatum_store.set_setup_message(
+                tournament.id, channel.id, message.id
+            )
+            self.bot.add_view(view, message_id=message.id)
+            return
+        view = await build_ultimatum_setup_view(
+            tournament.guild_id, channel.id, tournament
+        )
+        self.bot.add_view(view, message_id=tournament.setup_message_id)
 
     async def _build_tournament_embed(self, tournament) -> discord.Embed:
         """Build tournament status embed in regular tournament style."""

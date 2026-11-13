@@ -1,7 +1,10 @@
 """Tournament logic for Ultimatum Solo."""
 
+import asyncio
 import logging
 from typing import List, Optional
+
+import discord
 
 from ultimatum.models import (
     Tournament, Player, Match, Round,
@@ -14,6 +17,36 @@ from config import ULT_ROLE_ID
 
 logger = logging.getLogger(__name__)
 
+# Сериализация публикации карточек по турниру (in-process).
+_PUBLISH_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _publish_lock(tournament_id: str) -> asyncio.Lock:
+    lock = _PUBLISH_LOCKS.get(tournament_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _PUBLISH_LOCKS[tournament_id] = lock
+    return lock
+
+
+def _log_event(
+    event: str,
+    tournament_id: str,
+    *,
+    guild_id: int | None = None,
+    phase: str | None = None,
+    round_number: int | None = None,
+    channel_id: int | None = None,
+    message_id: int | None = None,
+    **extra,
+) -> None:
+    """Структурированное событие жизненного цикла турнира."""
+    logger.info(
+        "ultimatum_%s tid=%s guild=%s phase=%s round=%s channel=%s message=%s %s",
+        event, tournament_id, guild_id, phase, round_number,
+        channel_id, message_id, extra or "",
+    )
+
 
 class UltimatumTournament:
     """Main tournament logic controller."""
@@ -23,69 +56,261 @@ class UltimatumTournament:
         self.matchmaker = Matchmaker(store)
 
     async def start_tournament(self, tournament_id: str, bot=None) -> None:
-        """Start tournament after registration is complete."""
+        """Start tournament after registration is complete.
+
+        Идемпотентно: повторный вызов не создаёт дубли раундов/матчей
+        и доводит публикацию Discord-карточки до конца, даже если
+        прошлый запуск упал между сохранением матчей и отправкой.
+        """
         tournament = await self.store.get_tournament(tournament_id)
         if not tournament:
             raise ValueError("Tournament not found")
-
-        players = await self.store.get_players(tournament_id)
-        if len(players) != 16:
-            raise ValueError(f"Need exactly 16 players, got {len(players)}")
-
-        # Update tournament status
-        await self.store.update_tournament_status(
-            tournament_id, TournamentStatus.IN_PROGRESS, current_round=1
+        _log_event(
+            "start_requested", tournament_id,
+            guild_id=tournament.guild_id, phase=tournament.status.value,
         )
 
-        # Create first round
-        await self.create_round(tournament_id, 1, bot)
+        # Атомарный переход REGISTRATION -> IN_PROGRESS (FOR UPDATE).
+        action = await self.store.begin_tournament(tournament_id)
+        _log_event(
+            "start_committed", tournament_id,
+            guild_id=tournament.guild_id, action=action,
+        )
+        if action == "invalid":
+            raise ValueError(
+                f"Cannot start tournament from status {tournament.status.value}"
+            )
 
+        # Актуальное состояние после begin_tournament.
+        tournament = await self.store.get_tournament(tournament_id)
+        if tournament is None:
+            raise ValueError("Tournament not found")
+
+        players = await self.store.get_players(tournament_id)
         logger.info(f"Tournament {tournament_id} started with {len(players)} players")
-        
-        # Send round embed to tournament channel
-        if bot and tournament.guild_id:
-            guild = bot.get_guild(tournament.guild_id)
-            if guild:
-                from views.ultimatum_view import build_ultimatum_round_embed, build_ultimatum_round_view, round_messages
+
+        round_number = tournament.current_round or 1
+
+        # Создаём раунд только если турнир реально в фазе IN_PROGRESS
+        # (свежий старт или крах между begin и созданием матчей).
+        # Для ROUND_IN_PROGRESS/ROUND_COMPLETED/GRAND_FINAL — только
+        # восстановление UI, текущий раунд и статус не трогаем.
+        if tournament.status == TournamentStatus.IN_PROGRESS:
+            await self.create_round(tournament_id, round_number, bot)
+            tournament = await self.store.get_tournament(tournament_id)
+            if tournament and tournament.status == TournamentStatus.IN_PROGRESS:
+                await self.store.update_tournament_status(
+                    tournament_id, TournamentStatus.ROUND_IN_PROGRESS,
+                    current_round=round_number,
+                )
+
+        # Публикация карточки актуального раунда — идемпотентно.
+        await self.publish_round_message(tournament_id, round_number, bot)
+
+    async def publish_round_message(
+        self, tournament_id: str, round_number: int, bot=None
+    ) -> None:
+        """Опубликовать/обновить карточку раунда по сохранённым ID.
+
+        Не ищет сообщения по заголовкам: использует round_channel_id /
+        round_message_id из БД. Карточка регистрации удаляется только
+        после успешной публикации карточки раунда.
+
+        Публикация сериализована per-tournament lock'ом; состояние
+        перечитывается из БД внутри lock'а. Если round_message_id не
+        сохранён (крах между channel.send() и записью ID), перед
+        повторной отправкой ищется уже отправленная карточка в
+        известном канале — дубль не создаётся.
+        """
+        async with _publish_lock(tournament_id):
+            await self._publish_round_message_locked(
+                tournament_id, round_number, bot
+            )
+
+    async def _publish_round_message_locked(
+        self, tournament_id: str, round_number: int, bot=None
+    ) -> None:
+        tournament = await self.store.get_tournament(tournament_id)
+        if not tournament:
+            return
+        if not bot or not tournament.guild_id:
+            return
+        guild = bot.get_guild(tournament.guild_id)
+        if not guild:
+            _log_event(
+                "ui_sync_failed", tournament_id,
+                guild_id=tournament.guild_id, phase=tournament.status.value,
+                round_number=round_number, reason="guild_not_found",
+            )
+            return
+
+        from utils.design import compose
+        from views.ultimatum_view import (
+            build_ultimatum_round_embed, build_ultimatum_round_view,
+            round_messages,
+        )
+
+        channel = None
+        if tournament.round_channel_id:
+            channel = guild.get_channel(tournament.round_channel_id)
+        if channel is None and tournament.setup_channel_id:
+            channel = guild.get_channel(tournament.setup_channel_id)
+        if channel is None:
+            _log_event(
+                "ui_sync_failed", tournament_id,
+                guild_id=guild.id, phase=tournament.status.value,
+                round_number=round_number, reason="channel_not_found",
+            )
+            return
+
+        new_embed = await build_ultimatum_round_embed(
+            tournament_id, round_number, guild
+        )
+        new_view = await build_ultimatum_round_view(bot, tournament_id, round_number)
+
+        # Существующая карточка раунда — обновляем её.
+        if tournament.round_message_id:
+            try:
+                message = await channel.fetch_message(tournament.round_message_id)
+                await message.edit(view=compose(new_embed, new_view))
+                round_messages[guild.id] = (channel.id, message.id)
+                _log_event(
+                    "round_message_sent", tournament_id,
+                    guild_id=guild.id, phase=tournament.status.value,
+                    round_number=round_number,
+                    channel_id=channel.id, message_id=message.id,
+                    action="edited",
+                )
+                await self._delete_setup_message(tournament, guild)
+                return
+            except discord.NotFound:
+                # ID сохранён, но сообщение удалено — сбрасываем ссылку
+                # и идём по пути «поиск/отправка».
+                await self.store.set_round_message(tournament_id, channel.id, None)
+                tournament.round_message_id = None
+            except Exception:
+                logger.exception(
+                    "ultimatum_round_message_edit_failed tid=%s", tournament_id
+                )
+                _log_event(
+                    "ui_sync_failed", tournament_id,
+                    guild_id=guild.id, phase=tournament.status.value,
+                    round_number=round_number, channel_id=channel.id,
+                    reason="edit_failed",
+                )
+                return
+
+        # round_message_id не сохранён (или сообщение удалено):
+        # сначала ищем уже отправленную карточку в этом канале —
+        # закрывает окно «send() прошёл, set_round_message() упал».
+        adopted = await self._find_round_card(channel, bot)
+        if adopted is not None:
+            await self.store.set_round_message(
+                tournament_id, channel.id, adopted.id
+            )
+            try:
+                await adopted.edit(view=compose(new_embed, new_view))
+            except Exception:
+                logger.exception(
+                    "ultimatum_round_message_adopt_edit_failed tid=%s",
+                    tournament_id,
+                )
+            round_messages[guild.id] = (channel.id, adopted.id)
+            _log_event(
+                "round_message_sent", tournament_id,
+                guild_id=guild.id, phase=tournament.status.value,
+                round_number=round_number,
+                channel_id=channel.id, message_id=adopted.id,
+                action="adopted",
+            )
+            await self._delete_setup_message(tournament, guild)
+            return
+
+        # Карточки нет — отправляем новую и сохраняем ID.
+        try:
+            message = await channel.send(view=compose(new_embed, new_view))
+        except Exception:
+            logger.exception(
+                "ultimatum_round_message_send_failed tid=%s", tournament_id
+            )
+            _log_event(
+                "ui_sync_failed", tournament_id,
+                guild_id=guild.id, phase=tournament.status.value,
+                round_number=round_number, channel_id=channel.id,
+                reason="send_failed",
+            )
+            raise
+        await self.store.set_round_message(tournament_id, channel.id, message.id)
+        round_messages[guild.id] = (channel.id, message.id)
+        _log_event(
+            "round_message_sent", tournament_id,
+            guild_id=guild.id, phase=tournament.status.value,
+            round_number=round_number,
+            channel_id=channel.id, message_id=message.id,
+            action="sent",
+        )
+
+        # Только после успешной публикации удаляем карточку регистрации.
+        await self._delete_setup_message(tournament, guild)
+
+    async def _find_round_card(self, channel, bot):
+        """Найти уже отправленную карточку раунда в известном канале.
+
+        Ограниченный scan (последние 30 сообщений) — только для
+        восстановления после сбоя между send() и сохранением ID.
+        Карточка раунда отличается от регистрации описанием « Матчи:».
+        """
+        try:
+            async for msg in channel.history(limit=30):
+                if msg.author != bot.user or not msg.embeds:
+                    continue
+                emb = msg.embeds[0]
+                desc = emb.description or ""
+                if "УЛЬТИМАТУМ" in (emb.title or "") and "Матчи:" in desc:
+                    return msg
+        except Exception:
+            logger.exception("ultimatum_round_card_scan_failed")
+        return None
+
+    async def _delete_setup_message(self, tournament, guild) -> None:
+        """Удалить карточку регистрации по сохранённому ID (если ещё жива)."""
+        if not tournament.setup_channel_id or not tournament.setup_message_id:
+            return
+        try:
+            setup_channel = guild.get_channel(tournament.setup_channel_id)
+            if setup_channel:
                 try:
-                    new_embed = await build_ultimatum_round_embed(tournament_id, 1, guild)
-                    new_view = await build_ultimatum_round_view(bot, tournament_id, 1)
-                    
-                    # Find tournament channel with Ultimatum setup embed
-                    setup_message = None
-                    target_channel = None
-                    
-                    for channel in guild.text_channels:
-                        async for msg in channel.history(limit=50):
-                            if msg.embeds and msg.embeds[0].title:
-                                title = msg.embeds[0].title
-                                if "УЛЬТИМАТУМ" in title and "РЕГИСТРАЦИЯ" in title:
-                                    setup_message = msg
-                                    target_channel = channel
-                                    break
-                        if setup_message:
-                            break
-                    
-                    if target_channel and setup_message:
-                        # Send round message first
-                        round_message = await target_channel.send(embed=new_embed, view=new_view)
-                        logger.info(f"Sent round message: {round_message.id}")
-                        
-                        # Track the round message
-                        round_messages[guild.id] = (target_channel.id, round_message.id)
-                        
-                        # Delete setup message after round message is sent
-                        await setup_message.delete()
-                        logger.info("Deleted setup message after start")
-                    else:
-                        logger.warning("Could not find Ultimatum setup embed to replace")
-                        # Try to send to same channel as tournament is registered
-                        # or find by searching for tournament_id in message content
-                except Exception as e:
-                    logger.error(f"Error sending round embed: {e}", exc_info=True)
+                    setup_msg = await setup_channel.fetch_message(
+                        tournament.setup_message_id
+                    )
+                    await setup_msg.delete()
+                    logger.info(
+                        "Deleted setup message %s for tournament %s",
+                        tournament.setup_message_id, tournament.id,
+                    )
+                except discord.NotFound:
+                    pass
+            await self.store.clear_setup_message(tournament.id)
+            _log_event(
+                "registration_closed", tournament.id,
+                guild_id=guild.id, phase=tournament.status.value,
+                channel_id=tournament.setup_channel_id,
+                message_id=tournament.setup_message_id,
+            )
+        except Exception:
+            logger.exception(
+                "ultimatum_setup_delete_failed tid=%s", tournament.id
+            )
+            _log_event(
+                "ui_sync_failed", tournament.id,
+                guild_id=guild.id, phase=tournament.status.value,
+                channel_id=tournament.setup_channel_id,
+                message_id=tournament.setup_message_id,
+                reason="setup_delete_failed",
+            )
 
     async def create_round(self, tournament_id: str, round_number: int, bot=None) -> None:
-        """Create a new round with matches."""
+        """Create a new round with matches (идемпотентно)."""
         tournament = await self.store.get_tournament(tournament_id)
         if not tournament:
             raise ValueError("Tournament not found")
@@ -102,32 +327,31 @@ class UltimatumTournament:
             await self._create_grand_final(tournament_id, players, bot)
             return
 
-        # Create round in database (handle duplicate key error)
-        try:
-            await self.store.create_round(tournament_id, round_number)
-        except Exception as e:
-            if "duplicate key" in str(e).lower():
-                logger.warning(f"Round {round_number} already exists for tournament {tournament_id}, skipping creation")
-                return
-            raise
+        # Если матчи раунда уже есть — ничего не создаём.
+        if await self.store.round_match_count(tournament_id, round_number) > 0:
+            logger.info(
+                f"Round {round_number} matches already exist for "
+                f"tournament {tournament_id}, skipping creation"
+            )
+            return
 
         # Create matches using matchmaking
         player_pairs = await self.matchmaker.create_matches(
             tournament_id, players, round_number
         )
 
-        # Create match records
-        for p1_id, p2_id in player_pairs:
-            await self.store.create_match(
-                tournament_id, round_number, p1_id, p2_id, MatchType.NORMAL
-            )
-            # Add to match history
-            await self.store.add_match_history(tournament_id, p1_id, p2_id, round_number)
-
-        # Update round status
-        await self.store.update_round_status(
-            tournament_id, round_number, RoundStatus.IN_PROGRESS
+        # Атомарная идемпотентная запись раунда и матчей.
+        result = await self.store.ensure_round_with_matches(
+            tournament_id, round_number, player_pairs
         )
+        _log_event(
+            "round_created", tournament_id,
+            guild_id=tournament.guild_id, phase=tournament.status.value,
+            round_number=round_number,
+            extra=f"matches={result['match_count']} created={result['matches_created']}",
+        )
+        if not result["matches_created"]:
+            return
 
         # Update tournament status
         await self.store.update_tournament_status(
@@ -170,35 +394,26 @@ class UltimatumTournament:
 
         logger.info(f"Match details: tournament_id={match.tournament_id}, round={match.round_number}, type={match.match_type}")
 
-        # Update match in database
-        await self.store.complete_match(match_id, winner_id, loser_id)
+        # Транзакционное завершение: FOR UPDATE на матче + статистика
+        # игроков атомарно. Конкурентный вызов получит False.
+        claimed = await self.store.complete_match_atomic(
+            match_id, winner_id, loser_id
+        )
+        if not claimed:
+            logger.info(f"Match {match_id} already completed, skipping")
+            return
 
-        # Get players
+        # Get players (статистика уже обновлена атомарно)
         winner = await self.store.get_player_by_discord_id(match.tournament_id, winner_id)
         loser = await self.store.get_player_by_discord_id(match.tournament_id, loser_id)
 
         if not winner or not loser:
-            raise ValueError("Player not found")
-
-        # Update player stats (wins/losses)
-        await self.store.update_player_stats(
-            match.tournament_id,
-            winner_id,
-            winner.wins + 1,
-            winner.losses
-        )
-
-        await self.store.update_player_stats(
-            match.tournament_id,
-            loser_id,
-            loser.wins,
-            loser.losses + 1
-        )
-
-        logger.info(f"Player stats updated: winner={winner_id} ({winner.wins+1}:{winner.losses}), loser={loser_id} ({loser.wins}:{loser.losses+1})")
+            logger.error(f"Player not found for completed match {match_id}")
+        else:
+            logger.info(f"Player stats updated: winner={winner_id} ({winner.wins}:{winner.losses}), loser={loser_id} ({loser.wins}:{loser.losses})")
 
         # Check if loser should be eliminated (2 losses)
-        if loser.losses + 1 >= 2:
+        if loser and loser.losses >= 2:
             logger.info(f"Player {loser_id} eliminated (2 losses)")
             await self.eliminate_player(match.tournament_id, loser_id, match.round_number, bot)
 
@@ -210,8 +425,8 @@ class UltimatumTournament:
                     match.tournament_id,
                     winner_id,
                     loser_id,
-                    winner.username,
-                    loser.username
+                    winner.username if winner else str(winner_id),
+                    loser.username if loser else str(loser_id)
                 )
                 logger.info(f"Elo updated for match {match_id}")
             except Exception as e:
@@ -292,19 +507,13 @@ class UltimatumTournament:
         except Exception as e:
             logger.error(f"Error creating round {next_round}: {e}", exc_info=True)
             return
-        
-        # Update round embed to show new round
-        if bot:
-            from views.ultimatum_view import update_round_embed, round_messages
-            tournament = await self.store.get_tournament(tournament_id)
-            if tournament and tournament.guild_id:
-                guild = bot.get_guild(tournament.guild_id)
-                if guild and guild.id in round_messages:
-                    try:
-                        await update_round_embed(guild, tournament_id, next_round, bot)
-                        logger.info(f"Round embed updated to round {next_round}")
-                    except Exception as e:
-                        logger.error(f"Error updating round embed: {e}", exc_info=True)
+
+        # Обновить карточку раунда (по сохранённым ID, работает и после рестарта)
+        try:
+            await self.publish_round_message(tournament_id, next_round, bot)
+            logger.info(f"Round embed updated to round {next_round}")
+        except Exception as e:
+            logger.error(f"Error updating round embed: {e}", exc_info=True)
 
     async def _should_create_grand_final(
         self,
@@ -350,7 +559,16 @@ class UltimatumTournament:
         players: List[Player],
         bot=None
     ) -> None:
-        """Create grand final match."""
+        """Create grand final match (идемпотентно)."""
+        # GF-матч уже существует — повторный вызов ничего не делает.
+        existing_matches = await self.store.get_matches(tournament_id)
+        if any(m.match_type == MatchType.GRAND_FINAL for m in existing_matches):
+            logger.info(
+                f"Grand final already exists for tournament {tournament_id}, "
+                "skipping creation"
+            )
+            return
+
         tournament = await self.store.get_tournament(tournament_id)
         
         # Sort players by wins, then by fewer losses

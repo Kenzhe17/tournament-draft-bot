@@ -71,6 +71,11 @@ class Tournament:
     completed_at: Optional[datetime] = None
     created_by: int = 0
     is_open: bool = False  # If False, only players with r!z3 tag can join
+    # ID сообщений Discord: карточка регистрации и карточка текущего раунда.
+    setup_channel_id: Optional[int] = None
+    setup_message_id: Optional[int] = None
+    round_channel_id: Optional[int] = None
+    round_message_id: Optional[int] = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
