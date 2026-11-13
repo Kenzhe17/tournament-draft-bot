@@ -272,29 +272,34 @@ async def render_banner_png(
             has_activity=has_activity,
             report_day_label=report_day_label,
         )
-        from utils.profile_renderer import _get_browser
-        browser = await _get_browser()
-        page = await browser.new_page(
-            viewport={"width": VW, "height": VH}, device_scale_factor=1
-        )
+        from utils import profile_renderer as _pr
+
+        _pr._render_started()
         try:
-            await asyncio.wait_for(
-                page.set_content(html_doc, wait_until="load"),
-                timeout=RENDER_TIMEOUT,
+            browser = await _pr._get_browser()
+            page = await browser.new_page(
+                viewport={"width": VW, "height": VH}, device_scale_factor=1
             )
             try:
-                await page.evaluate(
-                    "() => Promise.all([document.fonts.ready,"
-                    "...Array.from(document.images).map(i => i.decode().catch(() => {}))"
-                    "]).then(() => true)"
+                await asyncio.wait_for(
+                    page.set_content(html_doc, wait_until="load"),
+                    timeout=RENDER_TIMEOUT,
                 )
-            except Exception:
-                await page.wait_for_timeout(150)
-            return await asyncio.wait_for(
-                page.screenshot(type="png"), timeout=RENDER_TIMEOUT
-            )
+                try:
+                    await page.evaluate(
+                        "() => Promise.all([document.fonts.ready,"
+                        "...Array.from(document.images).map(i => i.decode().catch(() => {}))"
+                        "]).then(() => true)"
+                    )
+                except Exception:
+                    await page.wait_for_timeout(150)
+                return await asyncio.wait_for(
+                    page.screenshot(type="png"), timeout=RENDER_TIMEOUT
+                )
+            finally:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
         finally:
-            try:
-                await page.close()
-            except Exception:
-                pass
+            _pr._render_finished()

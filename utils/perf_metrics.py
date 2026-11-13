@@ -165,6 +165,24 @@ def _timing_stats(dq: "deque[float]") -> dict[str, float]:
     return out
 
 
+_PSUTIL_PROC = None  # кэшированный psutil.Process — см. ниже
+
+
+def _get_proc():
+    """Один psutil.Process на процесс.
+
+    cpu_percent(interval=None) меряет дельту с ПРЕДЫДУЩЕГО вызова
+    на том же объекте Process. Новый Process на каждый отчёт
+    всегда возвращал бы 0.0 — поэтому объект кэшируется.
+    """
+    global _PSUTIL_PROC
+    if _PSUTIL_PROC is None:
+        import psutil
+
+        _PSUTIL_PROC = psutil.Process(os.getpid())
+    return _PSUTIL_PROC
+
+
 def _process_stats() -> dict[str, float]:
     """CPU%, RSS процесса и дочерних процессов (Chromium и пр.).
 
@@ -172,12 +190,19 @@ def _process_stats() -> dict[str, float]:
     всех дочерних процессов рекурсивно (Playwright/Chromium —
     отдельные процессы бота). Без psutil — fallback на ru_maxrss
     (исторический пик, не текущий расход).
+
+    ВАЖНО про rss_total_mb: это сумма RSS процессов — общие
+    страницы памяти (shared libs, page cache) учитываются
+    несколько раз, поэтому значение ЗАВЫШАЕТ реальное
+    потребление. Railway тарифицирует по cgroup memory
+    контейнера, а не по сумме RSS — rss_total_mb использовать
+    только как грубый индикатор/тренд, не как billing-метрику.
     """
     out: dict[str, float] = {}
     try:
-        import psutil
+        import psutil  # noqa: F401 — нужен для _get_proc
 
-        proc = psutil.Process(os.getpid())
+        proc = _get_proc()
         out["cpu_pct"] = round(proc.cpu_percent(interval=None), 1)
         out["rss_mb"] = round(proc.memory_info().rss / (1024 * 1024), 1)
         try:
