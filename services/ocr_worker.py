@@ -41,6 +41,14 @@ class OcrWorkerError(RuntimeError):
     """Worker недоступен/упал/таймаут — caller решает fallback."""
 
 
+class OcrWorkerBusy(OcrWorkerError):
+    """Очередь ожидающих worker-вызовов переполнена.
+
+    Инфраструктурная ошибка (не «пустой результат»): caller
+    показывает «сервис недоступен, повторите» и сохраняет сессию.
+    """
+
+
 class _WorkerTransportError(OcrWorkerError):
     """Транспортный сбой (таймаут/рассинхрон/падение child) —
     процесс под вопросом, после финальной неудачи убивается.
@@ -71,12 +79,53 @@ _lock = threading.Lock()          # один запрос за раз
 _last_used = 0.0
 _reaper_started = False
 
+# Bound ожидающих вызовов + приоритет: реальная обработка матчей
+# (priority>0) не должна стоять за диагностикой /ocr (priority<0).
+# _WAITING — все, кто ждёт _lock; _HI_WAITING — из них high-priority.
+_WAITING = 0
+_HI_WAITING = 0
+_wait_cond = threading.Condition()
+_MAX_WAITERS = int(os.environ.get("OCR_WORKER_MAX_WAITERS", "16"))
+
+
+def _cgroup_memory_mb() -> float | None:
+    """Текущее потребление cgroup (v2 memory.current, затем v1).
+
+    None — метрика недоступна (Windows/нет cgroup). Используется
+    как предохранитель перед spawn тяжёлого ONNX-воркера.
+    """
+    for path in (
+        "/sys/fs/cgroup/memory.current",
+        "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+    ):
+        try:
+            with open(path, "r", encoding="ascii") as f:
+                return int(f.read().strip()) / (1024 * 1024)
+        except (OSError, ValueError):
+            continue
+    return None
+
 
 def _ensure_proc() -> None:
     """Spawn worker при необходимости. Вызывать под _lock."""
     global _proc, _task_q, _res_q
     if _proc is not None and _proc.is_alive():
         return
+    # Не плодим второй тяжёлый ONNX-процесс, если контейнер уже
+    # за пределами безопасного запаса (env в МБ; 0/пусто = выкл).
+    max_mb = float(os.environ.get("OCR_WORKER_MAX_CGROUP_MB", "0") or 0)
+    if max_mb > 0:
+        used = _cgroup_memory_mb()
+        if used is not None and used >= max_mb:
+            try:
+                from utils import perf_metrics
+
+                perf_metrics.incr("ocr_worker_spawn_blocked_mem")
+            except Exception:
+                pass
+            raise OcrWorkerError(
+                f"cgroup memory {used:.0f}MB >= limit {max_mb:.0f}MB"
+            )
     ctx = mp.get_context("spawn")
     _task_q = ctx.Queue()
     _res_q = ctx.Queue()
@@ -107,6 +156,8 @@ def call(
     *args: Any,
     timeout: float | None = None,
     retries: int = 1,
+    priority: int = 0,
+    stats: dict | None = None,
 ) -> Any:
     """Синхронный вызов worker'а. Блокирует до результата.
 
@@ -117,20 +168,49 @@ def call(
     перезапускается, затем запрос повторяется. ONNX-модели в
     основной процесс не загружаются — при недоступности worker'а
     caller получает OcrWorkerError.
+
+    priority — >0 боевой pipeline (матчи), <0 диагностика /ocr:
+    low-priority вызовы ждут, пока есть ожидающие high-priority.
+    Число ожидающих ограничено OCR_WORKER_MAX_WAITERS —
+    переполнение даёт OcrWorkerBusy без постановки в очередь.
+
+    stats — необязательный dict: заполняется lock_wait_ms
+    (ожидание _lock) и ipc_ms (put+get через mp.Queue) на
+    последней попытке.
     """
-    global _last_used
+    global _last_used, _WAITING, _HI_WAITING
     if not worker_enabled():
         raise OcrWorkerError("worker disabled")
     if is_worker_child():
         # Защита от рекурсии: в child диспатчим напрямую.
         return _dispatch(kind, args)
+    stats = stats if stats is not None else {}
     attempts = max(0, retries) + 1
     last_exc: OcrWorkerError | None = None
     for attempt in range(attempts):
+        # Допуск в очередь ожидания: bound + low-priority yield.
+        with _wait_cond:
+            while True:
+                if priority < 0 and _HI_WAITING > 0:
+                    _wait_cond.wait(0.05)
+                    continue
+                if _WAITING >= _MAX_WAITERS:
+                    raise OcrWorkerBusy(
+                        f"OCR worker waiters full ({_WAITING})"
+                    )
+                _WAITING += 1
+                if priority > 0:
+                    _HI_WAITING += 1
+                break
+        t_lock = time.perf_counter()
         try:
             with _lock:
+                stats["lock_wait_ms"] = (
+                    time.perf_counter() - t_lock
+                ) * 1000.0
                 _ensure_proc()
                 seq = next(_seq)
+                t_ipc = time.perf_counter()
                 _task_q.put((seq, kind, args))
                 _last_used = time.time()
                 try:
@@ -141,6 +221,7 @@ def call(
                     raise _WorkerTransportError(
                         f"worker timeout kind={kind}"
                     )
+                stats["ipc_ms"] = (time.perf_counter() - t_ipc) * 1000.0
                 if got_seq != seq:
                     # Рассинхрон (не должно случаться при одном
                     # клиенте) — считаем worker битым.
@@ -161,6 +242,12 @@ def call(
             with _lock:
                 _kill_proc()
             time.sleep(0.2 * (attempt + 1))
+        finally:
+            with _wait_cond:
+                _WAITING -= 1
+                if priority > 0:
+                    _HI_WAITING -= 1
+                _wait_cond.notify_all()
     assert last_exc is not None
     if isinstance(last_exc, _WorkerTransportError):
         # Финальный транспортный сбой: child мог зависнуть
@@ -254,14 +341,18 @@ def _dispatch(kind: str, args: tuple) -> Any:
 
         t0 = time.perf_counter()
         reasons: list[str] = []
+        timings_out: dict = {}
         parsed = fast_cs_ocr._extract_parsed(
-            args[0], reason_out=reasons
+            args[0],
+            reason_out=reasons,
+            timings_out=timings_out,
         )
         wall_ms = (time.perf_counter() - t0) * 1000.0
         return {
             "parsed": parsed,
             "reason": reasons[-1] if reasons else None,
             "wall_ms": wall_ms,
+            "timings": timings_out,
             "ok": parsed is not None,
         }
 
@@ -269,6 +360,11 @@ def _dispatch(kind: str, args: tuple) -> Any:
         from services.ocr_service import _run_ocr_local
 
         return _run_ocr_local(*args)
+
+    if kind == "ocr_regions":
+        from services.ocr_service import _ocr_regions_local
+
+        return _ocr_regions_local(*args)
 
     if kind == "ocr_cyr_region":
         from services.ocr_service import _run_ocr_cyrillic_region_local

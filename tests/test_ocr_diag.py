@@ -193,7 +193,7 @@ class TestRunModes:
         async def fake_fast(data, **kw):
             return None
 
-        async def fake_classic(data, need_score=True, fast=True):
+        async def fake_classic(data, need_score=True, fast=True, **_kw):
             calls["classic"] += 1
             assert fast is False
             return _pipeline_result()
@@ -216,7 +216,7 @@ class TestRunModes:
             fast_calls["n"] += 1
             return _parsed()
 
-        async def fake_classic(data, need_score=True, fast=True):
+        async def fake_classic(data, need_score=True, fast=True, **_kw):
             assert fast is False
             return _pipeline_result()
 
@@ -232,7 +232,7 @@ class TestRunModes:
         async def fake_fast(data, **kw):
             return _parsed(kills=6)
 
-        async def fake_classic(data, need_score=True, fast=True):
+        async def fake_classic(data, need_score=True, fast=True, **_kw):
             return _pipeline_result(kills=9)  # kills отличаются
 
         monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
@@ -249,7 +249,7 @@ class TestRunModes:
         async def fake_fast(data, **kw):
             return _parsed()
 
-        async def fake_classic(data, need_score=True, fast=True):
+        async def fake_classic(data, need_score=True, fast=True, **_kw):
             return _pipeline_result()
 
         monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
@@ -263,7 +263,7 @@ class TestRunModes:
         async def fake_fast(data, **kw):
             return None
 
-        async def fake_classic(data, need_score=True, fast=True):
+        async def fake_classic(data, need_score=True, fast=True, **_kw):
             return None
 
         monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
@@ -283,7 +283,7 @@ class TestRunModes:
         async def fake_fast(data, **kw):
             return _parsed()
 
-        async def fake_classic(data, need_score=True, fast=True):
+        async def fake_classic(data, need_score=True, fast=True, **_kw):
             return _pipeline_result()
 
         monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
