@@ -91,7 +91,6 @@ async def test_ult_vac_check_solo(fake_store):
     vac = await vac_service.check_vac(1, 42)
     ts = int(vac["expires_at"].timestamp())
 
-    assert await vac_check(1, 42) is None or True  # активен → текст
     text = await vac_check(1, 42)
     assert text is not None
     assert "неявка" in text
