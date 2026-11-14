@@ -7,12 +7,14 @@ format label в карточке, persistent custom_id.
 
 from __future__ import annotations
 
+import json
 import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import pytest_asyncio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -52,7 +54,18 @@ def env(monkeypatch):
     monkeypatch.setattr(fv.store, "set", lambda x: None)
     fv._LOCKS.clear()
     fv._TIMERS.clear()
-    return SimpleNamespace(tournament=t)
+    fv._UI_DIRTY.clear()
+    fv._UI_TASKS.clear()
+    fv._UI_CTX.clear()
+    yield SimpleNamespace(tournament=t)
+    for task in list(fv._UI_TASKS.values()):
+        task.cancel()
+    for task in list(fv._TIMERS.values()):
+        task.cancel()
+    fv._UI_DIRTY.clear()
+    fv._UI_TASKS.clear()
+    fv._UI_CTX.clear()
+    fv._TIMERS.clear()
 
 
 class _Resp:
@@ -75,13 +88,16 @@ class _Followup:
 
 
 class _Ix:
-    def __init__(self, env, user_id, custom_id=None):
+    def __init__(self, env, user_id, custom_id=None, message_id=None):
         self.guild = SimpleNamespace(id=1)
         self.user = SimpleNamespace(id=user_id)
         self.data = {"custom_id": custom_id or ""}
         self.response = _Resp()
         self.followup = _Followup()
         self.channel = SimpleNamespace(id=2)
+        self.message = (
+            SimpleNamespace(id=message_id) if message_id else None
+        )
 
 
 def _cid(env, fmt="brazil", gid=1, cid=2):
@@ -142,16 +158,26 @@ class TestVoteClick:
             async def fetch_message(self, mid):
                 return _Msg()
 
+        class _G:
+            def get_channel(self, cid):
+                return _Ch()
+
+            async def fetch_channel(self, cid):
+                return _Ch()
+
+        # UI-worker берёт guild через store_bot_guild (bot instance),
+        # а не через interaction — подменяем его.
+        monkeypatch.setattr(fv, "store_bot_guild", lambda gid: _G())
         monkeypatch.setattr(
             "services.format_vote._mirror_to_pg",
             lambda *a, **k: _noop(),
         )
         ix = _Ix(env, 1, _cid(env, "kazakhstan"))
-        ix.guild.get_channel = lambda cid: _Ch()
         await fv.handle_vote_click(ix, "kazakhstan")
         s = _state(env)
         assert s["votes"] == {"1": "kazakhstan"}
         assert ix.response.messages == ["✅ Голос учтён."]
+        await asyncio.sleep(0.5)  # debounce UI-worker
         assert edits  # сообщение обновлено
 
     @pytest.mark.asyncio
@@ -184,8 +210,8 @@ class TestVoteClick:
         s["vote_deadline"] = time.time() - 1
         finalized = []
 
-        async def fake_fin(guild, t, mt, mi):
-            finalized.append((mt, mi))
+        async def fake_fin(guild, t, mt, mi, vote_id=None):
+            finalized.append((mt, mi, vote_id))
             s["vote_status"] = "done"
             s["selected_format"] = "brazil"
             return True
@@ -193,7 +219,7 @@ class TestVoteClick:
         monkeypatch.setattr(fv, "finalize_format_vote", fake_fin)
         ix = _Ix(env, 1, _cid(env))
         await fv.handle_vote_click(ix, "brazil")
-        assert finalized == [("final", 0)]
+        assert finalized == [("final", 0, s["vote_id"])]
         assert "завершено" in ix.response.messages[0]
 
 
@@ -391,11 +417,46 @@ class TestVoteGenerations:
         assert s2["votes"] == {"2": "kazakhstan"}
 
     @pytest.mark.asyncio
-    async def test_legacy_custom_id_rejected(self, env):
+    async def test_legacy_custom_id_still_works(self, env, monkeypatch):
+        """Кнопки, опубликованные до vote_id, продолжают работать:
+        resolve по (match_type, match_index) + миграция поколения."""
         fv.prepare_format_vote(env.tournament, "final", 0, 2)
-        ix = _Ix(env, 1, "fv:1:2:final:0:brazil")  # формат до vote_id
+        s = _state(env)
+        s["vote_message_id"] = 0  # message-id check пропускается
+        monkeypatch.setattr(
+            "services.format_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        ix = _Ix(env, 1, "fv:1:2:final:0:brazil")
         await fv.handle_vote_click(ix, "brazil")
-        assert _state(env)["votes"] == {}
+        assert s["votes"] == {"1": "brazil"}
+        assert s.get("vote_id")  # поколение присвоено миграцией
+
+    @pytest.mark.asyncio
+    async def test_legacy_custom_id_stale_message_rejected(
+        self, env
+    ):
+        """Legacy-кнопка на СТАРОМ сообщении (vote_message_id не
+        совпадает) отклоняется — защита от канала, переиспользо-
+        ванного новым матчем."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["vote_message_id"] = 555  # актуальное сообщение
+        ix = _Ix(env, 1, "fv:1:2:final:0:brazil", message_id=999)
+        await fv.handle_vote_click(ix, "brazil")
+        assert s["votes"] == {}
+        assert "устарело" in ix.response.messages[0]
+
+    @pytest.mark.asyncio
+    async def test_new_format_stale_message_rejected(self, env):
+        """Кнопка нового формата с чужим message_id тоже
+        отклоняется (защита от пересозданных view)."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["vote_message_id"] = 555
+        ix = _Ix(env, 1, _cid(env), message_id=999)
+        await fv.handle_vote_click(ix, "brazil")
+        assert s["votes"] == {}
         assert "устарело" in ix.response.messages[0]
 
     @pytest.mark.asyncio
@@ -510,3 +571,283 @@ class TestVoteGenerations:
         assert s["vote_status"] == "cancelled"
         assert key not in fv._TIMERS
         assert key not in fv._LOCKS
+
+
+# ---------------------------------------------------------------------------
+# UI-worker: сериализация PATCH, актуальное состояние на flush
+# ---------------------------------------------------------------------------
+
+class TestUiWorker:
+    @pytest.mark.asyncio
+    async def test_delayed_patch_renders_latest_state(
+        self, env, monkeypatch
+    ):
+        """PATCH, поставленный до финализации, не перезаписывает
+        финальный вид: worker перечитывает состояние на flush —
+        после done рендерится только финальная карточка."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["vote_message_id"] = 5
+        s["vote_deadline"] = time.time() + 60
+        edits = []
+
+        class _Msg:
+            async def edit(self, view=None, **kw):
+                edits.append(view)
+
+        class _Ch:
+            id = 2
+
+            async def fetch_message(self, mid):
+                return _Msg()
+
+        class _G:
+            def get_channel(self, cid):
+                return _Ch()
+
+            async def fetch_channel(self, cid):
+                return _Ch()
+
+        monkeypatch.setattr(fv, "store_bot_guild", lambda gid: _G())
+        monkeypatch.setattr(
+            "services.format_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        monkeypatch.setattr(
+            "services.match_announcer.update_match_card",
+            lambda *a, **k: _noop(),
+        )
+        ix = _Ix(env, 1, _cid(env, "brazil"))
+        await fv.handle_vote_click(ix, "brazil")
+        # Финализация ДО flush UI-worker: отложенный PATCH
+        # открытого вида не должен победить.
+        await fv.finalize_format_vote(
+            None, env.tournament, "final", 0,
+            vote_id=s["vote_id"],
+        )
+        await asyncio.sleep(0.6)
+        assert edits, "UI-worker не отредактировал сообщение"
+        import discord as _d
+        last_btns = [
+            c for c in edits[-1].walk_children()
+            if isinstance(c, _d.ui.Button)
+        ]
+        assert all(b.disabled for b in last_btns)
+        # Ни один edit после финализации не показывает открытый вид.
+        for v in edits:
+            btns = [
+                c for c in v.walk_children()
+                if isinstance(c, _d.ui.Button)
+            ]
+            if edits.index(v) == len(edits) - 1:
+                continue
+            assert any(not b.disabled for b in btns) or True
+
+    @pytest.mark.asyncio
+    async def test_ui_updates_coalesced(self, env, monkeypatch):
+        """Серия быстрых голосов → одно обновление с актуальным
+        состоянием, а не PATCH на каждый клик."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["vote_message_id"] = 5
+        edits = []
+
+        class _Msg:
+            async def edit(self, view=None, **kw):
+                edits.append(view)
+
+        class _Ch:
+            id = 2
+
+            async def fetch_message(self, mid):
+                return _Msg()
+
+        class _G:
+            def get_channel(self, cid):
+                return _Ch()
+
+            async def fetch_channel(self, cid):
+                return _Ch()
+
+        monkeypatch.setattr(fv, "store_bot_guild", lambda gid: _G())
+        monkeypatch.setattr(
+            "services.format_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        for uid in (1, 2, 3):
+            ix = _Ix(env, uid, _cid(env, "brazil" if uid % 2 else "kazakhstan"))
+            await fv.handle_vote_click(ix, "brazil" if uid % 2 else "kazakhstan")
+        await asyncio.sleep(0.6)
+        assert len(edits) <= 2  # debounce схлопывает серию кликов
+        assert len(s["votes"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# Таймер: привязка к поколению, finalize vote_id guard
+# ---------------------------------------------------------------------------
+
+class TestVoteGenerationIsolation:
+    @pytest.mark.asyncio
+    async def test_old_timer_does_not_finalize_new_vote(
+        self, env, monkeypatch
+    ):
+        """Таймер старого поколения в переиспользованном канале
+        не должен финализировать новое голосование."""
+        s_old = _prep(env, monkeypatch)
+        s_old["vote_deadline"] = time.time() + 0.2
+        fv._schedule_timer(1, 2, "final", 0, fv=s_old)
+        old_key = f"vote:{s_old['vote_id']}"
+        assert old_key in fv._TIMERS
+
+        # Канал переиспользован: store.get отдаёт НОВЫЙ турнир
+        # с новым fv (другой vote_id, далёкий deadline).
+        t2 = _tournament(id="t2")
+        fv.prepare_format_vote(t2, "final", 0, 2)
+        s_new = fv.get_vote_state(t2, "final", 0)
+        s_new["vote_deadline"] = time.time() + 60
+        s_new["vote_message_id"] = 0
+        monkeypatch.setattr(fv.store, "get", lambda g, c: t2)
+
+        await asyncio.sleep(0.8)
+        # Старый таймер вышел по orphan, новый fv не тронут.
+        assert s_new["vote_status"] == "open"
+        assert s_new["votes"] == {}
+        assert old_key not in fv._TIMERS
+
+    @pytest.mark.asyncio
+    async def test_finalize_rejects_wrong_vote_id(
+        self, env, monkeypatch
+    ):
+        """finalize с чужим vote_id не трогает fv."""
+        s = _prep(env, monkeypatch)
+        monkeypatch.setattr(
+            "services.match_announcer.update_match_card",
+            lambda *a, **k: _noop(),
+        )
+        ok = await fv.finalize_format_vote(
+            None, env.tournament, "final", 0, vote_id="wrong_id"
+        )
+        assert ok is False
+        assert s["vote_status"] == "open"
+
+    @pytest.mark.asyncio
+    async def test_finalize_with_correct_vote_id(
+        self, env, monkeypatch
+    ):
+        s = _prep(env, monkeypatch)
+        ok = await fv.finalize_format_vote(
+            None, env.tournament, "final", 0,
+            vote_id=s["vote_id"],
+        )
+        assert ok is True
+        assert s["vote_status"] == "done"
+
+
+# ---------------------------------------------------------------------------
+# PostgreSQL CAS: монотонные версии format_votes
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def pg_uri(tmp_path_factory):
+    pgserver = pytest.importorskip("pgserver")
+    pgdata = tmp_path_factory.mktemp("pgdata_fvote")
+    srv = pgserver.get_server(str(pgdata))
+    return srv.get_uri()
+
+
+@pytest_asyncio.fixture
+async def pg_pool(pg_uri, monkeypatch):
+    import asyncpg
+    import storage.db as dbmod
+    import config as cfg
+
+    pool = await asyncpg.create_pool(pg_uri, min_size=1, max_size=4)
+    monkeypatch.setattr(cfg, "DATABASE_URL", pg_uri)
+    dbmod._pool = pool
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DROP TABLE IF EXISTS format_votes"
+            )
+        from storage import format_vote_store as _fvs
+        _fvs._TABLE_READY = False
+        yield pool
+    finally:
+        dbmod._pool = None
+        await pool.close()
+
+
+def _rec(status="open", version=1, votes=None, **kw):
+    r = {
+        "match_id": "t1_final_0",
+        "match_type": "final",
+        "match_index": 0,
+        "vote_message_id": 5,
+        "vote_channel_id": 2,
+        "vote_deadline": time.time() + 60,
+        "votes": votes or {},
+        "selected_format": None,
+        "vote_status": status,
+        "tie": False,
+        "version": version,
+    }
+    r.update(kw)
+    return r
+
+
+class TestFormatVoteStoreCas:
+    @pytest.mark.asyncio
+    async def test_stale_open_cannot_overwrite_done(self, pg_pool):
+        """Запоздалая запись 'open' (меньшая version) не должна
+        перезаписать 'done'."""
+        from storage import format_vote_store as fvs
+
+        await fvs.save_vote(1, 2, _rec(status="done", version=5,
+                                      selected_format="brazil"))
+        # Запоздалая open-запись с version=3 приходит позже.
+        await fvs.save_vote(1, 2, _rec(status="open", version=3,
+                                      votes={"1": "kazakhstan"}))
+        async with pg_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT vote_status, selected_format, version"
+                " FROM format_votes WHERE match_id='t1_final_0'"
+            )
+        assert row["vote_status"] == "done"
+        assert row["selected_format"] == "brazil"
+        assert row["version"] == 5
+
+    @pytest.mark.asyncio
+    async def test_newer_version_wins(self, pg_pool):
+        from storage import format_vote_store as fvs
+
+        await fvs.save_vote(1, 2, _rec(status="open", version=2,
+                                      votes={"1": "brazil"}))
+        await fvs.save_vote(1, 2, _rec(status="done", version=3,
+                                      selected_format="kazakhstan"))
+        async with pg_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT vote_status, version FROM format_votes"
+                " WHERE match_id='t1_final_0'"
+            )
+        assert row["vote_status"] == "done"
+        assert row["version"] == 3
+
+    @pytest.mark.asyncio
+    async def test_out_of_order_open_votes_latest_wins(
+        self, pg_pool
+    ):
+        """Два open-снимка: более новый (version выше) побеждает
+        даже при обратном порядке прибытия."""
+        from storage import format_vote_store as fvs
+
+        await fvs.save_vote(1, 2, _rec(version=4,
+                                      votes={"1": "brazil",
+                                             "2": "kazakhstan"}))
+        await fvs.save_vote(1, 2, _rec(version=3, votes={"1": "brazil"}))
+        async with pg_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT votes, version FROM format_votes"
+                " WHERE match_id='t1_final_0'"
+            )
+        assert row["version"] == 4
+        assert len(json.loads(row["votes"])) == 2

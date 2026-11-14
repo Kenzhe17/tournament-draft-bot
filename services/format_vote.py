@@ -59,6 +59,14 @@ _FORMATS: dict[str, dict[str, str]] = {
 _LOCKS: dict[str, asyncio.Lock] = {}
 _TIMERS: dict[str, asyncio.Task] = {}
 
+# Сериализованный UI-worker на голосование: все правки сообщения
+# голосования проходят через одну задачу, которая при flush
+# перечитывает АКТУАЛЬНОЕ состояние — запоздавший PATCH открытого
+# вида не может перезаписать финальный (done/cancelled).
+_UI_DIRTY: dict[str, int] = {}
+_UI_TASKS: dict[str, asyncio.Task] = {}
+_UI_CTX: dict[str, tuple] = {}  # key -> (gid, cid, vote_id)
+
 
 def _new_vote_id() -> str:
     """Уникальный ID поколения голосования (на матч — свой)."""
@@ -203,6 +211,10 @@ def prepare_format_vote(
         # между матчами, поэтому (channel, match_type, index)
         # НЕ уникальны — уникален vote_id.
         "vote_id": _new_vote_id(),
+        # Монотонная версия состояния — PostgreSQL CAS в
+        # format_vote_store не даёт запоздавшей записи
+        # (open) перезаписать done/cancelled.
+        "version": 1,
         "vote_message_id": 0,
         "vote_channel_id": int(channel_id),
         "vote_deadline": time.time() + VOTE_SECONDS,
@@ -294,7 +306,11 @@ def build_vote_view(
 
     gid = int(getattr(tournament, "guild_id", 0) or 0)
     cid = int(getattr(tournament, "channel_id", 0) or 0)
-    done = fv.get("vote_status") == "done"
+    status = fv.get("vote_status")
+    done = status == "done"
+    # done/cancelled — финальные состояния: кнопки отключены,
+    # устаревший клик получит корректный ответ в handle_vote_click.
+    closed = status in ("done", "cancelled")
 
     if done:
         fmt = _FORMATS.get(fv.get("selected_format") or "", {})
@@ -322,10 +338,14 @@ def build_vote_view(
         view.sep()
         b_line, k_line = _votes_text(fv)
         voted = len(fv.get("votes") or {})
+        status_line = (
+            "**Статус:** Голосование отменено"
+            if status == "cancelled"
+            else f"**Проголосовало:** {voted}/{VOTE_PLAYERS}\n"
+                 f"**Завершение:** <t:{int(fv.get('vote_deadline') or 0)}:R>"
+        )
         view.text(
-            f"{b_line}\n{k_line}\n"
-            f"**Проголосовало:** {voted}/{VOTE_PLAYERS}\n"
-            f"**Завершение:** <t:{int(fv.get('vote_deadline') or 0)}:R>"
+            f"{b_line}\n{k_line}\n{status_line}"
         )
         view.sep()
 
@@ -339,7 +359,7 @@ def build_vote_view(
             label=label,
             style=discord.ButtonStyle.secondary,
             custom_id=_custom_id(gid, cid, vote_id, fmt_key),
-            disabled=done,
+            disabled=closed,
         )
 
         async def _cb(interaction, _fmt=fmt_key):
@@ -385,10 +405,98 @@ def _ensure_vote_id(tournament, meta: dict, fv: dict) -> None:
     if fv.get("vote_id"):
         return
     fv["vote_id"] = _new_vote_id()
+    fv["version"] = int(fv.get("version") or 0) + 1
     try:
         store.set(tournament)
     except Exception as exc:
         logger.warning("vote_id migration store.set failed: %s", exc)
+
+
+def _bump_version(fv: dict) -> None:
+    fv["version"] = int(fv.get("version") or 0) + 1
+
+
+# ---------------------------------------------------------------------------
+# UI-worker: сериализованные правки сообщения голосования
+# ---------------------------------------------------------------------------
+
+def _schedule_vote_ui(guild_id: int, channel_id: int, vote_id: str) -> None:
+    """Поставить обновление сообщения голосования в фоновую очередь.
+
+    Воркер при flush заново читает состояние — даже если между
+    постановкой и выполнением прошла финализация, отрендерится
+    актуальный (финальный) вид, а не устаревший открытый.
+    """
+    key = f"vote:{vote_id}"
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # Sync-контекст без event loop (напр. cancel из sync
+        # теста/утилиты): UI обновится при следующем рендере
+        # или restore — клики всё равно отклоняются по статусу.
+        return
+    _UI_CTX[key] = (guild_id, channel_id, vote_id)
+    _UI_DIRTY[key] = _UI_DIRTY.get(key, 0) + 1
+    task = _UI_TASKS.get(key)
+    if task is None or task.done():
+        task = asyncio.create_task(_vote_ui_worker(key))
+        _UI_TASKS[key] = task
+
+
+async def _vote_ui_worker(key: str) -> None:
+    """Debounce + актуальное состояние на момент flush."""
+    processed = 0
+    cancelled = False
+    try:
+        while True:
+            await asyncio.sleep(0.2)
+            dirty = _UI_DIRTY.get(key, 0)
+            if dirty <= processed:
+                return
+            processed = dirty
+            gid, cid, vote_id = _UI_CTX.get(key, (0, 0, ""))
+            found = _find_vote(gid, cid, vote_id)
+            if found is None:
+                continue  # голосование удалено — править нечего
+            tournament, _meta, fv, mt, mi = found
+            try:
+                await _edit_vote_message(tournament, mt, mi, fv)
+            except Exception as exc:
+                logger.warning("Vote UI edit failed %s: %s", vote_id, exc)
+    except asyncio.CancelledError:
+        cancelled = True
+        raise
+    finally:
+        _UI_TASKS.pop(key, None)
+        if not cancelled:
+            try:
+                if _UI_DIRTY.get(key, 0) > processed:
+                    _schedule_vote_ui(*_UI_CTX[key][:2], _UI_CTX[key][2])
+                else:
+                    _UI_DIRTY.pop(key, None)
+                    _UI_CTX.pop(key, None)
+            except (RuntimeError, KeyError):
+                pass
+
+
+async def _edit_vote_message(tournament, match_type: str,
+                             match_index: int, fv: dict) -> None:
+    """Отредактировать CV2-сообщение голосования по актуальному fv."""
+    gid = int(getattr(tournament, "guild_id", 0) or 0)
+    guild = store_bot_guild(gid)
+    if guild is None:
+        return
+    vch_id = int(fv.get("vote_channel_id") or 0)
+    mid = int(fv.get("vote_message_id") or 0)
+    if not (vch_id and mid):
+        return
+    vch = guild.get_channel(vch_id)
+    if vch is None:
+        vch = await guild.fetch_channel(vch_id)
+    msg = await vch.fetch_message(mid)
+    await msg.edit(
+        view=build_vote_view(tournament, match_type, match_index, fv)
+    )
 
 
 async def handle_vote_click(
@@ -404,18 +512,32 @@ async def handle_vote_click(
     """
     custom_id = (interaction.data or {}).get("custom_id", "")
     parsed = _parse_custom_id(custom_id)
-    if parsed is None:
-        # custom_id старого формата (без vote_id) или чужой —
-        # голосование этого поколения не существует, отклоняем.
-        if (custom_id or "").startswith("fv:"):
+    legacy = False
+    if parsed is not None:
+        gid, cid, vote_id, _fmt = parsed
+        key = f"vote:{vote_id}"
+    elif (custom_id or "").startswith("fv:"):
+        # Кнопки, опубликованные до введения vote_id:
+        # ``fv:{gid}:{cid}:{match_type}:{match_index}:{fmt}``.
+        # Резолвим fv по (match_type, match_index) ТЕКУЩЕГО
+        # турнира канала и проверяем vote_message_id — кнопка
+        # старого сообщения в переиспользованном канале не
+        # совпадёт с сообщением нового голосования и будет
+        # отклонена. Миграция vote_id — под provisional lock,
+        # затем голос учитывается под lock нового поколения.
+        legacy = True
+        lp = _parse_legacy_custom_id(custom_id)
+        if lp is None:
             await _ephemeral(
                 interaction,
                 "ℹ️ Это голосование устарело — "
                 "используйте кнопки актуального сообщения.",
             )
+            return
+        gid, cid, _lmt, _lmi = lp
+        key = _legacy_key(gid, cid, _lmt, _lmi)
+    else:
         return
-    gid, cid, vote_id, _ = parsed
-    key = f"vote:{vote_id}"
 
     reply: str | None = None
     need_finalize = False
@@ -423,37 +545,36 @@ async def handle_vote_click(
     match_type = None
     match_index = 0
     fv = None
+    resolved_vote_id = ""
 
-    async with _lock(key):
-        found = _find_vote(gid, cid, vote_id)
-        if found is None:
-            reply = "❌ Голосование не найдено — оно могло быть отменено или заменено новым матчем."
-        else:
-            tournament, meta, fv, match_type, match_index = found
-            _ensure_vote_id(tournament, meta, fv)
-            if fv.get("vote_status") != "open":
-                reply = "ℹ️ Голосование уже завершено."
-            elif time.time() > float(fv.get("vote_deadline") or 0):
-                need_finalize = True
+    if legacy:
+        # Фаза 1: resolve + миграция vote_id под provisional
+        # lock (он же сериализует конкурентные legacy-клики).
+        async with _lock(key):
+            resolved = _resolve_legacy(gid, cid, _lmt, _lmi,
+                                       interaction)
+            if isinstance(resolved, str):
+                reply = resolved
             else:
-                uid = int(getattr(interaction.user, "id", 0) or 0)
-                if uid not in _player_uids(tournament):
-                    reply = (
-                        "Вы не являетесь участником этого матча"
-                    )
-                else:
-                    votes = fv.setdefault("votes", {})
-                    if str(uid) in votes or uid in votes:
-                        reply = "Вы уже проголосовали за этот формат"
-                    elif len(votes) >= VOTE_PLAYERS:
-                        # 8-й голос уже зафиксирован, финализация ещё
-                        # не прошла — лишний голос не принимаем.
-                        need_finalize = True
-                    else:
-                        votes[str(uid)] = fmt
-                        store.set(tournament)
-                        need_finalize = len(votes) >= VOTE_PLAYERS
-    # --- конец критической секции ---
+                (_t, _meta, _fv, _mt, _mi, resolved_vote_id) = resolved
+        # Фаза 2: голос учитывается под lock СВОЕГО поколения —
+        # без вложенных захватов.
+        if reply is None and resolved_vote_id:
+            async with _lock(f"vote:{resolved_vote_id}"):
+                reply, need_finalize, ctx = await _cast_vote(
+                    gid, cid, resolved_vote_id, interaction, fmt
+                )
+                if ctx is not None:
+                    tournament, match_type, match_index, fv = ctx
+    else:
+        async with _lock(key):
+            reply, need_finalize, ctx = await _cast_vote(
+                gid, cid, vote_id, interaction, fmt
+            )
+            if ctx is not None:
+                tournament, match_type, match_index, fv = ctx
+                resolved_vote_id = vote_id
+    # --- конец критических секций ---
 
     if reply is not None:
         await _ephemeral(interaction, reply)
@@ -462,29 +583,126 @@ async def handle_vote_click(
     if need_finalize:
         # finalize сам берёт lock — вызывать только вне _lock.
         await finalize_format_vote(
-            interaction.guild, tournament, match_type, match_index
+            interaction.guild, tournament, match_type, match_index,
+            vote_id=resolved_vote_id or None,
         )
         await _ephemeral(interaction, "ℹ️ Голосование уже завершено.")
         return
 
-    # Обычный голос: обновить сообщение ВНЕ lock, затем ответить.
-    try:
-        vch_id = int(fv.get("vote_channel_id") or cid)
-        vch = interaction.guild.get_channel(vch_id)
-        if vch is None:
-            vch = await interaction.guild.fetch_channel(vch_id)
-        mid = int(fv.get("vote_message_id") or 0)
-        if vch is not None and mid:
-            msg = await vch.fetch_message(mid)
-            await msg.edit(
-                view=build_vote_view(
-                    tournament, match_type, match_index, fv
-                )
-            )
-    except Exception as exc:
-        logger.warning("Format vote update failed: %s", exc)
     await _mirror_to_pg(tournament, match_type, match_index, fv)
     await _ephemeral(interaction, "✅ Голос учтён.")
+
+
+async def _cast_vote(gid: int, cid: int, vote_id: str,
+                     interaction: discord.Interaction,
+                     fmt: str):
+    """Применить голос под уже захваченным lock поколения.
+
+    Возвращает (reply|None, need_finalize, ctx), где
+    ctx = (tournament, match_type, match_index, fv) при успехе.
+    """
+    found = _find_vote(gid, cid, vote_id)
+    if found is None:
+        return (
+            "❌ Голосование не найдено — оно могло быть "
+            "отменено или заменено новым матчем.", False, None,
+        )
+    tournament, _meta, fv, match_type, match_index = found
+
+    # Проверка поколения по сообщению: кнопка на старом
+    # сообщении не должна менять состояние нового fv даже при
+    # совпадении vote_id (защита от пересозданных view).
+    mid_expect = int(fv.get("vote_message_id") or 0)
+    mid_actual = _interaction_message_id(interaction)
+    if mid_expect and mid_actual and mid_actual != mid_expect:
+        logger.info(
+            "mm_diag event=vote_stale_message vote_id=%s "
+            "match_id=%s channel_id=%s expected_msg=%s got=%s",
+            fv.get("vote_id"), fv.get("match_id"), cid,
+            mid_expect, mid_actual,
+        )
+        return (
+            "ℹ️ Это голосование устарело — "
+            "используйте кнопки актуального сообщения.",
+            False, None,
+        )
+
+    if fv.get("vote_status") != "open":
+        return "ℹ️ Голосование уже завершено.", False, None
+    if time.time() > float(fv.get("vote_deadline") or 0):
+        return None, True, (tournament, match_type, match_index, fv)
+
+    uid = int(getattr(interaction.user, "id", 0) or 0)
+    if uid not in _player_uids(tournament):
+        return "Вы не являетесь участником этого матча", False, None
+    votes = fv.setdefault("votes", {})
+    if str(uid) in votes or uid in votes:
+        return "Вы уже проголосовали за этот формат", False, None
+    if len(votes) >= VOTE_PLAYERS:
+        # 8-й голос уже зафиксирован, финализация ещё не прошла —
+        # лишний голос не принимаем.
+        return None, True, (tournament, match_type, match_index, fv)
+    votes[str(uid)] = fmt
+    _bump_version(fv)
+    store.set(tournament)
+    _schedule_vote_ui(gid, cid, vote_id)
+    return None, len(votes) >= VOTE_PLAYERS, \
+        (tournament, match_type, match_index, fv)
+
+
+def _interaction_message_id(interaction) -> int:
+    msg = getattr(interaction, "message", None)
+    return int(getattr(msg, "id", 0) or 0)
+
+
+def _parse_legacy_custom_id(custom_id: str):
+    """Разбор custom_id старого формата
+    ``fv:{gid}:{cid}:{match_type}:{match_index}:{fmt}`` (6 частей).
+    Возвращает (gid, cid, match_type, match_index) или None.
+    """
+    parts = (custom_id or "").split(":")
+    if len(parts) != 6 or parts[0] != "fv":
+        return None
+    try:
+        return int(parts[1]), int(parts[2]), parts[3], int(parts[4])
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_legacy(gid: int, cid: int, match_type: str,
+                     match_index: int, interaction):
+    """Resolve fv по (match_type, match_index) для legacy-кнопки.
+
+    Возвращает строку-ошибку для ephemeral-ответа или кортеж
+    (tournament, meta, fv, mt, mi, vote_id) после миграции
+    vote_id. Вызывается под provisional lock.
+    """
+    t = store.get(gid, cid)
+    if t is None:
+        return "❌ Голосование не найдено — оно могло быть " \
+               "отменено или заменено новым матчем."
+    fv0 = get_vote_state(t, match_type, match_index)
+    if not isinstance(fv0, dict):
+        return "❌ Голосование не найдено — оно могло быть " \
+               "отменено или заменено новым матчем."
+    # Привязка к поколению через сообщение: legacy custom_id не
+    # несёт vote_id — кнопка старого сообщения в канале,
+    # переиспользованном новым матчем, отклоняется.
+    mid_expect = int(fv0.get("vote_message_id") or 0)
+    mid_actual = _interaction_message_id(interaction)
+    if mid_expect and mid_actual and mid_actual != mid_expect:
+        logger.info(
+            "mm_diag event=vote_stale_message vote_id=%s "
+            "match_id=%s channel_id=%s expected_msg=%s got=%s",
+            fv0.get("vote_id"), fv0.get("match_id"), cid,
+            mid_expect, mid_actual,
+        )
+        return ("ℹ️ Это голосование устарело — "
+                "используйте кнопки актуального сообщения.")
+    meta0 = _match_meta(t, match_type, match_index) or {}
+    _ensure_vote_id(t, meta0, fv0)
+    return t, meta0, fv0, match_type, match_index, \
+        fv0.get("vote_id") or ""
 
 
 async def _ephemeral(interaction: discord.Interaction,
@@ -510,6 +728,13 @@ def _schedule_timer(guild_id: int, channel_id: int,
     t = store.get(guild_id, channel_id)
     if fv is None and t is not None:
         fv = get_vote_state(t, match_type, match_index)
+    # Legacy fv без vote_id — мигрируем ДО постановки таймера,
+    # чтобы таймер был привязан к конкретному поколению, а не
+    # к (channel, match_type, index), которые переиспользуются.
+    if fv is not None and t is not None and not fv.get("vote_id"):
+        meta = _match_meta(t, match_type, match_index)
+        if meta is not None:
+            _ensure_vote_id(t, meta, fv)
     key = _vote_key(
         fv, guild_id, channel_id, match_type, match_index
     )
@@ -517,7 +742,10 @@ def _schedule_timer(guild_id: int, channel_id: int,
     if task is not None and not task.done():
         return
     task = asyncio.create_task(
-        _vote_timer(guild_id, channel_id, match_type, match_index, key)
+        _vote_timer(
+            guild_id, channel_id, match_type, match_index, key,
+            vote_id=(fv or {}).get("vote_id") or "",
+        )
     )
     _TIMERS[key] = task
     logger.info(
@@ -530,15 +758,39 @@ def _schedule_timer(guild_id: int, channel_id: int,
 
 async def _vote_timer(guild_id: int, channel_id: int,
                       match_type: str, match_index: int,
-                      key: str) -> None:
+                      key: str, vote_id: str = "") -> None:
+    """Таймер дедлайна. Если задан vote_id — резолвит fv ТОЛЬКО
+    по поколению: при переиспользовании канала чужой матч с тем
+    же (match_type, match_index) не будет финализирован этим
+    таймером."""
     try:
         while True:
-            tournament = store.get(guild_id, channel_id)
-            fv = (
-                get_vote_state(tournament, match_type, match_index)
-                if tournament is not None else None
-            )
-            if fv is None or fv.get("vote_status") != "open":
+            if vote_id:
+                found = _find_vote(guild_id, channel_id, vote_id)
+                if found is None:
+                    logger.info(
+                        "mm_diag event=vote_timer_orphan vote_id=%s "
+                        "channel_id=%s — голосование заменено/удалено",
+                        vote_id, channel_id,
+                    )
+                    return
+                tournament, _meta, fv, mt, mi = found
+            else:
+                # Legacy-таймер без vote_id: только если fv всё
+                # ещё не имеет поколения (редкий путь до
+                # миграции); иначе пропускаем.
+                tournament = store.get(guild_id, channel_id)
+                fv = (
+                    get_vote_state(tournament, match_type, match_index)
+                    if tournament is not None else None
+                )
+                if fv is None or fv.get("vote_id"):
+                    # fv удалено ИЛИ поколение появилось — этот
+                    # таймер устарел (новый таймер привязан к
+                    # vote_id и работает независимо).
+                    return
+                mt, mi = match_type, match_index
+            if fv.get("vote_status") != "open":
                 return
             remain = float(fv.get("vote_deadline") or 0) - time.time()
             if remain <= 0:
@@ -548,7 +800,7 @@ async def _vote_timer(guild_id: int, channel_id: int,
                     fv.get("vote_id"), fv.get("match_id"), channel_id,
                 )
                 await finalize_format_vote(
-                    None, tournament, match_type, match_index
+                    None, tournament, mt, mi, vote_id=vote_id or None
                 )
                 return
             await asyncio.sleep(min(remain + 0.5, 30.0))
@@ -565,25 +817,38 @@ async def finalize_format_vote(
     tournament,
     match_type: str,
     match_index: int,
+    vote_id: str | None = None,
 ) -> bool:
     """Подвести итог: победитель по голосам, ничья/пусто — случайно.
 
     Критическая секция (подсчёт + перевод статуса + store.set)
     выполняется под per-vote lock; Discord API и PG-зеркало —
     после его освобождения. Идемпотентно: повторный вызов при
-    vote_status != open возвращает False.
+    vote_status != open возвращает False. Если передан vote_id —
+    финализируется ТОЛЬКО это поколение: таймер/клик старого
+    матча не тронет новое голосование в переиспользованном канале.
     """
     gid = int(getattr(tournament, "guild_id", 0) or 0)
     cid = int(getattr(tournament, "channel_id", 0) or 0)
     fresh0 = store.get(gid, cid) or tournament
     fv0 = get_vote_state(fresh0, match_type, match_index)
-    key = _vote_key(fv0, gid, cid, match_type, match_index)
+    key = (
+        f"vote:{vote_id}" if vote_id
+        else _vote_key(fv0, gid, cid, match_type, match_index)
+    )
 
     payload = None
     async with _lock(key):
         fresh = store.get(gid, cid) or tournament
         fv = get_vote_state(fresh, match_type, match_index)
         if fv is None or fv.get("vote_status") != "open":
+            return False
+        if vote_id and fv.get("vote_id") != vote_id:
+            logger.info(
+                "mm_diag event=vote_finalize_mismatch vote_id=%s "
+                "fv_vote_id=%s match_id=%s channel_id=%s",
+                vote_id, fv.get("vote_id"), fv.get("match_id"), cid,
+            )
             return False
 
         votes = fv.get("votes") or {}
@@ -603,6 +868,7 @@ async def finalize_format_vote(
         fv["vote_status"] = "done"
         fv["tie"] = tie
         fv["closed_at"] = time.time()
+        _bump_version(fv)
         store.set(fresh)
         meta = _match_meta(fresh, match_type, match_index) or {}
         payload = (fresh, fv, counts, selected, meta)
@@ -611,23 +877,10 @@ async def finalize_format_vote(
     fresh, fv, counts, selected, meta = payload
     await _mirror_to_pg(fresh, match_type, match_index, fv)
 
-    # CV2-сообщение → финальный вид с правилами.
-    try:
-        if guild is None:
-            guild = store_bot_guild(gid)
-        vch_id = int(fv.get("vote_channel_id") or 0)
-        mid = int(fv.get("vote_message_id") or 0)
-        if guild is not None and vch_id and mid:
-            vch = guild.get_channel(vch_id)
-            if vch is None:
-                vch = await guild.fetch_channel(vch_id)
-            msg = await vch.fetch_message(mid)
-            await msg.edit(
-                view=build_vote_view(fresh, match_type,
-                                     match_index, fv)
-            )
-    except Exception as exc:
-        logger.warning("Format vote final edit failed: %s", exc)
+    # CV2-сообщение → финальный вид через сериализованный
+    # UI-worker: он перечитает состояние на момент flush, поэтому
+    # запоздавший PATCH открытого вида не перезапишет финальный.
+    _schedule_vote_ui(gid, cid, fv.get("vote_id") or "")
 
     # Строка «Формат» в карточке матча.
     try:
@@ -640,11 +893,16 @@ async def finalize_format_vote(
     except Exception as exc:
         logger.warning("Format vote card update failed: %s", exc)
 
-    # Завершённое голосование: снять таймер и lock-запись.
+    # Завершённое голосование: снять таймер. Lock-запись удаляем
+    # только если она не захвачена — иначе in-flight обработчик
+    # продолжил бы работать со «старым» lock-объектом, а новый
+    # _lock(key) создал бы второй → потеря сериализации.
     task = _TIMERS.pop(key, None)
     if task is not None and task is not asyncio.current_task():
         task.cancel()
-    _LOCKS.pop(key, None)
+    lk = _LOCKS.get(key)
+    if lk is not None and not lk.locked():
+        _LOCKS.pop(key, None)
     logger.info(
         "mm_diag event=vote_finalized vote_id=%s match_id=%s "
         "channel_id=%s selected=%s votes=%s",
@@ -676,13 +934,20 @@ def cancel_open_format_votes(tournament) -> None:
             continue
         fv["vote_status"] = "cancelled"
         fv["closed_at"] = time.time()
+        _ensure_vote_id(tournament, meta, fv)
+        _bump_version(fv)
         mt = meta.get("match_type", "")
         mi = int(meta.get("match_index", 0) or 0)
         key = _vote_key(fv, gid, cid, mt, mi)
         task = _TIMERS.pop(key, None)
         if task is not None:
             task.cancel()
-        _LOCKS.pop(key, None)
+        lk = _LOCKS.get(key)
+        if lk is not None and not lk.locked():
+            _LOCKS.pop(key, None)
+        # Кнопки на сообщении должны отключиться — UI-worker
+        # отрендерит актуальное (cancelled) состояние.
+        _schedule_vote_ui(gid, cid, fv.get("vote_id") or "")
         logger.info(
             "mm_diag event=vote_cancelled vote_id=%s match_id=%s "
             "channel_id=%s",
@@ -761,6 +1026,11 @@ async def _mirror_to_pg(tournament, match_type: str,
                     fv.get("vote_deadline") or 0
                 ),
                 "votes": dict(fv.get("votes") or {}),
+                # fv, созданные до появления version, шлём как 1 —
+                # CAS-колонка NOT NULL DEFAULT 0, а 0 < 0 заблокировал
+                # бы даже первую запись. Мутации всегда бампают
+                # версию, поэтому коллизий 1-vs-1 нет.
+                "version": max(1, int(fv.get("version") or 0)),
                 "selected_format": fv.get("selected_format"),
                 "vote_status": fv.get("vote_status") or "open",
                 "tie": bool(fv.get("tie")),
