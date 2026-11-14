@@ -219,7 +219,10 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
     from cogs.tournament import get_rank_emoji
 
     all_items = shop_store.get_all_items()
-    roles = [item for item in all_items if item.item_type == "role"]
+    roles = [
+        item for item in all_items
+        if item.item_type in ("role", "service")
+    ]
 
     if not roles:
         await interaction.response.send_message(
@@ -585,6 +588,11 @@ class RoleSelect(discord.ui.Select):
             await interaction.response.send_message(replace_emojis("Роль не найдена."), ephemeral=True)
             return
 
+        if item.item_type == "service":
+            from views.nickname_view import show_nickname_service_card
+            await show_nickname_service_card(interaction, item)
+            return
+
         await show_role_card(interaction, item)
 
 
@@ -818,6 +826,12 @@ class BuyButton(discord.ui.Button):
         item = shop_store.get_item(self.item_id)
         if not item:
             await interaction.response.send_message(replace_emojis("Товар не найден."), ephemeral=True)
+            return
+
+        # Услуги не проходят через инвентарь — отдельный сценарий.
+        if item.item_type == "service":
+            from views.nickname_view import show_nickname_service_card
+            await show_nickname_service_card(interaction, item)
             return
 
         # Проверить баланс

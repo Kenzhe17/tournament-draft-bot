@@ -420,8 +420,24 @@ def initialize_shop_items() -> None:
         ),
     ]
 
+    # Услуги (не инвентарь, не косметика, не роль)
+    services = [
+        ShopItem(
+            id="nickname_change",
+            name="Смена ника",
+            description="Изменение вашего ника на сервере Discord. Услугу можно приобретать повторно.",
+            price=1000,
+            cosmetic_type=CosmeticType.ICON,  # не используется для услуг
+            rarity=CosmeticRarity.BASIC,
+            value="",
+            category="services",
+            item_type="service",
+            is_sellable=False,
+        ),
+    ]
+
     # Добавить все товары в магазин
-    for item in icons + tags:
+    for item in icons + tags + services:
         shop_store.add_item(item)
 
 

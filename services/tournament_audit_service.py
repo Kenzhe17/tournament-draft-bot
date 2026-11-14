@@ -92,6 +92,8 @@ class A:
     MM_MATCH_START = "mm.match_start"
     MM_KD_SUBMIT = "mm.kd_submit"
     MM_RESULT_CONFIRM = "mm.result_confirm"
+    # Магазин
+    SHOP_NICKNAME_CHANGE = "shop.nickname_change"
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +217,7 @@ _ACTION_TITLES = {
     A.MM_MATCH_START: "MM-МАТЧ НАЧАТ",
     A.MM_KD_SUBMIT: "MM K/D ОТПРАВЛЕН",
     A.MM_RESULT_CONFIRM: "MM РЕЗУЛЬТАТ ПОДТВЕРЖДЁН",
+    A.SHOP_NICKNAME_CHANGE: "СМЕНА НИКА (МАГАЗИН)",
 }
 
 _SOURCE_LABELS = {

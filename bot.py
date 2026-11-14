@@ -969,6 +969,17 @@ class TournamentBot(commands.Bot):
         except Exception as e:
             logger.error(f"Ошибка синхронизации команд: {e}")
 
+        # Восстановление незавершённых покупок смены ника
+        try:
+            from services.nickname_service import recover_pending
+            resolved = await recover_pending(self)
+            if resolved:
+                logger.info(
+                    "nickname ops recovery: %d операций разрешено", resolved
+                )
+        except Exception as e:
+            logger.error(f"nickname ops recovery failed: {e}")
+
         # Restore org role panel if it exists
         from views.org_role_view import load_state, OrgPanelView
         from utils.banner import edit_attachments as _banner_att

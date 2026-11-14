@@ -328,6 +328,10 @@ class InventoryStore:
         if not item:
             return False
 
+        # Услуги не являются предметами инвентаря.
+        if item.item_type == "service":
+            return False
+
         # Check required level
         if item.required_level > 0:
             from storage.player_stats_store import player_stats_store
