@@ -201,6 +201,11 @@ async def refresh_announced_cards(bot: "discord.Client") -> None:
                 )
                 entry["layout_v2"] = True
                 dirty = True
+            except discord.NotFound:
+                # Сообщение удалено — помечаем, чтобы не ретраить
+                # при каждом старте.
+                entry["layout_v2"] = True
+                dirty = True
             except Exception as exc:
                 logger.warning(
                     "Match card refresh failed (%s): %s", key, exc)

@@ -195,6 +195,8 @@ async def refresh_mm_cards(bot) -> None:
                 ),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
+        except discord.NotFound:
+            continue  # сообщение удалено — не ретраим при старте
         except Exception as exc:
             logger.warning(
                 "MM card startup refresh failed (tournament %s): %s",
