@@ -35,9 +35,16 @@ async def _ensure_table(conn) -> None:
             selected_format TEXT,
             vote_status TEXT NOT NULL DEFAULT 'open',
             tie BOOLEAN NOT NULL DEFAULT FALSE,
+            version BIGINT NOT NULL DEFAULT 0,
             updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         """
+    )
+    # Монотонная версия для CAS: старые строки без колонки
+    # мигрируются независимо.
+    await conn.execute(
+        "ALTER TABLE format_votes "
+        "ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0"
     )
     _TABLE_READY = True
 
@@ -59,8 +66,8 @@ async def save_vote(guild_id: int, channel_id: int, record: dict) -> None:
                     match_id, guild_id, channel_id, match_type,
                     match_index, vote_message_id, vote_channel_id,
                     vote_deadline, votes, selected_format,
-                    vote_status, tie, updated_at
-                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13)
+                    vote_status, tie, version, updated_at
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14)
                 ON CONFLICT (match_id) DO UPDATE SET
                     vote_message_id = EXCLUDED.vote_message_id,
                     vote_channel_id = EXCLUDED.vote_channel_id,
@@ -69,7 +76,12 @@ async def save_vote(guild_id: int, channel_id: int, record: dict) -> None:
                     selected_format = EXCLUDED.selected_format,
                     vote_status = EXCLUDED.vote_status,
                     tie = EXCLUDED.tie,
+                    version = EXCLUDED.version,
                     updated_at = EXCLUDED.updated_at
+                -- CAS: запоздавшая запись с меньшей версией
+                -- (напр. «open» после «done»/«cancelled») не
+                -- перезаписывает более новое состояние.
+                WHERE format_votes.version < EXCLUDED.version
                 """,
                 record.get("match_id") or "",
                 guild_id,
@@ -83,7 +95,11 @@ async def save_vote(guild_id: int, channel_id: int, record: dict) -> None:
                 record.get("selected_format"),
                 record.get("vote_status") or "open",
                 bool(record.get("tie")),
-                datetime.now(timezone.utc),
+                int(record.get("version") or 0),
+                # Колонка TIMESTAMP (без tz) — asyncpg требует
+                # naive datetime; aware значение молча роняло
+                # всю запись (ошибка глоталась в debug-лог).
+                datetime.now(timezone.utc).replace(tzinfo=None),
             )
     except Exception as exc:
         logger.debug("format_votes save failed: %s", exc)

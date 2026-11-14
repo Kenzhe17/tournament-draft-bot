@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import secrets
 import time
 from collections import deque
 from pathlib import Path
@@ -137,6 +138,10 @@ class MMCog(commands.Cog):
         # схлопывается в одно актуальное обновление карточки.
         self._rc_ui_dirty: dict[str, int] = {}
         self._rc_ui_tasks: dict[str, asyncio.Task] = {}
+        # Rate-limit: минимальный интервал между flush карточки RC
+        # и между обновлениями панели очереди (Discord 429 на PATCH).
+        self._rc_ui_last_flush: dict[str, float] = {}
+        self._panel_ui_at: dict[tuple[int, int], float] = {}
         # Метрики задержек Ready Check (последние N значений, мс)
         self._ready_metrics: dict[str, deque] = {}
         self.bot.mm_cog = self  # Регистрация для доступа из view
@@ -1033,6 +1038,16 @@ class MMCog(commands.Cog):
             except Exception:
                 pass
 
+    @staticmethod
+    def _diag(event: str, **fields) -> None:
+        """Структурированный диагностический лог MM/RC/пула.
+
+        Поля: match_id, vote_id, channel_id, search, state, reason —
+        чтобы по логам восстанавливать зависания очереди и слотов.
+        """
+        parts = " ".join(f"{k}={v}" for k, v in fields.items())
+        logger.info("mm_diag event=%s %s", event, parts)
+
     def _ready_metric(self, name: str, ms: float, match_id: str | None = None) -> None:
         """Записать замер задержки Ready Check (для диагностики)."""
         q = self._ready_metrics.setdefault(name, deque(maxlen=500))
@@ -1064,14 +1079,22 @@ class MMCog(commands.Cog):
         except Exception as exc:
             logger.error("Failed to update ready check message: %s", exc)
 
-        # Обновить и панель очереди — живой счётчик готовности
+        # Обновить и панель очереди — живой счётчик готовности.
+        # Троттлинг: не чаще раза в секунду на поисковый канал —
+        # серия кликов «Готов» не должна спамить PATCH панели.
         t1 = time.perf_counter()
-        try:
-            search = mm_search_store.get(rc.guild_id, rc.search_channel_id)
-            if search is not None and search.is_locked:
-                await self._update_queue_panel(search)
-        except Exception:
-            pass
+        pkey = (rc.guild_id, rc.search_channel_id)
+        now = time.perf_counter()
+        if now - self._panel_ui_at.get(pkey, 0.0) >= 1.0:
+            self._panel_ui_at[pkey] = now
+            try:
+                search = mm_search_store.get(
+                    rc.guild_id, rc.search_channel_id
+                )
+                if search is not None and search.is_locked:
+                    await self._update_queue_panel(search)
+            except Exception:
+                pass
         self._ready_metric(
             "ready_queue_update_ms",
             (time.perf_counter() - t1) * 1000, rc.match_id,
@@ -1105,6 +1128,15 @@ class MMCog(commands.Cog):
                 if dirty <= processed:
                     return
                 processed = dirty
+                # Минимальный интервал между PATCH карточки —
+                # защита от 429 при серии готовностей/MATCH_FOUND.
+                wait = 0.8 - (
+                    time.perf_counter()
+                    - self._rc_ui_last_flush.get(match_id, 0.0)
+                )
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                self._rc_ui_last_flush[match_id] = time.perf_counter()
                 rc = await ready_check_store.get(match_id)
                 if rc is not None:
                     await self._update_ready_message(rc)
@@ -1530,6 +1562,11 @@ class MMCog(commands.Cog):
             self._rc_ui_dirty.pop(rc.match_id, None)
             self._rc_ui_tasks.pop(rc.match_id, None)
             logger.info("Ready check %s launched tournament", rc.match_id)
+            MMCog._diag(
+                "ready_check_launched", match_id=rc.match_id,
+                channel_id=rc.match_channel_id,
+                search=f"{rc.guild_id}/{rc.search_channel_id}",
+            )
         except Exception as exc:
             logger.error("Failed to launch tournament from ready check %s: %s", rc.match_id, exc, exc_info=True)
             rc.status = ReadyCheckStatus.CANCELLED
@@ -1601,6 +1638,11 @@ class MMCog(commands.Cog):
                         s.timer_started = bool(s.players)
                         mm_search_store.set(s)
                         await self._update_queue_panel(s)
+                        self._diag(
+                            "queue_unlocked_stuck",
+                            search=f"{s.guild_id}/{s.channel_id}",
+                            state=s.state, reason="no_active_rc_no_slot",
+                        )
                         logger.warning(
                             "Stuck MM queue unlocked: %s/%s",
                             s.guild_id, s.channel_id,
@@ -2243,7 +2285,13 @@ class MMCog(commands.Cog):
         При любой ошибке очередь возвращается в open.
         """
         guild = interaction.guild
-        match_id = f"rc_{search.guild_id}_{int(time.time() * 1000)}"
+        # match_id должен быть уникален даже при двух запусках в одну
+        # миллисекунду (два поисковых канала / повторный матч) —
+        # ready_check_store и view-custom_id ключуются по нему.
+        match_id = (
+            f"rc_{search.guild_id}_{int(time.time() * 1000)}_"
+            f"{secrets.token_hex(2)}"
+        )
         # Повторная попытка (WAITING_FOR_CHANNEL и т.п.): search.match_num
         # уже содержит выданный номер — переиспользуем его, иначе каждый
         # ретрай сжигал бы новый номер и оставлял «дыру» в нумерации.
@@ -2294,6 +2342,11 @@ class MMCog(commands.Cog):
         search.state = QUEUE_LOCKED_READY_CHECK
         search.match_num = match_num
         mm_search_store.set(search)
+        self._diag(
+            "queue_locked", match_id=match_id,
+            search=f"{search.guild_id}/{search.channel_id}",
+            state=search.state, match_num=match_num,
+        )
         await self._update_queue_panel(search)
 
         channel = None
@@ -2307,6 +2360,11 @@ class MMCog(commands.Cog):
                     # его автоматически при освобождении слота.
                     search.state = QUEUE_WAITING_CHANNEL
                     mm_search_store.set(search)
+                    self._diag(
+                        "queue_waiting_channel", match_id=match_id,
+                        search=f"{search.guild_id}/{search.channel_id}",
+                        state=search.state, reason="pool_full",
+                    )
                     await self._update_queue_panel(search)
                     return None, (
                         "Все каналы матчей сейчас заняты. "
@@ -2339,7 +2397,29 @@ class MMCog(commands.Cog):
             return None, "Не удалось запустить матч. Попробуйте ещё раз."
 
         if rc is None:
+            # Гонка: RC мог быть создан параллельным путём между
+            # проверкой в _begin_match и _start_ready_check. Если
+            # активный RC существует — НЕ откатываем очередь в OPEN
+            # (иначе набор откроется при живом матче), а держим
+            # LOCKED; канал этого запуска освобождаем.
+            try:
+                existing = await ready_check_store.get_active_by_search(
+                    search.guild_id, search.channel_id
+                )
+            except Exception:
+                existing = None
             await self._delete_channel_by_id(channel.id)
+            if existing is not None:
+                logger.info(
+                    "mm_diag event=begin_race_existing_rc "
+                    "match_id=%s search=%s/%s channel_id=%s",
+                    existing.match_id, search.guild_id,
+                    search.channel_id, channel.id,
+                )
+                search.state = QUEUE_LOCKED_READY_CHECK
+                mm_search_store.set(search)
+                await self._update_queue_panel(search)
+                return existing, None
             await _revert()
             return None, "Не удалось запустить проверку готовности."
         return rc, None

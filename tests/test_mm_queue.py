@@ -334,3 +334,129 @@ async def test_concurrent_begin_match_single_impl(monkeypatch):
     # завершения) или «уже выполняется» — но не второй impl.
     got_rc = sum(1 for rc in (rc_a, rc_b) if rc is not None)
     assert got_rc <= 1
+
+
+# ------------------------------------------------- pool_full → waiting → retry
+
+@pytest.mark.asyncio
+async def test_pool_full_waits_then_retries_after_release(monkeypatch):
+    """Пул полон → WAITING_CHANNEL; после освобождения слота
+    повторный запуск (sweeper) создаёт RC без нового вызова impl-дубля."""
+    import cogs.mm as mm_mod
+    from models.mm_search import QUEUE_WAITING_CHANNEL
+
+    s = _search()
+    cog = _cog(monkeypatch, s)
+    monkeypatch.setattr(cog, "_update_queue_panel", AsyncMock())
+    mns = SimpleNamespace(
+        get_or_assign=AsyncMock(return_value=42),
+        release=AsyncMock(), assign=AsyncMock(),
+    )
+    monkeypatch.setattr(mm_mod, "match_number_store", mns)
+
+    # 1) пул полон
+    monkeypatch.setattr(
+        cog, "_create_match_channel",
+        AsyncMock(return_value=(None, "pool_full")),
+    )
+    start_rc = AsyncMock()
+    monkeypatch.setattr(cog, "_start_ready_check", start_rc)
+    inter = _FakeInteraction(1000)
+    rc, err = await cog._begin_match(s, inter)
+    assert rc is None and s.state == QUEUE_WAITING_CHANNEL
+    start_rc.assert_not_called()
+
+    # 2) слот освободился — sweeper вызывает _begin_match повторно
+    fake_channel = SimpleNamespace(id=777)
+    monkeypatch.setattr(
+        cog, "_create_match_channel",
+        AsyncMock(return_value=(fake_channel, None)),
+    )
+    fake_rc = SimpleNamespace(match_id="rc_retry")
+    start_rc.return_value = fake_rc
+    rc2, err2 = await cog._begin_match(s, inter)
+    assert rc2 is fake_rc and err2 is None
+    assert s.state == QUEUE_LOCKED_READY_CHECK
+    # номер матча сохранён между попытками (prev_num path)
+    assert s.match_num == 42
+
+
+@pytest.mark.asyncio
+async def test_begin_race_keeps_queue_locked_when_rc_appears(
+    monkeypatch,
+):
+    """_start_ready_check вернул None, но активный RC уже есть
+    (создан параллельным путём) → очередь остаётся LOCKED,
+    канал освобождается, очередь НЕ откатывается в OPEN."""
+    import cogs.mm as mm_mod
+
+    s = _search()
+    cog = _cog(monkeypatch, s)
+    monkeypatch.setattr(cog, "_update_queue_panel", AsyncMock())
+    deleted = []
+
+    async def _del(cid):
+        deleted.append(cid)
+
+    monkeypatch.setattr(cog, "_delete_channel_by_id", _del)
+    fake_channel = SimpleNamespace(id=555)
+    monkeypatch.setattr(
+        cog, "_create_match_channel",
+        AsyncMock(return_value=(fake_channel, None)),
+    )
+    monkeypatch.setattr(
+        cog, "_start_ready_check", AsyncMock(return_value=None)
+    )
+    mns = SimpleNamespace(get_or_assign=AsyncMock(return_value=42))
+    monkeypatch.setattr(mm_mod, "match_number_store", mns)
+
+    # RC «появляется» только на повторной проверке внутри impl
+    existing = SimpleNamespace(match_id="rc_parallel")
+    calls = {"n": 0}
+
+    async def _active(gid, cid):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else existing
+
+    mm_mod.ready_check_store.get_active_by_search = _active
+
+    inter = _FakeInteraction(1000)
+    rc, err = await cog._begin_match(s, inter)
+
+    assert rc is existing and err is None
+    assert s.state == QUEUE_LOCKED_READY_CHECK  # НЕ open
+    assert deleted == [555]                     # канал освобождён
+
+
+@pytest.mark.asyncio
+async def test_sequential_matches_get_unique_match_ids(monkeypatch):
+    """Повторное использование канала: каждый _begin_match выдаёт
+    новый уникальный match_id (даже в одну миллисекунду)."""
+    import cogs.mm as mm_mod
+
+    s = _search()
+    cog = _cog(monkeypatch, s)
+    monkeypatch.setattr(cog, "_update_queue_panel", AsyncMock())
+    monkeypatch.setattr(
+        cog, "_create_match_channel",
+        AsyncMock(return_value=(SimpleNamespace(id=555), None)),
+    )
+    monkeypatch.setattr(
+        cog, "_start_ready_check",
+        AsyncMock(side_effect=lambda *a, **k: SimpleNamespace(
+            match_id=k["match_id"]
+        )),
+    )
+    mns = SimpleNamespace(get_or_assign=AsyncMock(side_effect=[1, 2]))
+    monkeypatch.setattr(mm_mod, "match_number_store", mns)
+
+    inter = _FakeInteraction(1000)
+    rc1, _ = await cog._begin_match(s, inter)
+    # «матч завершён» — очередь очищена, следующий матч
+    s.clear()
+    s.state = QUEUE_OPEN
+    for i in range(8):
+        s.add_player(f"P{i}", 1000 + i)
+    rc2, _ = await cog._begin_match(s, inter)
+
+    assert rc1.match_id != rc2.match_id
