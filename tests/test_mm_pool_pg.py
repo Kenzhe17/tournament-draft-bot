@@ -294,3 +294,58 @@ async def test_two_concurrent_finalizes_real_pg(pg_pool, monkeypatch):
             assert fin == "done"
     finally:
         dbmod._pool = prev
+
+
+@pytest.mark.asyncio
+async def test_coin_grant_respects_max_balance(pg_pool):
+    """add_balance_once при MAX_BALANCE: возвращает и фиксирует
+    ФАКТИЧЕСКИ зачисленную сумму; повтор возвращает то же значение."""
+    import storage.db as dbmod
+    from config import MAX_BALANCE
+    from storage import user_balance_store as ubs
+
+    prev = dbmod._pool
+    dbmod._pool = pg_pool
+    gid, uid = 880003, 555001
+    try:
+        await dbmod.init_db()
+        # Отключаем дневной decay для этого теста (баланс > порога)
+        tr = ubs.decay_tracker
+        tr.should_apply_decay(gid, uid)  # выставляет сегодняшнюю дату
+        tr.mark_processed(gid, uid)
+
+        async with pg_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO user_balance (guild_id, user_id, balance) "
+                "VALUES ($1, $2, $3) "
+                "ON CONFLICT (guild_id, user_id) DO UPDATE SET balance=$3",
+                gid, uid, MAX_BALANCE - 10,
+            )
+
+        credited = await ubs.user_balance_store.add_balance_once(
+            gid, uid, 75, "m_cap_1"
+        )
+        assert credited == 10  # cap: только 10 до MAX_BALANCE
+
+        async with pg_pool.acquire() as conn:
+            bal = await conn.fetchval(
+                "SELECT balance FROM user_balance "
+                "WHERE guild_id=$1 AND user_id=$2", gid, uid)
+            assert bal == MAX_BALANCE
+            stored = await conn.fetchval(
+                "SELECT amount FROM match_coin_grants "
+                "WHERE match_id='m_cap_1' AND user_id=$1", uid)
+            assert stored == 10  # в гранте — фактическая сумма
+
+        # Повтор: та же сумма, баланс не меняется
+        again = await ubs.user_balance_store.add_balance_once(
+            gid, uid, 75, "m_cap_1"
+        )
+        assert again == 10
+        async with pg_pool.acquire() as conn:
+            bal2 = await conn.fetchval(
+                "SELECT balance FROM user_balance "
+                "WHERE guild_id=$1 AND user_id=$2", gid, uid)
+            assert bal2 == MAX_BALANCE
+    finally:
+        dbmod._pool = prev

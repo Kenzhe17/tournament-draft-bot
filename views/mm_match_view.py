@@ -777,7 +777,26 @@ async def _finalize_mm_match_locked(
     from views.kd_input_view import process_match_result
 
     meta = meta_of(tournament)
-    if meta is None or meta.get("state") != "check":
+    meta_state = meta.get("state") if meta else None
+    if meta_state == "done":
+        # Все этапы завершены, но mark_done мог упасть (БД была
+        # недоступна). Дозаписываем маркер — ELO/монеты/история
+        # НЕ повторяются: они уже подтверждены stats_done/done.
+        from storage import finalize_store
+
+        mid0 = match_id_of(tournament)
+        try:
+            if await finalize_store.get_status(
+                tournament.guild_id, mid0
+            ) == "stats_done":
+                await finalize_store.mark_done(tournament.guild_id, mid0)
+                meta["finalize_marker_done"] = True
+                store.set(tournament)
+                return True, ""
+        except Exception as exc:
+            logger.warning("MM finalize marker retry failed: %s", exc)
+        return False, "Матч уже завершён."
+    if meta is None or meta_state != "check":
         return False, "Матч не в состоянии проверки результата."
 
     mid = match_id_of(tournament)
@@ -883,6 +902,8 @@ async def _finalize_mm_match_locked(
     #    остаётся 'stats_done' — повторный проход безопасен: все этапы
     #    идемпотентны, mark_done просто дозапишется.
     await finalize_store.mark_done(tournament.guild_id, mid)
+    meta["finalize_marker_done"] = True
+    store.set(tournament)
     return True, ""
 
 
@@ -983,17 +1004,78 @@ async def _save_match_histories(
 
 
 async def _release_match_channel(guild: discord.Guild, tournament: Tournament) -> None:
-    """Вернуть слот пула в FREE после финализации."""
+    """Вернуть слот пула в FREE после финализации.
+
+    Безопасность:
+    - слот проверяется по фактическому state в БД, а не по коду возврата;
+    - owner обязан совпадать с поколением этого матча — слот, уже
+      выданный другому матчу, НЕ освобождается;
+    - при неуспехе meta['channel_released'] не выставляется — sweeper
+      повторит освобождение автоматически.
+    """
     from services import match_channel_pool
 
-    channel = guild.get_channel(tournament.channel_id)
+    cid = tournament.channel_id
+    meta = meta_of(tournament) or {}
+    match_num = int(meta.get("match_num", 0) or 0)
+    # owner слота при acquire: mm:{gid}:{search_channel_id}:{match_num}
+    our_owner = (
+        f"mm:{guild.id}:{tournament.mm_search_channel_id}:{match_num}"
+    )
+    # Legacy-формат (до введения match_num) — тот же поиск, матч один.
+    legacy_owner = (
+        f"mm:{guild.id}:{tournament.mm_search_channel_id}"
+    )
+
+    try:
+        info = await match_channel_pool.slot_info(cid)
+    except Exception as exc:
+        logger.warning("MM slot_info failed for %s: %s", cid, exc)
+        return
+    if info is None:
+        meta["channel_released"] = True  # не пул-канал — нечего ждать
+        store.set(tournament)
+        return
+    if info.get("state") == "free":
+        meta["channel_released"] = True
+        store.set(tournament)
+        return
+    owner = info.get("owner") or ""
+    if owner not in (our_owner, legacy_owner):
+        # Слот уже принадлежит другому матчу/владельцу — не трогаем.
+        # Для нас канал «ушёл»: считаем освобождённым, чтобы sweeper
+        # не пытался снимать чужой слот повторно.
+        logger.warning(
+            "MM release skipped: slot %s owner=%s (ours=%s) state=%s",
+            cid, owner, our_owner, info.get("state"),
+        )
+        meta["channel_released"] = True
+        store.set(tournament)
+        return
+
+    channel = guild.get_channel(cid)
     if channel is None:
         try:
-            channel = await guild.fetch_channel(tournament.channel_id)
+            channel = await guild.fetch_channel(cid)
         except Exception:
             channel = None
+    released = False
     if isinstance(channel, discord.TextChannel):
         try:
             await match_channel_pool.release_channel(channel)
         except Exception as exc:
             logger.error("MM channel release failed: %s", exc)
+    # Проверка ФАКТИЧЕСКОГО состояния слота после попытки
+    try:
+        info = await match_channel_pool.slot_info(cid)
+        released = bool(info) and info.get("state") == "free"
+    except Exception as exc:
+        logger.warning("MM slot verify failed for %s: %s", cid, exc)
+    if released:
+        meta["channel_released"] = True
+        store.set(tournament)
+    else:
+        logger.warning(
+            "MM channel %s not freed (state=%s) — sweeper will retry",
+            cid, (info or {}).get("state", "?"),
+        )

@@ -216,10 +216,10 @@ class UserBalanceStore:
     ) -> int:
         """Идемпотентное начисление монет за матч.
 
-        Возвращает сумму, которую нужно учесть в статистике
-        (total_earnings): при первом вызове — amount, при повторном —
-        сумма ранее выданного гранта. Баланс изменяется только при
-        первом вызове.
+        Возвращает фактически зачисленную сумму для статистики
+        (total_earnings): при первом вызове — amount с учётом cap
+        MAX_BALANCE, при повторном — та же зафиксированная сумма.
+        Баланс изменяется только при первом вызове.
         """
         if amount <= 0:
             return 0
@@ -260,13 +260,22 @@ class UserBalanceStore:
                     balance = await self._apply_decay(
                         conn, guild_id, user_id, bal["balance"]
                     )
+                    # Фактически зачисленная сумма может быть меньше
+                    # amount при достижении MAX_BALANCE — фиксируем её
+                    # в гранте, чтобы total_earnings и повторные
+                    # вызовы учитывали реальное начисление.
                     add = min(amount, max(0, MAX_BALANCE - balance))
                     await conn.execute(
                         "UPDATE user_balance SET balance = $1 "
                         "WHERE guild_id = $2 AND user_id = $3",
                         balance + add, guild_id, user_id,
                     )
-                    return amount
+                    await conn.execute(
+                        "UPDATE match_coin_grants SET amount = $1 "
+                        "WHERE match_id = $2 AND user_id = $3",
+                        add, match_id, user_id,
+                    )
+                    return add
 
         # JSON-режим: PG нет — фолбэк на обычное начисление
         # (защита только in-memory processed-флагом).

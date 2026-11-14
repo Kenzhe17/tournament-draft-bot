@@ -759,6 +759,17 @@ class MMCog(commands.Cog):
                         )
                 except Exception as exc:
                     logger.error("Queue unlock sweeper error: %s", exc)
+                # Retry неудавшихся освобождений каналов и дозапись
+                # финализационных маркеров (mark_done/release могли
+                # упасть при сбое БД/Discord API).
+                try:
+                    await self._retry_pending_channel_releases()
+                except Exception as exc:
+                    logger.error("Channel release retry error: %s", exc)
+                try:
+                    await self._reconcile_mm_finalizations()
+                except Exception as exc:
+                    logger.error("Finalize reconcile error: %s", exc)
                 # Reconcile пула: ACTIVE/RESERVED без живого турнира
                 # старше 15 минут → ERROR (НЕ авто-free)
                 self._sweep_count = getattr(self, "_sweep_count", 0) + 1
@@ -1059,9 +1070,14 @@ class MMCog(commands.Cog):
                 ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID,
             ) if r
         ]
+        # owner включает match_num поколения: параллельные матчи одной
+        # очереди различимы, release не снимет слот с чужого матча.
         return await match_channel_pool.acquire_channel(
             guild, user_ids, role_ids=role_ids,
-            owner=f"mm:{guild.id}:{search.channel_id}",
+            owner=(
+                f"mm:{guild.id}:{search.channel_id}:"
+                f"{int(getattr(search, 'match_num', 0) or 0)}"
+            ),
         )
 
     async def _release_pool_channel(self, channel: discord.TextChannel) -> None:
@@ -1403,6 +1419,76 @@ class MMCog(commands.Cog):
                 "references it (state=%s owner=%s age=%.0fs)",
                 cid, s["state"], s.get("owner", ""), age,
             )
+
+    async def _retry_pending_channel_releases(self) -> None:
+        """Повторить освобождение слота для завершённых MM-матчей,
+        у которых release не был подтверждён (meta.channel_released).
+
+        _release_match_channel сам проверяет owner поколения и
+        фактический state слота — чужой/уже свободный слот не трогает.
+        """
+        from views.mm_match_view import _release_match_channel, meta_of
+
+        for guild in self.bot.guilds:
+            for t in store.get_by_guild(guild.id):
+                try:
+                    if not getattr(t, "mm_search_channel_id", 0):
+                        continue
+                    if t.phase != TournamentPhase.COMPLETE:
+                        continue
+                    meta = meta_of(t) or {}
+                    if (
+                        meta.get("state") != "done"
+                        or meta.get("channel_released")
+                    ):
+                        continue
+                    await _release_match_channel(guild, t)
+                except Exception as exc:
+                    logger.warning(
+                        "channel release retry failed for %s: %s",
+                        getattr(t, "id", "?"), exc,
+                    )
+
+    async def _reconcile_mm_finalizations(self) -> None:
+        """Дозаписать match_finalizations='done' для MM-матчей,
+        у которых все этапы завершены (meta.state='done'), но маркер
+        остался 'stats_done' — mark_done упал при сбое БД.
+
+        ELO/монеты/история НЕ повторяются: stats_done уже подтверждает
+        применение статистики, здесь только финальный маркер.
+        """
+        from storage import finalize_store
+        from views.mm_match_view import match_id_of, meta_of
+
+        for guild in self.bot.guilds:
+            for t in store.get_by_guild(guild.id):
+                try:
+                    if not getattr(t, "mm_search_channel_id", 0):
+                        continue
+                    if t.phase != TournamentPhase.COMPLETE:
+                        continue
+                    meta = meta_of(t) or {}
+                    if (
+                        meta.get("state") != "done"
+                        or meta.get("finalize_marker_done")
+                    ):
+                        continue
+                    mid = match_id_of(t)
+                    st = await finalize_store.get_status(guild.id, mid)
+                    if st == "stats_done":
+                        await finalize_store.mark_done(guild.id, mid)
+                        meta["finalize_marker_done"] = True
+                        store.set(t)
+                        logger.info(
+                            "MM finalize marker repaired: %s", mid)
+                    elif st == "done":
+                        meta["finalize_marker_done"] = True
+                        store.set(t)
+                except Exception as exc:
+                    logger.warning(
+                        "finalize reconcile failed for %s: %s",
+                        getattr(t, "id", "?"), exc,
+                    )
 
     async def _recover_queues(self) -> None:
         """Восстановить панели очередей и снять зависшие блокировки."""
