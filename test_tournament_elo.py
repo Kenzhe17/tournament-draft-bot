@@ -87,9 +87,9 @@ def test_base_elo_table():
 # ---------------------------------------------------------------- performance
 
 def test_performance_score_example():
-    # K5 D4 A5 DMG2179 → 5 + 2.5 - 3 + 1.0895 = 5.5895
-    score = calculate_player_performance(5, 4, 5, 2179)
-    assert abs(score - 5.5895) < 0.01
+    # K5 D4 → 5*1.0 - 4*0.75 = 2.0
+    score = calculate_player_performance(5, 4)
+    assert abs(score - 2.0) < 0.01
 
 
 def test_performance_modifiers_relative():

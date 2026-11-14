@@ -168,40 +168,14 @@ async def compute_all(guild_id: int) -> dict[str, CategoryData]:
         p = max(eligible, key=lambda x: x.kd_ratio)
         c.records.append(stat_rec(p, "Лучший K/D",
                                   f"{p.kd_ratio:.2f}", f"{p.games} матчей"))
-        p = max(eligible, key=lambda x: x.kda_ratio)
-        c.records.append(stat_rec(p, "Лучший KDA",
-                                  f"{p.kda_ratio:.2f}", f"{p.games} матчей"))
-        p = max(eligible, key=lambda x: x.avg_damage)
-        c.records.append(stat_rec(p, "Наибольший AVG Damage",
-                                  f"{p.avg_damage:.0f}", f"{p.games} матчей"))
     else:
-        for t in ("Наибольший AVG Kills", "Лучший K/D", "Лучший KDA",
-                  "Наибольший AVG Damage"):
+        for t in ("Наибольший AVG Kills", "Лучший K/D"):
             c.records.append(Record(t, available=False))
-
-    def match_row_rec(title: str, row_key: str, val_key: str,
-                      unit: str) -> None:
-        r = agg.get(row_key)
-        if r:
-            uid, nm = rec_for(int(r["user_id"]))
-            c.records.append(Record(
-                title, f"{int(r[val_key])} {unit}",
-                uid, nm, _match_ctx(r)))
-        else:
-            c.records.append(Record(title, available=False))
-
-    match_row_rec("Больше всего ассистов за матч", "top_assists",
-                  "assists", "ASSISTS")
-    match_row_rec("Максимальный урон за матч", "top_damage",
-                  "damage", "DMG")
 
     if stats:
         p = max(stats, key=lambda x: x.total_kills)
         c.records.append(stat_rec(p, "Больше всего убийств за всё время",
                                   f"{p.total_kills} KILLS", f"{p.games} матчей"))
-        p = max(stats, key=lambda x: x.total_damage)
-        c.records.append(stat_rec(p, "Наибольший суммарный урон",
-                                  f"{p.total_damage} DMG", f"{p.games} матчей"))
 
     # ======================= 2. РЕЗУЛЬТАТЫ =======================
     c = cats["results"]

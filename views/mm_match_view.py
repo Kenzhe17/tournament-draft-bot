@@ -996,8 +996,6 @@ async def _save_match_histories(
                 opponents=opponents,
                 kills=kd.get("kills", 0),
                 deaths=kd.get("deaths", 0),
-                assists=0,
-                damage=0,
                 result=result,
                 elo_change=elo_change,
             ))

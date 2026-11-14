@@ -34,8 +34,6 @@ PLAYER_STATS_RESET = {
     "best_loss_streak": 0,
     "total_kills": 0,
     "total_deaths": 0,
-    "total_assists": 0,
-    "total_damage": 0,
     "best_match_kills": 0,
     "total_elo_change": 0,
     "last_elo_change": 0,

@@ -67,17 +67,10 @@ def calculate_base_elo(expected_win: float, won: bool) -> float:
 # Индивидуальный вклад
 # ---------------------------------------------------------------------------
 
-def calculate_player_performance(
-    kills: int, deaths: int, assists: int, damage: int
-) -> float:
-    """Performance Score игрока за матч."""
+def calculate_player_performance(kills: int, deaths: int) -> float:
+    """Performance Score игрока за матч (K/D only)."""
     cfg = ELO_CONFIG
-    return (
-        kills * cfg["kill_weight"]
-        + assists * cfg["assist_weight"]
-        - deaths * cfg["death_weight"]
-        + damage / cfg["damage_divisor"]
-    )
+    return kills * cfg["kill_weight"] - deaths * cfg["death_weight"]
 
 
 def calculate_performance_modifiers(scores: list[float]) -> list[int]:
@@ -173,7 +166,7 @@ def compute_match_elo_changes(
         name: str
         team: str            # "a" или "b"
         won: bool            # True если команда игрока победила
-        kills/deaths/assists/damage: int
+        kills/deaths: int
         skill_rating: float  # SR игрока (0-10)
         elo_rank: int        # место в ELO-лидерборде ДО матча (1-based, 999=unknown)
 
@@ -209,8 +202,6 @@ def compute_match_elo_changes(
         calculate_player_performance(
             p.get("kills", 0),
             p.get("deaths", 0),
-            p.get("assists", 0),
-            p.get("damage", 0),
         )
         for p in match_players
     ]
@@ -259,8 +250,6 @@ def update_player_stats_from_match(
     deaths: int,
     elo_change: int,
     team_won: bool,
-    assists: int = 0,
-    damage: int = 0,
 ):
     """
     Update player stats after a match.
@@ -271,17 +260,13 @@ def update_player_stats_from_match(
         deaths: Deaths in this match
         elo_change: ELO change from this match
         team_won: Whether the player's team won
-        assists: Assists in this match
-        damage: Damage in this match
 
     Returns:
         Updated player stats
     """
-    # Update total kills, deaths, assists and damage
+    # Update total kills and deaths
     stats.total_kills += kills
     stats.total_deaths += deaths
-    stats.total_assists += assists
-    stats.total_damage += damage
 
     # Update best match kills
     if kills > stats.best_match_kills:
