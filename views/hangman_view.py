@@ -41,13 +41,13 @@ class HangmanView(discord.ui.View):
         )
 
         embed.add_field(
-            name="📝 Ошибки",
+            name="Ошибки",
             value=f"{self.mistakes}/{self.max_mistakes}",
             inline=False
         )
 
         embed.add_field(
-            name="🔤 Угаданные буквы",
+            name="Угаданные буквы",
             value=", ".join(sorted(self.guessed_letters)) if self.guessed_letters else "Нет",
             inline=False
         )
@@ -83,7 +83,7 @@ class LetterButton(discord.ui.Button):
                 await user_balance_store.add_balance(view.guild_id, view.user_id, winnings)
 
                 embed = discord.Embed(
-                    title=replace_emojis("✅ Победа!"),
+                    title=replace_emojis("Победа!"),
                     description=f"**Слово:** {view.word}\n**Выигрыш:** {winnings} 🪙 (2x)",
                     color=discord.Color.green()
                 )
@@ -128,7 +128,7 @@ class LetterButton(discord.ui.Button):
             if view.mistakes >= view.max_mistakes:
                 # Проигрыш
                 embed = discord.Embed(
-                    title=replace_emojis("❌ Проигрыш!"),
+                    title=replace_emojis("Проигрыш!"),
                     description=f"**Слово:** {view.word}\n**Потеря:** {view.bet} 🪙",
                     color=discord.Color.red()
                 )

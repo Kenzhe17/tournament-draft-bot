@@ -21,7 +21,7 @@ class ColorBetModal(Modal, title="Введите ставку"):
             bet = int(self.bet.value)
             if bet < 10:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Минимальная ставка: 10 монет"),
+                    replace_emojis("Минимальная ставка: 10 монет"),
                 ephemeral=True,
                 )
                 return
@@ -32,14 +32,14 @@ class ColorBetModal(Modal, title="Введите ставку"):
 
             if not session:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Недостаточно монет"),
+                    replace_emojis("Недостаточно монет"),
                 ephemeral=True,
                 )
                 return
 
             view = GuessColorGameView(session)
             embed = discord.Embed(
-                title="🎨 Угадай цвет",
+                title="Угадай цвет",
                 description=f"Ставка: {bet} 🪙\nУгадайте цвет!",
                 color=discord.Color.orange(),
             )
@@ -47,7 +47,7 @@ class ColorBetModal(Modal, title="Введите ставку"):
 
         except ValueError:
             await interaction.response.send_message(
-                replace_emojis("❌ Введите корректное число"),
+                replace_emojis("Введите корректное число"),
                 ephemeral=True,
             )
 
@@ -59,17 +59,17 @@ class GuessColorGameView(View):
         super().__init__(timeout=180)
         self.session = session
 
-    @discord.ui.button(label="🔴 Красный", style=discord.ButtonStyle.danger, custom_id="color_red")
+    @discord.ui.button(label="Красный", style=discord.ButtonStyle.danger, custom_id="color_red")
     async def red_button(self, interaction: discord.Interaction, button: Button) -> None:
         """Handle red choice."""
         await self.handle_choice(interaction, Color.RED)
 
-    @discord.ui.button(label="🔵 Синий", style=discord.ButtonStyle.primary, custom_id="color_blue")
+    @discord.ui.button(label="Синий", style=discord.ButtonStyle.primary, custom_id="color_blue")
     async def blue_button(self, interaction: discord.Interaction, button: Button) -> None:
         """Handle blue choice."""
         await self.handle_choice(interaction, Color.BLUE)
 
-    @discord.ui.button(label="🟢 Зелёный", style=discord.ButtonStyle.success, custom_id="color_green")
+    @discord.ui.button(label="Зелёный", style=discord.ButtonStyle.success, custom_id="color_green")
     async def green_button(self, interaction: discord.Interaction, button: Button) -> None:
         """Handle green choice."""
         await self.handle_choice(interaction, Color.GREEN)
@@ -92,7 +92,7 @@ class GuessColorGameView(View):
             color = discord.Color.red()
 
         embed = discord.Embed(
-            title="🎨 Угадай цвет",
+            title="Угадай цвет",
             description=f"Ваш выбор: {choice.emoji} {choice.name}\n"
             f"Загаданный цвет: {bot_color.emoji} {bot_color.name}\n\n"
             f"{result}",

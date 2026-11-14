@@ -6,7 +6,6 @@ import logging
 from datetime import timedelta
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from cogs.groups import banner_group, bind_commands
@@ -112,7 +111,7 @@ class BannerAdminCog(commands.Cog):
             + upd_status + (f" — {upd_detail}" if upd_detail else ""),
             f"**Участник дня:** {upd.get('winner_id') if upd else '—'}",
             f"**Manage Server у бота:** {'да' if can_manage else 'НЕТ'}",
-            f"**Server Banner:** сервер поддерживает баннер",
+            "**Server Banner:** сервер поддерживает баннер",
             f"**Следующее обновление:** {nxt.strftime('%d.%m %H:%M')} (Almaty)",
         ]
         await interaction.followup.send("\n".join(lines), ephemeral=True)

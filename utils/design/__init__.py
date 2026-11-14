@@ -8,8 +8,8 @@
     view.text(f"Монеты: **{em('coin')} 1 000**")
     view.sep()
     view.row(
-        btn("Пополнить", style="success", custom_id="topup", emoji_key="coin"),
-        btn("В меню", style="secondary", custom_id="back", emoji_key="back"),
+        btn("Пополнить", style="success", custom_id="topup"),
+        btn("В меню", style="secondary", custom_id="back"),
     )
     await interaction.response.send_message(view=view)
 

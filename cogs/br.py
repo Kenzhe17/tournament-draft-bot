@@ -62,14 +62,14 @@ class BRCog(commands.Cog):
         # Validate maps parameter
         if maps < 1 or maps > 10:
             await interaction.response.send_message(
-                "❌ Количество карт должно быть от 1 до 10.",
+                "Количество карт должно быть от 1 до 10.",
                 ephemeral=True
             )
             return
         # Проверка на владельца бота
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Эта команда доступна только владельцу бота.",
+                "Эта команда доступна только владельцу бота.",
                 ephemeral=True
             )
             return
@@ -77,14 +77,14 @@ class BRCog(commands.Cog):
         # Проверка конфигурации
         if BR_ROLE_ID == 0:
             await interaction.response.send_message(
-                "❌ BR_ROLE_ID не настроен в конфигурации.",
+                "BR_ROLE_ID не настроен в конфигурации.",
                 ephemeral=True
             )
             return
 
         if BR_ROOM_CHANNEL_ID == 0:
             await interaction.response.send_message(
-                "❌ BR_ROOM_CHANNEL_ID не настроен в конфигурации.",
+                "BR_ROOM_CHANNEL_ID не настроен в конфигурации.",
                 ephemeral=True
             )
             return
@@ -154,7 +154,7 @@ class BRCog(commands.Cog):
         if tournament.formation.value == "team":
             players_label = "Команд"
             players_count = f"{len(tournament.registered_teams)}/12"
-            rules_text = "Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+            rules_text = "Нажмите кнопку 'Зарегистрировать Команду' для регистрации вашей команды."
             team_display_label = "Команды"
         else:
             players_label = "Игроков"
@@ -174,7 +174,7 @@ class BRCog(commands.Cog):
                 f"{players_text}\n\n"
                 f" **Правила:**\n"
                 f" {rules_text}\n\n"
-                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+                f"Используйте кнопки ниже для регистрации на турнир"
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -184,7 +184,7 @@ class BRCog(commands.Cog):
 
         # Send ephemeral confirmation first
         await interaction.response.send_message(
-            replace_emojis("✅ BR турнир создан"),
+            replace_emojis("BR турнир создан"),
             ephemeral=True
         )
 
@@ -201,7 +201,7 @@ class BRCog(commands.Cog):
         # Проверка на владельца бота
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Эта команда доступна только владельцу бота.",
+                "Эта команда доступна только владельцу бота.",
                 ephemeral=True
             )
             return
@@ -210,7 +210,7 @@ class BRCog(commands.Cog):
         tournament = br_store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ В этом канале нет BR турнира.",
+                "В этом канале нет BR турнира.",
                 ephemeral=True
             )
             return
@@ -249,7 +249,7 @@ class BRCog(commands.Cog):
         br_store.delete(interaction.guild_id, interaction.channel_id)
 
         await interaction.response.send_message(
-            "✅ BR турнир удален.",
+            "BR турнир удален.",
             ephemeral=True
         )
 
@@ -261,7 +261,7 @@ class BRCog(commands.Cog):
         # Проверка на владельца бота
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Эта команда доступна только владельцу бота.",
+                "Эта команда доступна только владельцу бота.",
                 ephemeral=True
             )
             return
@@ -270,7 +270,7 @@ class BRCog(commands.Cog):
         tournament = br_store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ В этом канале нет BR турнира.",
+                "В этом канале нет BR турнира.",
                 ephemeral=True
             )
             return
@@ -278,7 +278,7 @@ class BRCog(commands.Cog):
         # Проверка фазы
         if tournament.phase != BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
-                "❌ BR турнир не в фазе регистрации.",
+                "BR турнир не в фазе регистрации.",
                 ephemeral=True
             )
             return
@@ -286,7 +286,7 @@ class BRCog(commands.Cog):
         # brtest only works for random format
         if tournament.formation.value == "team":
             await interaction.response.send_message(
-                "❌ brtest только для random формата. Для team формата регистрируйте команды через кнопку.",
+                "brtest только для random формата. Для team формата регистрируйте команды через кнопку.",
                 ephemeral=True
             )
             return
@@ -306,7 +306,7 @@ class BRCog(commands.Cog):
         br_store.set(tournament)
 
         await interaction.response.send_message(
-            replace_emojis("✅ Добавлено 48 ботов!"),
+            replace_emojis("Добавлено 48 ботов!"),
             ephemeral=True
         )
 
@@ -338,7 +338,7 @@ class BRCog(commands.Cog):
                     players_text = "\n".join(team_list) if team_list else f" *"
                     players_label = "Команд"
                     players_count = f"{len(tournament.registered_teams)}/12"
-                    rules_text = "Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+                    rules_text = "Нажмите кнопку 'Зарегистрировать Команду' для регистрации вашей команды."
                     team_display_label = "Команды"
                 else:
                     player_names = [p["name"] for p in tournament.players]
@@ -360,7 +360,7 @@ class BRCog(commands.Cog):
                         f"{players_text}\n\n"
                         f" **Правила:**\n"
                         f" {rules_text}\n\n"
-                        f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+                        f"Используйте кнопки ниже для регистрации на турнир"
                     ),
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
@@ -378,7 +378,7 @@ class BRCog(commands.Cog):
         # Проверка на владельца бота
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Эта команда доступна только владельцу бота.",
+                "Эта команда доступна только владельцу бота.",
                 ephemeral=True
             )
             return
@@ -387,7 +387,7 @@ class BRCog(commands.Cog):
         tournament = br_store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ В этом канале нет BR турнира.",
+                "В этом канале нет BR турнира.",
                 ephemeral=True
             )
             return
@@ -395,7 +395,7 @@ class BRCog(commands.Cog):
         # Проверка фазы
         if tournament.phase != BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
-                "❌ BR турнир не в фазе регистрации.",
+                "BR турнир не в фазе регистрации.",
                 ephemeral=True
             )
             return
@@ -403,7 +403,7 @@ class BRCog(commands.Cog):
         # brtestteam only works for team format
         if tournament.formation.value != "team":
             await interaction.response.send_message(
-                "❌ brtestteam только для team формата.",
+                "brtestteam только для team формата.",
                 ephemeral=True
             )
             return
@@ -439,7 +439,7 @@ class BRCog(commands.Cog):
 
         br_store.set(tournament)
         await interaction.response.send_message(
-            replace_emojis("✅ Добавлено 12 команд с ботами!"),
+            replace_emojis("Добавлено 12 команд с ботами!"),
             ephemeral=True
         )
         logger.info("BR турнир заполнен 12 командами с ботами в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
@@ -450,7 +450,7 @@ class BRCog(commands.Cog):
         # Проверка на владельца бота
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Эта команда доступна только владельцу бота.",
+                "Эта команда доступна только владельцу бота.",
                 ephemeral=True
             )
             return
@@ -459,7 +459,7 @@ class BRCog(commands.Cog):
         tournament = br_store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ В этом канале нет BR турнира.",
+                "В этом канале нет BR турнира.",
                 ephemeral=True
             )
             return
@@ -467,14 +467,14 @@ class BRCog(commands.Cog):
         # Проверка фазы - должна быть после формирования команд
         if tournament.phase == BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
-                "❌ BR турнир не начал игру. Сначала запустите турнир.",
+                "BR турнир не начал игру. Сначала запустите турнир.",
                 ephemeral=True
             )
             return
 
         if not tournament.teams:
             await interaction.response.send_message(
-                "❌ В турнире нет команд.",
+                "В турнире нет команд.",
                 ephemeral=True
             )
             return
@@ -493,7 +493,7 @@ class BRCog(commands.Cog):
         br_store.set(tournament)
 
         await interaction.response.send_message(
-            replace_emojis(f"✅ Заполнена случайная статистика для {len(tournament.teams)} команд на всех картах!"),
+            replace_emojis(f"Заполнена случайная статистика для {len(tournament.teams)} команд на всех картах!"),
             ephemeral=True
         )
         logger.info("BR статистика заполнена для %s команд в канале %s сервера %s", len(tournament.teams), interaction.channel_id, interaction.guild_id)

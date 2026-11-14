@@ -142,7 +142,7 @@ class SellCog(commands.Cog):
 
         # 6. Красивый Embed ответа
         embed = discord.Embed(
-            title=f" **ПРОДАЖА ПРЕДМЕТА**",
+            title=f"**ПРОДАЖА ПРЕДМЕТА**",
             description=(
                 f" **Пользователь:** {interaction.user.mention}\n\n"
                 f" **Продан предмет:** `{item.name}`\n"

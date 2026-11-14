@@ -65,6 +65,39 @@ def clean_nickname(text: str) -> str:
     return text
 
 
+def display_name_for(guild_id: int, user_id: int, fallback: str = "") -> str:
+    """Актуальное отображаемое имя игрока.
+
+    Приоритет: member.display_name из кэша бота → сохранённое
+    fallback-имя → безопасный fallback по ID. Идентификация
+    всегда остаётся по user_id — это только отображение.
+    """
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        uid = 0
+    if uid > 0:
+        try:
+            from models.tournament import get_bot_instance
+            bot = get_bot_instance()
+            guild = bot.get_guild(guild_id) if bot is not None else None
+            member = guild.get_member(uid) if guild is not None else None
+            if member is not None:
+                name = (getattr(member, "display_name", "") or "").strip()
+                if name:
+                    return name
+        except Exception:
+            pass
+    name = (fallback or "").strip()
+    # Legacy-записи могли хранить «<@id>» как имя — не показываем
+    # сырое упоминание, если нет ничего лучше.
+    if name.startswith("<@"):
+        name = ""
+    if name:
+        return name
+    return str(uid) if uid > 0 else ""
+
+
 def format_player_name(guild_id: int, user_id: int, base_name: str) -> str:
     """Форматировать имя игрока с учётом косметики.
 

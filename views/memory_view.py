@@ -29,13 +29,13 @@ class MemoryView(discord.ui.View):
 
         # Скрыть последовательность
         embed = discord.Embed(
-            title="🧠 Память",
+            title="Память",
             description=f"**Ставка:** {self.bet} 🪙\n**Множитель:** 2x\n\n**Повторите последовательность в правильном порядке:**",
             color=discord.Color.blue()
         )
 
         embed.add_field(
-            name="📝 Инструкция",
+            name="Инструкция",
             value="Введите эмодзи через пробел в правильном порядке\nПример: 🍎 🍊 🍋",
             inline=False
         )
@@ -76,13 +76,13 @@ class MemoryAnswerModal(discord.ui.Modal, title="Ваша последовате
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Правильно!"),
+                title=replace_emojis("Правильно!"),
                 description=f"**Последовательность:** {' '.join(correct_sequence)}\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title=replace_emojis("❌ Неправильно!"),
+                title=replace_emojis("Неправильно!"),
                 description=f"**Ваша последовательность:** {' '.join(user_sequence)}\n**Правильная последовательность:** {' '.join(correct_sequence)}\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )

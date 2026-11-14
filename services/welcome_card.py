@@ -32,9 +32,9 @@ def build_welcome_view(
     info_ref = f"<#{info_channel_id}>" if info_channel_id else "#информация"
     view = social_view(BANNER_WELCOME, timeout=None)
     view.text(
-        "₊˚⊹♡ **Добро пожаловать на сервер**, "
+        "**Добро пожаловать на сервер**, "
         f"{member.mention}!\n\n"
-        f"Ты стал(а) нашим **{member_number}-м** участником ♡"
+        f"Ты стал(а) нашим **{member_number}-м** участником"
     )
     view.sep()
     view.text(

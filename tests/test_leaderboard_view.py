@@ -64,12 +64,12 @@ def _fake_embed(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_page_button_works_inside_composed_layout(_fake_embed):
-    """Клик «▶» на сообщении, отправленном через compose(), не падает."""
+    """Клик «Вперёд» на сообщении, отправленном через compose(), не падает."""
     view = _make_view(user_id=42)
     layout = compose(discord.Embed(description="board"), view)
     assert isinstance(layout, discord.ui.LayoutView)
 
-    nxt = _find_button(layout, "▶")
+    nxt = _find_button(layout, "Вперёд")
     assert nxt.disabled is False
     assert nxt.view is layout  # кнопка принадлежит обёртке, не исходному View
 
@@ -79,16 +79,16 @@ async def test_page_button_works_inside_composed_layout(_fake_embed):
     interaction.response.edit_message.assert_awaited_once()
     sent_view = interaction.response.edit_message.await_args.kwargs["view"]
     # Сообщение пересобрано из исходного View: страница сменилась,
-    # кнопка «◀» появилась.
+    # кнопка «Назад» появилась.
     assert view.page == 2
-    assert _find_button(sent_view, "◀") is not None
+    assert _find_button(sent_view, "Назад") is not None
 
 
 @pytest.mark.asyncio
 async def test_page_button_rejects_other_user(_fake_embed):
     view = _make_view(user_id=42)
     layout = compose(discord.Embed(description="board"), view)
-    nxt = _find_button(layout, "▶")
+    nxt = _find_button(layout, "Вперёд")
 
     interaction = _interaction(user_id=999)
     await nxt.callback(interaction)

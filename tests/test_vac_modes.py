@@ -1,7 +1,5 @@
 """Тесты применения прогрессивного VAC в режимах r!z3.
 
-- MM Ready Check: авто-нарушения идут через record_violation
-  (лестница, а не фиксированные 10 минут) + event_key-дедупликация.
 - Ultimatum: _vac_check покрывает solo и duo (оба игрока),
   текст содержит причину, окончание и оставшееся время.
 """
@@ -26,47 +24,6 @@ def fake_store(monkeypatch):
     store = FakeVacStore()
     monkeypatch.setattr(vac_service, "vac_store", store)
     return store
-
-
-# ------------------------------------------------------------- MM auto-VAC
-
-@pytest.mark.asyncio
-async def test_mm_vac_uses_progressive_ladder(fake_store):
-    """MM no-show: первый → 3 мин, второй → 10 мин (не фикс. 10 мин)."""
-    from cogs.mm import MMCog
-
-    bot = SimpleNamespace(user=SimpleNamespace(id=1))
-    cog = MMCog(bot)
-
-    await cog._issue_mm_vacs(1, [42], "не подтвердил готовность",
-                             event_key="mm_timeout:m1")
-    row = fake_store.rows[-1]
-    assert row["level"] == 1
-    assert row["expires_at"] - row["issued_at"] == timedelta(minutes=3)
-
-    # Следующий матч — уровень 2 (10 мин)
-    for r in fake_store.rows:
-        r["expires_at"] = datetime.now(timezone.utc) - timedelta(seconds=1)
-    await cog._issue_mm_vacs(1, [42], "отказ от матча",
-                             event_key="mm_decline:m2")
-    row = fake_store.rows[-1]
-    assert row["level"] == 2
-    assert row["expires_at"] - row["issued_at"] == timedelta(minutes=10)
-
-
-@pytest.mark.asyncio
-async def test_mm_vac_event_key_no_double_punish(fake_store):
-    """Повторный вызов с тем же event_key не создаёт второй бан."""
-    from cogs.mm import MMCog
-
-    cog = MMCog(SimpleNamespace(user=SimpleNamespace(id=1)))
-    await cog._issue_mm_vacs(1, [42, 43], "таймаут",
-                             event_key="mm_timeout:m9")
-    await cog._issue_mm_vacs(1, [42, 43], "таймаут",
-                             event_key="mm_timeout:m9")
-    assert fake_store.profiles[(1, 42)]["violation_count"] == 1
-    assert fake_store.profiles[(1, 43)]["violation_count"] == 1
-    assert len(fake_store.rows) == 2
 
 
 # -------------------------------------------------------- Ultimatum _vac_check

@@ -162,7 +162,7 @@ class InfoCog(commands.Cog):
         if ch is None:
             await interaction.followup.send(
                 replace_emojis(
-                    "❌ Канал не найден. Укажите параметр channel или "
+                    "Канал не найден. Укажите параметр channel или "
                     "задайте INFO_CHANNEL_ID."
                 ),
                 ephemeral=True,
@@ -174,7 +174,7 @@ class InfoCog(commands.Cog):
         )
         body = "\n".join(f"- {r}" for r in results)
         embed = discord.Embed(
-            title=" Информационный центр",
+            title="Информационный центр",
             description=(
                 f"Канал: {ch.mention}\n\n{body}\n\n"
                 "Сообщения публикуются один раз — при обновлении контента "
@@ -200,7 +200,7 @@ class InfoCog(commands.Cog):
         if key and section_by_key(key) is None:
             names = ", ".join(s.key for s in SECTIONS)
             await interaction.followup.send(
-                replace_emojis(f"❌ Неизвестный раздел. Доступные: {names}"),
+                replace_emojis(f"Неизвестный раздел. Доступные: {names}"),
                 ephemeral=True,
             )
             return
@@ -208,7 +208,7 @@ class InfoCog(commands.Cog):
         if ch is None:
             await interaction.followup.send(
                 replace_emojis(
-                    "❌ Канал инфо-центра не настроен — сначала `/info publish`."
+                    "Канал инфо-центра не настроен — сначала `/info publish`."
                 ),
                 ephemeral=True,
             )
@@ -218,7 +218,7 @@ class InfoCog(commands.Cog):
         )
         body = "\n".join(f"- {r}" for r in results)
         embed = discord.Embed(
-            title=" Обновление инфо-центра",
+            title="Обновление инфо-центра",
             description=f"Канал: {ch.mention}\n\n{body}",
             color=discord.Color.from_rgb(170, 102, 255),
         )
@@ -257,7 +257,7 @@ class InfoCog(commands.Cog):
                 f"v{ver}→v{cur}, {when}"
             )
         embed = discord.Embed(
-            title=" Информационный центр — статус",
+            title="Информационный центр — статус",
             description="\n".join(lines),
             color=discord.Color.from_rgb(170, 102, 255),
         )
@@ -274,13 +274,13 @@ class InfoCog(commands.Cog):
         if issues:
             body = "\n".join(f"- {i}" for i in issues[:20])
             embed = discord.Embed(
-                title=" Валидация инфо-центра — проблемы",
+                title="Валидация инфо-центра — проблемы",
                 description=body,
                 color=discord.Color.red(),
             )
         else:
             embed = discord.Embed(
-                title=" Валидация инфо-центра",
+                title="Валидация инфо-центра",
                 description=(
                     f"Всё в порядке: {len(SECTIONS)} разделов, "
                     "все md-файлы и баннеры на месте, текст в лимитах."

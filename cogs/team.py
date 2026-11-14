@@ -29,7 +29,7 @@ class TeamCog(commands.Cog):
         existing_team = team_store.get_by_member(interaction.user.id)
         if existing_team:
             await interaction.response.send_message(
-                replace_emojis("❌ Вы уже состоите в команде!"),
+                replace_emojis("Вы уже состоите в команде!"),
                 ephemeral=True
             )
             return
@@ -56,7 +56,7 @@ class TeamCog(commands.Cog):
         await team_store.create(team)
 
         embed = discord.Embed(
-            title=f" Команда создана!",
+            title=f"Команда создана!",
             description=(
                 f" **Название:** {team.team_name}\n"
                 f" **Пароль:** ||{password}||\n"
@@ -74,7 +74,7 @@ class TeamCog(commands.Cog):
         team = team_store.get_by_captain(interaction.user.id)
         if not team:
             await interaction.response.send_message(
-                replace_emojis("❌ Вы не капитан команды!"),
+                replace_emojis("Вы не капитан команды!"),
                 ephemeral=True
             )
             return
@@ -96,7 +96,7 @@ class TeamCog(commands.Cog):
         await team_store.delete(team.team_id)
 
         embed = discord.Embed(
-            title=f" Команда удалена",
+            title=f"Команда удалена",
             description=f" Команда **{team.team_name}** была удалена.",
             color=discord.Color.from_rgb(235, 100, 100)  # Pastel red
         )
@@ -112,7 +112,7 @@ class TeamCog(commands.Cog):
             team = team_store.get_by_name(interaction.guild_id, team_name)
             if not team:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Команда с таким названием не найдена!"),
+                    replace_emojis("Команда с таким названием не найдена!"),
                     ephemeral=True
                 )
                 return
@@ -121,7 +121,7 @@ class TeamCog(commands.Cog):
             team = team_store.get_by_member(interaction.user.id)
             if not team:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Вы не состоите в команде! Укажите название команды или создайте свою."),
+                    replace_emojis("Вы не состоите в команде! Укажите название команды или создайте свою."),
                     ephemeral=True
                 )
                 return
@@ -196,7 +196,7 @@ class TeamCog(commands.Cog):
 
         # Send ephemeral confirmation
         await interaction.response.send_message(
-            replace_emojis("✅ Статус команды обновлен"),
+            replace_emojis("Статус команды обновлен"),
             ephemeral=True
         )
 

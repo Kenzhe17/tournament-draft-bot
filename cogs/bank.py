@@ -72,7 +72,7 @@ class BankCog(commands.Cog):
             await self.withdraw(interaction, amount)
         else:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Неверное действие! Используйте: status, deposit, withdraw",
+                f"Неверное действие! Используйте: status, deposit, withdraw",
                 ephemeral=True
             )
 
@@ -86,7 +86,7 @@ class BankCog(commands.Cog):
             stats = await player_stats_store.get(guild_id, user_id)
             if not stats:
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Профиль не найден!",
+                    f"Профиль не найден!",
                     ephemeral=True
                 )
                 return
@@ -109,7 +109,7 @@ class BankCog(commands.Cog):
 
             # Build embed
             embed = discord.Embed(
-                title=f" **БАНКОВСКИЙ СЕЙФ | /bank**",
+                title=f"**БАНКОВСКИЙ СЕЙФ | /bank**",
                 color=3447003  # Синий
             )
             embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
@@ -138,7 +138,7 @@ class BankCog(commands.Cog):
             stats = await player_stats_store.get(guild_id, user_id)
             if not stats:
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Профиль не найден!",
+                    f"Профиль не найден!",
                     ephemeral=True
                 )
                 return
@@ -156,13 +156,13 @@ class BankCog(commands.Cog):
                     deposit_amount = int(amount)
                 except ValueError:
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Неверная сумма!",
+                        f"Неверная сумма!",
                         ephemeral=True
                     )
                     return
             else:
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Укажите сумму или 'all'!",
+                    f"Укажите сумму или 'all'!",
                     ephemeral=True
                 )
                 return
@@ -170,14 +170,14 @@ class BankCog(commands.Cog):
             # Проверка наличия средств
             if cash <= 0:
                 await interaction.response.send_message(
-                    f"{replace_emojis('⚠️')} **Недостаточно средств:** У вас на руках нет запрошенной суммы наличных!",
+                    f"**Недостаточно средств:** У вас на руках нет запрошенной суммы наличных!",
                     ephemeral=True
                 )
                 return
 
             if deposit_amount > cash:
                 await interaction.response.send_message(
-                    f"{replace_emojis('⚠️')} **Недостаточно средств:** У вас на руках нет запрошенной суммы наличных!",
+                    f"**Недостаточно средств:** У вас на руках нет запрошенной суммы наличных!",
                     ephemeral=True
                 )
                 return
@@ -188,7 +188,7 @@ class BankCog(commands.Cog):
                 next_limit = get_next_bank_limit(level)
                 next_level_tier = ((level - 1) // 10 + 1) * 10 + 1
                 await interaction.response.send_message(
-                    f"{replace_emojis('⚠️')} **Сейф переполнен:** На вашем ранге (**Уровень {level}**) максимальный лимит сейфа — **{bank_limit:,}** {get_emoji('money')}. Повышайте уровень персонажа, чтобы получить доступ к **{next_limit:,}** {get_emoji('money')} на {next_level_tier} уровне!",
+                    f"**Сейф переполнен:** На вашем ранге (**Уровень {level}**) максимальный лимит сейфа — **{bank_limit:,}** {get_emoji('money')}. Повышайте уровень персонажа, чтобы получить доступ к **{next_limit:,}** {get_emoji('money')} на {next_level_tier} уровне!",
                     ephemeral=True
                 )
                 return
@@ -209,7 +209,7 @@ class BankCog(commands.Cog):
             new_bank = await user_bank_store.get_bank_balance(guild_id, user_id)
 
             await interaction.response.send_message(
-                f"{replace_emojis('✅')} **Сейф пополнен!** Вы внесли **{actual_deposit:,}** {get_emoji('money')}.\n• Комиссия банка (5%): **{fee:,}** {get_emoji('money')}\n• Зачислено в сейф: **{net_amount:,}** {get_emoji('money')}\n• Теперь в сейфе: **{new_bank:,} / {bank_limit:,}** {get_emoji('money')}.",
+                f"**Сейф пополнен!** Вы внесли **{actual_deposit:,}** {get_emoji('money')}.\n• Комиссия банка (5%): **{fee:,}** {get_emoji('money')}\n• Зачислено в сейф: **{net_amount:,}** {get_emoji('money')}\n• Теперь в сейфе: **{new_bank:,} / {bank_limit:,}** {get_emoji('money')}.",
                 ephemeral=True
             )
 
@@ -229,13 +229,13 @@ class BankCog(commands.Cog):
                     withdraw_amount = int(amount)
                 except ValueError:
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Неверная сумма!",
+                        f"Неверная сумма!",
                         ephemeral=True
                     )
                     return
             else:
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Укажите сумму или 'all'!",
+                    f"Укажите сумму или 'all'!",
                     ephemeral=True
                 )
                 return
@@ -243,14 +243,14 @@ class BankCog(commands.Cog):
             # Проверка наличия в сейфе
             if bank <= 0:
                 await interaction.response.send_message(
-                    f"{replace_emojis('⚠️')} **Недостаточно средств:** В сейфе нет средств для вывода!",
+                    f"**Недостаточно средств:** В сейфе нет средств для вывода!",
                     ephemeral=True
                 )
                 return
 
             if withdraw_amount > bank:
                 await interaction.response.send_message(
-                    f"{replace_emojis('⚠️')} **Недостаточно средств:** В сейфе нет запрошенной суммы!",
+                    f"**Недостаточно средств:** В сейфе нет запрошенной суммы!",
                     ephemeral=True
                 )
                 return
@@ -264,7 +264,7 @@ class BankCog(commands.Cog):
             new_bank = await user_bank_store.get_bank_balance(guild_id, user_id)
 
             await interaction.response.send_message(
-                f"{replace_emojis('✅')} **Вывод выполнен!** Вы перевели **{withdraw_amount:,}** {get_emoji('money')} из сейфа в наличные.\n• На руках: **{new_cash:,}** {get_emoji('money')} *(уязвимы)*\n• В сейфе осталось: **{new_bank:,}** {get_emoji('money')}.",
+                f"**Вывод выполнен!** Вы перевели **{withdraw_amount:,}** {get_emoji('money')} из сейфа в наличные.\n• На руках: **{new_cash:,}** {get_emoji('money')} *(уязвимы)*\n• В сейфе осталось: **{new_bank:,}** {get_emoji('money')}.",
                 ephemeral=True
             )
 

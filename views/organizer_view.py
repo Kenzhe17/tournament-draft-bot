@@ -72,7 +72,7 @@ def build_multi_channel_embed(guild: discord.Guild) -> discord.Embed:
             )
 
     embed = discord.Embed(
-        title=f" r1z3 | УПРАВЛЕНИЕ ОРГАНИЗАТОРАМИ",
+        title=f"r1z3 | УПРАВЛЕНИЕ ОРГАНИЗАТОРАМИ",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -170,7 +170,7 @@ class OrganizerManagementButton(Button):
 
         if not has_access:
             await interaction.response.send_message(
-                f"❌ У вас нет роли для управления организаторами.",
+                f"У вас нет роли для управления организаторами.",
                 ephemeral=True
             )
             return
@@ -180,20 +180,20 @@ class OrganizerManagementButton(Button):
             tournament = store.get(self.guild_id, user_channel_id)
             if not tournament:
                 await interaction.response.send_message(
-                    f"❌ В вашем канале нет активного турнира.",
+                    f"В вашем канале нет активного турнира.",
                     ephemeral=True
                 )
                 return
             # Open directly to their channel
             view = OrganizerMenuView(self.guild_id, user_channel_id)
             await interaction.response.defer(ephemeral=True)
-            await interaction.followup.send("✅ Сообщение для управления ролью организатора создано", ephemeral=True)
+            await interaction.followup.send("Сообщение для управления ролью организатора создано", ephemeral=True)
             await interaction.followup.send(view=compose(view=view), ephemeral=True)
         else:
             # Open channel selection view for MANAGER_ROLE or admin
             view = ChannelSelectView(self.guild_id, self.guild)
             await interaction.response.defer(ephemeral=True)
-            await interaction.followup.send("✅ Сообщение для управления ролью организатора создано", ephemeral=True)
+            await interaction.followup.send("Сообщение для управления ролью организатора создано", ephemeral=True)
             await interaction.followup.send(view=compose(view=view), ephemeral=True)
 
 
@@ -267,7 +267,7 @@ class NotifyOpenButton(Button):
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ В этом канале нет активного турнира.",
+                "В этом канале нет активного турнира.",
                 ephemeral=True
             )
             return
@@ -275,7 +275,7 @@ class NotifyOpenButton(Button):
         channel = interaction.guild.get_channel(self.channel_id)
         if not channel:
             await interaction.response.send_message(
-                "❌ Канал не найден.",
+                "Канал не найден.",
                 ephemeral=True
             )
             return
@@ -289,17 +289,17 @@ class NotifyOpenButton(Button):
                 f" Удачи всем участникам! "
             )
             await interaction.response.send_message(
-                "✅ Уведомление об открытии отправлено!",
+                "Уведомление об открытии отправлено!",
                 ephemeral=True
             )
         except discord.Forbidden:
             await interaction.response.send_message(
-                "❌ У бота нет прав для отправки сообщений в этот канал.",
+                "У бота нет прав для отправки сообщений в этот канал.",
                 ephemeral=True
             )
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка: {str(e)}",
+                f"Ошибка: {str(e)}",
                 ephemeral=True
             )
 
@@ -343,7 +343,7 @@ class CustomNotificationModal(Modal, title="Свой шаблон уведомл
         channel = interaction.guild.get_channel(self.channel_id)
         if not channel:
             await interaction.response.send_message(
-                "❌ Канал не найден.",
+                "Канал не найден.",
                 ephemeral=True
             )
             return
@@ -354,17 +354,17 @@ class CustomNotificationModal(Modal, title="Свой шаблон уведомл
                 f"{text}"
             )
             await interaction.response.send_message(
-                "✅ Уведомление отправлено!",
+                "Уведомление отправлено!",
                 ephemeral=True
             )
         except discord.Forbidden:
             await interaction.response.send_message(
-                "❌ У бота нет прав для отправки сообщений в этот канал.",
+                "У бота нет прав для отправки сообщений в этот канал.",
                 ephemeral=True
             )
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка: {str(e)}",
+                f"Ошибка: {str(e)}",
                 ephemeral=True
             )
 
@@ -385,7 +385,7 @@ class AddOrganizerButton(Button):
         channel_orgs = organizer_store.get(self.guild_id, self.channel_id)
         if not channel_orgs:
             await interaction.response.send_message(
-                "❌ Конфигурация организаторов не найдена.",
+                "Конфигурация организаторов не найдена.",
                 ephemeral=True
             )
             return
@@ -393,7 +393,7 @@ class AddOrganizerButton(Button):
         # Check permissions
         if not self._can_manage(interaction, channel_orgs):
             await interaction.response.send_message(
-                "❌ Только организатор канала или владелец бота может добавлять организаторов.",
+                "Только организатор канала или владелец бота может добавлять организаторов.",
                 ephemeral=True
             )
             return
@@ -401,7 +401,7 @@ class AddOrganizerButton(Button):
         # Check limit
         if len(channel_orgs.all_organizers()) >= 3:
             await interaction.response.send_message(
-                "❌ Достигнут лимит организаторов (максимум 3).",
+                "Достигнут лимит организаторов (максимум 3).",
                 ephemeral=True
             )
             return
@@ -410,7 +410,7 @@ class AddOrganizerButton(Button):
         role = interaction.guild.get_role(MANAGER_ROLE_ID)
         if not role:
             await interaction.response.send_message(
-                "❌ Роль менеджера не найдена.",
+                "Роль менеджера не найдена.",
                 ephemeral=True
             )
             return
@@ -427,7 +427,7 @@ class AddOrganizerButton(Button):
 
         if not options:
             await interaction.response.send_message(
-                "❌ Нет доступных пользователей с ролью менеджера.",
+                "Нет доступных пользователей с ролью менеджера.",
                 ephemeral=True
             )
             return
@@ -484,25 +484,39 @@ class AddOrganizerSelect(Select):
         channel_orgs = organizer_store.get(self.guild_id, self.channel_id)
         if not channel_orgs:
             await interaction.response.send_message(
-                "❌ Конфигурация организаторов не найдена.",
+                "Конфигурация организаторов не найдена.",
                 ephemeral=True
             )
             return
 
         if not channel_orgs.add_organizer(user_id):
             await interaction.response.send_message(
-                "❌ Не удалось добавить организатора (лимит или уже существует).",
+                "Не удалось добавить организатора (лимит или уже существует).",
                 ephemeral=True
             )
             return
 
         organizer_store.set(self.guild_id, self.channel_id, channel_orgs)
 
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                channel_id=self.channel_id,
+                tournament_id=channel_orgs.tournament_id or None,
+                target_user_id=user_id,
+                action=audit_svc.A.ORG_ASSIGN,
+                source="organizer",
+                after={"role": "additional"},
+            )
+        except Exception:
+            pass
+
         # Update the original message
         await self._update_message(interaction)
 
         await interaction.response.send_message(
-            f"✅ Организатор добавлен.",
+            f"Организатор добавлен.",
             ephemeral=True
         )
 
@@ -563,7 +577,7 @@ class RemoveOrganizerButton(Button):
         channel_orgs = organizer_store.get(self.guild_id, self.channel_id)
         if not channel_orgs:
             await interaction.response.send_message(
-                "❌ Конфигурация организаторов не найдена.",
+                "Конфигурация организаторов не найдена.",
                 ephemeral=True
             )
             return
@@ -571,25 +585,38 @@ class RemoveOrganizerButton(Button):
         # Check permissions
         if not self._can_manage(interaction, channel_orgs):
             await interaction.response.send_message(
-                "❌ Только организатор канала или владелец бота может удалять организаторов.",
+                "Только организатор канала или владелец бота может удалять организаторов.",
                 ephemeral=True
             )
             return
 
         if not channel_orgs.remove_organizer(self.organizer_id):
             await interaction.response.send_message(
-                "❌ Организатор не найден.",
+                "Организатор не найден.",
                 ephemeral=True
             )
             return
 
         organizer_store.set(self.guild_id, self.channel_id, channel_orgs)
 
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                channel_id=self.channel_id,
+                tournament_id=channel_orgs.tournament_id or None,
+                target_user_id=self.organizer_id,
+                action=audit_svc.A.ORG_REMOVE,
+                source="organizer",
+            )
+        except Exception:
+            pass
+
         # Update the original message
         await self._update_message(interaction)
 
         await interaction.response.send_message(
-            "✅ Организатор удален.",
+            "Организатор удален.",
             ephemeral=True
         )
 
@@ -670,7 +697,7 @@ class TransferOrganizerButton(Button):
         channel_orgs = organizer_store.get(self.guild_id, self.channel_id)
         if not channel_orgs:
             await interaction.response.send_message(
-                "❌ Конфигурация организаторов не найдена.",
+                "Конфигурация организаторов не найдена.",
                 ephemeral=True
             )
             return
@@ -678,7 +705,7 @@ class TransferOrganizerButton(Button):
         # Check permissions
         if not self._can_manage(interaction, channel_orgs):
             await interaction.response.send_message(
-                "❌ Только организатор канала или владелец бота может передавать права.",
+                "Только организатор канала или владелец бота может передавать права.",
                 ephemeral=True
             )
             return
@@ -687,7 +714,7 @@ class TransferOrganizerButton(Button):
         manager_role = interaction.guild.get_role(MANAGER_ROLE_ID)
         if not manager_role:
             await interaction.response.send_message(
-                "❌ MANAGER_ROLE_ID не настроен.",
+                "MANAGER_ROLE_ID не настроен.",
                 ephemeral=True
             )
             return
@@ -712,7 +739,7 @@ class TransferOrganizerButton(Button):
 
         if not options:
             await interaction.response.send_message(
-                "❌ Нет свободных организаторов (все с MANAGER_ROLE_ID уже организаторы в турнирах).",
+                "Нет свободных организаторов (все с MANAGER_ROLE_ID уже организаторы в турнирах).",
                 ephemeral=True
             )
             return
@@ -769,25 +796,39 @@ class TransferOrganizerSelect(Select):
         channel_orgs = organizer_store.get(self.guild_id, self.channel_id)
         if not channel_orgs:
             await interaction.response.send_message(
-                "❌ Конфигурация организаторов не найдена.",
+                "Конфигурация организаторов не найдена.",
                 ephemeral=True
             )
             return
 
         if not channel_orgs.transfer_organizer(new_org_id):
             await interaction.response.send_message(
-                "❌ Не удалось передать права.",
+                "Не удалось передать права.",
                 ephemeral=True
             )
             return
 
         organizer_store.set(self.guild_id, self.channel_id, channel_orgs)
 
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                channel_id=self.channel_id,
+                tournament_id=channel_orgs.tournament_id or None,
+                target_user_id=new_org_id,
+                action=audit_svc.A.ORG_TRANSFER,
+                source="organizer",
+                after={"role": "main"},
+            )
+        except Exception:
+            pass
+
         # Update the original message
         await self._update_message(interaction)
 
         await interaction.response.send_message(
-            "✅ Права основного организатора переданы.",
+            "Права основного организатора переданы.",
             ephemeral=True
         )
 

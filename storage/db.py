@@ -249,16 +249,10 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
-        # K/D/A + damage stats for KDA-based Skill Rating
-        try:
-            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_assists INTEGER DEFAULT 0")
-        except asyncpg.DuplicateColumnError:
-            pass
-
-        try:
-            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_damage INTEGER DEFAULT 0")
-        except asyncpg.DuplicateColumnError:
-            pass
+        # Удаление легаси-колонок assists/damage (классика r!z3 — только K/D)
+        for _col in ("total_assists", "total_damage"):
+            await conn.execute(
+                f"ALTER TABLE player_stats DROP COLUMN IF EXISTS {_col}")
 
         # Create user_balance table for economy system
         await conn.execute("""
@@ -613,6 +607,16 @@ async def init_db() -> None:
             from ultimatum import ULTIMATUM_SCHEMA, ELO_SCHEMA
             await conn.execute(ULTIMATUM_SCHEMA)
             await conn.execute(ELO_SCHEMA)
+            # Разовый перенос старого Solo ELO в ult_elo_ratings
+            # (ON CONFLICT DO NOTHING — идемпотентно, история
+            # elo_history остаётся в легаси-таблице).
+            try:
+                from ultimatum.elo import ult_elo_store
+                migrated = await ult_elo_store.migrate_legacy_solo()
+                if migrated:
+                    logger.info("Migrated %d legacy ultimatum ELO rows", migrated)
+            except Exception as e:
+                logger.warning("Legacy ultimatum ELO migration skipped: %s", e)
             logger.info("Ultimatum tables initialized successfully")
         except ImportError as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -670,10 +674,13 @@ async def init_db() -> None:
             )
         """)
 
-        # K/D/A + damage per match (Hall of Fame per-match records)
-        for _col in ("assists", "damage", "duration_seconds"):
+        # duration_seconds per match; легаси-колонки assists/damage удалены
+        for _col in ("duration_seconds",):
             await conn.execute(
                 f"ALTER TABLE match_history ADD COLUMN IF NOT EXISTS {_col} INTEGER DEFAULT 0")
+        for _col in ("assists", "damage"):
+            await conn.execute(
+                f"ALTER TABLE match_history DROP COLUMN IF EXISTS {_col}")
 
         # Режим матча (normal / no_ruin)
         await conn.execute(

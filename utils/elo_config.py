@@ -13,9 +13,7 @@ ELO_CONFIG = {
 
     # Веса индивидуальной статистики (Performance Score)
     "kill_weight": 1.0,
-    "assist_weight": 0.5,
     "death_weight": 0.75,
-    "damage_divisor": 2000,
 
     # Поправки за индивидуальный вклад (Performance Score) относительно
     # всех игроков матча: лучший / выше среднего / средний / ниже среднего /

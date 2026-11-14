@@ -4,44 +4,24 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-# Формат FF CS «7 раундов»: K/D/A выросли ~x1.4, урон ~x1.8
-# за матч. Пороги АБСОЛЮТНЫХ показателей (avg kills, avg damage)
-# подняты пропорционально — SR одинаково эффективного игрока
-# нового формата совпадает со старым. KDA — отношение (K+A)/D:
-# при равномерном росте K/A/D x1.4 оно не меняется, поэтому его
-# порог НЕ масштабируется. Сырые суммы статистики не трогаем.
-_SR_KILLS_THRESHOLD = 8.0 * 1.4    # 11.2
-_SR_DAMAGE_THRESHOLD = 3000.0 * 1.8  # 5400.0
-_SR_KDA_THRESHOLD = 4.0
-
-
-def calculate_sr(
-    kills: int, deaths: int, assists: int, damage: int, games: int
-) -> float:
-    """Skill Rating 0-10 по суммарной статистике игрока."""
+def calculate_sr(kills: int, deaths: int, games: int) -> float:
+    """Skill Rating 0-10 — классическая формула r!z3: только K/D и AVG Kills."""
     if games <= 0:
         return 1.0
 
-    kda = (kills + assists) / max(deaths, 1)
+    games_multiplier = games / 3.0 if games < 3 else 1.0
+
+    safe_deaths = deaths if deaths > 0 else 1
+    kd_ratio = kills / safe_deaths
     avg_kills = kills / games
-    avg_damage = damage / games
 
-    kda_score = min(kda / _SR_KDA_THRESHOLD, 1.25)
-    kills_score = min(avg_kills / _SR_KILLS_THRESHOLD, 1.25)
-    damage_score = min(avg_damage / _SR_DAMAGE_THRESHOLD, 1.25)
+    raw_index = (kd_ratio * 60) + (avg_kills * 8)
 
-    performance = (
-        kda_score * 0.40
-        + kills_score * 0.40
-        + damage_score * 0.20
-    )
+    # Нормализация: raw 30 → 1.0, raw 220 → 10.0
+    rating = 1.0 + ((raw_index - 30) / (220 - 30)) * 9.0
+    rating *= games_multiplier
 
-    # Понижение при недостатке матчей
-    confidence = min(games / 3.0, 1.0)
-
-    sr = 1.0 + 8.0 * performance * confidence
-
-    return round(max(1.0, min(sr, 10.0)), 1)
+    return round(max(1.0, min(rating, 10.0)), 1)
 
 
 @dataclass
@@ -65,8 +45,6 @@ class PlayerStats:
     # New fields for detailed rating system
     total_kills: int = 0
     total_deaths: int = 0
-    total_assists: int = 0
-    total_damage: int = 0
     best_match_kills: int = 0
     total_elo_change: int = 0
     last_elo_change: int = 0  # Sum of all ELO changes
@@ -113,8 +91,6 @@ class PlayerStats:
             "streak_bonus_coins": self.streak_bonus_coins,
             "total_kills": self.total_kills,
             "total_deaths": self.total_deaths,
-            "total_assists": self.total_assists,
-            "total_damage": self.total_damage,
             "best_match_kills": self.best_match_kills,
             "total_elo_change": self.total_elo_change,
             "last_elo_change": self.last_elo_change,
@@ -156,8 +132,6 @@ class PlayerStats:
             streak_bonus_coins=data.get("streak_bonus_coins", 0),
             total_kills=data.get("total_kills", 0),
             total_deaths=data.get("total_deaths", 0),
-            total_assists=data.get("total_assists", 0),
-            total_damage=data.get("total_damage", 0),
             best_match_kills=data.get("best_match_kills", 0),
             total_elo_change=data.get("total_elo_change", 0),
             last_elo_change=data.get("last_elo_change", 0),
@@ -195,17 +169,6 @@ class PlayerStats:
         return self.total_kills / self.total_deaths if self.total_deaths > 0 else 0.0
 
     @property
-    def kda_ratio(self) -> float:
-        """K+A/D — убийства + ассисты к смертям."""
-        deaths = self.total_deaths if self.total_deaths > 0 else 1
-        return (self.total_kills + self.total_assists) / deaths
-
-    @property
-    def avg_damage(self) -> float:
-        """Средний урон за игру."""
-        return self.total_damage / self.games if self.games > 0 else 0.0
-
-    @property
     def avg_elo_change(self) -> float:
         """Среднее изменение ELO за игру."""
         return self.total_elo_change / self.games if self.games > 0 else 0.0
@@ -217,15 +180,8 @@ class PlayerStats:
 
     @property
     def skill_rating(self) -> float:
-        """Skill Rating 0-10: KDA + avg kills + avg damage, с confidence
-        по количеству игр."""
-        return calculate_sr(
-            self.total_kills,
-            self.total_deaths,
-            self.total_assists,
-            self.total_damage,
-            self.games,
-        )
+        """Skill Rating 0-10: только K/D и avg kills (классика r!z3)."""
+        return calculate_sr(self.total_kills, self.total_deaths, self.games)
 
     def add_xp(self, amount: int) -> tuple[int, int]:
         """Добавить XP и автоматически повысить уровень. Возвращает (новый уровень, уровень до)."""

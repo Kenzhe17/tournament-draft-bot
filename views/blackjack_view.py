@@ -27,26 +27,26 @@ class BlackjackView(discord.ui.View):
         dealer_value = self.game.calculate_hand_value(dealer_hand)
 
         embed = discord.Embed(
-            title="🃏 Блэкджек",
+            title="Блэкджек",
             description=f"**Ставка:** {self.bet} 🪙\n**Множитель:** 2x (победа), 3x (blackjack)",
             color=discord.Color.dark_green()
         )
 
         embed.add_field(
-            name="👤 Ваша рука",
+            name="Ваша рука",
             value=f"{' '.join(player_hand)} = {player_value}",
             inline=False
         )
 
         if show_dealer:
             embed.add_field(
-                name="🎰 Рука дилера",
+                name="Рука дилера",
                 value=f"{' '.join(dealer_hand)} = {dealer_value}",
                 inline=False
             )
         else:
             embed.add_field(
-                name="🎰 Рука дилера",
+                name="Рука дилера",
                 value=f"{dealer_hand[0]} ?",
                 inline=False
             )
@@ -75,13 +75,13 @@ class BlackjackView(discord.ui.View):
                 # Дилер тоже перебрал - ничья
                 await user_balance_store.add_balance(self.guild_id, self.user_id, self.bet)
                 embed = discord.Embed(
-                    title="🃏 Блэкджек",
+                    title="Блэкджек",
                     description=f"**Перебор!**\nВаша рука: {' '.join(self.player_hand)} = {player_value}\nРука дилера: {' '.join(self.dealer_hand)} = {dealer_value}\n\nСтавка возвращена.",
                     color=discord.Color.orange()
                 )
             else:
                 embed = discord.Embed(
-                    title="🃏 Блэкджек",
+                    title="Блэкджек",
                     description=f"**Перебор!**\nВаша рука: {' '.join(self.player_hand)} = {player_value}\nРука дилера: {' '.join(self.dealer_hand)} = {dealer_value}\n\nПотеря: {self.bet} 🪙",
                     color=discord.Color.red()
                 )
@@ -122,13 +122,13 @@ class BlackjackView(discord.ui.View):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Победа!"),
+                title=replace_emojis("Победа!"),
                 description=f"**Ваша рука:** {' '.join(self.player_hand)} = {player_value}\n**Рука дилера:** {' '.join(self.dealer_hand)} = {dealer_value}\n\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title=replace_emojis("❌ Проигрыш"),
+                title=replace_emojis("Проигрыш"),
                 description=f"**Ваша рука:** {' '.join(self.player_hand)} = {player_value}\n**Рука дилера:** {' '.join(self.dealer_hand)} = {dealer_value}\n\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )
@@ -179,13 +179,13 @@ class BlackjackActionView(discord.ui.View):
         self.dealer_hand = dealer_hand
         self.game = game
 
-    @discord.ui.button(label="📥 Взять карту", style=discord.ButtonStyle.primary, custom_id="blackjack_hit")
+    @discord.ui.button(label="Взять карту", style=discord.ButtonStyle.primary, custom_id="blackjack_hit")
     async def hit_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Взять карту."""
         view = BlackjackView(self.guild_id, self.user_id, self.bet, self.deck, self.player_hand, self.dealer_hand, self.game)
         await view.hit(interaction)
 
-    @discord.ui.button(label="✋ Остановиться", style=discord.ButtonStyle.secondary, custom_id="blackjack_stand")
+    @discord.ui.button(label="Остановиться", style=discord.ButtonStyle.secondary, custom_id="blackjack_stand")
     async def stand_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Остановиться."""
         view = BlackjackView(self.guild_id, self.user_id, self.bet, self.deck, self.player_hand, self.dealer_hand, self.game)

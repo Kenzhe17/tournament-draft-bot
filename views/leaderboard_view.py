@@ -35,32 +35,27 @@ class TopCategorySelect(discord.ui.Select):
             discord.SelectOption(
                 label="Топ по ELO",
                 value="elo",
-                description="Турнирный рейтинг и статистика побед",
-                emoji="⚔️"
+                description="Турнирный рейтинг и статистика побед"
             ),
             discord.SelectOption(
-                label="Топ по Ultimatum Elo",
+                label="Топ по Ультиматуму",
                 value="ulti_elo",
-                description="Рейтинг Ultimatum 1v1",
-                emoji="🎮"
+                description="Рейтинг Ультиматума (Соло)"
             ),
             discord.SelectOption(
                 label="Топ по Монетам",
                 value="money",
-                description="Самые богатые игроки сервера",
-                emoji="💰"
+                description="Самые богатые игроки сервера"
             ),
             discord.SelectOption(
                 label="Топ по Уровню",
                 value="level",
-                description="Опыт аккаунта и прогресс",
-                emoji="✨"
+                description="Опыт аккаунта и прогресс"
             ),
             discord.SelectOption(
                 label="Топ по Репутации",
                 value="rep",
-                description="Вклад в развитие сервера",
-                emoji="🏅"
+                description="Вклад в развитие сервера"
             )
         ]
         super().__init__(
@@ -76,7 +71,7 @@ class TopCategorySelect(discord.ui.Select):
         view = self.view_ref
         if interaction.user.id != view.author_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Вы не можете переключать чужие вкладки!"),
+                replace_emojis("Вы не можете переключать чужие вкладки!"),
                 ephemeral=True
             )
             return
@@ -126,12 +121,12 @@ class UniversalLeaderboardView(discord.ui.View):
         if self.page > 1:
             self.add_item(
                 LeaderboardPageButton(
-                    self.guild_id, self.page - 1, "◀", discord.ButtonStyle.primary, self.leaderboard_type, self.user_id
+                    self.guild_id, self.page - 1, "Назад", discord.ButtonStyle.primary, self.leaderboard_type, self.user_id
                 )
             )
         else:
             disabled_button = discord.ui.Button(
-                label="◀",
+                label="Назад",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -141,12 +136,12 @@ class UniversalLeaderboardView(discord.ui.View):
         if self.page < self._total_pages:
             self.add_item(
                 LeaderboardPageButton(
-                    self.guild_id, self.page + 1, "▶", discord.ButtonStyle.primary, self.leaderboard_type, self.user_id
+                    self.guild_id, self.page + 1, "Вперёд", discord.ButtonStyle.primary, self.leaderboard_type, self.user_id
                 )
             )
         else:
             disabled_button = discord.ui.Button(
-                label="▶",
+                label="Вперёд",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -178,7 +173,7 @@ class LeaderboardPageButton(discord.ui.Button):
         author_id = getattr(view, "author_id", None)
         if author_id is not None and interaction.user.id != author_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Вы не можете перелистывать чужие страницы!"),
+                replace_emojis("Вы не можете перелистывать чужие страницы!"),
                 ephemeral=True
             )
             return
@@ -212,13 +207,13 @@ class LeaderboardView(discord.ui.View):
         if self.page > 1:
             self.add_item(
                 LeaderboardPageButton(
-                    self.guild_id, self.page - 1, "◀", discord.ButtonStyle.primary, self.leaderboard_type
+                    self.guild_id, self.page - 1, "Назад", discord.ButtonStyle.primary, self.leaderboard_type
                 )
             )
         else:
             # Disabled button for first page
             disabled_button = discord.ui.Button(
-                label="◀",
+                label="Назад",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -228,13 +223,13 @@ class LeaderboardView(discord.ui.View):
         if self.page < self._total_pages:
             self.add_item(
                 LeaderboardPageButton(
-                    self.guild_id, self.page + 1, "▶", discord.ButtonStyle.primary, self.leaderboard_type
+                    self.guild_id, self.page + 1, "Вперёд", discord.ButtonStyle.primary, self.leaderboard_type
                 )
             )
         else:
             # Disabled button for last page
             disabled_button = discord.ui.Button(
-                label="▶",
+                label="Вперёд",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )

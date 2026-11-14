@@ -194,6 +194,94 @@ class UserBalanceStore:
             self.save()
             return self._balances[key]
 
+    # Идемпотентные награды за матч: одна строка гранта на
+    # (match_id, user_id). Грант и начисление баланса — в одной
+    # транзакции: либо оба, либо ни одного. Повторный вызов с тем же
+    # match_id возвращает ранее выданную сумму БЕЗ повторного
+    # начисления — покрывает падение процесса между грантами
+    # разных игроков и повторную финализацию.
+    _GRANT_DDL = """
+    CREATE TABLE IF NOT EXISTS match_coin_grants (
+        match_id TEXT NOT NULL,
+        guild_id BIGINT NOT NULL,
+        user_id BIGINT NOT NULL,
+        amount INTEGER NOT NULL,
+        granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (match_id, user_id)
+    )
+    """
+
+    async def add_balance_once(
+        self, guild_id: int, user_id: int, amount: int, match_id: str
+    ) -> int:
+        """Идемпотентное начисление монет за матч.
+
+        Возвращает фактически зачисленную сумму для статистики
+        (total_earnings): при первом вызове — amount с учётом cap
+        MAX_BALANCE, при повторном — та же зафиксированная сумма.
+        Баланс изменяется только при первом вызове.
+        """
+        if amount <= 0:
+            return 0
+
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(self._GRANT_DDL)
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO match_coin_grants
+                            (match_id, guild_id, user_id, amount)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (match_id, user_id) DO NOTHING
+                        RETURNING amount
+                        """,
+                        match_id, guild_id, user_id, amount,
+                    )
+                    if row is None:
+                        # Грант уже выдан — возвращаем зафиксированную
+                        # сумму, баланс не трогаем.
+                        existing = await conn.fetchrow(
+                            "SELECT amount FROM match_coin_grants "
+                            "WHERE match_id = $1 AND user_id = $2",
+                            match_id, user_id,
+                        )
+                        return int(existing["amount"]) if existing else 0
+
+                    # Новый грант — начислить баланс в той же транзакции.
+                    await self._ensure_row(conn, guild_id, user_id)
+                    bal = await conn.fetchrow(
+                        "SELECT balance FROM user_balance "
+                        "WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+                        guild_id, user_id,
+                    )
+                    balance = await self._apply_decay(
+                        conn, guild_id, user_id, bal["balance"]
+                    )
+                    # Фактически зачисленная сумма может быть меньше
+                    # amount при достижении MAX_BALANCE — фиксируем её
+                    # в гранте, чтобы total_earnings и повторные
+                    # вызовы учитывали реальное начисление.
+                    add = min(amount, max(0, MAX_BALANCE - balance))
+                    await conn.execute(
+                        "UPDATE user_balance SET balance = $1 "
+                        "WHERE guild_id = $2 AND user_id = $3",
+                        balance + add, guild_id, user_id,
+                    )
+                    await conn.execute(
+                        "UPDATE match_coin_grants SET amount = $1 "
+                        "WHERE match_id = $2 AND user_id = $3",
+                        add, match_id, user_id,
+                    )
+                    return add
+
+        # JSON-режим: PG нет — фолбэк на обычное начисление
+        # (защита только in-memory processed-флагом).
+        await self.add_balance(guild_id, user_id, amount)
+        return amount
+
     async def subtract_balance(self, guild_id: int, user_id: int, amount: int) -> int:
         """Subtract coins from user balance. Returns new balance.
 
