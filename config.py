@@ -83,11 +83,13 @@ ORG_ROLE_MAP = _parse_channel_role_map(os.getenv("ORG_ROLE_MAP", ""))
 
 # Пул постоянных каналов MM-матчей: вместо create/delete на каждый
 # матч канал берётся из пула, чистится и переназначается.
-# Переопределяется env MM_MATCH_CHANNEL_POOL (csv id).
+# Переопределяется env MM_MATCH_CHANNEL_POOL (csv id); без env —
+# ровно два постоянных канала r!z3.
+_DEFAULT_MM_MATCH_CHANNEL_POOL = (1569282744909824061, 1569282781270245417)
 MM_MATCH_CHANNEL_POOL = [
     int(x) for x in os.getenv("MM_MATCH_CHANNEL_POOL", "").split(",")
     if x.strip()
-]
+] or list(_DEFAULT_MM_MATCH_CHANNEL_POOL)
 
 # Notification role ID for tournament announcements
 NOTIFICATION_ROLE_ID = int(os.getenv("NOTIFICATION_ROLE_ID", "0"))
@@ -135,18 +137,6 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
 # Канал приветствий новым участникам (0 = welcome отключён)
 WELCOME_CHANNEL_ID = int(os.getenv("WELCOME_CHANNEL_ID", "0"))
-
-# OCR: канал итоговых результатов матчей и канал статистики
-OCR_RESULT_CHANNEL_ID = int(os.getenv("OCR_RESULT_CHANNEL_ID", "0"))
-OCR_STATS_CHANNEL_ID = int(os.getenv("OCR_STATS_CHANNEL_ID", "0"))
-# Роль для пинга админов при проблемах OCR-маппинга
-OCR_ADMIN_ROLE_ID = int(os.getenv("OCR_ADMIN_ROLE_ID", "0"))
-# Канал OCR-скриншотов/сопоставления для обычных турниров
-# (/tournament create). MM-матчи публикуют OCR в канале матча.
-# Не путать с ROOM_DATA_CHANNEL_ID (ID/пароль игровых комнат).
-OCR_MAPPING_CHANNEL_ID = int(
-    os.getenv("OCR_MAPPING_CHANNEL_ID") or "1570473950218158180"
-)
 
 # Ultimatum: роль участников и канал данных комнат
 ULT_ROLE_ID = int(os.getenv("ULT_ROLE_ID", "0"))

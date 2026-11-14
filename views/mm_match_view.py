@@ -306,77 +306,91 @@ def _rules_button() -> discord.ui.Button:
     )
 
 
-class _MmDynamicButton(discord.ui.Button):
-    """Concrete-кнопка для DynamicItem.from_custom_id."""
+class MmKDBtn(discord.ui.DynamicItem[discord.ui.Button], template=T_KD):
+    """Persistent-кнопка «Заполнить K/D» — dispatch после рестарта."""
 
-
-class MmKDBtn(_MmDynamicButton, discord.ui.DynamicItem[discord.ui.Button], template=T_KD):
-    @classmethod
-    async def from_custom_id(cls, interaction, item, match):
-        btn = _MmDynamicButton(
+    def __init__(self, custom_id: str) -> None:
+        super().__init__(discord.ui.Button(
             style=discord.ButtonStyle.primary,
             label="Заполнить K/D",
-            custom_id=str(interaction.data.get("custom_id") or item.custom_id),
-        )
-        return cls(btn)
+            custom_id=custom_id,
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(str(interaction.data.get("custom_id") or item.custom_id))
 
     async def callback(self, interaction: discord.Interaction) -> None:
         await handle_kd_click(interaction)
 
 
-class MmWinBtn(_MmDynamicButton, discord.ui.DynamicItem[discord.ui.Button], template=T_WIN):
-    @classmethod
-    async def from_custom_id(cls, interaction, item, match):
-        side = match.group("side")
-        btn = _MmDynamicButton(
+class MmWinBtn(discord.ui.DynamicItem[discord.ui.Button], template=T_WIN):
+    """Persistent-кнопка подтверждения победителя."""
+
+    def __init__(self, custom_id: str) -> None:
+        super().__init__(discord.ui.Button(
             style=discord.ButtonStyle.success,
             label="Подтвердить победу",
-            custom_id=str(interaction.data.get("custom_id") or item.custom_id),
-        )
-        btn._side = side
-        return cls(btn)
+            custom_id=custom_id,
+        ))
 
-    async def callback(self, interaction: discord.Interaction) -> None:
-        await handle_win_click(interaction, getattr(self, "_side", ""))
-
-
-class MmEditBtn(_MmDynamicButton, discord.ui.DynamicItem[discord.ui.Button], template=T_EDIT):
     @classmethod
     async def from_custom_id(cls, interaction, item, match):
-        btn = _MmDynamicButton(
+        return cls(str(interaction.data.get("custom_id") or item.custom_id))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await handle_win_click(interaction, "")
+
+
+class MmEditBtn(discord.ui.DynamicItem[discord.ui.Button], template=T_EDIT):
+    """Persistent-кнопка «Изменить статистику» (организатор)."""
+
+    def __init__(self, custom_id: str) -> None:
+        super().__init__(discord.ui.Button(
             style=discord.ButtonStyle.secondary,
             label="Изменить статистику",
-            custom_id=str(interaction.data.get("custom_id") or item.custom_id),
-        )
-        return cls(btn)
+            custom_id=custom_id,
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(str(interaction.data.get("custom_id") or item.custom_id))
 
     async def callback(self, interaction: discord.Interaction) -> None:
         await handle_edit_click(interaction)
 
 
-class MmCancelBtn(_MmDynamicButton, discord.ui.DynamicItem[discord.ui.Button], template=T_CANCEL):
-    @classmethod
-    async def from_custom_id(cls, interaction, item, match):
-        btn = _MmDynamicButton(
+class MmCancelBtn(discord.ui.DynamicItem[discord.ui.Button], template=T_CANCEL):
+    """Persistent-кнопка отмены проверки результата."""
+
+    def __init__(self, custom_id: str) -> None:
+        super().__init__(discord.ui.Button(
             style=discord.ButtonStyle.danger,
             label="Отмена",
-            custom_id=str(interaction.data.get("custom_id") or item.custom_id),
-        )
-        return cls(btn)
+            custom_id=custom_id,
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(str(interaction.data.get("custom_id") or item.custom_id))
 
     async def callback(self, interaction: discord.Interaction) -> None:
         await handle_cancel_click(interaction)
 
 
-class MmRulesBtn(_MmDynamicButton, discord.ui.DynamicItem[discord.ui.Button], template=T_RULES):
-    @classmethod
-    async def from_custom_id(cls, interaction, item, match):
-        btn = _MmDynamicButton(
+class MmRulesBtn(discord.ui.DynamicItem[discord.ui.Button], template=T_RULES):
+    """Persistent-кнопка «Правила» на карточке матча."""
+
+    def __init__(self) -> None:
+        super().__init__(discord.ui.Button(
             style=discord.ButtonStyle.secondary,
             label="Правила",
             custom_id="mmatch:rules",
-        )
-        return cls(btn)
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
 
     async def callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(
@@ -390,26 +404,11 @@ class MmMatchTemplateView(discord.ui.View):
 
     def __init__(self) -> None:
         super().__init__(timeout=None)
-        self.add_item(MmKDBtn(_MmDynamicButton(
-            style=discord.ButtonStyle.primary, label="Заполнить K/D",
-            custom_id="mmatch:kd:0:0:0",
-        )))
-        self.add_item(MmWinBtn(_MmDynamicButton(
-            style=discord.ButtonStyle.success, label="Подтвердить победу",
-            custom_id="mmatch:win:a:0:0:0",
-        )))
-        self.add_item(MmEditBtn(_MmDynamicButton(
-            style=discord.ButtonStyle.secondary, label="Изменить статистику",
-            custom_id="mmatch:edit:0:0:0",
-        )))
-        self.add_item(MmCancelBtn(_MmDynamicButton(
-            style=discord.ButtonStyle.danger, label="Отмена",
-            custom_id="mmatch:cancel:0:0:0",
-        )))
-        self.add_item(MmRulesBtn(_MmDynamicButton(
-            style=discord.ButtonStyle.secondary, label="Правила",
-            custom_id="mmatch:rules",
-        )))
+        self.add_item(MmKDBtn("mmatch:kd:0:0:0"))
+        self.add_item(MmWinBtn("mmatch:win:a:0:0:0"))
+        self.add_item(MmEditBtn("mmatch:edit:0:0:0"))
+        self.add_item(MmCancelBtn("mmatch:cancel:0:0:0"))
+        self.add_item(MmRulesBtn())
 
 
 # ---------------------------------------------------------------------------
