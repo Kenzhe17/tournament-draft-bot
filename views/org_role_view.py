@@ -197,6 +197,31 @@ def _can_reset(user, guild: discord.Guild | None) -> bool:
     return False
 
 
+async def _refresh_public_panel(
+    interaction: discord.Interaction,
+    guild: discord.Guild,
+    state: OrgSlotState,
+    new_view: "OrgPanelView",
+) -> None:
+    """Обновить публичное сообщение панели после изменения слотов."""
+    try:
+        channel_id = state.channel_id or interaction.channel_id
+        channel = guild.get_channel(channel_id) or interaction.channel
+        if channel is not None and state.message_id:
+            message = await channel.fetch_message(state.message_id)
+            att = banner_edit_attachments(message)
+            edit_kwargs = {}
+            if att is not None:
+                edit_kwargs["attachments"] = att
+            await message.edit(
+                view=new_view,
+                allowed_mentions=_NO_MENTIONS,
+                **edit_kwargs,
+            )
+    except Exception:
+        logger.exception("org panel refresh failed")
+
+
 async def _fresh_member(guild: discord.Guild, user) -> object:
     """Свежий Member с актуальными ролями (fallback — interaction.user)."""
     fetch = getattr(guild, "fetch_member", None)
@@ -471,22 +496,7 @@ class _ResetConfirmButton(discord.ui.Button):
             pass
 
         # Обновить публичную панель (не ephemeral-карточку подтверждения)
-        try:
-            channel_id = state.channel_id or interaction.channel_id
-            channel = guild.get_channel(channel_id) or interaction.channel
-            if channel is not None and state.message_id:
-                message = await channel.fetch_message(state.message_id)
-                att = banner_edit_attachments(message)
-                edit_kwargs = {}
-                if att is not None:
-                    edit_kwargs["attachments"] = att
-                await message.edit(
-                    view=new_view,
-                    allowed_mentions=_NO_MENTIONS,
-                    **edit_kwargs,
-                )
-        except Exception:
-            logger.exception("org panel refresh after reset failed")
+        await _refresh_public_panel(interaction, guild, state, new_view)
 
         await interaction.response.send_message(
             "Все организаторские роли сброшены.", ephemeral=True
@@ -504,6 +514,312 @@ class _ResetCancelButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(
             "Сброс отменён.", ephemeral=True
+        )
+
+
+# ---------------------------------------------------------------------------
+# Административная сдача ORG-роли за другого участника
+# ---------------------------------------------------------------------------
+
+
+def _held_org_roles(
+    guild: discord.Guild | None,
+    state: OrgSlotState,
+    member,
+) -> list[tuple[int, str]]:
+    """ORG-роли, которые реально держит участник (state ∪ Discord)."""
+    member_role_ids = {
+        r.id for r in getattr(member, "roles", [])
+    }
+    discord_holders: dict[int, set[int]] = {}
+    if guild is not None:
+        wanted = {rid for rid, _ in _org_roles() if rid}
+        for m in getattr(guild, "members", []) or []:
+            hit = {r.id for r in getattr(m, "roles", [])} & wanted
+            for rid in hit:
+                discord_holders.setdefault(rid, set()).add(m.id)
+    uid = getattr(member, "id", 0)
+    held = []
+    for rid, name in _org_roles():
+        if not rid:
+            continue
+        if uid in state.get_holders(rid) or (
+            rid in member_role_ids
+        ) or uid in discord_holders.get(rid, set()):
+            held.append((rid, name))
+    return held
+
+
+class _AdminReleaseRoleButton(discord.ui.Button):
+    """Кнопка «Сдать роль участника» — только для администраторов.
+
+    Права проверяются на сервере при каждом нажатии; кнопка
+    видна всем, но не-админам отдаёт ephemeral-отказ.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            label="Сдать роль участника",
+            style=discord.ButtonStyle.secondary,
+            custom_id="org_panel_admin_release",
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not _can_reset(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "Действие доступно только владельцу, администратору "
+                "или менеджеру сервера.",
+                ephemeral=True,
+            )
+            return
+        view = _AdminPickUserView()
+        await interaction.response.send_message(
+            "Выберите участника, у которого нужно снять ORG-роль:",
+            view=view,
+            ephemeral=True,
+        )
+
+
+class _AdminPickUserView(discord.ui.View):
+    """UserSelect организатора для админской сдачи роли."""
+
+    def __init__(self) -> None:
+        super().__init__(timeout=120)
+        select = discord.ui.UserSelect(
+            placeholder="Найдите участника",
+            min_values=1,
+            max_values=1,
+            custom_id="org_admin_pick_user",
+        )
+
+        async def _cb(interaction: discord.Interaction, _s=select):
+            await self._on_pick(interaction, _s)
+
+        select.callback = _cb
+        self.add_item(select)
+
+    @staticmethod
+    def _selected_id(select) -> int:
+        values = list(getattr(select, "values", None) or [])
+        if not values:
+            return 0
+        selected = values[0]
+        uid = getattr(selected, "id", None)
+        if uid is None:
+            try:
+                uid = int(selected)
+            except (TypeError, ValueError):
+                uid = 0
+        try:
+            return int(uid)
+        except (TypeError, ValueError):
+            return 0
+
+    async def _on_pick(
+        self, interaction: discord.Interaction,
+        select: discord.ui.UserSelect,
+    ) -> None:
+        # Права перепроверяются на сервере при каждом действии.
+        if not _can_reset(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "Действие доступно только владельцу, администратору "
+                "или менеджеру сервера.",
+                ephemeral=True,
+            )
+            return
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "Панель работает только на сервере.", ephemeral=True
+            )
+            return
+        user_id = self._selected_id(select)
+        if user_id <= 0:
+            await interaction.response.edit_message(
+                content="Некорректный выбор пользователя.",
+                view=None,
+            )
+            return
+
+        state = load_state()
+        member = guild.get_member(user_id)
+        if member is None:
+            try:
+                member = await guild.fetch_member(user_id)
+            except Exception:
+                member = None
+        if member is None:
+            await interaction.response.edit_message(
+                content="Участник не найден на сервере.", view=None
+            )
+            return
+
+        held = _held_org_roles(guild, state, member)
+        display = getattr(member, "display_name", None) or member.name
+        if not held:
+            await interaction.response.edit_message(
+                content=(
+                    f"**{display}** не имеет ORG-роли — "
+                    "снимать нечего."
+                ),
+                view=None,
+            )
+            return
+
+        role_names = ", ".join(name for _, name in held)
+        confirm = _AdminReleaseConfirmView(
+            user_id=user_id,
+            display_name=display,
+            role_ids=[rid for rid, _ in held],
+        )
+        await interaction.response.edit_message(
+            content=(
+                f"**{display}** сейчас держит: {role_names}.\n"
+                "Снять роль?"
+            ),
+            view=confirm,
+        )
+
+
+class _AdminReleaseConfirmView(discord.ui.View):
+    """Подтверждение админской сдачи ORG-роли."""
+
+    def __init__(
+        self, *, user_id: int, display_name: str,
+        role_ids: list[int],
+    ) -> None:
+        super().__init__(timeout=120)
+        self.user_id = user_id
+        self.display_name = display_name
+        self.role_ids = role_ids
+
+        yes = discord.ui.Button(
+            label="Сдать роль",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"org_admin_release_yes:{user_id}",
+        )
+        yes.callback = self._on_release
+        self.add_item(yes)
+
+        no = discord.ui.Button(
+            label="Отмена",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"org_admin_release_no:{user_id}",
+        )
+        no.callback = self._on_cancel
+        self.add_item(no)
+
+    async def _on_cancel(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(
+            content="Действие отменено.", view=None
+        )
+
+    async def _on_release(self, interaction: discord.Interaction) -> None:
+        # Права и состояние перепроверяются на сервере
+        # непосредственно перед снятием роли.
+        if not _can_reset(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "Действие доступно только владельцу, администратору "
+                "или менеджеру сервера.",
+                ephemeral=True,
+            )
+            return
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "Панель работает только на сервере.", ephemeral=True
+            )
+            return
+
+        roles = _org_roles()
+        name_by_id = {rid: name for rid, name in roles}
+        released: list[str] = []
+        new_view = None
+        state = None
+
+        async with _PANEL_LOCK:
+            state = load_state()
+            member = guild.get_member(self.user_id)
+            if member is None:
+                try:
+                    member = await guild.fetch_member(self.user_id)
+                except Exception:
+                    member = None
+            if member is not None:
+                member_role_ids = {
+                    r.id for r in getattr(member, "roles", [])
+                }
+                for rid in self.role_ids:
+                    role_name = name_by_id.get(rid, f"ORG-{rid}")
+                    # member свежий (fetch) — member_role_ids актуален;
+                    # state мог отставать, поэтому проверяем оба.
+                    still_held = (
+                        self.user_id in state.get_holders(rid)
+                        or rid in member_role_ids
+                    )
+                    if not still_held:
+                        continue
+                    discord_role = guild.get_role(rid)
+                    if (
+                        discord_role is not None
+                        and rid in member_role_ids
+                    ):
+                        try:
+                            await member.remove_roles(discord_role)
+                        except discord.Forbidden:
+                            await interaction.response.send_message(
+                                "У бота нет прав для снятия ролей.",
+                                ephemeral=True,
+                            )
+                            return
+                        except Exception:
+                            logger.exception(
+                                "admin release: remove_roles failed"
+                            )
+                    while state.remove_holder(rid, self.user_id):
+                        pass
+                    released.append(role_name)
+            # message_id/channel_id публичной панели НЕ трогаем —
+            # interaction здесь ephemeral-карточка, её id не является
+            # id сообщения панели.
+            state.guild_id = guild.id
+            save_state(state)
+            new_view = OrgPanelView(guild=guild, state=state)
+
+        if not released:
+            await interaction.response.edit_message(
+                content=(
+                    f"**{self.display_name}** больше не держит "
+                    "ORG-роль (уже освобождена)."
+                ),
+                view=None,
+            )
+            return
+
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                action=audit_svc.A.ORG_ROLE_REVOKE,
+                source="organizer",
+                target_user_id=self.user_id,
+                after={
+                    "role": ", ".join(released),
+                    "admin_forced": True,
+                },
+            )
+        except Exception:
+            pass
+
+        await _refresh_public_panel(
+            interaction, guild, state, new_view
+        )
+        await interaction.response.edit_message(
+            content=(
+                f"ORG-роль ({', '.join(released)}) снята "
+                f"с **{self.display_name}**."
+            ),
+            view=None,
         )
 
 
@@ -595,6 +911,7 @@ class OrgPanelView(discord.ui.LayoutView):
         container.add_item(row)
 
         row2 = discord.ui.ActionRow()
+        row2.add_item(_AdminReleaseRoleButton())
         row2.add_item(_ResetRolesButton())
         container.add_item(row2)
 

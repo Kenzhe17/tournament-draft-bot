@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import discord
 import pytest
@@ -406,3 +407,180 @@ class TestReset:
         assert omv.load_state().get_holders(11) == [9]
         assert m2.removed == []
         assert any("отмен" in r for r in ix2.replies)
+
+
+# ---------- админская сдача роли за участника ----------
+
+
+def _panel_msg(guild):
+    """Сообщение публичной панели в канале (для refresh)."""
+    msg = SimpleNamespace(id=55, edits=[])
+
+    async def _edit(**kw):
+        msg.edits.append(kw)
+
+    msg.edit = _edit
+    guild.channel.messages[55] = msg
+    return msg
+
+
+class TestAdminRelease:
+    @pytest.mark.asyncio
+    async def test_denied_for_regular_user(self):
+        m = _Member(1)
+        guild = _Guild([m])
+        btn = omv._AdminReleaseRoleButton()
+        ix = _Ix(m, guild)
+        await btn.callback(ix)
+        assert any("только владельцу" in r for r in ix.replies)
+
+    @pytest.mark.asyncio
+    async def test_admin_gets_user_select(self):
+        m = _Member(1, admin=True)
+        guild = _Guild([m])
+        btn = omv._AdminReleaseRoleButton()
+        ix = _Ix(m, guild)
+        await btn.callback(ix)
+        view = ix.last_view
+        assert view is not None
+        selects = [
+            i for i in _iter_items(view)
+            if isinstance(i, discord.ui.UserSelect)
+        ]
+        assert selects
+
+    @pytest.mark.asyncio
+    async def test_pick_user_without_role(self, monkeypatch):
+        import services.tournament_audit_service as audit_svc
+        monkeypatch.setattr(
+            audit_svc, "record_interaction", AsyncMock())
+        admin = _Member(1, admin=True)
+        target = _Member(9)
+        guild = _Guild([admin, target])
+        omv.save_state(_state())
+        btn = omv._AdminReleaseRoleButton()
+        ix = _Ix(admin, guild)
+        await btn.callback(ix)
+        pick_view = ix.last_view
+        select = next(
+            i for i in _iter_items(pick_view)
+            if isinstance(i, discord.ui.UserSelect)
+        )
+        select._values = [SimpleNamespace(id=9)]
+        ix2 = _Ix(admin, guild)
+        await select.callback(ix2)
+        # edit_message — карточка «нет ORG-роли»
+        assert ix2.edits
+        assert ix2.last_view is None or not _all_buttons(
+            ix2.last_view or pick_view
+        )
+
+    @pytest.mark.asyncio
+    async def test_full_release_flow(self, monkeypatch):
+        import services.tournament_audit_service as audit_svc
+        audit_mock = AsyncMock()
+        monkeypatch.setattr(
+            audit_svc, "record_interaction", audit_mock)
+
+        admin = _Member(1, admin=True)
+        target = _Member(9, role_ids=[22], name="Holder")
+        guild = _Guild([admin, target])
+        panel_msg = _panel_msg(guild)
+        omv.save_state(_state({22: [9]}))
+
+        # 1. Кнопка → UserSelect
+        btn = omv._AdminReleaseRoleButton()
+        ix = _Ix(admin, guild)
+        await btn.callback(ix)
+        pick_view = ix.last_view
+        select = next(
+            i for i in _iter_items(pick_view)
+            if isinstance(i, discord.ui.UserSelect)
+        )
+        select._values = [SimpleNamespace(id=9)]
+        ix2 = _Ix(admin, guild)
+        await select.callback(ix2)
+
+        # 2. Подтверждение: показана роль ORG-2
+        confirm_view = ix2.last_view
+        texts = "\n".join(
+            getattr(c, "content", "")
+            for i in _iter_items(confirm_view)
+            for c in getattr(i, "children", [])
+        ) if hasattr(confirm_view, "children") else ""
+        # content карточки — в edit_message kwargs, не в view;
+        # проверяем через кнопку подтверждения
+        yes = next(
+            b for b in _all_buttons(confirm_view)
+            if b.custom_id.startswith("org_admin_release_yes")
+        )
+        ix3 = _Ix(admin, guild)
+        await yes.callback(ix3)
+
+        # 3. Роль снята: Discord + state, панель обновлена
+        assert target.removed == [22]
+        assert omv.load_state().get_holders(22) == []
+        assert panel_msg.edits
+        assert isinstance(
+            panel_msg.edits[0].get("view"), omv.OrgPanelView)
+        # Аудит: revoke с target=9 и admin_forced
+        assert audit_mock.await_count >= 1
+        kw = audit_mock.await_args.kwargs
+        assert kw.get("target_user_id") == 9
+        assert kw["after"].get("admin_forced") is True
+        assert "ORG-2" in kw["after"].get("role", "")
+
+    @pytest.mark.asyncio
+    async def test_release_denied_for_non_admin_at_confirm(
+        self, monkeypatch
+    ):
+        """Права перепроверяются при подтверждении: admin→user
+        между выбором и нажатием «Сдать роль» — отказ."""
+        import services.tournament_audit_service as audit_svc
+        monkeypatch.setattr(
+            audit_svc, "record_interaction", AsyncMock())
+        admin = _Member(1, admin=True)
+        target = _Member(9, role_ids=[22])
+        guild = _Guild([admin, target])
+        omv.save_state(_state({22: [9]}))
+
+        # Строим confirm-view напрямую (как после выбора)
+        confirm = omv._AdminReleaseConfirmView(
+            user_id=9, display_name="Holder", role_ids=[22])
+        # Жмёт обычный пользователь — не admin
+        regular = _Member(5)
+        guild2 = _Guild([regular, target])
+        ix = _Ix(regular, guild2)
+        yes = next(
+            b for b in _all_buttons(confirm)
+            if b.custom_id.startswith("org_admin_release_yes")
+        )
+        await yes.callback(ix)
+        assert target.removed == []
+        assert omv.load_state().get_holders(22) == [9]
+        assert any("только владельцу" in r for r in ix.replies)
+
+    @pytest.mark.asyncio
+    async def test_release_when_state_only_no_discord_role(
+        self, monkeypatch
+    ):
+        """Роль есть в state, но нет в Discord — слот освобождается."""
+        import services.tournament_audit_service as audit_svc
+        monkeypatch.setattr(
+            audit_svc, "record_interaction", AsyncMock())
+        admin = _Member(1, admin=True)
+        target = _Member(9)  # без discord-роли
+        guild = _Guild([admin, target])
+        _panel_msg(guild)
+        omv.save_state(_state({22: [9]}))
+
+        confirm = omv._AdminReleaseConfirmView(
+            user_id=9, display_name="Holder", role_ids=[22])
+        ix = _Ix(admin, guild)
+        yes = next(
+            b for b in _all_buttons(confirm)
+            if b.custom_id.startswith("org_admin_release_yes")
+        )
+        await yes.callback(ix)
+        assert omv.load_state().get_holders(22) == []
+        assert target.removed == []  # discord-роли не было
