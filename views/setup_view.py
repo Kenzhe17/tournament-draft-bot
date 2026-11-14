@@ -52,6 +52,34 @@ async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float
         pass
 
 
+async def _audit(
+    interaction: discord.Interaction,
+    tournament: Tournament,
+    action: str,
+    *,
+    target_user_id: int | None = None,
+    before=None,
+    after=None,
+    source: str = "tournament",
+    dedup_key: str | None = None,
+) -> None:
+    """Записать событие аудита (не ломает сценарий при сбое)."""
+    try:
+        from services import tournament_audit_service as audit_svc
+        await audit_svc.record_interaction(
+            interaction,
+            tournament_id=str(tournament.id),
+            target_user_id=target_user_id,
+            action=action,
+            source=source,
+            before=before,
+            after=after,
+            dedup_key=dedup_key,
+        )
+    except Exception as exc:
+        logger.warning("audit record failed (%s): %s", action, exc)
+
+
 class PlayerSelectView(discord.ui.View):
     """View с пагинацией для выбора игрока."""
 
@@ -217,43 +245,42 @@ class CircleSelectButton(discord.ui.Button):
                     )
                     return
 
-            # Get user's nickname and clean it from emojis
-            user_name = interaction.user.display_name
-            from utils.cosmetics import clean_nickname
-            cleaned_name = clean_nickname(user_name)
+            # Идентификация по Discord user_id — display_name может
+            # повторяться у разных пользователей и меняться со временем.
+            user_id = interaction.user.id
+            user_name = interaction.user.display_name or interaction.user.name
 
-            # Fallback: if cleaned_name is empty, use username
-            if not cleaned_name or cleaned_name.strip() == "":
-                cleaned_name = interaction.user.name
-
-            # Automatically update user's nickname if it contains emojis
-            if cleaned_name != user_name:
-                try:
-                    await interaction.user.edit(nick=cleaned_name)
-                    user_name = cleaned_name
-                except discord.Forbidden:
-                    # Bot doesn't have permission to edit nickname, use cleaned name anyway
-                    user_name = cleaned_name
+            # Legacy-записи без user_id: если display_name совпадает
+            # с уже сохранённым именем без привязанного ID — считаем
+            # это тем же игроком и привязываем user_id.
+            existing_name, location = _find_entry_by_uid(tournament, user_id)
+            if existing_name is None:
+                display_name = user_name.strip()
+                if display_name in (
+                    tournament.all_players | set(tournament.players_pool)
+                ) and tournament.player_user_ids.get(display_name, 0) <= 0:
+                    existing_name = display_name
+                    tournament.player_user_ids[display_name] = user_id
 
             # Check if user already in tournament - if so, move them to new circle
             was_moved = False
-            if user_name in tournament.all_players:
-                # Find which circle they're in
-                for circle in range(1, 5):
-                    if user_name in getattr(tournament, f"circle{circle}"):
-                        if circle == self.circle:
-                            await interaction.response.send_message(
-                                replace_emojis("Вы уже находитесь в этом круге."),
-                                ephemeral=True
-                            )
-                            return
-                        # Remove from old circle
-                        tournament.remove_player(user_name)
-                        was_moved = True
-                        break
+            if existing_name is not None:
+                if location == self.circle:
+                    await interaction.response.send_message(
+                        replace_emojis("Вы уже находитесь в этом круге."),
+                        ephemeral=True
+                    )
+                    return
+                # Remove from old location by user_id
+                tournament.remove_player_uid(user_id)
+                was_moved = True
+
+            # Уникальное отображаемое имя: при совпадении display_name
+            # у разных пользователей добавляется числовой суффикс.
+            player_name = _unique_player_name(tournament, user_name, user_id)
 
             # Add player with user_id
-            success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id, store)
+            success = tournament.add_player_to_circle(self.circle, player_name, user_id, store)
             if not success:
                 await interaction.response.send_message(
                     replace_emojis("Вы уже участвуете в другом активном турнире."),
@@ -263,8 +290,24 @@ class CircleSelectButton(discord.ui.Button):
 
             store.set(tournament)
 
+            from services import tournament_audit_service as _audit_svc
+            await _audit(
+                interaction, tournament,
+                _audit_svc.A.PLAYER_MOVE if was_moved
+                else _audit_svc.A.PLAYER_JOIN,
+                target_user_id=user_id,
+                after={"circle": self.circle},
+            )
+
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
-            await bot.update_tournament_message(interaction.guild, tournament)
+            updated = await bot.update_tournament_message(interaction.guild, tournament)
+            if updated is False:
+                await safe_send_message(
+                    interaction,
+                    replace_emojis("Вы добавлены, но не удалось обновить карточку турнира. Сообщите организатору."),
+                    ephemeral=True
+                )
+                return
 
             message = f"Вы перемещены в {circle_names[self.circle]}!" if was_moved else f"Вы добавлены в {circle_names[self.circle]}!"
 
@@ -335,26 +378,20 @@ class JoinPoolButton(discord.ui.Button):
                 )
                 return
 
-            # Get user's nickname and clean it from emojis
-            user_name = interaction.user.display_name
-            from utils.cosmetics import clean_nickname
-            cleaned_name = clean_nickname(user_name)
+            # Идентификация по Discord user_id (см. CircleSelectButton).
+            user_id = interaction.user.id
+            user_name = interaction.user.display_name or interaction.user.name
 
-            # Fallback: if cleaned_name is empty, use username
-            if not cleaned_name or cleaned_name.strip() == "":
-                cleaned_name = interaction.user.name
+            existing_name, _loc = _find_entry_by_uid(tournament, user_id)
+            if existing_name is None:
+                display_name = user_name.strip()
+                if display_name in (
+                    tournament.all_players | set(tournament.players_pool)
+                ) and tournament.player_user_ids.get(display_name, 0) <= 0:
+                    existing_name = display_name
+                    tournament.player_user_ids[display_name] = user_id
 
-            # Automatically update user's nickname if it contains emojis
-            if cleaned_name != user_name:
-                try:
-                    await interaction.user.edit(nick=cleaned_name)
-                    user_name = cleaned_name
-                except discord.Forbidden:
-                    # Bot doesn't have permission to edit nickname, use cleaned name anyway
-                    user_name = cleaned_name
-
-            # Check if user already in pool
-            if user_name in tournament.players_pool:
+            if existing_name is not None:
                 await interaction.response.send_message(
                     replace_emojis("Вы уже участвуете в турнире."),
                     ephemeral=True
@@ -365,25 +402,42 @@ class JoinPoolButton(discord.ui.Button):
             all_tournaments = store.get_by_guild(self.guild_id)
             for other_tournament in all_tournaments:
                 if other_tournament.id != tournament.id:
-                    if other_tournament.is_player_active(interaction.user.id):
+                    if other_tournament.is_player_active(user_id):
                         await interaction.response.send_message(
                             replace_emojis("Вы уже участвуете в другом активном турнире."),
                             ephemeral=True
                         )
                         return
 
+            # Уникальное отображаемое имя при совпадении display_name.
+            player_name = _unique_player_name(tournament, user_name, user_id)
+
             # Add player to pool
-            tournament.players_pool.append(user_name)
-            tournament.player_user_ids[user_name] = interaction.user.id
+            tournament.players_pool.append(player_name)
+            tournament.player_user_ids[player_name] = user_id
 
             # Start auto-timer if this is first player
             was_first = len(tournament.players_pool) == 1
 
             store.set(tournament)
 
+            from services import tournament_audit_service as _audit_svc
+            await _audit(
+                interaction, tournament, _audit_svc.A.PLAYER_JOIN,
+                target_user_id=user_id,
+                after={"pool": len(tournament.players_pool)},
+            )
+
             # Update message using bot from interaction
             bot = interaction.client
-            await bot.update_tournament_message(interaction.guild, tournament)
+            updated = await bot.update_tournament_message(interaction.guild, tournament)
+            if updated is False:
+                await safe_send_message(
+                    interaction,
+                    replace_emojis("Вы добавлены, но не удалось обновить карточку турнира. Сообщите организатору."),
+                    ephemeral=True
+                )
+                return
 
             # Send response
             await safe_send_message(interaction, replace_emojis("Вы добавлены в турнир!"), ephemeral=True)
@@ -780,6 +834,13 @@ class _AdminAddConfirmView(discord.ui.View):
 
         store.set(tournament)
 
+        from services import tournament_audit_service as _audit_svc
+        await _audit(
+            interaction, tournament, _audit_svc.A.PLAYER_ADD,
+            target_user_id=self.user_id,
+            after={"player": player_name, "circle": self.circle},
+        )
+
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
@@ -906,6 +967,14 @@ class _AdminMoveConfirmView(discord.ui.View):
 
         store.set(tournament)
 
+        from services import tournament_audit_service as _audit_svc
+        await _audit(
+            interaction, tournament, _audit_svc.A.PLAYER_MOVE,
+            target_user_id=self.user_id,
+            before={"player": player_name, "from": location},
+            after={"to": self.target_circle},
+        )
+
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
@@ -957,62 +1026,54 @@ class ExitButton(discord.ui.Button):
                 pass
             return
 
-        user_name = interaction.user.display_name
-        from utils.cosmetics import clean_nickname
-        cleaned_name = clean_nickname(user_name)
-        user_name = cleaned_name
         user_id = interaction.user.id
+        # Отображаемое имя нужно только для логов/аудита — идентичность
+        # определяется по Discord user_id, display_name может меняться.
+        user_name = tournament.player_name_for_uid(user_id) or interaction.user.display_name
 
         logger.info(f"ExitButton: user '{user_name}' (id={user_id}) attempting to exit tournament {tournament.id} in channel {interaction.channel_id}")
 
-        # Handle different modes
-        if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
-            # RANDOM mode: check players_pool
-            if user_name not in tournament.players_pool:
-                try:
-                    await interaction.response.send_message(
-                        replace_emojis("Вы не участвуете в турнире."),
-                        ephemeral=True
-                    )
-                except discord.NotFound:
-                    pass
-                return
+        # Legacy-запись без user_id с совпадающим display_name —
+        # привязываем ID, чтобы выход работал и для старых турниров.
+        if user_name == interaction.user.display_name and user_id not in tournament.player_user_ids.values():
+            display_name = interaction.user.display_name.strip()
+            if display_name in (
+                tournament.all_players | set(tournament.players_pool)
+            ) and tournament.player_user_ids.get(display_name, 0) <= 0:
+                tournament.player_user_ids[display_name] = user_id
+                user_name = display_name
 
-            # Remove from pool
-            tournament.players_pool.remove(user_name)
-            if user_name in tournament.player_user_ids:
-                del tournament.player_user_ids[user_name]
-            logger.info(f"ExitButton: user '{user_name}' (id={user_id}) removed from players_pool, tournament_id={tournament.id}")
-        else:
-            # Other modes: check circles
-            if user_name not in tournament.all_players:
-                try:
-                    await interaction.response.send_message(
-                        replace_emojis("Вы не участвуете в турнире."),
-                        ephemeral=True
-                    )
-                except discord.NotFound:
-                    pass
-                return
+        # Remove player by user_id (circles + players_pool).
+        if not tournament.remove_player_uid(user_id):
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("Вы не участвуете в турнире."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
 
-            # Remove player
-            success = tournament.remove_player(user_name)
-            if not success:
-                try:
-                    await interaction.response.send_message(
-                        replace_emojis("Не удалось удалить игрока."),
-                        ephemeral=True
-                    )
-                except discord.NotFound:
-                    pass
-                return
-
-            logger.info(f"ExitButton: user '{user_name}' (id={user_id}) successfully removed from tournament {tournament.id}")
+        logger.info(f"ExitButton: user '{user_name}' (id={user_id}) successfully removed from tournament {tournament.id}")
 
         store.set(tournament)
 
+        from services import tournament_audit_service as _audit_svc
+        await _audit(
+            interaction, tournament, _audit_svc.A.PLAYER_EXIT,
+            target_user_id=user_id,
+            before={"player": user_name},
+        )
+
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
+        updated = await bot.update_tournament_message(interaction.guild, tournament)
+        if updated is False:
+            await safe_send_message(
+                interaction,
+                replace_emojis("Вы вышли, но не удалось обновить карточку турнира. Сообщите организатору."),
+                ephemeral=True
+            )
+            return
 
         try:
             await interaction.response.send_message(
@@ -1112,6 +1173,7 @@ class DeletePlayerButton(discord.ui.Button):
                 except discord.NotFound:
                     pass
                 return
+            removed_uid = tournament.player_user_ids.get(player_name)
 
             if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
                 if player_name not in tournament.players_pool:
@@ -1138,6 +1200,13 @@ class DeletePlayerButton(discord.ui.Button):
                     return
 
             store.set(tournament)
+
+            from services import tournament_audit_service as _audit_svc
+            await _audit(
+                interaction, tournament, _audit_svc.A.PLAYER_REMOVE,
+                target_user_id=removed_uid,
+                before={"player": player_name},
+            )
 
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
@@ -1267,6 +1336,18 @@ class SwapPlayersButton(discord.ui.Button):
 
                 # Save
                 store.set(tournament)
+
+                from services import tournament_audit_service as _audit_svc
+                uid1 = tournament.player_user_ids.get(first_player)
+                uid2 = tournament.player_user_ids.get(second_player)
+                await _audit(
+                    interaction, tournament, _audit_svc.A.PLAYER_SWAP,
+                    target_user_id=uid1 or uid2,
+                    after={
+                        "players": [first_player, second_player],
+                        "positions": [f"{c1}:{i1}", f"{c2}:{i2}"],
+                    },
+                )
 
                 # Update message
                 bot: TournamentBot = interaction.client  # type: ignore[assignment]
@@ -1420,6 +1501,15 @@ class MovePlayerButton(discord.ui.Button):
                 # Save
                 store.set(tournament)
 
+                from services import tournament_audit_service as _audit_svc
+                await _audit(
+                    interaction, tournament, _audit_svc.A.PLAYER_MOVE,
+                    target_user_id=tournament.player_user_ids.get(
+                        selected_player),
+                    before={"player": selected_player, "from": from_circle},
+                    after={"to": target_circle},
+                )
+
                 # Update message
                 bot: TournamentBot = interaction.client  # type: ignore[assignment]
                 await bot.update_tournament_message(interaction.guild, tournament)
@@ -1561,6 +1651,12 @@ class AutoDistributeButton(discord.ui.Button):
         await tournament.distribute_by_elo(self.guild_id)
         store.set(tournament)
 
+        from services import tournament_audit_service as _audit_svc
+        await _audit(
+            interaction, tournament, _audit_svc.A.AUTO_DISTRIBUTE,
+            after={"mode": "elo"},
+        )
+
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
@@ -1635,6 +1731,12 @@ class AutoDistributeAvgButton(discord.ui.Button):
         # Distribute by Skill Rating
         await tournament.distribute_by_skill_rating(self.guild_id)
         store.set(tournament)
+
+        from services import tournament_audit_service as _audit_svc
+        await _audit(
+            interaction, tournament, _audit_svc.A.AUTO_DISTRIBUTE,
+            after={"mode": "skill"},
+        )
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -1755,6 +1857,20 @@ class StartTournamentButton(discord.ui.Button):
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
+
+        from services import tournament_audit_service as _audit_svc
+        await _audit(
+            interaction, tournament, _audit_svc.A.TOURNAMENT_START,
+            after={
+                "formation": tournament.formation_mode.value,
+                "phase": tournament.phase.value,
+            },
+        )
+        if tournament.formation_mode == FormationMode.DRAFT:
+            await _audit(
+                interaction, tournament, _audit_svc.A.DRAFT_START,
+                after={"phase": tournament.phase.value},
+            )
 
         launch_text = (
             "Турнир запущен! Команды сбалансированы по Skill Rating."
@@ -1911,9 +2027,17 @@ class ToggleRegistrationButton(discord.ui.Button):
             return
 
         # Переключить состояние
+        old_state = tournament.registration
         new_state = RegistrationState.CLOSED if tournament.registration == RegistrationState.OPEN else RegistrationState.OPEN
         tournament.registration = new_state
         store.set(tournament)
+
+        from services import tournament_audit_service as _audit_svc
+        await _audit(
+            interaction, tournament, _audit_svc.A.REGISTRATION_TOGGLE,
+            before={"registration": old_state.value},
+            after={"registration": new_state.value},
+        )
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -1972,8 +2096,16 @@ class ToggleIsolationButton(discord.ui.Button):
             # Включить изоляцию - закрыть для всех
             new_state = RegistrationState.ISOLATED
 
+        old_state = tournament.registration
         tournament.registration = new_state
         store.set(tournament)
+
+        from services import tournament_audit_service as _audit_svc
+        await _audit(
+            interaction, tournament, _audit_svc.A.REGISTRATION_TOGGLE,
+            before={"registration": old_state.value},
+            after={"registration": new_state.value, "isolation": True},
+        )
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -2223,6 +2355,10 @@ class OrgActionSelect(discord.ui.Select):
                 label="Уведомление",
                 value="notify",
                 description="Отправить анонс турнира"),
+            discord.SelectOption(
+                label="Журнал",
+                value="audit",
+                description="Журнал действий турнира"),
         ]
         super().__init__(
             placeholder="Выберите действие",
@@ -2233,7 +2369,7 @@ class OrgActionSelect(discord.ui.Select):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import can_manage_channel_tournament
+        from utils.permissions import can_manage_tournament
 
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
@@ -2247,8 +2383,8 @@ class OrgActionSelect(discord.ui.Select):
 
         # Права проверяются на сервере при каждом выборе —
         # отозванный доступ прекращается без перезапуска бота.
-        if not can_manage_channel_tournament(
-            interaction.user, interaction.guild, self.channel_id
+        if not can_manage_tournament(
+            interaction.user, interaction.guild, tournament
         ):
             try:
                 await interaction.response.send_message(
@@ -2259,6 +2395,14 @@ class OrgActionSelect(discord.ui.Select):
             return
 
         value = self.values[0] if self.values else ""
+        if value == "audit":
+            from views.tournament_audit_view import open_audit_panel
+            await open_audit_panel(
+                interaction,
+                tournament_id=str(tournament.id),
+                tournament_label=f"Турнир `{tournament.id}`",
+            )
+            return
         panel_cls = {
             "players": OrgPlayersPanel,
             "settings": OrgSettingsPanel,
@@ -2541,9 +2685,17 @@ class LimitToggleButton(discord.ui.Button):
             return
 
         # Toggle limit
-        new_status = not tournament.circle_limits_enabled.get(self.circle, True)
+        old_status = tournament.circle_limits_enabled.get(self.circle, True)
+        new_status = not old_status
         tournament.circle_limits_enabled[self.circle] = new_status
         store.set(tournament)
+
+        from services import tournament_audit_service as _audit_svc
+        await _audit(
+            interaction, tournament, _audit_svc.A.LIMIT_CHANGE,
+            before={"circle": self.circle, "enabled": old_status},
+            after={"circle": self.circle, "enabled": new_status},
+        )
 
         # Update view with new button state
         new_view = LimitSettingsView(tournament)

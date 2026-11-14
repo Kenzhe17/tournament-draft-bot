@@ -531,8 +531,13 @@ class TournamentBot(commands.Bot):
         tournament: Tournament,
         *,
         from_timer: bool = False,
-    ) -> None:
+    ) -> bool:
         """Отредактировать главное сообщение турнира.
+
+        Возвращает True при успешном обновлении (или когда обновление
+        не требовалось), False — если сообщение обновить не удалось
+        (нет message_id, канал/сообщение недоступны, ошибка edit).
+        Вызывающие коды могут сообщить пользователю о проблеме.
 
         Оптимизация P1: контент рендерится и сравнивается по
         сигнатуре — message.edit выполняется только при реальном
@@ -552,7 +557,7 @@ class TournamentBot(commands.Bot):
         """
         if not tournament.message_id:
             logger.warning("Нет message_id для сервера %s", guild.id)
-            return
+            return False
 
         fp_key = str(tournament.id)
         fp = _tournament_display_fingerprint(tournament) if from_timer else ""
@@ -574,7 +579,7 @@ class TournamentBot(commands.Bot):
                     await announce_phase_matches(tournament, guild, self)
                 except Exception as exc:
                     logger.error("Match announce failed: %s", exc)
-                return
+                return True
 
         if from_timer and fp:
             if len(_TOURNAMENT_FP_CACHE) >= _TOURNAMENT_FP_CACHE_MAX:
@@ -589,7 +594,7 @@ class TournamentBot(commands.Bot):
                     channel = await guild.fetch_channel(tournament.channel_id)
                 except discord.HTTPException as exc:
                     logger.error("Канал не найден: %s", exc)
-                    return
+                    return False
 
             from utils import perf_metrics
 
@@ -638,6 +643,9 @@ class TournamentBot(commands.Bot):
                         logger.warning("Не удалось получить сообщение: %s", exc)
                         message = None
 
+                if message is None:
+                    return False
+
                 if message is not None:
                     try:
                         async with perf_metrics.async_timing(
@@ -657,15 +665,18 @@ class TournamentBot(commands.Bot):
                         )
                         _EDIT_CACHE.pop(key, None)
                         message = None
+                        return False
                     except discord.Forbidden as exc:
                         logger.error(
                             "Нет прав на редактирование сообщения "
                             "турнира %s: %s", tournament.id, exc
                         )
+                        return False
                     except discord.HTTPException as exc:
                         logger.error(
                             "Не удалось обновить сообщение: %s", exc
                         )
+                        return False
                     else:
                         perf_metrics.incr("discord_edits")
                         if len(_EDIT_CACHE) >= _EDIT_CACHE_MAX:
@@ -683,6 +694,8 @@ class TournamentBot(commands.Bot):
                 await announce_phase_matches(tournament, guild, self)
         except Exception as exc:
             logger.error("Match announce failed: %s", exc)
+
+        return True
 
     async def betting_timer_loop(self) -> None:
         """Background task to update betting timer in tournament messages."""

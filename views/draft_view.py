@@ -112,11 +112,24 @@ class PlayerSelect(discord.ui.Select):
         user_name = interaction.user.display_name
         from utils.cosmetics import clean_nickname
 
-        cleaned_name = clean_nickname(user_name)
         cleaned_captain_name = clean_nickname(expected_captain_name)
 
+        def _is_current_picker() -> bool:
+            """Ход капитана: по Discord user_id, fallback — по имени
+            (legacy-записи без ID и тестовые игроки)."""
+            expected_uid = tournament.player_user_ids.get(
+                expected_captain_name
+            )
+            try:
+                expected_uid = int(expected_uid) if expected_uid else 0
+            except (TypeError, ValueError):
+                expected_uid = 0
+            if expected_uid > 0:
+                return interaction.user.id == expected_uid
+            return clean_nickname(user_name) == cleaned_captain_name
+
         # In test mode, allow anyone to pick
-        if not tournament.is_test and cleaned_name != cleaned_captain_name:
+        if not tournament.is_test and not _is_current_picker():
             await self._ephemeral(
                 interaction, f"Сейчас выбирает {expected_captain_name}"
             )
@@ -156,10 +169,18 @@ class PlayerSelect(discord.ui.Select):
                     expected = tournament.captains[
                         tournament.captain_order[pos]
                     ]
-                    if not tournament.is_test and (
-                        clean_nickname(interaction.user.display_name)
-                        != clean_nickname(expected)
-                    ):
+                    expected_uid = tournament.player_user_ids.get(expected)
+                    try:
+                        expected_uid = int(expected_uid) if expected_uid else 0
+                    except (TypeError, ValueError):
+                        expected_uid = 0
+                    picker_ok = (
+                        interaction.user.id == expected_uid
+                        if expected_uid > 0
+                        else clean_nickname(interaction.user.display_name)
+                        == clean_nickname(expected)
+                    )
+                    if not tournament.is_test and not picker_ok:
                         stale = f"Сейчас выбирает {expected}"
                     elif player not in tournament.available.get(
                         str(tournament.current_circle), []
@@ -170,14 +191,6 @@ class PlayerSelect(discord.ui.Select):
                 return
             picker_pos = tournament.current_picker_position()
 
-            # Автоочистка ника от эмодзи — косметика, после ack и вне
-            # критического пути (ошибка не должна ломать выбор).
-            if cleaned_name != user_name:
-                try:
-                    await interaction.user.edit(nick=cleaned_name)
-                except Exception as exc:  # noqa: BLE001 - косметика
-                    logger.debug("Nick cleanup failed: %s", exc)
-
             tournament.pick_player(picker_pos, player)
             draft_complete = tournament.advance_after_pick()
             mark("state_update")
@@ -185,6 +198,22 @@ class PlayerSelect(discord.ui.Select):
             # Критическое сохранение выбора — до Discord-обновлений.
             store.set(tournament)
             mark("database_save")
+
+            # Аудит выбора игрока капитаном (после фактического save).
+            try:
+                from services import tournament_audit_service as audit_svc
+                _picker_name = tournament.captains[
+                    tournament.captain_order[picker_pos]
+                ] if picker_pos is not None else None
+                await audit_svc.record_interaction(
+                    interaction,
+                    tournament_id=str(tournament.id),
+                    action=audit_svc.A.DRAFT_PICK,
+                    before={"picker": _picker_name},
+                    after={"picked": player},
+                )
+            except Exception as _exc:
+                logger.warning("audit draft_pick failed: %s", _exc)
 
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)

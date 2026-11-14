@@ -469,6 +469,33 @@ async def get_server_average_elo(guild_id: int) -> int:
         return int(result) if result else 1000
 
 
+def _player_display(
+    tournament: Tournament, player_name: str, guild_id: int | None = None
+) -> str:
+    """Отображаемое имя игрока в карточке турнира.
+
+    Для реальных Discord-пользователей (user_id > 0) возвращает
+    mention ``<@id>`` — Discord сам подставит актуальный ник,
+    поэтому смена ника не ломает отображение. Упоминания не
+    отправляют уведомления (allowed_mentions=none при edit).
+    Тестовые игроки с uid <= 0 и записи без ID показываются
+    сохранённым текстовым именем.
+    """
+    user_id = tournament.player_user_ids.get(player_name)
+    try:
+        uid = int(user_id) if user_id is not None else 0
+    except (TypeError, ValueError):
+        uid = 0
+    if uid > 0:
+        base = f"<@{uid}>"
+        if guild_id:
+            return format_player_name(guild_id, uid, base)
+        return base
+    if guild_id and user_id:
+        return format_player_name(guild_id, user_id, player_name)
+    return player_name
+
+
 def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None, tournament: Tournament = None, guild_id: int = None) -> str:
     """Строка игроков круга с ELO или пустой слот."""
     if not players:
@@ -476,13 +503,8 @@ def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None, tou
 
     player_strings = []
     for player_name in players:
-        # Format name with cosmetics if tournament and guild_id provided
-        if tournament and guild_id:
-            user_id = tournament.player_user_ids.get(player_name)
-            if user_id:
-                formatted_name = format_player_name(guild_id, user_id, player_name)
-            else:
-                formatted_name = player_name
+        if tournament:
+            formatted_name = _player_display(tournament, player_name, guild_id)
         else:
             formatted_name = player_name
 
@@ -618,20 +640,15 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
             if isinstance(p_name, tuple):
                 p_name = p_name[0] if p_name else ""
             if p_name and isinstance(p_name, str):
-                # Format name with cosmetics
-                user_id = tournament.player_user_ids.get(p_name)
-                if user_id:
-                    formatted_name = format_player_name(guild.id, user_id, p_name)
-                else:
-                    formatted_name = p_name
-                players.append(formatted_name)
+                players.append(_player_display(tournament, p_name, guild.id))
 
         players_str = ", ".join(players) if players else "*Ожидание игроков...*"
         emoji = team_emojis.get(i + 1, "")
+        captain_display = _player_display(tournament, captain, guild.id)
 
         teams_text.append(
             f"{emoji} **Команда {team_name}**\n"
-            f"┣ **Капитан:** {captain}\n"
+            f"┣ **Капитан:** {captain_display}\n"
             f"┗ **Состав:** {players_str}\n"
         )
 
@@ -677,12 +694,7 @@ async def build_setup_embed(
         # Build player list with ELO
         player_strings = []
         for player_name in tournament.players_pool:
-            # Format name with cosmetics
-            user_id = tournament.player_user_ids.get(player_name)
-            if user_id:
-                formatted_name = format_player_name(guild.id, user_id, player_name)
-            else:
-                formatted_name = player_name
+            formatted_name = _player_display(tournament, player_name, guild.id)
 
             if player_name in elo_dict:
                 player_strings.append(f"{formatted_name} ({int(elo_dict[player_name])} ELO)")

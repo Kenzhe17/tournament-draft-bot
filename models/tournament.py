@@ -546,6 +546,41 @@ class Tournament:
 
         return True
 
+    def player_name_for_uid(self, user_id: int) -> str | None:
+        """Отображаемое имя игрока по Discord user_id (или None)."""
+        for name, uid in self.player_user_ids.items():
+            if uid == user_id:
+                return name
+        return None
+
+    def remove_player_uid(self, user_id: int) -> bool:
+        """Удалить игрока по Discord user_id из кругов и players_pool.
+
+        В отличие от remove_player (поиск по имени без учёта регистра)
+        оперирует точной записью player_user_ids — идентичность
+        по user_id, одинаковые display_name не затрагиваются.
+        """
+        name = self.player_name_for_uid(user_id)
+        if name is None:
+            return False
+
+        removed = False
+        for circle in range(1, 5):
+            circle_players = self.circle_list(circle)
+            if name in circle_players:
+                circle_players.remove(name)
+                self.set_circle_list(circle, circle_players)
+                removed = True
+
+        if name in self.players_pool:
+            self.players_pool.remove(name)
+            removed = True
+
+        if removed and name in self.player_user_ids:
+            del self.player_user_ids[name]
+
+        return removed
+
     def remove_player(self, name: str) -> bool:
         """Удалить игрока из любого круга и команды. Возвращает True если найден и удален."""
         import logging
