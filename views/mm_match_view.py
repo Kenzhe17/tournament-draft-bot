@@ -94,10 +94,21 @@ def _team_name(tournament: Tournament, team_index: int) -> str:
 
 
 def _roster_mentions(tournament: Tournament, team_index: int) -> str:
+    """Состав команды: имя + экипированная косметика (как в турнирах)."""
+    from utils.cosmetics import display_name_for, format_player_name
+
     lines = []
     for name in _team_players(tournament, team_index):
         uid = tournament.player_user_ids.get(name, 0)
-        lines.append(f"<@{uid}>" if uid else name)
+        try:
+            uid = int(uid)
+        except (TypeError, ValueError):
+            uid = 0
+        if uid > 0:
+            base = display_name_for(tournament.guild_id, uid, name)
+            lines.append(format_player_name(tournament.guild_id, uid, base))
+        else:
+            lines.append(name)
     return "\n".join(lines) if lines else "—"
 
 

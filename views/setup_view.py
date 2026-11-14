@@ -639,9 +639,27 @@ class AdminAddUserView(discord.ui.View):
             )
             return
 
+        # UserSelect.values — объекты discord.User/Member,
+        # а не строковые ID.
+        values = list(getattr(select, "values", None) or [])
+        if not values:
+            await interaction.response.send_message(
+                replace_emojis("Пользователь не выбран."),
+                ephemeral=True,
+            )
+            return
+        selected = values[0]
+        user_id = getattr(selected, "id", None)
+        if user_id is None:
+            try:
+                user_id = int(selected)
+            except (TypeError, ValueError):
+                user_id = None
         try:
-            user_id = int(select.values[0])
-        except (TypeError, ValueError, IndexError):
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            user_id = 0
+        if user_id <= 0:
             await interaction.response.send_message(
                 replace_emojis("Некорректный выбор пользователя."),
                 ephemeral=True,

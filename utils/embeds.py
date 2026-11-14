@@ -474,25 +474,28 @@ def _player_display(
 ) -> str:
     """Отображаемое имя игрока в карточке турнира.
 
-    Для реальных Discord-пользователей (user_id > 0) возвращает
-    mention ``<@id>`` — Discord сам подставит актуальный ник,
-    поэтому смена ника не ломает отображение. Упоминания не
-    отправляют уведомления (allowed_mentions=none при edit).
-    Тестовые игроки с uid <= 0 и записи без ID показываются
-    сохранённым текстовым именем.
+    Реальные пользователи (user_id > 0) показываются обычным
+    именем с экипированной косметикой через ``format_player_name``:
+    ``**[TAG]** Ник ICON``. Базовое имя — актуальный
+    member.display_name, иначе сохранённое имя турнира.
+    Упоминания ``<@id>`` в списках не используются; идентификация
+    остаётся по user_id. Тестовые игроки (uid <= 0) и записи без
+    ID показываются сохранённым текстовым именем.
     """
     user_id = tournament.player_user_ids.get(player_name)
     try:
         uid = int(user_id) if user_id is not None else 0
     except (TypeError, ValueError):
         uid = 0
+    gid = guild_id or tournament.guild_id
     if uid > 0:
-        base = f"<@{uid}>"
-        if guild_id:
-            return format_player_name(guild_id, uid, base)
+        from utils.cosmetics import display_name_for
+        base = display_name_for(gid, uid, player_name)
+        if gid:
+            return format_player_name(gid, uid, base)
         return base
-    if guild_id and user_id:
-        return format_player_name(guild_id, user_id, player_name)
+    if gid and user_id:
+        return format_player_name(gid, user_id, player_name)
     return player_name
 
 
@@ -545,13 +548,28 @@ def team_roster_names(team_data: dict) -> list[str]:
 
 
 def team_roster_mentions(tournament: Tournament, team_data: dict) -> str:
-    """Состав команды строкой ментионов <@id> (или имен, если id неизвестен)."""
+    """Состав команды: имя + экипированная косметика.
+
+    Формат как в остальных карточках турнира:
+    ``**[TAG]** Ник ICON``. Идентификация — по user_id,
+    отображение — по нику (без ``<@id>``).
+    """
+    from utils.cosmetics import display_name_for, format_player_name
+
     parts = []
     for name in team_roster_names(team_data):
         uid = tournament.player_user_ids.get(name)
-        # Невалидные ID (тестовые отрицательные значения и т.п.)
-        # не превращаем в <@...> — показываем имя.
-        parts.append(f"<@{uid}>" if uid and uid > 0 else name)
+        try:
+            uid = int(uid)
+        except (TypeError, ValueError):
+            uid = 0
+        if uid > 0:
+            base = display_name_for(tournament.guild_id, uid, name)
+            parts.append(
+                format_player_name(tournament.guild_id, uid, base)
+            )
+        else:
+            parts.append(name)
     return " ".join(parts)
 
 
@@ -762,11 +780,9 @@ async def build_draft_embed(
     # Get current picker
     current_picker_pos = tournament.current_picker_position()
     current_line = ""
-    current_captain_id = 0
 
     if current_picker_pos is not None:
         current_captain_name = tournament.captains[tournament.captain_order[current_picker_pos]]
-        current_captain_id = tournament.player_user_ids.get(current_captain_name, 0)
         # Динамический дедлайн: Discord сам отсчитывает <t:...:R>
         # на клиенте — сообщение не редактируется каждую секунду.
         # Дедлайн вычисляется из сохранённого draft_pick_start_time
@@ -776,10 +792,7 @@ async def build_draft_embed(
             timer_line = f"До окончания выбора: <t:{deadline}:R>"
         else:
             timer_line = "У вас есть 60 сек на выбор!"
-        who = (
-            f"<@{current_captain_id}>" if current_captain_id > 0
-            else current_captain_name
-        )
+        who = _player_display(tournament, current_captain_name, guild.id)
         current_line = f"**Сейчас выбирает:** {who}\n{timer_line}"
     else:
         current_line = "Драфт завершён"
@@ -796,20 +809,16 @@ async def build_draft_embed(
 
         for pos in pick_order:
             captain_name = tournament.captains[pos]
-            captain_id = tournament.player_user_ids.get(captain_name, 0)
             pick = tournament.picks.get(str(pos), {}).get(str(circle))
-            captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain_name
+            captain_display = _player_display(
+                tournament, captain_name, guild.id)
 
             if circle > tournament.current_circle or not pick:
-                lines.append(f"{captain_mention} `[Ожидание]`")
-            elif circle == tournament.current_circle and pick:
-                pick_id = tournament.player_user_ids.get(pick, 0)
-                pick_mention = f"<@{pick_id}>" if pick_id > 0 else pick
-                lines.append(f"{captain_mention} {pick_mention}")
-            elif circle < tournament.current_circle:
-                pick_id = tournament.player_user_ids.get(pick, 0)
-                pick_mention = f"<@{pick_id}>" if pick_id > 0 else pick
-                lines.append(f"{captain_mention} {pick_mention}")
+                lines.append(f"{captain_display} `[Ожидание]`")
+            else:
+                pick_display = _player_display(
+                    tournament, pick, guild.id)
+                lines.append(f"{captain_display} {pick_display}")
 
         status = ""
         if circle == tournament.current_circle:

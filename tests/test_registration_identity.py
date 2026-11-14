@@ -6,8 +6,9 @@
   оба игрока участвуют одновременно.
 - Ник не меняется автоматически (нет user.edit(nick=...)).
 - Legacy-записи без user_id привязываются по совпадающему имени.
-- Отображение: реальные пользователи — <@uid>, тестовые (uid<=0)
-  — текстовые имена.
+- Отображение: реальные пользователи — имя + экипированная
+  косметика (format_player_name), тестовые (uid<=0) — текстовые
+  имена; без «<@uid>» в списках.
 """
 
 from __future__ import annotations
@@ -310,11 +311,16 @@ async def test_exit_button_works_with_suffixed_name(env):
 # ------------------------------------------------------------ display
 
 
-def test_player_display_mention_for_real_user():
+def test_player_display_name_for_real_user():
+    """Реальный пользователь — обычное имя (без <@uid>),
+    с экипированной косметикой при её наличии."""
     t = _tournament()
     t.circle1 = ["Nick"]
     t.player_user_ids = {"Nick": 12345}
-    assert _player_display(t, "Nick") == "<@12345>"
+    # Бот не привязан в тесте → member недоступен → fallback на
+    # сохранённое имя; косметики у тестового uid нет.
+    assert _player_display(t, "Nick") == "Nick"
+    assert "<@" not in _player_display(t, "Nick")
 
 
 def test_player_display_text_for_test_player():
@@ -330,14 +336,16 @@ def test_player_display_text_without_uid():
     assert _player_display(t, "NoId") == "NoId"
 
 
-def test_circle_line_uses_mentions():
+def test_circle_line_uses_names():
+    """Строка круга: реальные — имена (с косметикой при наличии),
+    тестовые (uid<=0) — текстовые имена, без <@...>."""
     t = _tournament()
     t.circle1 = ["Real", "Bot"]
     t.player_user_ids = {"Real": 777, "Bot": -5}
     line = _circle_line(t.circle1, None, t)
-    assert "<@777>" in line
+    assert "Real" in line
     assert "Bot" in line
-    assert "<@-5>" not in line
+    assert "<@" not in line
 
 
 # ------------------------------------------------------- update result
@@ -391,4 +399,7 @@ def test_serialization_roundtrip_preserves_identity():
     assert t2.circle1 == ["Nick", "Nick ·1002"]
     assert t2.player_user_ids == {"Nick": 1001, "Nick ·1002": 1002}
     assert t2.player_name_for_uid(1002) == "Nick ·1002"
-    assert _circle_line(t2.circle1, None, t2) == "<@1001> <@1002>"
+    # Отображение — имена (с косметикой при наличии), не <@uid>
+    line = _circle_line(t2.circle1, None, t2)
+    assert "<@" not in line
+    assert "Nick" in line
