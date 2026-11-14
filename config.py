@@ -153,6 +153,11 @@ PET_HUNGER_CHANNEL_ID = int(os.getenv("PET_HUNGER_CHANNEL_ID", "0"))
 ROOM_DATA_CHANNEL_ID = int(
     os.getenv("ROOM_DATA_CHANNEL_ID") or "1561683314480255057"
 )
+# Канал общего чата для уведомления «КОМНАТА ОТКРЫТА»
+# (без ID/пароля — только упоминания участников и ссылки).
+ROOM_OPEN_NOTIFY_CHANNEL_ID = int(
+    os.getenv("ROOM_OPEN_NOTIFY_CHANNEL_ID") or "1200125075156910181"
+)
 GAMES_CHANNEL_ID = int(os.getenv("GAMES_CHANNEL_ID", "0"))
 
 # Ready Check («Найден матч») для Ranked Matchmaking

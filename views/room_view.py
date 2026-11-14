@@ -1,18 +1,23 @@
 """Данные комнат турнира (ID + пароль Free Fire) — Components V2.
 
-Отдельная система от K/D и результатов:
-- отправлять могут только участники конкретного матча (по user_id);
-- организаторы видят и исправляют данные всех матчей;
-- в публичной карточке — только статус «Комната готова»;
-- пароль виден только участникам матча и организаторам;
-- все действия — кнопки/Modal/ephemeral, без новых сообщений в канале.
+Одна кнопка «Данные комнаты» в карточке матча открывает Modal
+(ID + пароль — без номера комнаты). Отправлять могут только
+участники конкретного матча (по user_id).
+
+Публикация — services/room_publisher.py:
+- CV2-карточка «КОМНАТА ОТКРЫТА» в канале данных комнат
+  (названия команд, 8 участников через mentions, правила,
+  пароль, кнопка «ID»);
+- отдельное уведомление в общий чат (без ID/пароля);
+- при изменении данных карточка редактируется, повторного
+  уведомления нет; при ошибке — честный статус + безопасный
+  retry после рестарта.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -21,7 +26,6 @@ from models.tournament import TournamentPhase
 from storage.json_store import store
 from storage.room_store import match_key, room_store
 from utils.design import compose, text_card
-from utils.design.formatters import muted
 from utils.permissions import can_manage_tournament
 
 if TYPE_CHECKING:
@@ -30,7 +34,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Временное хранилище «ожидающих подтверждения» правок комнаты:
-# {(gid, cid, uid): {match_key, room_no, room_id, password, ts}}
+# {(gid, cid, uid): {match, tournament_id, room_id, password, ts}}
+# Одна актуальная запись на match_key — номер комнаты убран.
 _PENDING_EDITS: dict[tuple[int, int, int], dict[str, Any]] = {}
 _PENDING_TTL = 300.0
 
@@ -98,14 +103,6 @@ def _team_label(tournament: "Tournament", team_idx: int) -> str:
     return str(tournament.team_names.get(team_idx, captain))
 
 
-def _match_title(tournament: "Tournament", m: dict[str, Any]) -> str:
-    a, b = m["teams"]
-    return (
-        f"{m['label']}\n"
-        f"**{_team_label(tournament, a)}** vs **{_team_label(tournament, b)}**"
-    )
-
-
 def _user_matches(
     tournament: "Tournament", user_id: int, *, active_only: bool = True
 ) -> list[dict[str, Any]]:
@@ -140,90 +137,18 @@ def _room_status_text(guild_id: int, channel_id: int, key: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Ephemeral-карточки
+# Ephemeral-выбор матча
 # ---------------------------------------------------------------------------
-
-def _fmt_ts(ts: float | None) -> str:
-    if not ts:
-        return "—"
-    try:
-        dt = datetime.fromtimestamp(float(ts), tz=timezone.utc)
-        return discord.utils.format_dt(dt, style="R")
-    except Exception:
-        return "—"
-
-
-def build_room_card(
-    tournament: "Tournament",
-    m: dict[str, Any],
-    guild_id: int,
-    channel_id: int,
-    *,
-    can_see_password: bool,
-) -> discord.ui.LayoutView:
-    """Эфемерная карточка «Данные комнаты» для одного матча."""
-    rooms = room_store.get_rooms(guild_id, channel_id, m["key"])
-    view = discord.ui.LayoutView(timeout=120)
-    container = discord.ui.Container()
-    container.add_item(
-        discord.ui.TextDisplay(
-            content=f"> ### {m['label']}\n{_match_title(tournament, m)}"
-        )
-    )
-    container.add_item(discord.ui.Separator())
-    container.add_item(
-        discord.ui.TextDisplay(content="**ДАННЫЕ КОМНАТЫ**")
-    )
-    if not rooms:
-        container.add_item(
-            discord.ui.TextDisplay(content=muted("Ожидаются данные."))
-        )
-    else:
-        for room in rooms:
-            room_no = int(room.get("room_no", 1))
-            rid = str(room.get("room_id") or "—")
-            pwd = str(room.get("password") or "—")
-            lines = [
-                f"**Комната #{room_no}**",
-                f"**ID:** `{rid}`",
-            ]
-            if can_see_password:
-                lines.append(f"**Пароль:** `{pwd}`")
-            else:
-                lines.append(muted("Пароль виден участникам матча."))
-            lines.append(
-                f"**Отправил:** <@{room.get('submitted_by', 0)}> · "
-                f"{_fmt_ts(room.get('submitted_at'))}"
-            )
-            if room.get("updated_at") and room.get("updated_by"):
-                lines.append(
-                    f"-# изменено <@{room['updated_by']}> · "
-                    f"{_fmt_ts(room['updated_at'])}"
-                )
-            container.add_item(
-                discord.ui.TextDisplay(content="\n".join(lines))
-            )
-    container.add_item(discord.ui.Separator())
-    status = "Комната готова" if rooms else "Ожидаются данные"
-    container.add_item(
-        discord.ui.TextDisplay(
-            content=f"**Статус:** {status}\n"
-            + muted("Изменить данные может любой участник матча.")
-        )
-    )
-    view.add_item(container)
-    return view
 
 
 class _MatchSelect(discord.ui.View):
-    """Ephemeral-выбор матча (комната/просмотр)."""
+    """Ephemeral-выбор матча для отправки данных комнаты."""
 
     def __init__(self, matches: list[dict[str, Any]], tournament,
-                 mode: str, guild_id: int, channel_id: int):
+                 guild_id: int, channel_id: int):
         super().__init__(timeout=180)
         self.matches = matches
         self.tournament = tournament
-        self.mode = mode  # "send" | "data" | "manage"
         self.guild_id = guild_id
         self.channel_id = channel_id
         options = [
@@ -242,7 +167,7 @@ class _MatchSelect(discord.ui.View):
         select = discord.ui.Select(
             placeholder="Выберите матч",
             options=options,
-            custom_id=f"troom:pick:{mode}",
+            custom_id="troom:pick",
         )
 
         async def _cb(interaction: discord.Interaction,
@@ -264,23 +189,10 @@ class _MatchSelect(discord.ui.View):
             await interaction.response.send_message(
                 "Матч не найден.", ephemeral=True)
             return
-        m = self.matches[idx]
-        if self.mode == "send" or self.mode == "manage":
-            await interaction.response.send_modal(
-                RoomModal(self.guild_id, self.channel_id,
-                          self.tournament, m)
-            )
-        else:  # data
-            is_org = _is_org(interaction.user, interaction.guild,
-                             self.tournament)
-            team_idx = self.tournament.get_player_team_index(
-                interaction.user.id)
-            can_see = is_org or team_idx in m["teams"]
-            card = build_room_card(
-                self.tournament, m, self.guild_id, self.channel_id,
-                can_see_password=can_see,
-            )
-            await interaction.response.edit_message(view=card)
+        await interaction.response.send_modal(
+            RoomModal(self.guild_id, self.channel_id,
+                      self.tournament, self.matches[idx])
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +200,7 @@ class _MatchSelect(discord.ui.View):
 # ---------------------------------------------------------------------------
 
 class RoomModal(discord.ui.Modal):
-    """ID + пароль комнаты. Поддерживает несколько комнат (room_no)."""
+    """ID + пароль комнаты. Одна актуальная запись на матч."""
 
     def __init__(self, guild_id: int, channel_id: int,
                  tournament: "Tournament", m: dict[str, Any]):
@@ -309,16 +221,8 @@ class RoomModal(discord.ui.Modal):
             min_length=1,
             max_length=32,
         )
-        self.no_input = discord.ui.TextInput(
-            label="Номер комнаты (если несколько)",
-            placeholder="1",
-            required=False,
-            max_length=2,
-            default="1",
-        )
         self.add_item(self.room_input)
         self.add_item(self.pass_input)
-        self.add_item(self.no_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         room_id = (self.room_input.value or "").strip()
@@ -327,11 +231,6 @@ class RoomModal(discord.ui.Modal):
             await interaction.response.send_message(
                 "Укажите ID и пароль комнаты.", ephemeral=True)
             return
-        try:
-            room_no = int((self.no_input.value or "1").strip() or "1")
-        except ValueError:
-            room_no = 1
-        room_no = max(1, min(room_no, 99))
 
         # Серверная проверка прав: участник матча или организатор.
         tournament = store.get(self.guild_id, self.channel_id)
@@ -364,15 +263,14 @@ class RoomModal(discord.ui.Modal):
                 "Вы не участвуете в этом матче.", ephemeral=True)
             return
 
-        existing = room_store.get_room(
-            self.guild_id, self.channel_id, fresh["key"], room_no)
-        if existing:
+        existing = room_store.get_active_room(
+            self.guild_id, self.channel_id, fresh["key"])
+        if existing and existing.get("room_id"):
             # Изменение существующей комнаты — с подтверждением.
             token = (self.guild_id, self.channel_id, interaction.user.id)
             _PENDING_EDITS[token] = {
                 "match": fresh,
                 "tournament_id": str(tournament.id),
-                "room_no": room_no,
                 "room_id": room_id,
                 "password": password,
                 "ts": time.time(),
@@ -405,8 +303,8 @@ class RoomModal(discord.ui.Modal):
                     embed=None,
                     view=confirm,
                     text=(
-                        f"**Комната #{room_no}** для **{fresh['label']}** "
-                        "уже существует.\n"
+                        f"Данные комнаты для **{fresh['label']}** "
+                        "уже существуют.\n"
                         "Заменить ID и пароль?"
                     ),
                 ),
@@ -415,7 +313,7 @@ class RoomModal(discord.ui.Modal):
             return
 
         await _save_room(
-            interaction, tournament, fresh, room_id, password, room_no)
+            interaction, tournament, fresh, room_id, password)
 
 
 async def _apply_room_edit(
@@ -449,7 +347,7 @@ async def _apply_room_edit(
         return
     await _save_room(
         interaction, tournament, fresh, pending["room_id"],
-        pending["password"], pending["room_no"], edit_reply=True)
+        pending["password"], edit_reply=True)
 
 
 async def _save_room(
@@ -458,24 +356,23 @@ async def _save_room(
     m: dict[str, Any],
     room_id: str,
     password: str,
-    room_no: int,
     *,
     edit_reply: bool = False,
 ) -> None:
     gid, cid = interaction.guild_id, interaction.channel_id
     result = room_store.upsert_room(
         gid, cid, m["key"], room_id, password,
-        interaction.user.id, room_no,
+        interaction.user.id,
+        tournament_id=str(tournament.id),
     )
     room = result["room"]
     logger.info(
-        "Room %s match=%s room_no=%s by=%s (created=%s)",
+        "Room %s match=%s by=%s (created=%s)",
         "saved" if result["created"] else "updated",
-        m["key"], room_no, interaction.user.id, result["created"],
+        m["key"], interaction.user.id, result["created"],
     )
 
-    # Аудит: ID комнаты и кто отправил — БЕЗ пароля.
-    # «До/после» не храним значения комнаты — только факт обновления.
+    # Аудит: факт отправки/изменения — БЕЗ пароля и ID в логи.
     try:
         from services import tournament_audit_service as audit_svc
         await audit_svc.record_interaction(
@@ -490,7 +387,6 @@ async def _save_room(
             source="room",
             after={
                 "match": m["label"],
-                "room_no": room_no,
                 "teams": list(m.get("teams", ())),
             },
             dedup_key=None,
@@ -498,10 +394,30 @@ async def _save_room(
     except Exception as exc:
         logger.warning("room audit failed: %s", exc)
 
+    # Публикация карточки + уведомления (services/room_publisher).
+    publish = {"card": False, "notified": False}
+    try:
+        from services.room_publisher import publish_room
+        publish = await publish_room(
+            interaction.client, tournament, m,
+            room_store.get_active_room(gid, cid, m["key"]) or room,
+        )
+    except Exception as exc:
+        logger.warning("room publish failed key=%s: %s", m["key"], exc)
+
+    if publish["card"]:
+        detail = (
+            "Карточка комнаты опубликована в канале данных."
+            if publish["notified"] or not result["created"]
+            else "Карточка комнаты опубликована, уведомление отправлено."
+        )
+    else:
+        detail = (
+            "Данные сохранены, но публикация карточки не удалась — "
+            "будет повторена автоматически."
+        )
     text = (
-        f"Данные комнаты сохранены для **{m['label']}** "
-        f"(комната #{room_no}).\n"
-        "В канале турнира отображается только статус."
+        f"Данные комнаты сохранены для **{m['label']}**.\n{detail}"
     )
     if edit_reply:
         await interaction.response.edit_message(view=text_card(text))
@@ -530,14 +446,14 @@ def _load_tournament(gid: int, cid: int):
         return None
 
 
-class RoomSendButton(discord.ui.Button):
-    """«Отправить комнату» — участники активных матчей."""
+class RoomDataButton(discord.ui.Button):
+    """«Данные комнаты» — Modal отправки ID/пароля (участники)."""
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
-            label="Отправить комнату",
+            label="Данные комнаты",
             style=discord.ButtonStyle.primary,
-            custom_id=f"troom:send:{guild_id}:{channel_id}",
+            custom_id=f"troom:data:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -562,102 +478,7 @@ class RoomSendButton(discord.ui.Button):
             )
             return
         view = _MatchSelect(
-            matches, tournament, "send",
-            self.guild_id, self.channel_id)
-        await interaction.response.send_message(
-            view=compose(text="Выберите матч:", view=view),
-            ephemeral=True,
-        )
-
-
-class RoomDataButton(discord.ui.Button):
-    """«Данные комнаты» — просмотр своих матчей (пароль — участникам)."""
-
-    def __init__(self, guild_id: int, channel_id: int):
-        super().__init__(
-            label="Данные комнаты",
-            style=discord.ButtonStyle.secondary,
-            custom_id=f"troom:data:{guild_id}:{channel_id}",
-        )
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        tournament = _load_tournament(self.guild_id, self.channel_id)
-        if tournament is None:
-            await interaction.response.send_message(
-                "Турнир не найден.", ephemeral=True)
-            return
-        matches = _user_matches(
-            tournament, interaction.user.id, active_only=False)
-        is_org = _is_org(interaction.user, interaction.guild, tournament)
-        if not matches and not is_org:
-            await interaction.response.send_message(
-                "Вы не участвуете в матчах этого турнира.",
-                ephemeral=True,
-            )
-            return
-        if is_org and not matches:
-            # Организатор без команды — просмотр всех матчей фазы.
-            matches = iter_tournament_matches(tournament)
-        if len(matches) == 1:
-            m = matches[0]
-            team_idx = tournament.get_player_team_index(
-                interaction.user.id)
-            can_see = is_org or team_idx in m["teams"]
-            await interaction.response.send_message(
-                view=build_room_card(
-                    tournament, m, self.guild_id, self.channel_id,
-                    can_see_password=can_see),
-                ephemeral=True,
-            )
-            return
-        view = _MatchSelect(
-            matches, tournament, "data",
-            self.guild_id, self.channel_id)
-        await interaction.response.send_message(
-            view=compose(text="Выберите матч:", view=view),
-            ephemeral=True,
-        )
-
-
-class RoomManageButton(discord.ui.Button):
-    """«Управление» — только организаторы: все матчи фазы."""
-
-    def __init__(self, guild_id: int, channel_id: int):
-        super().__init__(
-            label="Управление",
-            style=discord.ButtonStyle.secondary,
-            custom_id=f"troom:manage:{guild_id}:{channel_id}",
-        )
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        tournament = _load_tournament(self.guild_id, self.channel_id)
-        if tournament is None:
-            await interaction.response.send_message(
-                "Турнир не найден.", ephemeral=True)
-            return
-        if not _is_org(interaction.user, interaction.guild, tournament):
-            await interaction.response.send_message(
-                "Только организаторы могут управлять комнатами.",
-                ephemeral=True,
-            )
-            return
-        matches = iter_tournament_matches(tournament)
-        if not matches:
-            await interaction.response.send_message(
-                "В текущей фазе нет матчей.", ephemeral=True)
-            return
-        if len(matches) == 1:
-            await interaction.response.send_modal(
-                RoomModal(self.guild_id, self.channel_id,
-                          tournament, matches[0])
-            )
-            return
-        view = _MatchSelect(
-            matches, tournament, "manage",
+            matches, tournament,
             self.guild_id, self.channel_id)
         await interaction.response.send_message(
             view=compose(text="Выберите матч:", view=view),
@@ -666,9 +487,5 @@ class RoomManageButton(discord.ui.Button):
 
 
 def room_buttons(guild_id: int, channel_id: int) -> list[discord.ui.Button]:
-    """Ряд кнопок комнат для фазовых View турнира."""
-    return [
-        RoomSendButton(guild_id, channel_id),
-        RoomDataButton(guild_id, channel_id),
-        RoomManageButton(guild_id, channel_id),
-    ]
+    """Одна кнопка «Данные комнаты» для фазовых View турнира."""
+    return [RoomDataButton(guild_id, channel_id)]

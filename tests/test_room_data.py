@@ -18,10 +18,8 @@ import pytest
 from models.tournament import Tournament, TournamentPhase
 from storage.room_store import RoomStore, match_key
 from views.room_view import (
-    _match_title,
     _user_matches,
     iter_tournament_matches,
-    build_room_card,
     room_buttons,
 )
 
@@ -122,15 +120,49 @@ def test_upsert_updates_in_place(tmp_path):
     assert rooms[0]["updated_at"] >= rooms[0]["submitted_at"]
 
 
-def test_room_no_multiple_rooms(tmp_path):
+def test_single_active_room_per_match(tmp_path):
+    """Одна актуальная запись на match_key; обновление на месте."""
     store = RoomStore(tmp_path / "rooms.json")
     k = match_key("t1", "final", 0)
     store.upsert_room(1, 2, k, "111", "pw1", 101, room_no=1)
     store.upsert_room(1, 2, k, "222", "pw2", 101, room_no=2)
     rooms = store.get_rooms(1, 2, k)
+    # Новая модель: вторая отправка обновляет АКТУАЛЬНУЮ запись —
+    # одна запись, а не две. Исторические room_no>1 из старых
+    # файлов сохраняются (см. test_legacy_rooms_preserved).
+    active = store.get_active_room(1, 2, k)
+    assert active["room_id"] == "222"
+    assert len([r for r in rooms if r.get("room_id")]) >= 1
+
+
+def test_legacy_multi_rooms_preserved(tmp_path):
+    """Старые файлы с несколькими room_no не теряются при загрузке;
+    актуальной считается запись с max(updated_at)."""
+    import json
+    path = tmp_path / "rooms.json"
+    k = match_key("t1", "final", 0)
+    path.write_text(json.dumps({
+        f"1:2:{k}": {"rooms": [
+            {"room_no": 1, "room_id": "old1", "password": "p1",
+             "submitted_by": 1, "submitted_at": 100.0,
+             "updated_at": 100.0},
+            {"room_no": 2, "room_id": "old2", "password": "p2",
+             "submitted_by": 1, "submitted_at": 200.0,
+             "updated_at": 200.0},
+        ]}
+    }))
+    store = RoomStore(path)
+    rooms = store.get_rooms(1, 2, k)
+    assert len(rooms) == 2            # ничего не удалено
+    active = store.get_active_room(1, 2, k)
+    assert active["room_id"] == "old2"  # более свежая — актуальная
+    # Обновление пишет в актуальную запись, старые не трогаем.
+    store.upsert_room(1, 2, k, "new", "pn", 105,
+                      tournament_id="t1")
+    rooms = store.get_rooms(1, 2, k)
     assert len(rooms) == 2
-    assert store.get_room(1, 2, k, 1)["room_id"] == "111"
-    assert store.get_room(1, 2, k, 2)["room_id"] == "222"
+    assert store.get_active_room(1, 2, k)["room_id"] == "new"
+    assert store.get_active_room(1, 2, k)["match_key"] == k
 
 
 def test_persistence_reload(tmp_path):
@@ -148,31 +180,31 @@ def test_scope_isolation_between_channels(tmp_path):
     assert store.get_rooms(1, 3, k) == []
 
 
-def test_room_card_hides_password(tmp_path, monkeypatch):
-    import views.room_view as rv
+def test_room_card_view_content(tmp_path):
+    """Карточка «КОМНАТА ОТКРЫТА»: команды, 8 mentions, пароль, ID-кнопка."""
+    from services.room_publisher import build_room_card_view
 
-    monkeypatch.setattr(
-        rv, "room_store", RoomStore(tmp_path / "rooms.json"))
-    store = rv.room_store
     t = _semifinal_tournament()
     m = iter_tournament_matches(t)[0]
-    store.upsert_room(1, 2, m["key"], "123456789", "secretpw", 101)
-
-    card_pub = build_room_card(t, m, 1, 2, can_see_password=False)
-    pub_text = "\n".join(
+    room = {"room_id": "123456789", "password": "secretpw"}
+    card = build_room_card_view(t, m, room)
+    text = "\n".join(
         getattr(i, "content", "")
-        for i in _walk(card_pub)
+        for i in _walk(card)
     )
-    assert "secretpw" not in pub_text
-    assert "123456789" in pub_text
-    assert "Комната готова" in pub_text
-
-    card_priv = build_room_card(t, m, 1, 2, can_see_password=True)
-    priv_text = "\n".join(
-        getattr(i, "content", "")
-        for i in _walk(card_priv)
-    )
-    assert "secretpw" in priv_text
+    assert "КОМНАТА ОТКРЫТА" in text
+    assert "Team0" in text and "Team1" in text
+    # Все 8 участников матча — через mentions (<@uid>).
+    for uid in (100, 101, 102, 103, 110, 111, 112, 113):
+        assert f"<@{uid}>" in text
+    assert "secretpw" in text
+    # Кнопка «ID» с custom_id rcard:id:...
+    custom_ids = [
+        getattr(i, "custom_id", "")
+        for i in _walk(card)
+        if getattr(i, "custom_id", "")
+    ]
+    assert any(cid.startswith("rcard:id:") for cid in custom_ids)
 
 
 def _walk(view):
@@ -190,21 +222,22 @@ def test_phase_views_have_room_buttons():
     t.qualifier_winners = [None]
     v = QualifiersView(1, 2, t.qualifier_matches, t.qualifier_winners, t)
     labels = [getattr(i, "label", "") for i in v.children]
-    assert "Отправить комнату" in labels
-    assert "Данные комнаты" in labels
-    assert "Управление" in labels
+    # Одна кнопка «Данные комнаты» — без «Отправить»/«Управление».
+    assert labels.count("Данные комнаты") == 1
+    assert "Отправить комнату" not in labels
+    assert "Управление" not in labels
 
     t2 = _semifinal_tournament()
     v2 = SemifinalsView(1, 2, t2.semifinal_matches,
                         t2.semifinal_winners, t2)
     labels2 = [getattr(i, "label", "") for i in v2.children]
-    assert "Отправить комнату" in labels2
+    assert labels2.count("Данные комнаты") == 1
 
     t3 = _tournament(TournamentPhase.FINAL)
     t3.final_teams = [0, 1]
     v3 = FinalView(1, 2, t3.final_teams, t3)
     labels3 = [getattr(i, "label", "") for i in v3.children]
-    assert "Отправить комнату" in labels3
+    assert labels3.count("Данные комнаты") == 1
 
 
 def test_room_status_suffix(tmp_path, monkeypatch):

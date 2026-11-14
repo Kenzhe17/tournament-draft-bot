@@ -453,6 +453,15 @@ class TournamentBot(commands.Bot):
         except Exception as exc:
             logger.warning("Match rules view registration failed: %s", exc)
 
+        # Кнопка «ID» на карточках «КОМНАТА ОТКРЫТА» в канале
+        # данных комнат — persistent DynamicItem.
+        try:
+            from services.room_publisher import RoomCardTemplateView
+
+            self.add_view(RoomCardTemplateView())
+        except Exception as exc:
+            logger.warning("Room card view registration failed: %s", exc)
+
 
         # Set up error handler for app commands
         self.tree.on_error = self.on_app_command_error
@@ -979,6 +988,17 @@ class TournamentBot(commands.Bot):
                 )
         except Exception as e:
             logger.error(f"nickname ops recovery failed: {e}")
+
+        # Довести отложенные публикации карточек комнат турниров
+        try:
+            from services.room_publisher import retry_pending_rooms
+            resolved_rooms = await retry_pending_rooms(self)
+            if resolved_rooms:
+                logger.info(
+                    "room publish recovery: %d записей", resolved_rooms
+                )
+        except Exception as e:
+            logger.error(f"room publish recovery failed: {e}")
 
         # Restore org role panel if it exists
         from views.org_role_view import load_state, OrgPanelView
