@@ -12,6 +12,7 @@ import logging
 
 import discord
 
+from config import WELCOME_BANNER_URL
 from models.mm_search import MMSearch
 from utils.design.layouts import DesignView
 
@@ -94,6 +95,16 @@ def build_queue_panel(
 ) -> discord.ui.LayoutView:
     """Построить V2-панель очереди (open/locked)."""
     view = DesignView(timeout=None)
+
+    # PNG-баннер сверху карточки (удалённый URL — не требует
+    # перевложений при каждом edit сообщения).
+    if WELCOME_BANNER_URL:
+        view.component(
+            discord.ui.MediaGallery(
+                discord.MediaGalleryItem(media=WELCOME_BANNER_URL)
+            )
+        )
+        view.sep(large=True)
 
     if search.is_waiting_channel:
         view.text("## СТАТУС ОЧЕРЕДИ")
