@@ -3355,6 +3355,11 @@ class HelpGuideView(discord.ui.View):
         self.add_item(HelpGuideSelectMenu(current=current))
 
 
+# Модульный алиас: cogs.ultimatum присоединяет свою группу
+# к /tournament через этот объект (тот же Group, что в когe).
+tournament_group = TournamentCog.tournament_group
+
+
 async def setup(bot: TournamentBot) -> None:
     """Загрузить ког."""
     await bot.add_cog(TournamentCog(bot))
