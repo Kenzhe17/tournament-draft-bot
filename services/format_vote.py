@@ -65,6 +65,7 @@ _UI_DIRTY: dict[str, int] = {}
 _UI_TASKS: dict[str, asyncio.Task] = {}
 _UI_CTX: dict[str, tuple] = {}  # key -> (gid, cid, vote_id)
 _UI_FAILS: dict[str, int] = {}  # key -> подряд неудачных flush'ей
+_UI_GUILD_SINCE: dict[str, float] = {}  # key -> первый guild-unavailable
 
 
 def _new_vote_id() -> str:
@@ -472,9 +473,30 @@ async def _vote_ui_worker(key: str) -> None:
                 )
                 processed = dirty
                 _UI_FAILS.pop(key, None)
+                _UI_GUILD_SINCE.pop(key, None)
             except _VoteMessageGone:
                 processed = dirty  # сообщение удалено — дальше нечего
                 _UI_FAILS.pop(key, None)
+                _UI_GUILD_SINCE.pop(key, None)
+            except _GuildUnavailable:
+                # setup_hook до ready / guild ещё не в кэше —
+                # это НЕ успешный flush: ждём и повторяем,
+                # processed не двигаем. Потолок ожидания —
+                # _UI_GUILD_TIMEOUT, чтобы не крутиться вечно.
+                since = _UI_GUILD_SINCE.setdefault(
+                    key, time.monotonic()
+                )
+                if time.monotonic() - since > _UI_GUILD_TIMEOUT:
+                    logger.error(
+                        "Vote UI edit giving up %s: guild "
+                        "unavailable for %.0fs",
+                        vote_id, _UI_GUILD_TIMEOUT,
+                    )
+                    processed = dirty
+                    _UI_GUILD_SINCE.pop(key, None)
+                else:
+                    await asyncio.sleep(2.0)
+                    continue
             except Exception as exc:
                 fails = _UI_FAILS.get(key, 0) + 1
                 _UI_FAILS[key] = fails
@@ -508,10 +530,15 @@ async def _vote_ui_worker(key: str) -> None:
 
 
 _UI_MAX_FAILS = 5
+_UI_GUILD_TIMEOUT = 300.0  # сек ожидания готовности guild
 
 
 class _VoteMessageGone(Exception):
-    "Внутренняя метка: сообщение голосования удалено (404)."
+    """Внутренняя метка: сообщение голосования удалено (404)."""
+
+
+class _GuildUnavailable(Exception):
+    """guild ещё не доступен (bot не ready / нет в кэше)."""
 
 
 async def _edit_vote_message_retry(tournament, match_type: str,
@@ -534,6 +561,8 @@ async def _edit_vote_message_retry(tournament, match_type: str,
             last_exc = exc
             if getattr(exc, "status", None) == 404:
                 raise _VoteMessageGone(vote_id) from exc
+            if isinstance(exc, _GuildUnavailable):
+                raise  # guild-unavailable — не транзиентный retry
             wait = delay
             ra = getattr(exc, "retry_after", None)
             if ra is not None:
@@ -554,7 +583,10 @@ async def _edit_vote_message(tournament, match_type: str,
     gid = int(getattr(tournament, "guild_id", 0) or 0)
     guild = store_bot_guild(gid)
     if guild is None:
-        return
+        # Бот ещё не ready (setup_hook) или guild вне кэша —
+        # это отложенная ситуация, а не «нечего править»:
+        # worker повторит после готовности.
+        raise _GuildUnavailable(gid)
     vch_id = int(fv.get("vote_channel_id") or 0)
     mid = int(fv.get("vote_message_id") or 0)
     if not (vch_id and mid):
@@ -1000,9 +1032,11 @@ def store_bot_guild(guild_id: int):
 def cancel_open_format_votes(tournament) -> None:
     """Отмена голосований при отмене матча: статус cancelled,
     кнопки отключаются при следующем рендере/клике. Таймеры
-    отменяются, lock/timer записи чистятся."""
+    отменяются, lock/timer записи чистятся, итоги
+    зеркалируются в PostgreSQL."""
     gid = int(getattr(tournament, "guild_id", 0) or 0)
     cid = int(getattr(tournament, "channel_id", 0) or 0)
+    cancelled: list = []
     for meta in (tournament.match_channels or {}).values():
         fv = (meta or {}).get("format_vote")
         if not (isinstance(fv, dict) and fv.get("vote_status") == "open"):
@@ -1022,12 +1056,25 @@ def cancel_open_format_votes(tournament) -> None:
         # Кнопки на сообщении должны отключиться — UI-worker
         # отрендерит актуальное (cancelled) состояние.
         _schedule_vote_ui(gid, cid, fv.get("vote_id") or "")
+        cancelled.append((tournament, mt, mi, fv))
         logger.info(
             "mm_diag event=vote_cancelled vote_id=%s match_id=%s "
             "channel_id=%s",
             fv.get("vote_id"), fv.get("match_id"), cid,
         )
     store.set(tournament)
+    # PG-зеркало статуса cancelled — best-effort, только если
+    # есть running loop (в проде cancel вызывается из async
+    # обработчиков; в sync-контексте зеркало пропускается).
+    if cancelled:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        for t, mt, mi, fv in cancelled:
+            asyncio.create_task(
+                _mirror_to_pg(t, mt, mi, fv)
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1042,8 +1089,12 @@ async def restore_format_votes(bot) -> None:
     получил корректный ответ), а для open с истёкшим deadline —
     немедленную финализацию, иначе — таймер.
     """
-    from views.format_vote_view import FormatVoteButtonsView
+    from views.format_vote_view import (
+        FormatVoteButtonsView,
+        LegacyFormatVoteView,
+    )
 
+    legacy_registered: set[tuple] = set()
     for tournament in store.all():
         if not getattr(tournament, "mm_search_channel_id", 0):
             continue
@@ -1070,6 +1121,21 @@ async def restore_format_votes(bot) -> None:
                     "Format vote view restore failed %s: %s",
                     fv.get("match_id"), exc,
                 )
+            # Кнопки, опубликованные до vote_id, имеют старый
+            # custom_id — регистрируем и legacy-view, иначе
+            # после рестарта они не имеют обработчика.
+            lkey = (gid, cid, mt, mi)
+            if lkey not in legacy_registered:
+                legacy_registered.add(lkey)
+                try:
+                    bot.add_view(
+                        LegacyFormatVoteView(gid, cid, mt, mi)
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Legacy format vote view restore failed "
+                        "%s: %s", fv.get("match_id"), exc,
+                    )
             if fv.get("vote_status") != "open":
                 # done/cancelled: карточка могла остаться в
                 # открытом виде (крах до финального edit) —
@@ -1084,6 +1150,44 @@ async def restore_format_votes(bot) -> None:
                 await finalize_format_vote(guild, tournament, mt, mi)
             else:
                 _schedule_timer(gid, cid, mt, mi, fv=fv)
+
+    # setup_hook выполняется до ready: store_bot_guild может
+    # вернуть None, и UI-worker посчитает обновление выполненным,
+    # хотя edit не дошёл. После wait_until_ready повторно
+    # ставим обновления финальных карточек — не блокируя
+    # setup_hook.
+    pending = []
+    for tournament in store.all():
+        gid = int(getattr(tournament, "guild_id", 0) or 0)
+        cid = int(getattr(tournament, "channel_id", 0) or 0)
+        for meta in (tournament.match_channels or {}).values():
+            fv = (meta or {}).get("format_vote")
+            if (
+                isinstance(fv, dict)
+                and fv.get("vote_status") in ("done", "cancelled")
+                and fv.get("vote_message_id")
+                and fv.get("vote_id")
+            ):
+                pending.append((gid, cid, fv["vote_id"]))
+    if pending:
+        asyncio.create_task(
+            _reschedule_ui_after_ready(bot, pending)
+        )
+
+
+async def _reschedule_ui_after_ready(bot, pending: list) -> None:
+    """Повторная постановка UI-обновлений после ready.
+
+    Покрывает случай, когда setup_hook отработал до готовности
+    guild-кэша: первый flush мог «успешно» завершиться без
+    реального edit.
+    """
+    try:
+        await bot.wait_until_ready()
+    except Exception:
+        await asyncio.sleep(5)
+    for gid, cid, vote_id in pending:
+        _schedule_vote_ui(gid, cid, vote_id)
 
 
 async def _mirror_to_pg(tournament, match_type: str,

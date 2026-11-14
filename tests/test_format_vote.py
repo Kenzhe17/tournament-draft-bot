@@ -553,8 +553,15 @@ class TestVoteGenerations:
 
         monkeypatch.setattr(fv.store, "all", lambda: [env.tournament])
         await fv.restore_format_votes(_Bot())
-        assert len(added) == 1
-        cids = [b.custom_id for b in added[0].children]
+        # restore регистрирует и новый view (vote_id), и
+        # legacy-view для кнопок, опубликованных до vote_id.
+        fv_views = [
+            v for v in added
+            if any(s["vote_id"] in b.custom_id
+                   for b in v.children)
+        ]
+        assert len(fv_views) == 1
+        cids = [b.custom_id for b in fv_views[0].children]
         assert all(s["vote_id"] in c for c in cids)
         assert f"vote:{s['vote_id']}" in fv._TIMERS
         for task in list(fv._TIMERS.values()):
@@ -583,6 +590,77 @@ class TestVoteGenerations:
         monkeypatch.setattr(fv.store, "all", lambda: [env.tournament])
         await fv.restore_format_votes(_Bot())
         assert f"vote:{s['vote_id']}" in fv._UI_DIRTY
+
+    @pytest.mark.asyncio
+    async def test_restore_legacy_view_routes_old_buttons(
+        self, env, monkeypatch
+    ):
+        """Старые опубликованные кнопки (custom_id без vote_id)
+        после рестарта маршрутизируются через зарегистрированный
+        LegacyFormatVoteView → handle_vote_click → голос принят."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["vote_message_id"] = 0  # message-id check пропускается
+        monkeypatch.setattr(
+            "services.format_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        added = []
+
+        class _Bot:
+            def add_view(self, v):
+                added.append(v)
+
+            def get_guild(self, gid):
+                return None
+
+        monkeypatch.setattr(fv.store, "all", lambda: [env.tournament])
+        await fv.restore_format_votes(_Bot())
+
+        # Ищем legacy-view по старому custom_id.
+        legacy_btn = None
+        for view in added:
+            for item in view.children:
+                if item.custom_id == "fv:1:2:final:0:brazil":
+                    legacy_btn = item
+        assert legacy_btn is not None, (
+            "LegacyFormatVoteView не зарегистрирован"
+        )
+
+        # Клик по старой кнопке — тем же путём, что и dispatch
+        # discord.py (callback → handle_vote_click).
+        ix = _Ix(env, 1, "fv:1:2:final:0:brazil")
+        await legacy_btn.callback(ix)
+        assert s["votes"] == {"1": "brazil"}
+        assert "учтён" in ix.response.messages[-1]
+
+        # А кнопка нового поколения тоже зарегистрирована.
+        new_cid = f"fv:1:2:{s['vote_id']}:kazakhstan"
+        new_btn = None
+        for view in added:
+            for item in view.children:
+                if item.custom_id == new_cid:
+                    new_btn = item
+        assert new_btn is not None
+
+    @pytest.mark.asyncio
+    async def test_cancel_mirrors_cancelled_to_pg(
+        self, env, monkeypatch
+    ):
+        """Отмена голосования зеркалируется в PG со статусом
+        cancelled (version уже увеличена)."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        mirrored = []
+
+        async def fake_mirror(t, mt, mi, fv_state):
+            mirrored.append(dict(fv_state))
+
+        monkeypatch.setattr(fv, "_mirror_to_pg", fake_mirror)
+        fv.cancel_open_format_votes(env.tournament)
+        await asyncio.sleep(0.2)  # create_task отработает
+        assert len(mirrored) == 1
+        assert mirrored[0]["vote_status"] == "cancelled"
+        assert mirrored[0]["version"] >= 2
 
     @pytest.mark.asyncio
     async def test_cancel_cleans_timer_and_lock(self, env, monkeypatch):
@@ -756,6 +834,55 @@ class TestUiWorker:
         await fv.handle_vote_click(ix, "brazil")
         await asyncio.sleep(2.5)  # debounce + retry backoff
         assert attempts["n"] >= 3
+        assert edits
+
+    @pytest.mark.asyncio
+    async def test_ui_worker_waits_for_guild_availability(
+        self, env, monkeypatch
+    ):
+        """setup_hook до ready: store_bot_guild → None не считается
+        успешным flush — worker ждёт и правит после появления
+        guild."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["vote_message_id"] = 5
+        edits = []
+        guild_holder = {"g": None}
+
+        class _Msg:
+            async def edit(self, view=None, **kw):
+                edits.append(view)
+
+        class _Ch:
+            id = 2
+
+            async def fetch_message(self, mid):
+                return _Msg()
+
+        class _G:
+            def get_channel(self, cid):
+                return _Ch()
+
+            async def fetch_channel(self, cid):
+                return _Ch()
+
+        monkeypatch.setattr(
+            fv, "store_bot_guild", lambda gid: guild_holder["g"]
+        )
+        monkeypatch.setattr(
+            "services.format_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        ix = _Ix(env, 1, _cid(env, "brazil"))
+        await fv.handle_vote_click(ix, "brazil")
+        await asyncio.sleep(0.6)
+        # Guild недоступен — flush НЕ засчитан, worker ждёт.
+        assert not edits
+        key = f"vote:{s['vote_id']}"
+        assert key in fv._UI_GUILD_SINCE
+        # Guild появился (бот дошёл до ready).
+        guild_holder["g"] = _G()
+        await asyncio.sleep(2.6)
         assert edits
 
 
