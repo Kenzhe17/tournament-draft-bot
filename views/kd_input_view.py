@@ -41,7 +41,7 @@ class TeamKDButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_info: dict, team_number: int, team_name: str):
         super().__init__(
-            label=f"📊 {team_name} K/D",
+            label=f"{team_name} K/D",
             style=discord.ButtonStyle.primary,
             custom_id=f"team_kd:{guild_id}:{channel_id}:{team_number}"
         )
@@ -96,7 +96,7 @@ class ProcessMatchButton(discord.ui.Button):
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."),
+                replace_emojis("Турнир не найден."),
                 ephemeral=True
             )
             return
@@ -107,7 +107,7 @@ class ProcessMatchButton(discord.ui.Button):
 
         if not temp_stats:
             await interaction.response.send_message(
-                replace_emojis("❌ Нет данных статистики для обработки. Сначала заполните статистику для обеих команд."),
+                replace_emojis("Нет данных статистики для обработки. Сначала заполните статистику для обеих команд."),
                 ephemeral=True
             )
             return
@@ -120,7 +120,7 @@ class ProcessMatchButton(discord.ui.Button):
         missing_players = [p for p in all_players if p not in temp_stats]
         if missing_players:
             await interaction.response.send_message(
-                replace_emojis(f"❌ Отсутствует статистика для: {', '.join(missing_players)}"),
+                replace_emojis(f"Отсутствует статистика для: {', '.join(missing_players)}"),
                 ephemeral=True
             )
             return
@@ -139,7 +139,7 @@ class ProcessMatchButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.followup.send(
-            replace_emojis("✅ Результат матча обработан!"),
+            replace_emojis("Результат матча обработан!"),
             ephemeral=True
         )
 

@@ -110,14 +110,14 @@ class TeamMenuButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         if not self.team.is_captain(interaction.user.id):
             await interaction.response.send_message(
-                replace_emojis("❌ Только капитан может открывать меню!"),
+                replace_emojis("Только капитан может открывать меню!"),
                 ephemeral=True
             )
             return
 
         view = TeamMenuView(self.team, self.status_view)
         embed = discord.Embed(
-            title=f" Меню капитана",
+            title=f"Меню капитана",
             description=f" Управление командой **{self.team.team_name}**",
             color=discord.Color.from_rgb(114, 137, 218)
         )
@@ -148,7 +148,7 @@ class TeamLeaveButton(discord.ui.Button):
 
         if self.team.is_captain(interaction.user.id):
             await interaction.response.send_message(
-                replace_emojis("❌ Капитан не может покинуть команду! Используйте `/team delete` для удаления команды."),
+                replace_emojis("Капитан не может покинуть команду! Используйте `/team delete` для удаления команды."),
                 ephemeral=True
             )
             return
@@ -156,7 +156,7 @@ class TeamLeaveButton(discord.ui.Button):
         # Check if user is actually in the team
         if not self.team.is_member(interaction.user.id):
             await interaction.response.send_message(
-                replace_emojis("❌ Вы не состоите в этой команде!"),
+                replace_emojis("Вы не состоите в этой команде!"),
                 ephemeral=True
             )
             return
@@ -164,7 +164,7 @@ class TeamLeaveButton(discord.ui.Button):
         success = await team_store.remove_member(self.team.team_id, interaction.user.id)
         if not success:
             await interaction.response.send_message(
-                replace_emojis("❌ Команда зарегистрирована в BR турнире! Нельзя менять состав."),
+                replace_emojis("Команда зарегистрирована в BR турнире! Нельзя менять состав."),
                 ephemeral=True
             )
             return
@@ -180,7 +180,7 @@ class TeamLeaveButton(discord.ui.Button):
                 self.team = updated_team
 
         embed = discord.Embed(
-            title=f" Вы покинули команду",
+            title=f"Вы покинули команду",
             description=f" Вы вышли из команды **{self.team.team_name}**",
             color=discord.Color.from_rgb(235, 100, 100)
         )
@@ -204,7 +204,7 @@ class TeamJoinButton(discord.ui.Button):
         # Check if user is already in the team
         if self.team.is_member(interaction.user.id):
             await interaction.response.send_message(
-                replace_emojis("❌ Вы уже состоите в этой команде!"),
+                replace_emojis("Вы уже состоите в этой команде!"),
                 ephemeral=True
             )
             return
@@ -239,7 +239,7 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
 
         if self.password.value != self.team.password:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверный пароль!"),
+                replace_emojis("Неверный пароль!"),
                 ephemeral=True
             )
             return
@@ -247,7 +247,7 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
         # Check if already in team
         if self.team.is_member(interaction.user.id):
             await interaction.response.send_message(
-                replace_emojis("❌ Вы уже в этой команде!"),
+                replace_emojis("Вы уже в этой команде!"),
                 ephemeral=True
             )
             return
@@ -255,7 +255,7 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
         # Check if team is full
         if self.team.is_full():
             await interaction.response.send_message(
-                replace_emojis("❌ Команда заполнена!"),
+                replace_emojis("Команда заполнена!"),
                 ephemeral=True
             )
             return
@@ -263,7 +263,7 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
         success = await team_store.add_member(self.team.team_id, interaction.user.id)
         if not success:
             await interaction.response.send_message(
-                replace_emojis("❌ Команда зарегистрирована в BR турнире! Нельзя менять состав."),
+                replace_emojis("Команда зарегистрирована в BR турнире! Нельзя менять состав."),
                 ephemeral=True
             )
             return
@@ -278,7 +278,7 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
                 self.team = updated_team
 
         embed = discord.Embed(
-            title=f" Вы вступили в команду",
+            title=f"Вы вступили в команду",
             description=f" Вы вступили в команду **{self.team.team_name}**",
             color=discord.Color.from_rgb(114, 137, 218)
         )
@@ -346,7 +346,7 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
         existing_team = team_store.get_by_name(self.team.guild_id, new_name)
         if existing_team and existing_team.team_id != self.team.team_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Это название уже занято другой командой!"),
+                replace_emojis("Это название уже занято другой командой!"),
                 ephemeral=True
             )
             return
@@ -355,7 +355,7 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
         success = await team_store.update_team(self.team)
         if not success:
             await interaction.response.send_message(
-                replace_emojis("❌ Команда зарегистрирована в BR турнире! Нельзя менять название."),
+                replace_emojis("Команда зарегистрирована в BR турнире! Нельзя менять название."),
                 ephemeral=True
             )
             return
@@ -372,7 +372,7 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
 
         # Respond with success message (modal response)
         embed = discord.Embed(
-            title=f" Название изменено",
+            title=f"Название изменено",
             description=f" Новое название: **{self.team.team_name}**",
             color=discord.Color.from_rgb(114, 137, 218)
         )
@@ -424,7 +424,7 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
         success = await team_store.update_team(self.team)
         if not success:
             await interaction.response.send_message(
-                replace_emojis("❌ Команда зарегистрирована в BR турнире! Нельзя менять пароль."),
+                replace_emojis("Команда зарегистрирована в BR турнире! Нельзя менять пароль."),
                 ephemeral=True
             )
             return
@@ -439,7 +439,7 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
                 self.team = updated_team
 
         embed = discord.Embed(
-            title=f" Пароль изменен",
+            title=f"Пароль изменен",
             description=f" Новый пароль: ||{self.team.password}||",
             color=discord.Color.from_rgb(114, 137, 218)
         )
@@ -483,7 +483,7 @@ class KickMemberButton(discord.ui.Button):
 
         if not options:
             await interaction.response.send_message(
-                replace_emojis("❌ Нет участников для кика!"),
+                replace_emojis("Нет участников для кика!"),
                 ephemeral=True
             )
             return
@@ -522,7 +522,7 @@ class KickMemberSelectView(discord.ui.View):
         success = await team_store.remove_member(self.team.team_id, user_id)
         if not success:
             await interaction.response.send_message(
-                replace_emojis("❌ Команда зарегистрирована в BR турнире! Нельзя менять состав."),
+                replace_emojis("Команда зарегистрирована в BR турнире! Нельзя менять состав."),
                 ephemeral=True
             )
             return
@@ -537,6 +537,6 @@ class KickMemberSelectView(discord.ui.View):
                 self.team = updated_team
 
         await interaction.response.send_message(
-            replace_emojis("✅ Участник исключен из команды!"),
+            replace_emojis("Участник исключен из команды!"),
             ephemeral=True
         )

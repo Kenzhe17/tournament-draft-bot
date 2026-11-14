@@ -14,19 +14,19 @@ async def _execute_bet(interaction: discord.Interaction, *, guild_id, tournament
     balance = await user_balance_store.get_balance(guild_id, interaction.user.id)
     if amount > balance:
         return replace_emojis(
-            f"❌ Недостаточно средств. Ваш баланс: {balance} {get_emoji('money')}")
+            f"Недостаточно средств. Ваш баланс: {balance} {get_emoji('money')}")
 
     user_team_index = _get_user_team_index(tournament, match_type, match_index,
                                            interaction.user.id)
     if user_team_index is not None:
         if (team_name == team_a_name and user_team_index == 1) or (
                 team_name == team_b_name and user_team_index == 0):
-            return replace_emojis("❌ Нельзя ставить против своей команды!")
+            return replace_emojis("Нельзя ставить против своей команды!")
 
     existing_bet = await bet_store.get_user_bet_in_phase(
         guild_id, interaction.user.id, tournament.id, match_type)
     if existing_bet:
-        return replace_emojis("❌ Можно ставить только 1 раз за этап!")
+        return replace_emojis("Можно ставить только 1 раз за этап!")
 
     match_id = f"{tournament.id}_{match_type}_{match_index}"
     odds_data = await bet_store.get_current_odds_db(match_id)
@@ -53,7 +53,7 @@ async def _execute_bet(interaction: discord.Interaction, *, guild_id, tournament
     except Exception as e:
         import logging
         logging.error(f"Error placing bet: {e}", exc_info=True)
-        return replace_emojis(f"❌ Ошибка при создании ставки: {str(e)}")
+        return replace_emojis(f"Ошибка при создании ставки: {str(e)}")
     return None
 
 
@@ -156,28 +156,28 @@ class BetAmountModal(Modal, title="Сумма ставки"):
         try:
             amount = int(self.amount.value)
         except ValueError:
-            await interaction.response.send_message(replace_emojis("❌ Некорректная сумма. Введите число."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Некорректная сумма. Введите число."), ephemeral=True)
             return
 
         if amount <= 0:
-            await interaction.response.send_message(replace_emojis("❌ Сумма должна быть больше 0."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Сумма должна быть больше 0."), ephemeral=True)
             return
 
         balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
         if amount > balance:
-            await interaction.response.send_message(replace_emojis(f"❌ Недостаточно средств. Ваш баланс: {balance} {get_emoji('money')}"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis(f"Недостаточно средств. Ваш баланс: {balance} {get_emoji('money')}"), ephemeral=True)
             return
 
         user_team_index = _get_user_team_index(self.tournament, self.match_type,
                                                self.match_index, interaction.user.id)
         if user_team_index is not None:
             if (self.team_name == self.team_a_name and user_team_index == 1) or (self.team_name == self.team_b_name and user_team_index == 0):
-                await interaction.response.send_message(replace_emojis("❌ Нельзя ставить против своей команды!"), ephemeral=True)
+                await interaction.response.send_message(replace_emojis("Нельзя ставить против своей команды!"), ephemeral=True)
                 return
 
         existing_bet = await bet_store.get_user_bet_in_phase(self.guild_id, interaction.user.id, self.tournament.id, self.match_type)
         if existing_bet:
-            await interaction.response.send_message(replace_emojis("❌ Можно ставить только 1 раз за этап!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Можно ставить только 1 раз за этап!"), ephemeral=True)
             return
 
         match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"

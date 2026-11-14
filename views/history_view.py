@@ -38,7 +38,7 @@ class HistoryView(discord.ui.View):
             self.add_item(prev_button)
         else:
             disabled_button = discord.ui.Button(
-                label="◀",
+                label="Назад",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -50,7 +50,7 @@ class HistoryView(discord.ui.View):
             self.add_item(next_button)
         else:
             disabled_button = discord.ui.Button(
-                label="▶",
+                label="Вперёд",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -63,7 +63,7 @@ class PrevButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="◀"
+            label="Назад"
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -88,7 +88,7 @@ class NextButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="▶"
+            label="Вперёд"
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -181,7 +181,7 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             parts.append("")
             parts.append(" Ещё не играл в турниры")
 
-        title = f" ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f" ИСТОРИЯ МАТЧЕЙ"
+        title = f"ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f" ИСТОРИЯ МАТЧЕЙ"
         embed = discord.Embed(
             title=title,
             description="\n".join(parts),
@@ -217,13 +217,13 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
                 parts.append(f" **Ставка:** {match.bet_amount} {get_emoji('money')} → {match.bet_win} {get_emoji('money')}")
 
             embed = discord.Embed(
-                title=f" ИСТОРИЯ МАТЧЕЙ — Матч #{match_index + 1}",
+                title=f"ИСТОРИЯ МАТЧЕЙ — Матч #{match_index + 1}",
                 description="\n".join(parts),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
         else:
             embed = discord.Embed(
-                title=f" ИСТОРИЯ МАТЧЕЙ",
+                title=f"ИСТОРИЯ МАТЧЕЙ",
                 description="Матч не найден",
                 color=discord.Color.from_rgb(69, 69, 69)
             )

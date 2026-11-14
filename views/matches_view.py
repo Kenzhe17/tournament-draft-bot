@@ -90,7 +90,7 @@ async def _open_admin_stats_match(
         except Exception as e:
             logger.error(f"Error creating AdminConfirmView: {e}", exc_info=True)
             await interaction.response.send_message(
-                replace_emojis(f"❌ Ошибка при создании окна подтверждения: {e}"),
+                replace_emojis(f"Ошибка при создании окна подтверждения: {e}"),
                 ephemeral=True
             )
     else:
@@ -180,7 +180,7 @@ class AdminStatsMatchSelectView(discord.ui.View):
                          select: discord.ui.Select) -> None:
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                replace_emojis("У вас нет прав для использования админ-панели!"),
                 ephemeral=True
             )
             return
@@ -189,7 +189,7 @@ class AdminStatsMatchSelectView(discord.ui.View):
             idx = int(select.values[0])
         except (ValueError, IndexError):
             await interaction.response.send_message(
-                replace_emojis("❌ Некорректный выбор."), ephemeral=True)
+                replace_emojis("Некорректный выбор."), ephemeral=True)
             return
 
         if self.match_type == "qualifier":
@@ -202,7 +202,7 @@ class AdminStatsMatchSelectView(discord.ui.View):
             return
         if idx >= len(matches):
             await interaction.response.send_message(
-                replace_emojis("❌ Матч не найден."), ephemeral=True)
+                replace_emojis("Матч не найден."), ephemeral=True)
             return
 
         await _open_admin_stats_match(
@@ -233,7 +233,7 @@ class AdminStatsMatchButton(discord.ui.Button):
         # Check permissions
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                replace_emojis("У вас нет прав для использования админ-панели!"),
                 ephemeral=True
             )
             return
@@ -307,11 +307,11 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         # на момент нажатия, а не на момент отрисовки кнопки.
         fresh = store.get(self.guild_id, self.channel_id)
         if fresh is None:
-            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Турнир не найден."), ephemeral=True)
             return
         if not can_manage_tournament(interaction.user, interaction.guild, fresh):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав!"),
+                replace_emojis("У вас нет прав!"),
                 ephemeral=True
             )
             return
@@ -320,7 +320,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         # повторно — иначе ELO/история/ставки обработались бы дважды.
         if fresh.phase == TournamentPhase.COMPLETE:
             await interaction.response.send_message(
-                replace_emojis("❌ Результат турнира уже подтверждён."),
+                replace_emojis("Результат турнира уже подтверждён."),
                 ephemeral=True
             )
             return
@@ -342,7 +342,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         if not temp_stats:
             # No stats - require stats to be filled first
             await interaction.response.send_message(
-                replace_emojis("❌ Сначала заполните статистику через 'Заполнить статистику' → выберите матч → заполните данные для обеих команд"),
+                replace_emojis("Сначала заполните статистику через 'Заполнить статистику', выберите матч, заполните данные для обеих команд"),
                 ephemeral=True
             )
             return
@@ -491,7 +491,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         # Confirm winner
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Турнир не найден."), ephemeral=True)
             return
 
         if self.match_type == "qualifier":
@@ -533,13 +533,13 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         try:
-            await interaction.response.edit_message( view=text_card(f"✅ Победитель {self.team_name} подтверждён!")
+            await interaction.response.edit_message( view=text_card(f"Победитель {self.team_name} подтверждён!")
             )
         except (discord.NotFound, discord.InteractionResponded):
             # Interaction expired or already responded, use followup instead
             try:
                 await interaction.followup.send(
-                    f"✅ Победитель {self.team_name} подтверждён!",
+                    f"Победитель {self.team_name} подтверждён!",
                     ephemeral=True
                 )
             except (discord.NotFound, discord.InteractionResponded):
@@ -567,7 +567,7 @@ class CancelWinnerButton(discord.ui.Button):
         from utils.permissions import can_manage_channel_tournament
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав!"),
+                replace_emojis("У вас нет прав!"),
                 ephemeral=True
             )
             return
@@ -583,7 +583,7 @@ class CancelWinnerButton(discord.ui.Button):
         team_b_name = self.tournament.team_names.get(team_b_index, team_b_data.get("captain", f"Team {team_b_index}"))
         
         embed = discord.Embed(
-            title=replace_emojis("📊 Статистика матча"),
+            title="Статистика матча",
             description=f"{team_a_name} vs {team_b_name}",
             color=discord.Color.blue()
         )
@@ -636,7 +636,7 @@ class AdminEditStatsButton(discord.ui.Button):
         # Show team selection for editing
         team_view = AdminStatsTeamSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.match)
         embed = discord.Embed(
-            title=replace_emojis("📊 Выберите команду для редактирования"),
+            title="Выберите команду для редактирования",
             color=discord.Color.gold()
         )
         await interaction.response.edit_message( view=compose(embed, team_view))
@@ -698,7 +698,7 @@ class AdminStatsTeamButton(discord.ui.Button):
                     players.append(player)
 
         if not players:
-            await interaction.response.send_message("❌ Нет игроков в команде.", ephemeral=True)
+            await interaction.response.send_message("Нет игроков в команде.", ephemeral=True)
             return
 
         # Open modal with K/D fields for this team's players
@@ -762,7 +762,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
             if parsed is None:
                 await interaction.followup.send(
                     replace_emojis(
-                        f"⚠️ Некорректный формат K/D у {player_name}! "
+                        f"Некорректный формат K/D у {player_name}! "
                         "Введите два целых неотрицательных числа через `/`. "
                         "Пример: 7/4"
                     ),
@@ -778,7 +778,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
         # Store in tournament temp stats
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+            await interaction.followup.send(replace_emojis("Турнир не найден."), ephemeral=True)
             return
 
         if match_id not in tournament.temp_match_stats:
@@ -801,7 +801,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
 
             # Refresh the view to hide captain buttons for filled teams
             await interaction.followup.send(
-                replace_emojis("✅ Статистика заполнена. Кнопка капитана для этой команды исчезла."),
+                replace_emojis("Статистика заполнена. Кнопка капитана для этой команды исчезла."),
                 ephemeral=True
             )
         except Exception as e:
@@ -851,7 +851,7 @@ class ConfirmWinnerButton(discord.ui.Button):
         # Check permissions
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                replace_emojis("У вас нет прав для использования админ-панели!"),
                 ephemeral=True
             )
             return
@@ -859,28 +859,28 @@ class ConfirmWinnerButton(discord.ui.Button):
         # Finalize winner selection
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Турнир не найден."), ephemeral=True)
             return
 
         # Check if winner already set to prevent duplicate finalization
         if self.match_type == "qualifier":
             if tournament.qualifier_winners[self.match_index] is not None:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Результат этого матча уже зафиксирован."),
+                    replace_emojis("Результат этого матча уже зафиксирован."),
                     ephemeral=True
                 )
                 return
         elif self.match_type == "semifinal":
             if tournament.semifinal_pending_winners[self.match_index] is not None:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Результат этого матча уже зафиксирован."),
+                    replace_emojis("Результат этого матча уже зафиксирован."),
                     ephemeral=True
                 )
                 return
         elif self.match_type == "final":
             if tournament.final_pending_winner is not None:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Результат этого матча уже зафиксирован."),
+                    replace_emojis("Результат этого матча уже зафиксирован."),
                     ephemeral=True
                 )
                 return
@@ -905,7 +905,7 @@ class ConfirmWinnerButton(discord.ui.Button):
             # No stats - require stats to be filled first
             logging.warning("No stats found, blocking winner selection")
             await interaction.response.send_message(
-                replace_emojis("❌ Сначала заполните статистику через 'Заполнить статистику' → выберите матч → заполните данные для обеих команд"),
+                replace_emojis("Сначала заполните статистику через 'Заполнить статистику', выберите матч, заполните данные для обеих команд"),
                 ephemeral=True
             )
             return
@@ -962,7 +962,7 @@ class GenerateMatchesButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут генерировать матчи."),
+                replace_emojis("Только организаторы (роль 'org') могут генерировать матчи."),
                 ephemeral=True
             )
             return
@@ -972,7 +972,7 @@ class GenerateMatchesButton(discord.ui.Button):
         try:
             tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
-                await interaction.edit_original_response( view=text_card(replace_emojis("❌ Турнир не найден.")),
+                await interaction.edit_original_response( view=text_card(replace_emojis("Турнир не найден.")),
                 )
                 return
 
@@ -988,7 +988,7 @@ class GenerateMatchesButton(discord.ui.Button):
                 store.set(tournament)
 
             if tournament.phase != TournamentPhase.TEAMS:
-                await interaction.edit_original_response( view=text_card(replace_emojis(f"❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}")),
+                await interaction.edit_original_response( view=text_card(replace_emojis(f"Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}")),
                 )
                 return
 
@@ -1058,7 +1058,7 @@ class GenerateMatchesButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
         except Exception as e:
             logger.error(f"Error generating matches: {e}", exc_info=True)
-            await interaction.edit_original_response( view=text_card(replace_emojis(f"❌ Ошибка при генерации матчей: {str(e)}"))
+            await interaction.edit_original_response( view=text_card(replace_emojis(f"Ошибка при генерации матчей: {str(e)}"))
             )
 
 
@@ -1078,7 +1078,7 @@ class TeamNameButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         # Team name changes disabled
         await interaction.response.send_message(
-            replace_emojis("❌ Изменение названия команд отключено."),
+            replace_emojis("Изменение названия команд отключено."),
             ephemeral=True
         )
         return
@@ -1105,7 +1105,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
         name = self.name_input.value.strip()
         if not name:
             await interaction.followup.send(
-                replace_emojis("❌ Название не может быть пустым."),
+                replace_emojis("Название не может быть пустым."),
                 ephemeral=True
             )
             return
@@ -1115,7 +1115,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
             # Check if this team can still edit their name
             if not tournament.is_team_name_editable(self.team_index):
                 await interaction.followup.send(
-                    replace_emojis("❌ Ваша команда уже изменила название. Можно изменить только один раз."),
+                    replace_emojis("Ваша команда уже изменила название. Можно изменить только один раз."),
                     ephemeral=True
                 )
                 return
@@ -1128,7 +1128,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
             await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.followup.send(
-            replace_emojis("✅ Название команды изменено."),
+            replace_emojis("Название команды изменено."),
             ephemeral=True
         )
 
@@ -1285,7 +1285,7 @@ class MatchWinnerSelectView(discord.ui.View):
                          select: discord.ui.Select) -> None:
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                replace_emojis("У вас нет прав для использования админ-панели!"),
                 ephemeral=True
             )
             return
@@ -1294,13 +1294,13 @@ class MatchWinnerSelectView(discord.ui.View):
             idx = int(select.values[0])
         except (ValueError, IndexError):
             await interaction.response.send_message(
-                replace_emojis("❌ Некорректный выбор."), ephemeral=True)
+                replace_emojis("Некорректный выбор."), ephemeral=True)
             return
 
         match = _match_for_type(self.tournament, self.match_type, idx)
         if match is None:
             await interaction.response.send_message(
-                replace_emojis("❌ Матч не найден."), ephemeral=True)
+                replace_emojis("Матч не найден."), ephemeral=True)
             return
 
         await _open_match_result_card(
@@ -1328,7 +1328,7 @@ class MatchButton(discord.ui.Button):
 
         match = _match_for_type(self.tournament, self.match_type, self.match_index)
         if match is None:
-            await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Неверный тип матча."), ephemeral=True)
             return
 
         await _open_match_result_card(
@@ -1385,7 +1385,7 @@ class TeamWinnerButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                replace_emojis("У вас нет прав для использования админ-панели!"),
                 ephemeral=True
             )
             return
@@ -1396,7 +1396,7 @@ class TeamWinnerButton(discord.ui.Button):
         )
 
         embed = discord.Embed(
-            title="⚠️ Подтвердите выбор победителя",
+            title="Подтвердите выбор победителя",
             description=f"Вы действительно хотите объявить **{self.team_name}** победителем в Игра #{self.match_index + 1}?\n*Это действие подведёт итоги ставок и откроет доступ к статистике.*",
             color=discord.Color.orange()
         )
@@ -1435,7 +1435,7 @@ class AdminPanelSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                replace_emojis("У вас нет прав для использования админ-панели!"),
                 ephemeral=True,
             )
             return

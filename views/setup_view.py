@@ -109,7 +109,7 @@ class PlayerSelectView(discord.ui.View):
         if self.total_pages > 1:
             # Previous button
             prev_btn = discord.ui.Button(
-                label="◀",
+                label="Назад",
                 style=discord.ButtonStyle.primary,
                 disabled=self.page == 1,
                 custom_id=f"player_prev:{self.action}:{self.guild_id}:{self.channel_id}:{self.page}"
@@ -119,7 +119,7 @@ class PlayerSelectView(discord.ui.View):
 
             # Next button
             next_btn = discord.ui.Button(
-                label="▶",
+                label="Вперёд",
                 style=discord.ButtonStyle.primary,
                 disabled=self.page == self.total_pages,
                 custom_id=f"player_next:{self.action}:{self.guild_id}:{self.channel_id}:{self.page}"
@@ -162,7 +162,7 @@ class CircleSelectButton(discord.ui.Button):
             tournament = store.get(self.guild_id, self.channel_id)
             if not tournament or tournament.phase != TournamentPhase.SETUP:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis("Турнир не в фазе настройки."),
                     ephemeral=True
                 )
                 return
@@ -182,7 +182,7 @@ class CircleSelectButton(discord.ui.Button):
             if tournament.registration == RegistrationState.ISOLATED:
                 # Isolated mode - nobody can join
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Турнир изолирован, подождите пока Админ отменить действие.",
+                    f"Турнир изолирован, подождите пока Админ отменить действие.",
                     ephemeral=True
                 )
                 return
@@ -190,7 +190,7 @@ class CircleSelectButton(discord.ui.Button):
                 # Allow users with guild tag to join if circle has space
                 if not has_guild_tag(interaction.user):
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Регистрация закрыта. Участники с тегом r!z3 могут входить в круги со свободными местами.",
+                        f"Регистрация закрыта. Участники с тегом r!z3 могут входить в круги со свободными местами.",
                         ephemeral=True
                     )
                     return
@@ -201,7 +201,7 @@ class CircleSelectButton(discord.ui.Button):
                     limit = tournament.circle_limit(self.circle)
                     if len(circle_list) >= limit:
                         await interaction.response.send_message(
-                            f"{replace_emojis('❌')} Этот круг заполнен. Участники с тегом r!z3 могут входить только в круги со свободными местами.",
+                            f"Этот круг заполнен. Участники с тегом r!z3 могут входить только в круги со свободными местами.",
                             ephemeral=True
                         )
                         return
@@ -212,7 +212,7 @@ class CircleSelectButton(discord.ui.Button):
                 limit = tournament.circle_limit(self.circle)
                 if len(circle_list) >= limit:
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Круг {self.circle} уже заполнен (максимум {limit} игрока).",
+                        f"Круг {self.circle} уже заполнен (максимум {limit} игрока).",
                         ephemeral=True
                     )
                     return
@@ -243,7 +243,7 @@ class CircleSelectButton(discord.ui.Button):
                     if user_name in getattr(tournament, f"circle{circle}"):
                         if circle == self.circle:
                             await interaction.response.send_message(
-                                replace_emojis("❌ Вы уже находитесь в этом круге."),
+                                replace_emojis("Вы уже находитесь в этом круге."),
                                 ephemeral=True
                             )
                             return
@@ -256,7 +256,7 @@ class CircleSelectButton(discord.ui.Button):
             success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id, store)
             if not success:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Вы уже участвуете в другом активном турнире."),
+                    replace_emojis("Вы уже участвуете в другом активном турнире."),
                     ephemeral=True
                 )
                 return
@@ -266,12 +266,12 @@ class CircleSelectButton(discord.ui.Button):
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
 
-            message = f"{replace_emojis('✅')} Вы перемещены в {circle_names[self.circle]}!" if was_moved else f"{replace_emojis('✅')} Вы добавлены в {circle_names[self.circle]}!"
+            message = f"Вы перемещены в {circle_names[self.circle]}!" if was_moved else f"Вы добавлены в {circle_names[self.circle]}!"
 
             await safe_send_message(interaction, message, ephemeral=True)
         except Exception as e:
             logger.error(f"Error in CircleSelectButton callback: {e}", exc_info=True)
-            await safe_send_message(interaction, replace_emojis("❌ Произошла ошибка при добавлении игрока."), ephemeral=True)
+            await safe_send_message(interaction, replace_emojis("Произошла ошибка при добавлении игрока."), ephemeral=True)
 
 
 class JoinPoolButton(discord.ui.Button):
@@ -294,7 +294,7 @@ class JoinPoolButton(discord.ui.Button):
             tournament = store.get(self.guild_id, self.channel_id)
             if not tournament or tournament.phase != TournamentPhase.SETUP:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis("Турнир не в фазе настройки."),
                     ephemeral=True
                 )
                 return
@@ -314,7 +314,7 @@ class JoinPoolButton(discord.ui.Button):
             if tournament.registration == RegistrationState.ISOLATED:
                 # Isolated mode - nobody can join
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Турнир изолирован, подождите пока Админ отменить действие.",
+                    f"Турнир изолирован, подождите пока Админ отменить действие.",
                     ephemeral=True
                 )
                 return
@@ -322,7 +322,7 @@ class JoinPoolButton(discord.ui.Button):
                 # Allow users with guild tag to join if pool has space
                 if not has_guild_tag(interaction.user):
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Регистрация закрыта. Участники с тегом r!z3 могут входить если есть свободные места.",
+                        f"Регистрация закрыта. Участники с тегом r!z3 могут входить если есть свободные места.",
                         ephemeral=True
                     )
                     return
@@ -330,7 +330,7 @@ class JoinPoolButton(discord.ui.Button):
             # Check if pool is full
             if len(tournament.players_pool) >= int(tournament.size.value):
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Турнир заполнен (максимум {tournament.size.value} игрока).",
+                    f"Турнир заполнен (максимум {tournament.size.value} игрока).",
                     ephemeral=True
                 )
                 return
@@ -356,7 +356,7 @@ class JoinPoolButton(discord.ui.Button):
             # Check if user already in pool
             if user_name in tournament.players_pool:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Вы уже участвуете в турнире."),
+                    replace_emojis("Вы уже участвуете в турнире."),
                     ephemeral=True
                 )
                 return
@@ -367,7 +367,7 @@ class JoinPoolButton(discord.ui.Button):
                 if other_tournament.id != tournament.id:
                     if other_tournament.is_player_active(interaction.user.id):
                         await interaction.response.send_message(
-                            replace_emojis("❌ Вы уже участвуете в другом активном турнире."),
+                            replace_emojis("Вы уже участвуете в другом активном турнире."),
                             ephemeral=True
                         )
                         return
@@ -386,10 +386,10 @@ class JoinPoolButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
 
             # Send response
-            await safe_send_message(interaction, replace_emojis("✅ Вы добавлены в турнир!"), ephemeral=True)
+            await safe_send_message(interaction, replace_emojis("Вы добавлены в турнир!"), ephemeral=True)
         except Exception as e:
             logger.error(f"Error in JoinPoolButton callback: {e}", exc_info=True)
-            await safe_send_message(interaction, replace_emojis("❌ Произошла ошибка при добавлении игрока."), ephemeral=True)
+            await safe_send_message(interaction, replace_emojis("Произошла ошибка при добавлении игрока."), ephemeral=True)
 
 
 circle_names = {
@@ -570,7 +570,7 @@ class AdminAddUserView(discord.ui.View):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis(
-                    "❌ Только организаторы (роль 'org') могут "
+                    "Только организаторы (роль 'org') могут "
                     "добавлять игроков."
                 ),
                 ephemeral=True,
@@ -580,7 +580,7 @@ class AdminAddUserView(discord.ui.View):
         tournament = self._tournament()
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
+                replace_emojis("Турнир не в фазе настройки."),
                 ephemeral=True,
             )
             return
@@ -589,7 +589,7 @@ class AdminAddUserView(discord.ui.View):
             user_id = int(select.values[0])
         except (TypeError, ValueError, IndexError):
             await interaction.response.send_message(
-                replace_emojis("❌ Некорректный выбор пользователя."),
+                replace_emojis("Некорректный выбор пользователя."),
                 ephemeral=True,
             )
             return
@@ -683,7 +683,7 @@ class _AdminAddConfirmView(discord.ui.View):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis(
-                    "❌ Только организаторы (роль 'org') могут "
+                    "Только организаторы (роль 'org') могут "
                     "добавлять игроков."
                 ),
                 ephemeral=True,
@@ -694,7 +694,7 @@ class _AdminAddConfirmView(discord.ui.View):
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.edit_message(
                 view=compose(
-                    text=replace_emojis("❌ Турнир не в фазе настройки.")
+                    text=replace_emojis("Турнир не в фазе настройки.")
                 )
             )
             return
@@ -739,7 +739,7 @@ class _AdminAddConfirmView(discord.ui.View):
                 await interaction.response.edit_message(
                     view=compose(
                         text=replace_emojis(
-                            "❌ Этот пользователь уже участвует "
+                            "Этот пользователь уже участвует "
                             "в другом активном турнире."
                         )
                     )
@@ -754,7 +754,7 @@ class _AdminAddConfirmView(discord.ui.View):
             await interaction.response.edit_message(
                 view=compose(
                     text=(
-                        f"❌ {circle_names[self.circle]} уже "
+                        f"{circle_names[self.circle]} уже "
                         f"заполнен (максимум {limit})."
                     )
                 )
@@ -771,7 +771,7 @@ class _AdminAddConfirmView(discord.ui.View):
             await interaction.response.edit_message(
                 view=compose(
                     text=replace_emojis(
-                        "❌ Не удалось добавить игрока. Возможно, "
+                        "Не удалось добавить игрока. Возможно, "
                         "он уже участвует в другом активном турнире."
                     )
                 )
@@ -786,7 +786,7 @@ class _AdminAddConfirmView(discord.ui.View):
         await interaction.response.edit_message(
             view=compose(
                 text=(
-                    f"✅ **{player_name}** добавлен в "
+                    f"**{player_name}** добавлен в "
                     f"{circle_names[self.circle]}."
                 )
             )
@@ -838,7 +838,7 @@ class _AdminMoveConfirmView(discord.ui.View):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis(
-                    "❌ Только организаторы (роль 'org') могут "
+                    "Только организаторы (роль 'org') могут "
                     "перемещать игроков."
                 ),
                 ephemeral=True,
@@ -849,7 +849,7 @@ class _AdminMoveConfirmView(discord.ui.View):
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.edit_message(
                 view=compose(
-                    text=replace_emojis("❌ Турнир не в фазе настройки.")
+                    text=replace_emojis("Турнир не в фазе настройки.")
                 )
             )
             return
@@ -861,7 +861,7 @@ class _AdminMoveConfirmView(discord.ui.View):
             await interaction.response.edit_message(
                 view=compose(
                     text=replace_emojis(
-                        "❌ Игрок больше не найден в турнире."
+                        "Игрок больше не найден в турнире."
                     )
                 )
             )
@@ -884,7 +884,7 @@ class _AdminMoveConfirmView(discord.ui.View):
             await interaction.response.edit_message(
                 view=compose(
                     text=(
-                        f"❌ {circle_names[self.target_circle]} "
+                        f"{circle_names[self.target_circle]} "
                         f"уже заполнен (максимум {limit})."
                     )
                 )
@@ -912,8 +912,8 @@ class _AdminMoveConfirmView(discord.ui.View):
         await interaction.response.edit_message(
             view=compose(
                 text=(
-                    f"✅ **{player_name}** перемещён: "
-                    f"{circle_names[location]} → "
+                    f"**{player_name}** перемещён: "
+                    f"{circle_names[location]} "
                     f"{circle_names[self.target_circle]}."
                 )
             )
@@ -940,7 +940,7 @@ class ExitButton(discord.ui.Button):
         if not tournament:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."),
+                    replace_emojis("Турнир не найден."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -950,7 +950,7 @@ class ExitButton(discord.ui.Button):
         if tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis("Турнир не в фазе настройки."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -971,7 +971,7 @@ class ExitButton(discord.ui.Button):
             if user_name not in tournament.players_pool:
                 try:
                     await interaction.response.send_message(
-                        replace_emojis("❌ Вы не участвуете в турнире."),
+                        replace_emojis("Вы не участвуете в турнире."),
                         ephemeral=True
                     )
                 except discord.NotFound:
@@ -988,7 +988,7 @@ class ExitButton(discord.ui.Button):
             if user_name not in tournament.all_players:
                 try:
                     await interaction.response.send_message(
-                        replace_emojis("❌ Вы не участвуете в турнире."),
+                        replace_emojis("Вы не участвуете в турнире."),
                         ephemeral=True
                     )
                 except discord.NotFound:
@@ -1000,7 +1000,7 @@ class ExitButton(discord.ui.Button):
             if not success:
                 try:
                     await interaction.response.send_message(
-                        replace_emojis("❌ Не удалось удалить игрока."),
+                        replace_emojis("Не удалось удалить игрока."),
                         ephemeral=True
                     )
                 except discord.NotFound:
@@ -1016,7 +1016,7 @@ class ExitButton(discord.ui.Button):
 
         try:
             await interaction.response.send_message(
-                replace_emojis("✅ Вы вышли из турнира."),
+                replace_emojis("Вы вышли из турнира."),
                 ephemeral=True
             )
         except discord.NotFound:
@@ -1041,7 +1041,7 @@ class DeletePlayerButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут удалять игроков."),
+                    replace_emojis("Только организаторы (роль 'org') могут удалять игроков."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1052,7 +1052,7 @@ class DeletePlayerButton(discord.ui.Button):
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis("Турнир не в фазе настройки."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1073,7 +1073,7 @@ class DeletePlayerButton(discord.ui.Button):
         if not players:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Нет зарегистрированных игроков."),
+                    replace_emojis("Нет зарегистрированных игроков."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1095,7 +1095,7 @@ class DeletePlayerButton(discord.ui.Button):
             if not tournament:
                 try:
                     await interaction.followup.send(
-                        replace_emojis("❌ Турнир не найден."),
+                        replace_emojis("Турнир не найден."),
                         ephemeral=True
                     )
                 except discord.NotFound:
@@ -1106,7 +1106,7 @@ class DeletePlayerButton(discord.ui.Button):
             if player_name is None:
                 try:
                     await interaction.followup.send(
-                        replace_emojis("❌ Игрок не найден."),
+                        replace_emojis("Игрок не найден."),
                         ephemeral=True
                     )
                 except discord.NotFound:
@@ -1117,7 +1117,7 @@ class DeletePlayerButton(discord.ui.Button):
                 if player_name not in tournament.players_pool:
                     try:
                         await interaction.followup.send(
-                            f"{replace_emojis('❌')} Игрок `{player_name}` не найден.",
+                            f"Игрок `{player_name}` не найден.",
                             ephemeral=True
                         )
                     except discord.NotFound:
@@ -1130,7 +1130,7 @@ class DeletePlayerButton(discord.ui.Button):
                 if not tournament.remove_player(player_name):
                     try:
                         await interaction.followup.send(
-                            f"{replace_emojis('❌')} Игрок `{player_name}` не найден.",
+                            f"Игрок `{player_name}` не найден.",
                             ephemeral=True
                         )
                     except discord.NotFound:
@@ -1170,7 +1170,7 @@ class SwapPlayersButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут менять местами игроков."),
+                    replace_emojis("Только организаторы (роль 'org') могут менять местами игроков."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1181,7 +1181,7 @@ class SwapPlayersButton(discord.ui.Button):
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis("Турнир не в фазе настройки."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1202,7 +1202,7 @@ class SwapPlayersButton(discord.ui.Button):
         if not players:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Нет зарегистрированных игроков."),
+                    replace_emojis("Нет зарегистрированных игроков."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1227,7 +1227,7 @@ class SwapPlayersButton(discord.ui.Button):
                 tournament = store.get(self.guild_id, self.channel_id)
                 if not tournament:
                     await interaction.followup.send(
-                        replace_emojis("❌ Турнир не найден."),
+                        replace_emojis("Турнир не найден."),
                         ephemeral=True
                     )
                     return
@@ -1237,7 +1237,7 @@ class SwapPlayersButton(discord.ui.Button):
                 second_player = _resolve_player_token(tournament, token2)
                 if not first_player or not second_player:
                     await interaction.followup.send(
-                        replace_emojis("❌ Не удалось найти позиции обоих игроков."),
+                        replace_emojis("Не удалось найти позиции обоих игроков."),
                         ephemeral=True
                     )
                     return
@@ -1255,7 +1255,7 @@ class SwapPlayersButton(discord.ui.Button):
 
                 if not pos1 or not pos2:
                     await interaction.followup.send(
-                        replace_emojis("❌ Не удалось найти позиции обоих игроков."),
+                        replace_emojis("Не удалось найти позиции обоих игроков."),
                         ephemeral=True
                     )
                     return
@@ -1313,7 +1313,7 @@ class MovePlayerButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут перемещать игроков."),
+                    replace_emojis("Только организаторы (роль 'org') могут перемещать игроков."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1324,7 +1324,7 @@ class MovePlayerButton(discord.ui.Button):
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis("Турнир не в фазе настройки."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1345,7 +1345,7 @@ class MovePlayerButton(discord.ui.Button):
         if not players:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Нет зарегистрированных игроков."),
+                    replace_emojis("Нет зарегистрированных игроков."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1362,7 +1362,7 @@ class MovePlayerButton(discord.ui.Button):
             if selected_player is None:
                 try:
                     await interaction.response.send_message(
-                        replace_emojis("❌ Игрок не найден."),
+                        replace_emojis("Игрок не найден."),
                         ephemeral=True
                     )
                 except discord.NotFound:
@@ -1395,7 +1395,7 @@ class MovePlayerButton(discord.ui.Button):
                 tournament = store.get(self.guild_id, self.channel_id)
                 if not tournament:
                     await interaction.followup.send(
-                        replace_emojis("❌ Турнир не найден."),
+                        replace_emojis("Турнир не найден."),
                         ephemeral=True
                     )
                     return
@@ -1464,7 +1464,7 @@ class AdminAddButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут добавлять игроков."),
+                    replace_emojis("Только организаторы (роль 'org') могут добавлять игроков."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1475,7 +1475,7 @@ class AdminAddButton(discord.ui.Button):
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis("Турнир не в фазе настройки."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1516,7 +1516,7 @@ class AutoDistributeButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
+                    replace_emojis("Только организаторы (роль 'org') могут распределять игроков."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1527,7 +1527,7 @@ class AutoDistributeButton(discord.ui.Button):
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis("Турнир не в фазе настройки."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1537,7 +1537,7 @@ class AutoDistributeButton(discord.ui.Button):
         if tournament.formation_mode != FormationMode.ELO:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир создан не в режиме ELO. Используйте /tournament create с параметром formation=elo."),
+                    replace_emojis("Турнир создан не в режиме ELO. Используйте /tournament create с параметром formation=elo."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1550,7 +1550,7 @@ class AutoDistributeButton(discord.ui.Button):
         if total_players < required_players:
             try:
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
+                    f"Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1566,7 +1566,7 @@ class AutoDistributeButton(discord.ui.Button):
 
         try:
             await interaction.response.send_message(
-                replace_emojis("✅ Игроки распределены по кругам на основе ELO!"),
+                replace_emojis("Игроки распределены по кругам на основе ELO!"),
                 ephemeral=True
             )
         except discord.NotFound:
@@ -1590,7 +1590,7 @@ class AutoDistributeAvgButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
+                    replace_emojis("Только организаторы (роль 'org') могут распределять игроков."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1601,7 +1601,7 @@ class AutoDistributeAvgButton(discord.ui.Button):
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis("Турнир не в фазе настройки."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1611,7 +1611,7 @@ class AutoDistributeAvgButton(discord.ui.Button):
         if tournament.formation_mode != FormationMode.SKILL:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир создан не в режиме Skill. Используйте /tournament create с параметром formation=skill."),
+                    replace_emojis("Турнир создан не в режиме Skill. Используйте /tournament create с параметром formation=skill."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1625,7 +1625,7 @@ class AutoDistributeAvgButton(discord.ui.Button):
         if total_players < required_players:
             try:
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
+                    f"Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1641,7 +1641,7 @@ class AutoDistributeAvgButton(discord.ui.Button):
 
         try:
             await interaction.response.send_message(
-                replace_emojis("✅ Игроки распределены по кругам на основе Skill Rating!"),
+                replace_emojis("Игроки распределены по кругам на основе Skill Rating!"),
                 ephemeral=True
             )
         except discord.NotFound:
@@ -1665,7 +1665,7 @@ class StartTournamentButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут запускать турнир."),
+                    replace_emojis("Только организаторы (роль 'org') могут запускать турнир."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1676,7 +1676,7 @@ class StartTournamentButton(discord.ui.Button):
         if not tournament:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
+                    replace_emojis("Сначала создайте турнир командой `/tournament`."),
                     ephemeral=True,
                 )
             except discord.NotFound:
@@ -1686,7 +1686,7 @@ class StartTournamentButton(discord.ui.Button):
         if tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Турнир не в фазе настройки. Текущая фаза: {tournament.phase.value}",
+                    f"Турнир не в фазе настройки. Текущая фаза: {tournament.phase.value}",
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1710,7 +1710,7 @@ class StartTournamentButton(discord.ui.Button):
             if removed_names:
                 store.set(tournament)
                 await interaction.response.send_message(
-                    f"{replace_emojis('⚠️')} Перед стартом исключены игроки с активным VAC: "
+                    f"Перед стартом исключены игроки с активным VAC: "
                     + ", ".join(removed_names)
                     + ". Нажмите «Старт» ещё раз.",
                     ephemeral=True,
@@ -1727,7 +1727,7 @@ class StartTournamentButton(discord.ui.Button):
             if current_players < required_players:
                 try:
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Недостаточно игроков. Нужно {required_players}, есть {current_players}.",
+                        f"Недостаточно игроков. Нужно {required_players}, есть {current_players}.",
                         ephemeral=True
                     )
                 except discord.NotFound:
@@ -1739,7 +1739,7 @@ class StartTournamentButton(discord.ui.Button):
                 captain_count = tournament.captain_count
                 try:
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитан, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4.",
+                        f"Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитан, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4.",
                         ephemeral=True
                     )
                 except discord.NotFound:
@@ -1750,15 +1750,24 @@ class StartTournamentButton(discord.ui.Button):
         # Kazakhstan. Сразу формируем команды и запускаем турнир.
         await launch_tournament_formation(
             interaction.guild, interaction.channel, tournament,
-            interaction.client,
+            interaction.client, interaction=interaction,
         )
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
+        launch_text = (
+            "Турнир запущен! Команды сбалансированы по Skill Rating."
+            if tournament.formation_mode == FormationMode.BALANCED_SR
+            else (
+                "Турнир запущен! Игроки распределены случайно."
+                if tournament.formation_mode == FormationMode.RANDOM
+                else "Турнир запущен!"
+            )
+        )
         try:
             await interaction.response.send_message(
-                replace_emojis("✅ Турнир запущен!"),
+                replace_emojis(launch_text),
                 ephemeral=True,
             )
         except discord.NotFound:
@@ -1770,6 +1779,7 @@ async def launch_tournament_formation(
     channel: discord.TextChannel,
     tournament: "Tournament",
     bot: "TournamentBot",
+    interaction: discord.Interaction | None = None,
 ) -> None:
     """Сформировать команды и запустить турнир после голосования.
 
@@ -1839,17 +1849,8 @@ async def launch_tournament_formation(
         if bot is not None:
             await bot.update_tournament_message(guild, tournament)
 
-        try:
-            if tournament.formation_mode == FormationMode.BALANCED_SR:
-                await channel.send(
-                    replace_emojis("⚖️ Турнир запущен! Команды сбалансированы по Skill Rating.")
-                )
-            else:
-                await channel.send(
-                    replace_emojis("🎲 Турнир запущен! Игроки распределены случайно.")
-                )
-        except Exception:
-            pass
+        # Публичных сообщений в канал нет — статус виден
+        # в обновлённой карточке турнира.
     else:
         # ELO/SKILL modes: shuffle circles and start draft
         tournament.shuffle_circles()
@@ -1891,7 +1892,7 @@ class ToggleRegistrationButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут менять регистрацию."),
+                    replace_emojis("Только организаторы (роль 'org') могут менять регистрацию."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1902,7 +1903,7 @@ class ToggleRegistrationButton(discord.ui.Button):
         if not tournament:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Нет активного турнира."),
+                    replace_emojis("Нет активного турнира."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1946,7 +1947,7 @@ class ToggleIsolationButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут менять изоляцию."),
+                    replace_emojis("Только организаторы (роль 'org') могут менять изоляцию."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1957,7 +1958,7 @@ class ToggleIsolationButton(discord.ui.Button):
         if not tournament:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Нет активного турнира."),
+                    replace_emojis("Нет активного турнира."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -2042,7 +2043,7 @@ class OrgMenuButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    "❌ Только владелец бота или организатор могут открывать орг меню.",
+                    "Только владелец бота или организатор могут открывать орг меню.",
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -2053,7 +2054,7 @@ class OrgMenuButton(discord.ui.Button):
         if not tournament:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Нет активного турнира."),
+                    replace_emojis("Нет активного турнира."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -2117,7 +2118,7 @@ class OrgBackButton(discord.ui.Button):
         if not tournament:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Нет активного турнира."),
+                    replace_emojis("Нет активного турнира."),
                     ephemeral=True)
             except discord.NotFound:
                 pass
@@ -2238,7 +2239,7 @@ class OrgActionSelect(discord.ui.Select):
         if not tournament:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Нет активного турнира."),
+                    replace_emojis("Нет активного турнира."),
                     ephemeral=True)
             except discord.NotFound:
                 pass
@@ -2251,7 +2252,7 @@ class OrgActionSelect(discord.ui.Select):
         ):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ У вас нет прав управлять этим турниром."),
+                    replace_emojis("У вас нет прав управлять этим турниром."),
                     ephemeral=True)
             except discord.NotFound:
                 pass
@@ -2270,7 +2271,7 @@ class OrgActionSelect(discord.ui.Select):
         if panel_cls is None:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Действие недоступно в текущем режиме."),
+                    replace_emojis("Действие недоступно в текущем режиме."),
                     ephemeral=True)
             except discord.NotFound:
                 pass
@@ -2330,7 +2331,7 @@ class NotifyButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    "❌ Только владелец бота или организатор могут отправлять уведомления.",
+                    "Только владелец бота или организатор могут отправлять уведомления.",
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -2342,7 +2343,7 @@ class NotifyButton(discord.ui.Button):
         if not tournament:
             try:
                 await interaction.response.send_message(
-                    "❌ Турнир не найден.",
+                    "Турнир не найден.",
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -2358,7 +2359,7 @@ class NotifyButton(discord.ui.Button):
             next_allowed = int((created_at + timedelta(minutes=1)).timestamp())
             try:
                 await interaction.response.send_message(
-                    f"⏱️ Подождите <t:{next_allowed}:R> после создания турнира перед отправкой уведомления.",
+                    f"Подождите <t:{next_allowed}:R> после создания турнира перед отправкой уведомления.",
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -2371,7 +2372,7 @@ class NotifyButton(discord.ui.Button):
             next_allowed = int((last_use + timedelta(minutes=1)).timestamp())
             try:
                 await interaction.response.send_message(
-                    f"⏱️ Подождите <t:{next_allowed}:R> перед повторным уведомлением.",
+                    f"Подождите <t:{next_allowed}:R> перед повторным уведомлением.",
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -2383,7 +2384,7 @@ class NotifyButton(discord.ui.Button):
         if not channel:
             try:
                 await interaction.response.send_message(
-                    "❌ Канал для уведомлений не найден.",
+                    "Канал для уведомлений не найден.",
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -2407,7 +2408,7 @@ class NotifyButton(discord.ui.Button):
         missing = total_needed - total_players
 
         description = f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
-        description += f"**Регистрация** {replace_emojis("➡️")} <#{tournament.channel_id}>\n"
+        description += f"**Регистрация** <#{tournament.channel_id}>\n"
         description += f"**Зарегистрировано:** {total_players}/{total_needed}\n"
 
         if missing > 0:
@@ -2444,7 +2445,7 @@ class NotifyButton(discord.ui.Button):
         try:
             await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
             await interaction.response.send_message(
-                "✅ Уведомление отправлено.",
+                "Уведомление отправлено.",
                 ephemeral=True
             )
         except discord.NotFound:
@@ -2471,7 +2472,7 @@ class LimitButton(discord.ui.Button):
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут менять лимиты."),
+                    replace_emojis("Только организаторы (роль 'org') могут менять лимиты."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -2482,7 +2483,7 @@ class LimitButton(discord.ui.Button):
         if not tournament:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Нет активного турнира."),
+                    replace_emojis("Нет активного турнира."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -2532,7 +2533,7 @@ class LimitToggleButton(discord.ui.Button):
         if not tournament:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Нет активного турнира."),
+                    replace_emojis("Нет активного турнира."),
                     ephemeral=True
                 )
             except discord.NotFound:

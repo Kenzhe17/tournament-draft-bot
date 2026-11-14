@@ -21,7 +21,7 @@ class DiceBetModal(Modal, title="Введите ставку"):
             bet = int(self.bet.value)
             if bet < 10:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Минимальная ставка: 10 монет"),
+                    replace_emojis("Минимальная ставка: 10 монет"),
                 ephemeral=True,
                 )
                 return
@@ -32,7 +32,7 @@ class DiceBetModal(Modal, title="Введите ставку"):
 
             if not session:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Недостаточно монет"),
+                    replace_emojis("Недостаточно монет"),
                 ephemeral=True,
                 )
                 return
@@ -47,7 +47,7 @@ class DiceBetModal(Modal, title="Введите ставку"):
 
         except ValueError:
             await interaction.response.send_message(
-                replace_emojis("❌ Введите корректное число"),
+                replace_emojis("Введите корректное число"),
                 ephemeral=True,
             )
 

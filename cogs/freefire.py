@@ -49,7 +49,7 @@ def _check_uid(uid: str) -> bool:
 
 def _error_embed(exc: FreeFireError) -> discord.Embed:
     return discord.Embed(
-        title=replace_emojis(f"{get_emoji('error')} FREE FIRE | Ошибка"),
+        title=replace_emojis(f"FREE FIRE | Ошибка"),
         description=str(exc),
         color=discord.Color.red(),
     )
@@ -57,7 +57,7 @@ def _error_embed(exc: FreeFireError) -> discord.Embed:
 
 def _no_key_embed() -> discord.Embed:
     return discord.Embed(
-        title=replace_emojis(f"{get_emoji('warning')} FREE FIRE | API не настроен"),
+        title=replace_emojis(f"FREE FIRE | API не настроен"),
         description=(
             "Ключ Free Fire API не задан.\n"
             "Установите переменную `FREEFIRE_API_KEY`."
@@ -125,7 +125,7 @@ async def ff_info(
         if remaining > 0:
             ready_at = int(time.time()) + remaining
             await interaction.response.send_message(
-                f"⏳ `/ff info` доступна через <t:{ready_at}:R>.",
+                f"`/ff info` доступна через <t:{ready_at}:R>.",
                 ephemeral=True,
             )
             return
@@ -165,7 +165,7 @@ async def ff_stats(
         if remaining > 0:
             ready_at = int(time.time()) + remaining
             await interaction.response.send_message(
-                f"⏳ `/ff stats` доступна через <t:{ready_at}:R>.",
+                f"`/ff stats` доступна через <t:{ready_at}:R>.",
                 ephemeral=True,
             )
             return

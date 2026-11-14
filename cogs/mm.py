@@ -164,7 +164,7 @@ class MMCog(commands.Cog):
                 cid = int(str(channel_id).strip())
         if str(channel_id).strip() and not cid:
             await interaction.response.send_message(
-                "❌ Не удалось распознать ID канала — введите число.",
+                "Не удалось распознать ID канала — введите число.",
                 ephemeral=True,
             )
             return
@@ -177,7 +177,7 @@ class MMCog(commands.Cog):
                 targets = [s for s in slots if s["channel_id"] == cid]
                 if not targets:
                     await interaction.followup.send(
-                        f"❌ Канал `{cid}` не найден в пуле.",
+                        f"Канал `{cid}` не найден в пуле.",
                         ephemeral=True,
                     )
                     return
@@ -185,7 +185,7 @@ class MMCog(commands.Cog):
                 targets = [s for s in slots if s["state"] != "free"]
                 if not targets:
                     await interaction.followup.send(
-                        "✅ Все каналы пула свободны.", ephemeral=True,
+                        "Все каналы пула свободны.", ephemeral=True,
                     )
                     return
 
@@ -216,7 +216,7 @@ class MMCog(commands.Cog):
                              ).get("state", "?")
                 lines.append(
                     f"`{cid}`: {old['state']} (owner `{old['owner']}`) "
-                    f"→ `{state_now}`"
+                    f"`{state_now}`"
                 )
             await interaction.followup.send(
                 "**Принудительное освобождение каналов**\n"
@@ -227,7 +227,7 @@ class MMCog(commands.Cog):
         except Exception as exc:
             logger.error("mm freechannel failed: %s", exc, exc_info=True)
             await interaction.followup.send(
-                f"❌ Ошибка: {exc}", ephemeral=True,
+                f"Ошибка: {exc}", ephemeral=True,
             )
 
     @mm_group.command(name="delete", description="Удалить все поиски на сервере")
@@ -254,7 +254,7 @@ class MMCog(commands.Cog):
                 logger.error(f"Error deleting search: {e}")
 
         await interaction.response.send_message(
-            f"✅ Удалено {deleted_count} поисков на сервере.",
+            f"Удалено {deleted_count} поисков на сервере.",
             ephemeral=True
         )
 
@@ -264,7 +264,7 @@ class MMCog(commands.Cog):
         """Заполнить активный поиск тестовыми игроками и запустить матч."""
         guild = interaction.guild
         if guild is None:
-            await interaction.response.send_message("❌ Команда только на сервере.", ephemeral=True)
+            await interaction.response.send_message("Команда только на сервере.", ephemeral=True)
             return
 
         try:
@@ -278,7 +278,7 @@ class MMCog(commands.Cog):
             search = searches[0] if searches else None
         if search is None:
             await interaction.followup.send(
-                "❌ Нет активного поиска — /mmtest только дозаполняет "
+                "Нет активного поиска — /mmtest только дозаполняет "
                 "существующий поиск.", ephemeral=True
             )
             return
@@ -286,7 +286,7 @@ class MMCog(commands.Cog):
         needed = search.required_players - len(search.players)
         if needed <= 0:
             await interaction.followup.send(
-                "✅ Поиск уже заполнен.", ephemeral=True
+                "Поиск уже заполнен.", ephemeral=True
             )
             return
 
@@ -340,18 +340,18 @@ class MMCog(commands.Cog):
             tournament, err = await self._begin_match(search, interaction)
             if tournament is None:
                 await interaction.followup.send(
-                    err or "❌ Не удалось запустить матч.",
+                    err or "Не удалось запустить матч.",
                     ephemeral=True,
                 )
                 return
             await interaction.followup.send(
-                f"🧪 Тест: матч запущен в канале <#{tournament.channel_id}>.",
+                f"Тест: матч запущен в канале <#{tournament.channel_id}>.",
                 ephemeral=True,
             )
             return
 
         await interaction.followup.send(
-            f"🧪 Добавлено {added} тестовых игроков — "
+            f"Добавлено {added} тестовых игроков — "
             f"в поиске {len(search.players)}/{search.required_players}.",
             ephemeral=True,
         )
@@ -361,7 +361,7 @@ class MMCog(commands.Cog):
         existing = mm_search_store.get(interaction.guild_id, interaction.channel_id)
         if existing:
             await interaction.response.send_message(
-                "❌ В этом канале уже есть активный поиск.",
+                "В этом канале уже есть активный поиск.",
                 ephemeral=True
             )
             return
@@ -505,7 +505,7 @@ class MMCog(commands.Cog):
                     f"{search_channel.mention}"
                 )
             embed = discord.Embed(
-                title="🔍 RANKED MATCHMAKING",
+                title="RANKED MATCHMAKING",
                 description=desc,
                 color=discord.Color.from_rgb(69, 69, 69)
             )
@@ -1285,7 +1285,7 @@ class MMCog(commands.Cog):
                     await self._edit_panel(interaction, search)
                     await self._ephemeral(
                         interaction,
-                        f"✅ Вы в очереди "
+                        f"Вы в очереди "
                         f"({len(search.players)}/{search.required_players}).",
                     )
                     return
@@ -1304,7 +1304,7 @@ class MMCog(commands.Cog):
                 self._begin_fail_at.pop(key, None)
                 await self._ephemeral(
                     interaction,
-                    "🚀 Очередь заполнена — матч запускается!",
+                    "Очередь заполнена — матч запускается!",
                 )
 
     async def handle_queue_leave(
@@ -1361,7 +1361,7 @@ class MMCog(commands.Cog):
             if search.timer_started and not search.is_locked:
                 await self._maybe_send_notifications(search)
             await self._edit_panel(interaction, search)
-            await self._ephemeral(interaction, "✅ Вы вышли из очереди.")
+            await self._ephemeral(interaction, "Вы вышли из очереди.")
 
     async def _reconcile_pool_slots(self) -> None:
         """Пометить ERROR слоты пула, на которые никто не ссылается.

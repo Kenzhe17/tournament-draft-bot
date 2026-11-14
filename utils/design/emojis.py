@@ -203,7 +203,9 @@ def em(name: str) -> str:
             return f"<:{emoji_name}:{emoji_id}>"
     # Мост к config.py: там ID берутся из EMOJI_* env-переменных
     try:
-        from config import get_emoji
+        from config import DECORATIVE_EMOJI_KEYS, get_emoji
+        if name in DECORATIVE_EMOJI_KEYS:
+            return ""
         result = get_emoji(name)
         if result and result != name:
             return result

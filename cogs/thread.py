@@ -34,7 +34,7 @@ class ThreadCog(commands.Cog):
         # Check if user is in a thread
         if not isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message(
-                "❌ Эта команда работает только внутри треда.",
+                "Эта команда работает только внутри треда.",
                 ephemeral=True
             )
             return

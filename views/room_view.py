@@ -133,7 +133,7 @@ def _room_status_text(guild_id: int, channel_id: int, key: str) -> str:
     """Публичный статус комнаты для строки матча в карточке."""
     try:
         if room_store.has_room(guild_id, channel_id, key):
-            return "🗝️ Комната готова"
+            return "Комната готова"
     except Exception:
         pass
     return "Ожидаются данные"
@@ -204,7 +204,7 @@ def build_room_card(
                 discord.ui.TextDisplay(content="\n".join(lines))
             )
     container.add_item(discord.ui.Separator())
-    status = "🗝️ Комната готова" if rooms else "Ожидаются данные"
+    status = "Комната готова" if rooms else "Ожидаются данные"
     container.add_item(
         discord.ui.TextDisplay(
             content=f"**Статус:** {status}\n"
@@ -258,11 +258,11 @@ class _MatchSelect(discord.ui.View):
             idx = int(select.values[0])
         except (ValueError, IndexError):
             await interaction.response.send_message(
-                "❌ Некорректный выбор.", ephemeral=True)
+                "Некорректный выбор.", ephemeral=True)
             return
         if idx >= len(self.matches):
             await interaction.response.send_message(
-                "❌ Матч не найден.", ephemeral=True)
+                "Матч не найден.", ephemeral=True)
             return
         m = self.matches[idx]
         if self.mode == "send" or self.mode == "manage":
@@ -325,7 +325,7 @@ class RoomModal(discord.ui.Modal):
         password = (self.pass_input.value or "").strip()
         if not room_id or not password:
             await interaction.response.send_message(
-                "❌ Укажите ID и пароль комнаты.", ephemeral=True)
+                "Укажите ID и пароль комнаты.", ephemeral=True)
             return
         try:
             room_no = int((self.no_input.value or "1").strip() or "1")
@@ -337,7 +337,7 @@ class RoomModal(discord.ui.Modal):
         tournament = store.get(self.guild_id, self.channel_id)
         if tournament is None or str(tournament.id) != str(self.tournament.id):
             await interaction.response.send_message(
-                "❌ Турнир не найден.", ephemeral=True)
+                "Турнир не найден.", ephemeral=True)
             return
         # Актуальный список матчей — состояние могло измениться.
         fresh = next(
@@ -347,21 +347,21 @@ class RoomModal(discord.ui.Modal):
         )
         if fresh is None:
             await interaction.response.send_message(
-                "❌ Матч не найден в текущей фазе турнира.",
+                "Матч не найден в текущей фазе турнира.",
                 ephemeral=True,
             )
             return
         org = _is_org(interaction.user, interaction.guild, tournament)
         if not fresh["active"] and not org:
             await interaction.response.send_message(
-                "❌ Матч уже завершён — данные комнаты изменить нельзя.",
+                "Матч уже завершён — данные комнаты изменить нельзя.",
                 ephemeral=True,
             )
             return
         team_idx = tournament.get_player_team_index(interaction.user.id)
         if not org and team_idx not in fresh["teams"]:
             await interaction.response.send_message(
-                "❌ Вы не участвуете в этом матче.", ephemeral=True)
+                "Вы не участвуете в этом матче.", ephemeral=True)
             return
 
         existing = room_store.get_room(
@@ -425,14 +425,14 @@ async def _apply_room_edit(
     pending = _PENDING_EDITS.pop(token, None)
     if pending is None or time.time() - pending["ts"] > _PENDING_TTL:
         await interaction.response.send_message(
-            "❌ Сессия подтверждения истекла — отправьте данные снова.",
+            "Сессия подтверждения истекла — отправьте данные снова.",
             ephemeral=True,
         )
         return
     tournament = store.get(token[0], token[1])
     if tournament is None or str(tournament.id) != pending["tournament_id"]:
         await interaction.response.edit_message(
-            view=text_card("❌ Турнир больше не активен."))
+            view=text_card("Турнир больше не активен."))
         return
     m = pending["match"]
     org = _is_org(interaction.user, interaction.guild, tournament)
@@ -445,7 +445,7 @@ async def _apply_room_edit(
         not org and team_idx not in fresh["teams"]
     ):
         await interaction.response.edit_message(
-            view=text_card("❌ Нет прав на изменение этой комнаты."))
+            view=text_card("Нет прав на изменение этой комнаты."))
         return
     await _save_room(
         interaction, tournament, fresh, pending["room_id"],
@@ -475,7 +475,7 @@ async def _save_room(
     )
 
     text = (
-        f"✅ Данные комнаты сохранены для **{m['label']}** "
+        f"Данные комнаты сохранены для **{m['label']}** "
         f"(комната #{room_no}).\n"
         "В канале турнира отображается только статус."
     )
@@ -522,12 +522,12 @@ class RoomSendButton(discord.ui.Button):
         tournament = _load_tournament(self.guild_id, self.channel_id)
         if tournament is None:
             await interaction.response.send_message(
-                "❌ Турнир не найден.", ephemeral=True)
+                "Турнир не найден.", ephemeral=True)
             return
         matches = _user_matches(tournament, interaction.user.id)
         if not matches:
             await interaction.response.send_message(
-                "❌ Вы не участвуете в активных матчах турнира.",
+                "Вы не участвуете в активных матчах турнира.",
                 ephemeral=True,
             )
             return
@@ -562,14 +562,14 @@ class RoomDataButton(discord.ui.Button):
         tournament = _load_tournament(self.guild_id, self.channel_id)
         if tournament is None:
             await interaction.response.send_message(
-                "❌ Турнир не найден.", ephemeral=True)
+                "Турнир не найден.", ephemeral=True)
             return
         matches = _user_matches(
             tournament, interaction.user.id, active_only=False)
         is_org = _is_org(interaction.user, interaction.guild, tournament)
         if not matches and not is_org:
             await interaction.response.send_message(
-                "❌ Вы не участвуете в матчах этого турнира.",
+                "Вы не участвуете в матчах этого турнира.",
                 ephemeral=True,
             )
             return
@@ -613,18 +613,18 @@ class RoomManageButton(discord.ui.Button):
         tournament = _load_tournament(self.guild_id, self.channel_id)
         if tournament is None:
             await interaction.response.send_message(
-                "❌ Турнир не найден.", ephemeral=True)
+                "Турнир не найден.", ephemeral=True)
             return
         if not _is_org(interaction.user, interaction.guild, tournament):
             await interaction.response.send_message(
-                "❌ Только организаторы могут управлять комнатами.",
+                "Только организаторы могут управлять комнатами.",
                 ephemeral=True,
             )
             return
         matches = iter_tournament_matches(tournament)
         if not matches:
             await interaction.response.send_message(
-                "❌ В текущей фазе нет матчей.", ephemeral=True)
+                "В текущей фазе нет матчей.", ephemeral=True)
             return
         if len(matches) == 1:
             await interaction.response.send_modal(

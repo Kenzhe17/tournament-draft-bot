@@ -10,7 +10,7 @@ from discord.ui import Modal, TextInput, View, Button, button
 from games.reflex_test import ReflexTestGame
 
 
-class ReflexTestBetModal(Modal, title="⚡ Быстрый тест"):
+class ReflexTestBetModal(Modal, title="Быстрый тест"):
     """Modal для ввода ставки."""
 
     bet = TextInput(label="Ставка (монеты)", placeholder="Введите сумму ставки", min_length=1, max_length=10)
@@ -27,20 +27,20 @@ class ReflexTestBetModal(Modal, title="⚡ Быстрый тест"):
         try:
             bet = int(self.bet.value)
         except ValueError:
-            await interaction.response.send_message(replace_emojis("❌ Введите корректную ставку!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Введите корректную ставку!"), ephemeral=True)
             return
 
         if bet < 10:
-            await interaction.response.send_message(replace_emojis("❌ Минимальная ставка: 10 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Минимальная ставка: 10 🪙"), ephemeral=True)
             return
 
         if bet > 200:
-            await interaction.response.send_message(replace_emojis("❌ Максимальная ставка: 200 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Максимальная ставка: 200 🪙"), ephemeral=True)
             return
 
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
         if balance < bet:
-            await interaction.response.send_message(replace_emojis("❌ Недостаточно монет!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Недостаточно монет!"), ephemeral=True)
             return
 
         # Списать ставку
@@ -48,7 +48,7 @@ class ReflexTestBetModal(Modal, title="⚡ Быстрый тест"):
 
         # Создать embed
         embed = discord.Embed(
-            title="⚡ Быстрый тест",
+            title="Быстрый тест",
             description=replace_emojis("🎯 Нажмите кнопку чтобы начать! После задержки появится эмодзи - нажмите быстро!"),
             color=discord.Color.blue()
         )
@@ -75,15 +75,15 @@ class ReflexTestGameView(View):
     async def start_game(self, interaction: discord.Interaction, button: Button) -> None:
         """Начать игру."""
         if self.started:
-            await interaction.response.send_message(replace_emojis("❌ Игра уже началась!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Игра уже началась!"), ephemeral=True)
             return
 
         self.started = True
 
         # Изменить embed на "Ждите..."
         embed = discord.Embed(
-            title="⚡ Быстрый тест",
-            description="⏳ Ждите появления эмодзи...",
+            title="Быстрый тест",
+            description="Ждите появления эмодзи...",
             color=discord.Color.orange()
         )
         embed.add_field(name="Ставка", value=f"{self.bet} 🪙", inline=True)
@@ -98,7 +98,7 @@ class ReflexTestGameView(View):
         target_emoji = self.game.start()
 
         embed = discord.Embed(
-            title="⚡ Быстрый тест",
+            title="Быстрый тест",
             description=replace_emojis("🎯 НАЖМИТЕ! {target_emoji}"),
             color=discord.Color.red()
         )
@@ -124,7 +124,7 @@ class ReflexTestReactionView(View):
         self.target_emoji = target_emoji
 
         react_button = Button(
-            label=f"⚡ {target_emoji}",
+            label=f"{target_emoji}",
             style=discord.ButtonStyle.danger,
             custom_id="reflex_react"
         )
@@ -140,13 +140,13 @@ class ReflexTestReactionView(View):
         # Создать embed
         if result == "correct":
             color = discord.Color.gold()
-            title = "🎉 Победа!"
+            title = "Победа!"
         elif result == "timeout":
             color = discord.Color.red()
-            title = "😢 Медленно!"
+            title = "Медленно!"
         else:
             color = discord.Color.orange()
-            title = replace_emojis("❌ Ошибка!"),
+            title = replace_emojis("Ошибка!"),
 
         embed = discord.Embed(
             title=title,

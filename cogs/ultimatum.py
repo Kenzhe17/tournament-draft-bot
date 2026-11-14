@@ -49,7 +49,7 @@ def has_guild_tag(user) -> bool:
 async def _can_join(t: UltTournament, user) -> tuple[bool, str]:
     if t.is_open or has_guild_tag(user):
         return True, ""
-    return False, f"🔒 Закрытый турнир — нужен тег {get_emoji('guild_tag')}r!z3"
+    return False, f"Закрытый турнир — нужен тег {get_emoji('guild_tag')}r!z3"
 
 
 async def _vac_check(guild_id: int, *user_ids: int) -> Optional[str]:
@@ -106,7 +106,7 @@ class UltimatumRoomModal(discord.ui.Modal, title="Данные комнаты"):
             )
         else:
             await interaction.response.send_message(
-                "❌ Укажите ID комнаты.", ephemeral=True
+                "Укажите ID комнаты.", ephemeral=True
             )
 
 
@@ -116,7 +116,7 @@ async def ultimatum_room_submit(
 ) -> None:
     if not room_id.strip():
         await interaction.response.send_message(
-            "❌ Укажите ID комнаты.", ephemeral=True
+            "Укажите ID комнаты.", ephemeral=True
         )
         return
     from utils.permissions import is_org_check
@@ -129,7 +129,7 @@ async def ultimatum_room_submit(
     if not ok:
         await interaction.response.send_message(msg, ephemeral=True)
         return
-    await interaction.response.send_message(f"✅ {msg}", ephemeral=True)
+    await interaction.response.send_message(f"{msg}", ephemeral=True)
 
     m = await ultimatum_store.get_match(match_db_id)
     # Уведомить соперника приватно
@@ -147,7 +147,7 @@ async def ultimatum_room_submit(
                     try:
                         user = await interaction.client.fetch_user(uid)
                         await user.send(
-                            f"🗝️ Комната для вашего матча **{m.key}** "
+                            f"Комната для вашего матча **{m.key}** "
                             f"({m.round_name}):\n"
                             f"ID: `{m.room_id or room_id}`\n"
                             f"Пароль: `{m.room_password or room_password or '—'}`"
@@ -174,7 +174,7 @@ async def _publish_room_public(interaction, m: Optional[UltMatch], room_id: str)
         if channel is None:
             return
         await channel.send(
-            f"🗝️ **{m.key}** ({m.round_name}): комната `{room_id}` — "
+            f"**{m.key}** ({m.round_name}): комната `{room_id}` — "
             "пароль доступен участникам матча."
         )
     except Exception as e:
@@ -217,7 +217,7 @@ class UltimatumCog(commands.Cog):
         )
         if existing:
             await interaction.response.send_message(
-                f"❌ Уже есть активный турнир ({fmt_title(fmt)}). "
+                f"Уже есть активный турнир ({fmt_title(fmt)}). "
                 "Завершите или удалите его.",
                 ephemeral=True,
             )
@@ -232,13 +232,13 @@ class UltimatumCog(commands.Cog):
         except Exception:
             # uq_ult2_active: параллельное создание того же формата
             await interaction.response.send_message(
-                f"❌ Уже есть активный турнир ({fmt_title(fmt)}).",
+                f"Уже есть активный турнир ({fmt_title(fmt)}).",
                 ephemeral=True,
             )
             return
         ctx = await load_context(t.id)
         if ctx is None:
-            await interaction.response.send_message("❌ Ошибка создания.", ephemeral=True)
+            await interaction.response.send_message("Ошибка создания.", ephemeral=True)
             return
         _, _, _, entrants, invites = ctx
         view = build_registration_view(t, entrants, invites)
@@ -247,7 +247,7 @@ class UltimatumCog(commands.Cog):
         await ultimatum_store.log(t.id, interaction.user.id, "create")
 
         await interaction.response.send_message(
-            f"✅ Турнир **{name}** создан! Карточка регистрации ниже.",
+            f"Турнир **{name}** создан! Карточка регистрации ниже.",
             ephemeral=True,
         )
         logger.info("Ult2 %s created by %s", t.id, interaction.user.id)
@@ -264,12 +264,12 @@ class UltimatumCog(commands.Cog):
         t = await ultimatum_store.get_active_tournament(interaction.guild_id, fmt)
         if not t:
             await interaction.response.send_message(
-                "❌ Нет активного турнира этого формата.", ephemeral=True
+                "Нет активного турнира этого формата.", ephemeral=True
             )
             return
         await self.service.delete_tournament(t, self.bot)
         await interaction.response.send_message(
-            f"✅ Турнир **{t.name}** удалён.", ephemeral=True
+            f"Турнир **{t.name}** удалён.", ephemeral=True
         )
 
     @ultimatum_group.command(name="сетка", description="Показать турнирную сетку")
@@ -283,12 +283,12 @@ class UltimatumCog(commands.Cog):
         t = await ultimatum_store.get_active_tournament(interaction.guild_id, fmt)
         if not t:
             await interaction.response.send_message(
-                "❌ Нет активного турнира этого формата.", ephemeral=True
+                "Нет активного турнира этого формата.", ephemeral=True
             )
             return
         await post_or_update_bracket(self.bot, t)
         await interaction.response.send_message(
-            "✅ Сетка обновлена в канале турнира.", ephemeral=True
+            "Сетка обновлена в канале турнира.", ephemeral=True
         )
 
     @ultimatum_group.command(name="статус", description="Статус турнира Ультиматум")
@@ -302,19 +302,19 @@ class UltimatumCog(commands.Cog):
         t = await ultimatum_store.get_active_tournament(interaction.guild_id, fmt)
         if not t:
             await interaction.response.send_message(
-                "❌ Нет активного турнира этого формата.", ephemeral=True
+                "Нет активного турнира этого формата.", ephemeral=True
             )
             return
         ctx = await load_context(t.id)
         if ctx is None:
-            await interaction.response.send_message("❌ Ошибка загрузки.", ephemeral=True)
+            await interaction.response.send_message("Ошибка загрузки.", ephemeral=True)
             return
         _, ent_map, matches, entrants, _ = ctx
         total = len(matches)
         done = sum(1 for m in matches if m.status == "COMPLETED")
         active = [m for m in matches if m.status in VOTABLE or m.status == "DISPUTED"]
         view = DesignView(
-            title=f" 📊 {t.name}", accent=colors.TOURNAMENT, timeout=120,
+            title=f"{t.name}", accent=colors.TOURNAMENT, timeout=120,
         )
         view.text(
             f"**Формат:** {'Соло' if fmt is Format.SOLO else 'Дуо'}\n"
@@ -345,7 +345,7 @@ class UltimatumCog(commands.Cog):
             interaction.guild_id, fmt, limit=10
         )
         view = DesignView(
-            title=" 🏆 История Ультиматума", accent=colors.TOURNAMENT, timeout=120,
+            title="История Ультиматума", accent=colors.TOURNAMENT, timeout=120,
         )
         if not history:
             view.text(muted("Завершённых турниров пока нет."))
@@ -375,7 +375,7 @@ class UltimatumCog(commands.Cog):
         t = await ultimatum_store.get_active_tournament(interaction.guild_id, fmt)
         if not t:
             await interaction.response.send_message(
-                "❌ Нет активного турнира этого формата.", ephemeral=True
+                "Нет активного турнира этого формата.", ephemeral=True
             )
             return
         await _open_fix_panel(interaction, t)
@@ -403,19 +403,19 @@ class UltimatumCog(commands.Cog):
                     break
         if fmt is None:
             await interaction.response.send_message(
-                "❌ Нет активного турнира. Сначала создайте его.",
+                "Нет активного турнира. Сначала создайте его.",
                 ephemeral=True,
             )
             return
         t = await ultimatum_store.get_active_tournament(interaction.guild_id, fmt)
         if not t:
             await interaction.response.send_message(
-                "❌ Нет активного турнира этого формата.", ephemeral=True
+                "Нет активного турнира этого формата.", ephemeral=True
             )
             return
         if t.status != "REGISTRATION":
             await interaction.response.send_message(
-                "❌ Турнир не в фазе регистрации.", ephemeral=True
+                "Турнир не в фазе регистрации.", ephemeral=True
             )
             return
 
@@ -423,7 +423,7 @@ class UltimatumCog(commands.Cog):
         entrants = await ultimatum_store.get_entrants(t.id)
         if len(entrants) >= need:
             await interaction.response.send_message(
-                f"✅ Уже заполнен ({len(entrants)}/{need}).", ephemeral=True
+                f"Уже заполнен ({len(entrants)}/{need}).", ephemeral=True
             )
             return
 
@@ -455,7 +455,7 @@ class UltimatumCog(commands.Cog):
 
         # VAC-sweep + start
         await interaction.response.send_message(
-            f"🧪 Добавлено {added}. Запускаю турнир...", ephemeral=True
+            f"Добавлено {added}. Запускаю турнир...", ephemeral=True
         )
         t = await ultimatum_store.get_tournament(t.id)
         ok, msg = await self.service.start(t, self.bot)
@@ -514,7 +514,7 @@ class UltimatumCog(commands.Cog):
 
         # Автопрохождение: случайный победитель в каждом готовом матче
         await interaction.response.send_message(
-            "🧪 Автосимуляция запущена...", ephemeral=True
+            "Автосимуляция запущена...", ephemeral=True
         )
         played = 0
         guard = 0
@@ -539,7 +539,7 @@ class UltimatumCog(commands.Cog):
         matches = await ultimatum_store.get_matches(t.id)
         done = sum(1 for x in matches if x.status == "COMPLETED")
         await interaction.followup.send(
-            f"✅ Симуляция завершена: сыграно {played} матчей, "
+            f"Симуляция завершена: сыграно {played} матчей, "
             f"статус турнира: {t.status}, завершено {done}/{len(matches)}.",
             ephemeral=True,
         )
@@ -573,7 +573,7 @@ class UltimatumCog(commands.Cog):
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message(
-                        "❌ Внутренняя ошибка. Попробуйте позже.", ephemeral=True
+                        "Внутренняя ошибка. Попробуйте позже.", ephemeral=True
                     )
             except Exception:
                 pass
@@ -613,7 +613,7 @@ class UltimatumCog(commands.Cog):
             await self._act_fixpick(interaction, rest[0], interaction.data)
         else:
             await interaction.response.send_message(
-                "❌ Неизвестное действие.", ephemeral=True
+                "Неизвестное действие.", ephemeral=True
             )
 
     # ---------------- регистрация ----------------
@@ -624,7 +624,7 @@ class UltimatumCog(commands.Cog):
     async def _act_join(self, interaction, tid: str) -> None:
         t = await self._get_tournament(tid)
         if not t:
-            return await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+            return await interaction.response.send_message("Турнир не найден.", ephemeral=True)
         ok, why = await _can_join(t, interaction.user)
         if not ok:
             return await interaction.response.send_message(why, ephemeral=True)
@@ -639,7 +639,7 @@ class UltimatumCog(commands.Cog):
     async def _act_leave(self, interaction, tid: str) -> None:
         t = await self._get_tournament(tid)
         if not t:
-            return await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+            return await interaction.response.send_message("Турнир не найден.", ephemeral=True)
         if t.format is Format.DUO:
             msg = await self.service.duo_leave(t, interaction.user)
         else:
@@ -656,22 +656,22 @@ class UltimatumCog(commands.Cog):
         if sub == "new":
             t = await self._get_tournament(tid)
             if not t or t.format is not Format.DUO:
-                return await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+                return await interaction.response.send_message("Турнир не найден.", ephemeral=True)
             # Уже в дуэте?
             ent = await ultimatum_store.find_entrant_by_member(t.id, interaction.user.id)
             if ent:
                 return await interaction.response.send_message(
-                    "❌ Вы уже в дуэте.", ephemeral=True
+                    "Вы уже в дуэте.", ephemeral=True
                 )
             pending = await ultimatum_store.get_pending_invite_for(t.id, interaction.user.id)
             if pending:
                 return await interaction.response.send_message(
-                    f"⏳ У вас уже есть приглашение "
+                    f"У вас уже есть приглашение "
                     f"({'исходящее' if pending.captain_id == interaction.user.id else 'входящее'}) "
                     f"для <@{pending.partner_id or pending.captain_id}>.",
                     ephemeral=True,
                 )
-            view = DesignView(title=" 👥 Выбор напарника", accent=colors.TOURNAMENT, timeout=180)
+            view = DesignView(title="Выбор напарника", accent=colors.TOURNAMENT, timeout=180)
             view.text("Выберите второго игрока дуэта:")
             sel = discord.ui.UserSelect(
                 placeholder="Выберите напарника",
@@ -684,10 +684,10 @@ class UltimatumCog(commands.Cog):
         elif sub == "pick":
             t = await self._get_tournament(tid)
             if not t:
-                return await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+                return await interaction.response.send_message("Турнир не найден.", ephemeral=True)
             values = interaction.data.get("values") or []
             if not values:
-                return await interaction.response.send_message("❌ Игрок не выбран.", ephemeral=True)
+                return await interaction.response.send_message("Игрок не выбран.", ephemeral=True)
             partner_id = int(values[0])
             partner = interaction.client.get_user(partner_id)
             if partner is None:
@@ -695,7 +695,7 @@ class UltimatumCog(commands.Cog):
                     partner = await interaction.client.fetch_user(partner_id)
                 except Exception:
                     return await interaction.response.send_message(
-                        "❌ Не удалось найти этого пользователя.", ephemeral=True
+                        "Не удалось найти этого пользователя.", ephemeral=True
                     )
             inv_id, msg = await self.service.duo_create_invite(
                 t, interaction.user, partner
@@ -717,14 +717,14 @@ class UltimatumCog(commands.Cog):
                         partner_id,
                     )
                     await interaction.followup.send(
-                        "📨 Личные сообщения игрока закрыты — "
+                        "Личные сообщения игрока закрыты — "
                         "приглашение опубликовано в канале турнира.",
                         ephemeral=True,
                     )
                 except Exception as e2:
                     logger.warning("duo invite channel fallback failed: %s", e2)
                     await interaction.followup.send(
-                        "⚠️ Не удалось доставить приглашение: у игрока "
+                        "Не удалось доставить приглашение: у игрока "
                         "закрыты DM, а канал турнира недоступен. "
                         "Отправьте приглашение позже.",
                         ephemeral=True,
@@ -735,7 +735,7 @@ class UltimatumCog(commands.Cog):
             iid = int(rest[1]) if len(rest) > 1 else 0
             inv = await ultimatum_store.get_invite(iid)
             if not inv:
-                return await interaction.response.send_message("❌ Приглашение не найдено.", ephemeral=True)
+                return await interaction.response.send_message("Приглашение не найдено.", ephemeral=True)
             ok, msg = await self.service.duo_respond(inv, interaction.user, sub == "accept")
             await interaction.response.send_message(msg, ephemeral=True)
             t = await self._get_tournament(inv.tournament_id)
@@ -748,7 +748,7 @@ class UltimatumCog(commands.Cog):
         elif sub == "leave":
             t = await self._get_tournament(tid)
             if not t:
-                return await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+                return await interaction.response.send_message("Турнир не найден.", ephemeral=True)
             # Сначала роспуск дуэта; если игрок не в команде —
             # отменить его висящее приглашение.
             msg = await self.service.duo_leave(t, interaction.user)
@@ -773,11 +773,11 @@ class UltimatumCog(commands.Cog):
         tid = rest[1] if len(rest) > 1 else ""
         if not is_org_check(interaction.user, interaction.guild):
             return await interaction.response.send_message(
-                "❌ Только организаторы.", ephemeral=True
+                "Только организаторы.", ephemeral=True
             )
         t = await self._get_tournament(tid)
         if not t:
-            return await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+            return await interaction.response.send_message("Турнир не найден.", ephemeral=True)
 
         if sub == "menu" or sub == "":
             await interaction.response.send_message(
@@ -797,7 +797,7 @@ class UltimatumCog(commands.Cog):
                     if any(uid in vac_ids for uid in e.member_ids):
                         await ultimatum_store.remove_entrant(e.id)
                 await interaction.followup.send(
-                    "⚠️ Исключены участники с активным VAC. Нажмите «Старт» ещё раз.",
+                    "Исключены участники с активным VAC. Нажмите «Старт» ещё раз.",
                     ephemeral=True,
                 )
                 return
@@ -813,14 +813,14 @@ class UltimatumCog(commands.Cog):
             await ultimatum_store.set_open(t.id, not t.is_open)
             t = await self._get_tournament(tid)
             await interaction.followup.send(
-                f"✅ Регистрация {'открыта' if t.is_open else 'закрыта'}.",
+                f"Регистрация {'открыта' if t.is_open else 'закрыта'}.",
                 ephemeral=True,
             )
             await refresh_all_ult_views(self.bot, t)
         elif sub == "delete":
             await interaction.response.defer(ephemeral=True)
             await self.service.delete_tournament(t, self.bot)
-            await interaction.followup.send("✅ Турнир удалён.", ephemeral=True)
+            await interaction.followup.send("Турнир удалён.", ephemeral=True)
             # Удалить сообщения
             try:
                 for mid in (t.message_id, t.bracket_message_id):
@@ -842,16 +842,16 @@ class UltimatumCog(commands.Cog):
         tid = rest[1] if len(rest) > 1 else ""
         t = await self._get_tournament(tid)
         if not t:
-            return await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+            return await interaction.response.send_message("Турнир не найден.", ephemeral=True)
         if sub == "refresh":
             await refresh_all_ult_views(self.bot, t)
             return await interaction.response.send_message(
-                "✅ Сетка обновлена.", ephemeral=True
+                "Сетка обновлена.", ephemeral=True
             )
         # open / matches / png / default → ephemeral bracket
         ctx = await load_context(t.id)
         if ctx is None:
-            return await interaction.response.send_message("❌ Ошибка.", ephemeral=True)
+            return await interaction.response.send_message("Ошибка.", ephemeral=True)
         _, ent_map, matches, _, _ = ctx
         if sub == "png":
             await interaction.response.defer(ephemeral=True)
@@ -868,7 +868,7 @@ class UltimatumCog(commands.Cog):
             except Exception as e:
                 logger.error("bracket png failed: %s", e, exc_info=True)
                 await interaction.followup.send(
-                    "❌ Не удалось сгенерировать изображение сетки.",
+                    "Не удалось сгенерировать изображение сетки.",
                     ephemeral=True,
                 )
             return
@@ -885,10 +885,10 @@ class UltimatumCog(commands.Cog):
         tid = rest[1] if len(rest) > 1 else ""
         t = await self._get_tournament(tid)
         if not t:
-            return await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+            return await interaction.response.send_message("Турнир не найден.", ephemeral=True)
         ctx = await load_context(t.id)
         if ctx is None:
-            return await interaction.response.send_message("❌ Ошибка.", ephemeral=True)
+            return await interaction.response.send_message("Ошибка.", ephemeral=True)
         _, ent_map, matches, _, _ = ctx
         viewer_is_org = is_org_check(interaction.user, interaction.guild)
 
@@ -907,7 +907,7 @@ class UltimatumCog(commands.Cog):
             if values:
                 view = await _detail(int(values[0]))
                 if view is None:
-                    return await interaction.response.send_message("❌ Матч не найден.", ephemeral=True)
+                    return await interaction.response.send_message("Матч не найден.", ephemeral=True)
                 return await interaction.response.send_message(view=view, ephemeral=True)
             view = build_matches_panel(t, matches, ent_map)
             return await interaction.response.send_message(view=view, ephemeral=True)
@@ -918,7 +918,7 @@ class UltimatumCog(commands.Cog):
                 return
             view = await _detail(int(values[0]))
             if view is None:
-                return await interaction.response.send_message("❌ Матч не найден.", ephemeral=True)
+                return await interaction.response.send_message("Матч не найден.", ephemeral=True)
             return await interaction.response.send_message(view=view, ephemeral=True)
 
     async def _act_vote(self, interaction, match_db_id: int, side: str) -> None:
@@ -956,7 +956,7 @@ class UltimatumCog(commands.Cog):
                 org = self.bot.get_user(t.created_by)
                 if org:
                     await org.send(
-                        f"⚠️ Спор в матче **{outcome.match.key if outcome.match else '?'}** "
+                        f"Спор в матче **{outcome.match.key if outcome.match else '?'}** "
                         f"турнира {t.name}. Используйте /tournament ультиматум исправить."
                     )
             t2 = await ultimatum_store.get_tournament(t.id)
@@ -969,7 +969,7 @@ class UltimatumCog(commands.Cog):
         # Проверка прав до модалки
         m = await ultimatum_store.get_match(match_db_id)
         if not m:
-            return await interaction.response.send_message("❌ Матч не найден.", ephemeral=True)
+            return await interaction.response.send_message("Матч не найден.", ephemeral=True)
         from utils.permissions import is_org, is_org_check
         is_org = is_org_check(interaction.user, interaction.guild)
         is_participant = False
@@ -979,7 +979,7 @@ class UltimatumCog(commands.Cog):
                 is_participant = True
         if not (is_org or is_participant):
             return await interaction.response.send_message(
-                "❌ Данные комнаты видят только участники матча и организаторы.",
+                "Данные комнаты видят только участники матча и организаторы.",
                 ephemeral=True,
             )
         await interaction.response.send_modal(UltimatumRoomModal(match_db_id))
@@ -994,12 +994,12 @@ class UltimatumCog(commands.Cog):
         match_db_id = int(values[0])
         m = await ultimatum_store.get_match(match_db_id)
         if not m:
-            return await interaction.response.send_message("❌ Матч не найден.", ephemeral=True)
+            return await interaction.response.send_message("Матч не найден.", ephemeral=True)
         ent_map = {e.id: e for e in await ultimatum_store.get_entrants(m.tournament_id)}
         ea = ent_map.get(m.entrant_a or -1)
         eb = ent_map.get(m.entrant_b or -1)
         view = DesignView(
-            title=f" 🔧 Матч {m.key} — выбор победителя",
+            title=f"Матч {m.key} — выбор победителя",
             accent=colors.DANGER, timeout=120,
         )
         view.text(
@@ -1010,14 +1010,14 @@ class UltimatumCog(commands.Cog):
         view.sep()
         view.row(
             btn(f"Победа A: {(ea.label() if ea else '?')[:40]}", style="success",
-                custom_id=f"{CID}:fixwin:{match_db_id}:a", emoji_key="winner"),
+                custom_id=f"{CID}:fixwin:{match_db_id}:a"),
             btn(f"Победа B: {(eb.label() if eb else '?')[:40]}", style="success",
-                custom_id=f"{CID}:fixwin:{match_db_id}:b", emoji_key="winner"),
+                custom_id=f"{CID}:fixwin:{match_db_id}:b"),
         )
         if m.status == "DISPUTED":
             view.row(
-                btn("🔄 Переоткрыть для подтверждения", style="secondary",
-                    custom_id=f"{CID}:reopen:{match_db_id}", emoji_key="refresh"),
+                btn("Переоткрыть для подтверждения", style="secondary",
+                    custom_id=f"{CID}:reopen:{match_db_id}"),
             )
         await interaction.response.send_message(view=view, ephemeral=True)
 
@@ -1025,12 +1025,12 @@ class UltimatumCog(commands.Cog):
         from utils.permissions import is_org, is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             return await interaction.response.send_message(
-                "❌ Только организаторы.", ephemeral=True
+                "Только организаторы.", ephemeral=True
             )
         await interaction.response.defer(ephemeral=True)
         m = await ultimatum_store.get_match(match_db_id)
         if not m:
-            return await interaction.followup.send("❌ Матч не найден.", ephemeral=True)
+            return await interaction.followup.send("Матч не найден.", ephemeral=True)
         winner_eid = m.entrant_a if side == "a" else m.entrant_b
         ok, msg = await self.service.admin_set_result(match_db_id, winner_eid, interaction.user)
         await interaction.followup.send(msg, ephemeral=True)
@@ -1045,7 +1045,7 @@ class UltimatumCog(commands.Cog):
         from utils.permissions import is_org, is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             return await interaction.response.send_message(
-                "❌ Только организаторы.", ephemeral=True
+                "Только организаторы.", ephemeral=True
             )
         await interaction.response.defer(ephemeral=True)
         ok, msg = await self.service.admin_reopen_match(match_db_id, interaction.user)
@@ -1059,7 +1059,7 @@ async def _announce_final(bot: commands.Bot, t: UltTournament) -> None:
         ent_map = {e.id: e for e in entrants}
         champ = ent_map.get(t.champion_entrant_id or -1)
         view = DesignView(
-            title=f" 🏆 {t.name} — итоги", accent=colors.TOURNAMENT, timeout=None,
+            title=f"{t.name} — итоги", accent=colors.TOURNAMENT, timeout=None,
         )
         view.text(
             f"**Чемпион:** {champ.label() if champ else '?'}\n"
@@ -1101,7 +1101,7 @@ def _invite_view(
 ) -> DesignView:
     """View приглашения в дуэт (DM или канал — кнопки одинаковые)."""
     iview = DesignView(
-        title=" 🤝 Приглашение в дуэт — Ультиматум",
+        title="Приглашение в дуэт — Ультиматум",
         accent=colors.TOURNAMENT, timeout=None,
     )
     iview.text(
@@ -1109,8 +1109,8 @@ def _invite_view(
         f"на турнир **{t.name}**."
     )
     iview.row(
-        btn("✅ Принять", style="success", custom_id=f"{CID}:duo:accept:{invite_id}", emoji_key="check"),
-        btn("❌ Отклонить", style="danger", custom_id=f"{CID}:duo:decline:{invite_id}", emoji_key="cross"),
+        btn("Принять", style="success", custom_id=f"{CID}:duo:accept:{invite_id}"),
+        btn("Отклонить", style="danger", custom_id=f"{CID}:duo:decline:{invite_id}"),
     )
     return iview
 
@@ -1180,13 +1180,13 @@ async def _update_invite_dm(client, invite: DuoInvite) -> None:
         return
     try:
         view = DesignView(
-            title=" 🤝 Приглашение в дуэт — Ультиматум",
+            title="Приглашение в дуэт — Ультиматум",
             accent=colors.TOURNAMENT, timeout=None,
         )
         status_txt = {
-            "accepted": "✅ Принято",
-            "declined": "❌ Отклонено",
-            "cancelled": "🚫 Отменено",
+            "accepted": "Принято",
+            "declined": "Отклонено",
+            "cancelled": "Отменено",
             "expired": "⌛ Истекло",
         }.get(invite.status, invite.status)
         view.text(f"Приглашение: **{status_txt}**")
@@ -1210,7 +1210,7 @@ async def _open_fix_panel(
         # Также показываем завершённые без сыгранных потомков —
         # но безопаснее предложить только незавершённые/спорные.
         text = "Нет матчей, доступных для исправления."
-        view = DesignView(title=" 🔧 Исправление", accent=colors.DANGER, timeout=120)
+        view = DesignView(title="Исправление", accent=colors.DANGER, timeout=120)
         view.text(text)
         if followup:
             await interaction.followup.send(view=view, ephemeral=True)
@@ -1220,7 +1220,7 @@ async def _open_fix_panel(
 
     ent_map = {e.id: e for e in await ultimatum_store.get_entrants(t.id)}
     view = DesignView(
-        title=" 🔧 Исправление результата", accent=colors.DANGER, timeout=180,
+        title="Исправление результата", accent=colors.DANGER, timeout=180,
     )
     view.text("Выберите матч для исправления:")
     view.sep()

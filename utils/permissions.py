@@ -29,7 +29,7 @@ def is_admin() -> app_commands.check:
                     return True
 
         raise app_commands.CheckFailure(
-            "❌ Эта команда доступна только администраторам или организаторам (роль 'org', ORG-1/2/3)."
+            "Эта команда доступна только администраторам или организаторам (роль 'org', ORG-1/2/3)."
         )
 
     return app_commands.check(predicate)
@@ -57,7 +57,7 @@ def is_org() -> app_commands.check:
                     return True
 
         raise app_commands.CheckFailure(
-            "❌ Эта команда доступна только организаторам (роль 'org', ORG-1/2/3) или администраторам."
+            "Эта команда доступна только организаторам (роль 'org', ORG-1/2/3) или администраторам."
         )
 
     return app_commands.check(predicate)
@@ -205,13 +205,13 @@ def is_channel_organizer_decorator() -> app_commands.check:
 
     async def predicate(interaction: discord.Interaction) -> bool:
         if not interaction.guild:
-            raise app_commands.CheckFailure("❌ Эта команда доступна только на сервере.")
+            raise app_commands.CheckFailure("Эта команда доступна только на сервере.")
 
         if is_channel_organizer(interaction.user, interaction.guild, interaction.channel_id):
             return True
 
         raise app_commands.CheckFailure(
-            "❌ Эта команда доступна только организаторам канала или глобальным организаторам."
+            "Эта команда доступна только организаторам канала или глобальным организаторам."
         )
 
     return app_commands.check(predicate)
@@ -226,7 +226,7 @@ def is_bot_owner() -> app_commands.check:
             return True
 
         raise app_commands.CheckFailure(
-            "❌ Эта команда доступна только владельцу бота."
+            "Эта команда доступна только владельцу бота."
         )
 
     return app_commands.check(predicate)

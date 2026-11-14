@@ -61,7 +61,7 @@ class GuessNumberView(discord.ui.View):
     def create_embed(self, state: str = "playing", result: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f" **УГАДАЙ ЧИСЛО | /guess_number**",
+            title=f"**УГАДАЙ ЧИСЛО | /guess_number**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 

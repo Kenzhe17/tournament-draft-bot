@@ -94,16 +94,16 @@ class PlayerSelect(discord.ui.Select):
 
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await self._ephemeral(interaction, "❌ Турнир не найден.")
+            await self._ephemeral(interaction, "Турнир не найден.")
             return
 
         if tournament.phase != TournamentPhase.DRAFT:
-            await self._ephemeral(interaction, "❌ Драфт не активен.")
+            await self._ephemeral(interaction, "Драфт не активен.")
             return
 
         picker_pos = tournament.current_picker_position()
         if picker_pos is None:
-            await self._ephemeral(interaction, "❌ Сейчас не ваш ход.")
+            await self._ephemeral(interaction, "Сейчас не ваш ход.")
             return
 
         expected_captain_name = tournament.captains[
@@ -118,14 +118,14 @@ class PlayerSelect(discord.ui.Select):
         # In test mode, allow anyone to pick
         if not tournament.is_test and cleaned_name != cleaned_captain_name:
             await self._ephemeral(
-                interaction, f"❌ Сейчас выбирает {expected_captain_name}"
+                interaction, f"Сейчас выбирает {expected_captain_name}"
             )
             return
 
         player = self.values[0]
         key = str(tournament.current_circle)
         if player not in tournament.available.get(key, []):
-            await self._ephemeral(interaction, "❌ Этот игрок уже выбран.")
+            await self._ephemeral(interaction, "Этот игрок уже выбран.")
             return
 
         mark("validation")
@@ -166,7 +166,7 @@ class PlayerSelect(discord.ui.Select):
                     ):
                         stale = "Этот игрок уже выбран."
             if stale is not None:
-                await self._ephemeral(interaction, f"❌ {stale}")
+                await self._ephemeral(interaction, f"{stale}")
                 return
             picker_pos = tournament.current_picker_position()
 
@@ -258,7 +258,7 @@ class PlayerSelect(discord.ui.Select):
             perf_metrics.record(name, value)
 
         if draft_complete:
-            await self._ephemeral(interaction, "✅ Драфт завершён!")
+            await self._ephemeral(interaction, "Драфт завершён!")
 
 
 class DraftView(discord.ui.View):

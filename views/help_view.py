@@ -49,7 +49,7 @@ class HelpBackButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         """Вернуться в главное меню."""
         embed = discord.Embed(
-            title="📚 Справка по командам",
+            title="Справка по командам",
             description="Выберите категорию для просмотра команд",
             color=discord.Color.dark_blue()
         )

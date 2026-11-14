@@ -43,14 +43,14 @@ class EloCog(commands.Cog):
 
         if not player:
             await interaction.response.send_message(
-                f"❌ У вас пока нет рейтинга {_FMT_TITLE[fmt]}. "
+                f"У вас пока нет рейтинга {_FMT_TITLE[fmt]}. "
                 "Сыграйте рейтингованный матч!",
                 ephemeral=True,
             )
             return
 
         embed = discord.Embed(
-            title=f"🎮 {_FMT_TITLE[fmt]} — {player.get('username') or interaction.user.display_name}",
+            title=f"{_FMT_TITLE[fmt]} — {player.get('username') or interaction.user.display_name}",
             color=discord.Color.from_rgb(168, 63, 255),
         )
         embed.add_field(name="Текущий ELO", value=str(player["elo"]), inline=True)
@@ -80,12 +80,12 @@ class EloCog(commands.Cog):
 
         if not history:
             await interaction.response.send_message(
-                "❌ Рейтингованных матчей не найдено.", ephemeral=True
+                "Рейтингованных матчей не найдено.", ephemeral=True
             )
             return
 
         embed = discord.Embed(
-            title=f"📊 {_FMT_TITLE[fmt]} — история",
+            title=f"{_FMT_TITLE[fmt]} — история",
             description=f"Последние {len(history)} матчей",
             color=discord.Color.blue(),
         )

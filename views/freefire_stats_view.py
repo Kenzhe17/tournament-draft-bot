@@ -93,7 +93,7 @@ class FreeFireStatsView(discord.ui.LayoutView):
             row.add_item(btn)
         row2 = discord.ui.ActionRow()
         close = discord.ui.Button(
-            label="✕",
+            label="Закрыть",
             style=discord.ButtonStyle.danger,
             custom_id="ffs:close",
             disabled=disabled,

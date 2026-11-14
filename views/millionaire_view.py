@@ -39,7 +39,7 @@ class MillionaireView(discord.ui.View):
         )
 
         embed.add_field(
-            name="💎 Текущий приз",
+            name="Текущий приз",
             value=f"{prize} 🪙",
             inline=False
         )
@@ -59,13 +59,13 @@ class MillionaireView(discord.ui.View):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Победа!"),
+                title=replace_emojis("Победа!"),
                 description=f"**Вы ответили на все вопросы!**\n**Выигрыш:** {winnings} 🪙 ({self.multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title=replace_emojis("❌ Проигрыш"),
+                title=replace_emojis("Проигрыш"),
                 description=f"**Проигрыш на вопросе {self.current_question + 1}**\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )
@@ -133,7 +133,7 @@ class MillionaireQuestionView(discord.ui.View):
             self.current_prize = prize
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Правильно!"),
+                title=replace_emojis("Правильно!"),
                 description=f"**Ответ:** {selected_option}\n**Приз:** {prize} 🪙",
                 color=discord.Color.green()
             )

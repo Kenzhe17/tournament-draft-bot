@@ -23,7 +23,7 @@ class CaseOpenButton(discord.ui.Button):
         """Открыть кейс с анимацией и reactions."""
         case = case_store.get_case(self.case_id)
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Кейс не найден."), ephemeral=True)
             return
 
         # Проверить баланс
@@ -76,7 +76,7 @@ class CaseOpenButton(discord.ui.Button):
 
         # Формировать результат
         if result["type"] == "nothing":
-            message = "😢 Ничего не выпало!"
+            message = "Ничего не выпало!"
             color = discord.Color.red()
             reaction_emoji = "cross"
         elif result["type"] == "coins":
@@ -118,12 +118,12 @@ class CaseOpenButton(discord.ui.Button):
             name_emoji = "emoji_special_case"
 
         embed = discord.Embed(
-            title=f" Результат открытия {replace_emojis(name_emoji)} {case.name}",
+            title=f"Результат открытия {replace_emojis(name_emoji)} {case.name}",
             description=message,
             color=color
         )
 
-        await interaction.edit_original_response( view=compose(embed, text="🎉")
+        await interaction.edit_original_response( view=compose(embed, text="")
         )
 
         # Добавить reaction результата
@@ -170,7 +170,7 @@ class CaseSelect(discord.ui.Select):
         case = case_store.get_case(case_id)
 
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Кейс не найден."), ephemeral=True)
             return
 
         # Проверить баланс
@@ -223,7 +223,7 @@ class CaseSelect(discord.ui.Select):
 
         # Формировать результат
         if result["type"] == "nothing":
-            message = "😢 Ничего не выпало!"
+            message = "Ничего не выпало!"
             color = discord.Color.red()
             reaction_emoji = "cross"
         elif result["type"] == "coins":
@@ -265,12 +265,12 @@ class CaseSelect(discord.ui.Select):
             name_emoji = "emoji_special_case"
 
         embed = discord.Embed(
-            title=f" Результат открытия {replace_emojis(name_emoji)} {case.name}",
+            title=f"Результат открытия {replace_emojis(name_emoji)} {case.name}",
             description=message,
             color=color
         )
 
-        await interaction.edit_original_response( view=compose(embed, text="🎉")
+        await interaction.edit_original_response( view=compose(embed, text="")
         )
 
         # Добавить reaction результата

@@ -143,7 +143,7 @@ async def _on_my_invite_click(interaction: discord.Interaction) -> None:
             if fcode and await _reply_existing(fcode):
                 return
             await interaction.followup.send(
-                "❌ Ссылка создаётся другим запросом — попробуйте через пару секунд.",
+                "Ссылка создаётся другим запросом — попробуйте через пару секунд.",
                 ephemeral=True,
             )
             return
@@ -169,7 +169,7 @@ async def _on_my_invite_click(interaction: discord.Interaction) -> None:
             if fcode and await _reply_existing(fcode):
                 return
         await interaction.followup.send(
-            "⏳ Ссылка уже создаётся — попробуйте через несколько секунд.",
+            "Ссылка уже создаётся — попробуйте через несколько секунд.",
             ephemeral=True,
         )
         return
@@ -199,7 +199,7 @@ async def _create_personal_invite(interaction, channel):
     """Создать Discord-инвайт или вернуть None с уже отправленной ошибкой."""
     if channel is None or not isinstance(channel, discord.TextChannel):
         await interaction.followup.send(
-            "❌ Персональную ссылку можно создать только в текстовом канале.",
+            "Персональную ссылку можно создать только в текстовом канале.",
             ephemeral=True,
         )
         return None
@@ -210,14 +210,14 @@ async def _create_personal_invite(interaction, channel):
         )
     except discord.Forbidden:
         await interaction.followup.send(
-            "❌ У бота нет права создавать приглашения в этом канале.",
+            "У бота нет права создавать приглашения в этом канале.",
             ephemeral=True,
         )
         return None
     except Exception as exc:
         logger.warning("create_invite failed: %s", exc)
         await interaction.followup.send(
-            "❌ Не удалось создать ссылку, попробуйте позже.",
+            "Не удалось создать ссылку, попробуйте позже.",
             ephemeral=True,
         )
         return None
@@ -225,7 +225,7 @@ async def _create_personal_invite(interaction, channel):
 
 def _invite_link_button(owner_id: int) -> discord.ui.Button:
     btn = discord.ui.Button(
-        label="🔗 Моя ссылка",
+        label="Моя ссылка",
         style=discord.ButtonStyle.primary,
         custom_id=f"rep_my_invite_link:{owner_id}",
     )
@@ -233,7 +233,7 @@ def _invite_link_button(owner_id: int) -> discord.ui.Button:
     async def _cb(interaction: discord.Interaction) -> None:
         if interaction.user.id != owner_id:
             await interaction.response.send_message(
-                "❌ Эта кнопка показывает ссылку только владельцу статистики.",
+                "Эта кнопка показывает ссылку только владельцу статистики.",
                 ephemeral=True,
             )
             return

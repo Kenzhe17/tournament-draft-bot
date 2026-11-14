@@ -64,11 +64,11 @@ class MatchSelectView(View):
             idx = int(select.values[0])
         except (ValueError, IndexError):
             await interaction.response.send_message(
-                "❌ Некорректный выбор.", ephemeral=True)
+                "Некорректный выбор.", ephemeral=True)
             return
         if idx >= len(self.matches):
             await interaction.response.send_message(
-                "❌ Матч не найден.", ephemeral=True)
+                "Матч не найден.", ephemeral=True)
             return
         team_a, team_b = self.matches[idx]
         name_a, name_b = _match_names(self.tournament, team_a, team_b)
@@ -142,7 +142,7 @@ class TeamSelectView(View):
         user_team_index = self.tournament.get_player_team_index(interaction.user.id)
         if user_team_index is not None and user_team_index == self.team_b:
             await interaction.response.send_message(
-                "❌ Вы не можете ставить против своей команды.",
+                "Вы не можете ставить против своей команды.",
                 ephemeral=True
             )
             return
@@ -165,7 +165,7 @@ class TeamSelectView(View):
         user_team_index = self.tournament.get_player_team_index(interaction.user.id)
         if user_team_index is not None and user_team_index == self.team_a:
             await interaction.response.send_message(
-                "❌ Вы не можете ставить против своей команды.",
+                "Вы не можете ставить против своей команды.",
                 ephemeral=True
             )
             return
@@ -277,7 +277,7 @@ class ToggleBettingButton(Button):
             # Check if user is org
             if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут менять статус ставок."),
+                    replace_emojis("Только организаторы (роль 'org') могут менять статус ставок."),
                     ephemeral=True
                 )
                 return
@@ -285,7 +285,7 @@ class ToggleBettingButton(Button):
             tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."),
+                    replace_emojis("Турнир не найден."),
                     ephemeral=True
                 )
                 return
@@ -296,7 +296,7 @@ class ToggleBettingButton(Button):
             store.set(tournament)
 
             await interaction.response.send_message(
-                replace_emojis("✅ Ставки {status}."),
+                replace_emojis("Ставки {status}."),
                 ephemeral=True
             )
 
@@ -310,12 +310,12 @@ class ToggleBettingButton(Button):
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(
-                        replace_emojis(f"❌ Ошибка при изменении статуса ставок: {str(e)}"),
+                        replace_emojis(f"Ошибка при изменении статуса ставок: {str(e)}"),
                         ephemeral=True
                     )
                 else:
                     await interaction.response.send_message(
-                        replace_emojis(f"❌ Ошибка при изменении статуса ставок: {str(e)}"),
+                        replace_emojis(f"Ошибка при изменении статуса ставок: {str(e)}"),
                         ephemeral=True
                     )
             except:
@@ -344,7 +344,7 @@ class BetButton(Button):
         """Open match selection view."""
         if not self.tournament.is_betting_open() or self.tournament.betting_phase != self.match_type:
             await interaction.response.send_message(
-                replace_emojis("❌ Ставки закрыты."),
+                replace_emojis("Ставки закрыты."),
                 ephemeral=True
             )
             return

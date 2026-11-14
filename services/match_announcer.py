@@ -51,12 +51,12 @@ class MatchRulesButton(discord.ui.Button):
     def __init__(self) -> None:
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="📜 Правила",
+            label="Правила",
             custom_id="match_rules",
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        view = DesignView(title="📜 Правила матча", timeout=60)
+        view = DesignView(title="Правила матча", timeout=60)
         view.text(MATCH_RULES_TEXT)
         await interaction.response.send_message(
             view=view, ephemeral=True,
@@ -136,7 +136,7 @@ def _match_card_view(
     t2: int,
 ) -> DesignView:
     view = DesignView(
-        title=f"⚔️ МАТЧ #{number} — {label}",
+        title=f"МАТЧ #{number} — {label}",
         timeout=None,
     )
     view.text(f"**{name_a}** vs **{name_b}**")

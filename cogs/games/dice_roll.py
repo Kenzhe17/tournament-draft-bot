@@ -56,7 +56,7 @@ class DiceRollView(discord.ui.View):
     def create_embed(self, state: str = "menu", result: int = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f" **КУБИК | /dice_roll**",
+            title=f"**КУБИК | /dice_roll**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 

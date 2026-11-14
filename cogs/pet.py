@@ -76,15 +76,15 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
         status_text = f"\n\n **ПЛОХОЕ СОСТОЯНИЕ!** Питомец может уйти из-за голода!"
 
     embed = discord.Embed(
-        title=f" **ПРОФИЛЬ ПИТОМЦА | {pet_name.upper()}**",
+        title=f"**ПРОФИЛЬ ПИТОМЦА | {pet_name.upper()}**",
         description=(
             f" **Имя:** **{pet_name}**\n"
             f" **Уровень:** `{age}`\n"
             f" **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
             f"**Состояние:**\n"
-            f" 🍖 **Сытость:** `{fullness}%`\n"
-            f" ⚡ **Энергия:** `{energy}%`\n"
-            f" ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
+            f"**Сытость:** `{fullness}%`\n"
+            f"**Энергия:** `{energy}%`\n"
+            f"**Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
             f"**Пассивные эффекты:**\n"
             f"{abilities_formatted}"
             f"{status_text}"
@@ -129,7 +129,7 @@ class PetCog(commands.Cog):
 
         if not pet:
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет питомца, которого можно было бы отпустить!"),
+                replace_emojis("У вас нет питомца, которого можно было бы отпустить!"),
                 ephemeral=True
             )
             return
@@ -140,7 +140,7 @@ class PetCog(commands.Cog):
             title=replace_emojis("ПОДТВЕРЖДЕНИЕ | ОТПУСТИТЬ ПИТОМЦА"),
             description=(
                 f"Вы действительно хотите попрощаться с питомцем **{pet_dict['pet_name']}**?\n\n"
-                f"⚠️ **ВНИМАНИЕ:**\n"
+                f"**ВНИМАНИЕ:**\n"
                 f" Весь прогресс, уровень и способности **будут стерты**.\n"
                 f" Вернуть питомца назад будет невозможно.\n\n"
                 f"> *Это сообщение видите только вы.*"
@@ -158,11 +158,11 @@ class PetCog(commands.Cog):
         await interaction.response.defer()
 
         if target.id == interaction.user.id:
-            await interaction.followup.send(replace_emojis("❌ Вы не можете предложить со-опекунство самому себе!"))
+            await interaction.followup.send(replace_emojis("Вы не можете предложить со-опекунство самому себе!"))
             return
 
         if target.bot:
-            await interaction.followup.send(replace_emojis("❌ Боты не могут быть опекунами питомцев!"))
+            await interaction.followup.send(replace_emojis("Боты не могут быть опекунами питомцев!"))
             return
 
         pool = await get_pool()
@@ -173,17 +173,17 @@ class PetCog(commands.Cog):
             )
 
             if not pet:
-                await interaction.followup.send(replace_emojis("❌ У вас нет питомца!"))
+                await interaction.followup.send(replace_emojis("У вас нет питомца!"))
                 return
 
             pet_dict = dict(pet)
 
             if pet_dict["owner_1_id"] != interaction.user.id:
-                await interaction.followup.send(replace_emojis("❌ Только главный опекун может приглашать со-опекунов!"))
+                await interaction.followup.send(replace_emojis("Только главный опекун может приглашать со-опекунов!"))
                 return
 
             if pet_dict.get("owner_2_id"):
-                await interaction.followup.send(replace_emojis("❌ У вашего питомца уже есть второй опекун!"))
+                await interaction.followup.send(replace_emojis("У вашего питомца уже есть второй опекун!"))
                 return
 
             target_pet = await conn.fetchrow(
@@ -191,7 +191,7 @@ class PetCog(commands.Cog):
                 target.id
             )
             if target_pet:
-                await interaction.followup.send(f"❌ У {target.mention} уже есть питомец!")
+                await interaction.followup.send(f"У {target.mention} уже есть питомец!")
                 return
 
         from models.pets_catalog import PETS_CATALOG
@@ -204,7 +204,7 @@ class PetCog(commands.Cog):
                 f" {interaction.user.mention} предлагает {target.mention} стать со-опекуном питомца!\n\n"
                 f"**Питомец:** **{pet_display_name}** (*{pet_dict['rarity']}*)\n"
                 f"**Уровень:** `{pet_dict['level']} level`\n\n"
-                f"📜 **Что даст со-опекунство?**\n"
+                f"**Что даст со-опекунство?**\n"
                 f" Вы сможете вместе кормить питомца через `/pet profile`.\n"
                 f" Оба опекуна получают эффекты от активных пассивных способностей.\n\n"
                 f"> {target.mention}, используйте кнопки ниже для ответа."
@@ -235,7 +235,7 @@ class PetCog(commands.Cog):
 
             if not pet:
                 await interaction.followup.send(
-                    replace_emojis("❌ У вас нет питомца или вы не являетесь опекуном!")
+                    replace_emojis("У вас нет питомца или вы не являетесь опекуном!")
                 )
                 return
 
@@ -244,7 +244,7 @@ class PetCog(commands.Cog):
 
             if not old_coowner_id:
                 await interaction.followup.send(
-                    f"❌ У вашего питомца **{pet_dict['pet_name']}** сейчас нет со-опекуна."
+                    f"У вашего питомца **{pet_dict['pet_name']}** сейчас нет со-опекуна."
                 )
                 return
 
@@ -254,7 +254,7 @@ class PetCog(commands.Cog):
 
             if not is_main_owner and not is_coowner:
                 await interaction.followup.send(
-                    replace_emojis("❌ Вы не являетесь опекуном этого питомца!")
+                    replace_emojis("Вы не являетесь опекуном этого питомца!")
                 )
                 return
 
@@ -357,7 +357,7 @@ class PetTopView(discord.ui.View):
                 )
                 self._user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **{user_pet['pet_name']}** — **Уровень {user_pet['level']}** (`{user_pet['exp']} EXP`)"
             else:
-                self._user_rank_info = "У вас пока нет питомца. Приобретите его в `/shop` → **Питомцы**!"
+                self._user_rank_info = "У вас пока нет питомца. Приобретите его в `/shop`, категория «Питомцы»!"
 
         self._total_pages = (len(self._pets) + self.per_page - 1) // self.per_page if self._pets else 1
 
@@ -400,7 +400,7 @@ class PetTopView(discord.ui.View):
             description += f"───\n {self._user_rank_info}"
 
         embed = discord.Embed(
-            title=f" **ТОП ПИТОМЦЕВ**",
+            title=f"**ТОП ПИТОМЦЕВ**",
             description=description,
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -417,11 +417,11 @@ class PetTopView(discord.ui.View):
         # Previous button
         if self.page > 1:
             self.add_item(
-                PetTopPageButton(self.page - 1, "◀", discord.ButtonStyle.primary)
+                PetTopPageButton(self.page - 1, "Назад", discord.ButtonStyle.primary)
             )
         else:
             disabled_button = discord.ui.Button(
-                label="◀",
+                label="Назад",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -430,11 +430,11 @@ class PetTopView(discord.ui.View):
         # Next button
         if self.page < self._total_pages:
             self.add_item(
-                PetTopPageButton(self.page + 1, "▶", discord.ButtonStyle.primary)
+                PetTopPageButton(self.page + 1, "Вперёд", discord.ButtonStyle.primary)
             )
         else:
             disabled_button = discord.ui.Button(
-                label="▶",
+                label="Вперёд",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -457,7 +457,7 @@ class PetTopPageButton(discord.ui.Button):
 
         if interaction.user.id != view.author_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Вы не можете переключать чужие страницы!"),
+                replace_emojis("Вы не можете переключать чужие страницы!"),
                 ephemeral=True
             )
             return
@@ -492,14 +492,14 @@ class PetCatalogView(discord.ui.View):
         if self.current_index > 0:
             prev_button = discord.ui.Button(
                 style=discord.ButtonStyle.primary,
-                label="◀",
+                label="Назад",
                 custom_id="catalog_prev"
             )
             prev_button.callback = self.prev_callback
             self.add_item(prev_button)
         else:
             disabled_button = discord.ui.Button(
-                label="◀",
+                label="Вперёд",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -509,14 +509,14 @@ class PetCatalogView(discord.ui.View):
         if self.current_index < len(self.pet_list) - 1:
             next_button = discord.ui.Button(
                 style=discord.ButtonStyle.primary,
-                label="▶",
+                label="Назад",
                 custom_id="catalog_next"
             )
             next_button.callback = self.next_callback
             self.add_item(next_button)
         else:
             disabled_button = discord.ui.Button(
-                label="▶",
+                label="Вперёд",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -537,7 +537,7 @@ class PetCatalogView(discord.ui.View):
                 abilities_text += f" **{ab['name']}:** {desc}\n"
         
         embed = discord.Embed(
-            title=f" **КАТАЛОГ ПИТОМЦЕВ**",
+            title=f"**КАТАЛОГ ПИТОМЦЕВ**",
             description=(
                 f" **{pet_data['name']}** (*{pet_data['rarity']}*)\n\n"
                 f" **ID:** `{pet_id}`\n"
@@ -587,7 +587,7 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
 
     if not pet_row:
         embed = discord.Embed(
-            title=replace_emojis("🐾 Питомец"),
+            title="Питомец",
             description=(
                 f" У вас нет питомца.\n"
                 f" Используйте `/shop` → **Питомцы** для покупки."
@@ -603,7 +603,7 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     is_dead, pet = await pet_store.check_fullness_and_energy(pet_dict["pet_id"], interaction.guild_id, interaction.client)
     if is_dead:
         embed = discord.Embed(
-            title=replace_emojis("💀 Питомец умер"),
+            title="Питомец умер",
             description=(
                 f" Ваш питомец умер от голода.\n"
                 f" Используйте `/shop` для нового питомца."
@@ -617,7 +617,7 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     pet_def = pet_catalog.get_pet(pet.pet_type.value)
     if not pet_def:
         await interaction.response.send_message(
-            replace_emojis("❌ Ошибка загрузки данных питомца."),
+            replace_emojis("Ошибка загрузки данных питомца."),
             ephemeral=True
         )
         return
@@ -709,7 +709,7 @@ class FeedPetButton(discord.ui.Button):
         # Проверить, является ли пользователь опекуном
         if interaction.user.id not in [self.pet_dict["owner_1_id"], self.pet_dict.get("owner_2_id")]:
             await interaction.response.send_message(
-                replace_emojis("❌ Только опекуны могут кормить питомца!"),
+                replace_emojis("Только опекуны могут кормить питомца!"),
                 ephemeral=True
             )
             return
@@ -717,7 +717,7 @@ class FeedPetButton(discord.ui.Button):
         # Проверить сытость
         if self.pet_dict["fullness"] >= 100:
             await interaction.response.send_message(
-                replace_emojis("❌ Питомец уже сыт! Сытость: 100%"),
+                replace_emojis("Питомец уже сыт! Сытость: 100%"),
                 ephemeral=True
             )
             return
@@ -728,7 +728,7 @@ class FeedPetButton(discord.ui.Button):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < self.feed_cost:
             await interaction.response.send_message(
-                replace_emojis(f"❌ Недостаточно монет. Нужно: {self.feed_cost} 🪙"),
+                replace_emojis(f"Недостаточно монет. Нужно: {self.feed_cost} 🪙"),
                 ephemeral=True
             )
             return
@@ -785,7 +785,7 @@ class FeedPetButton(discord.ui.Button):
                     logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Питомец покормлен"),
+                title=replace_emojis("Питомец покормлен"),
                 description=(
                     f" **Сытость:** +20\n"
                     f" **Энергия:** +5\n"
@@ -798,7 +798,7 @@ class FeedPetButton(discord.ui.Button):
             # Вернуть деньги
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.feed_cost)
             await interaction.response.send_message(
-                replace_emojis(f"❌ {message}"),
+                replace_emojis(f"{message}"),
                 ephemeral=True
             )
 
@@ -824,7 +824,7 @@ class SafeButton(discord.ui.Button):
         # Проверить, является ли пользователь опекуном
         if interaction.user.id not in [self.pet_dict["owner_1_id"], self.pet_dict.get("owner_2_id")]:
             await interaction.response.send_message(
-                replace_emojis("❌ Только опекуны могут управлять сейфом!"),
+                replace_emojis("Только опекуны могут управлять сейфом!"),
                 ephemeral=True
             )
             return
@@ -859,14 +859,14 @@ class SafeModal(discord.ui.Modal):
         if not item_id or item_id.lower() == "clear":
             await pet_store.set_protected_item(self.pet_id, None)
             await interaction.response.send_message(
-                replace_emojis("✅ Сейф очищен! Предмет не защищён."),
+                replace_emojis("Сейф очищен! Предмет не защищён."),
                 ephemeral=True
             )
         else:
             # Установить защищаемый предмет
             await pet_store.set_protected_item(self.pet_id, item_id)
             await interaction.response.send_message(
-                replace_emojis(f"✅ Предмет `{item_id}` теперь защищён в сейфе!"),
+                replace_emojis(f"Предмет `{item_id}` теперь защищён в сейфе!"),
                 ephemeral=True
             )
         
@@ -935,7 +935,7 @@ class RenamePetButton(discord.ui.Button):
         # Проверить, является ли пользователь опекуном
         if interaction.user.id not in [self.pet_dict["owner_1_id"], self.pet_dict.get("owner_2_id")]:
             await interaction.response.send_message(
-                replace_emojis("❌ Только опекуны могут переименовывать питомца!"),
+                replace_emojis("Только опекуны могут переименовывать питомца!"),
                 ephemeral=True
             )
             return
@@ -967,7 +967,7 @@ class RenamePetModal(discord.ui.Modal):
 
         if not new_name:
             await interaction.response.send_message(
-                replace_emojis("❌ Имя не может быть пустым."),
+                replace_emojis("Имя не может быть пустым."),
                 ephemeral=True
             )
             return
@@ -1015,7 +1015,7 @@ class RenamePetModal(discord.ui.Modal):
                 logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
 
         await interaction.response.send_message(
-            replace_emojis(f"✅ Питомец переименован в {new_name}"),
+            replace_emojis(f"Питомец переименован в {new_name}"),
             ephemeral=True
         )
 
@@ -1026,7 +1026,7 @@ class ProtectItemButton(discord.ui.Button):
     def __init__(self, pet_id: int, pet_dict: dict, interaction: discord.Interaction):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label="🛡️ Защитить предмет",
+            label="Защитить предмет",
             custom_id=f"protect_item:{pet_id}"
         )
         self.pet_id = pet_id
@@ -1038,7 +1038,7 @@ class ProtectItemButton(discord.ui.Button):
         # Проверить, является ли пользователь опекуном
         if interaction.user.id not in [self.pet_dict["owner_1_id"], self.pet_dict.get("owner_2_id")]:
             await interaction.response.send_message(
-                replace_emojis("❌ Только опекуны могут использовать защиту предмета!"),
+                replace_emojis("Только опекуны могут использовать защиту предмета!"),
                 ephemeral=True
             )
             return
@@ -1049,7 +1049,7 @@ class ProtectItemButton(discord.ui.Button):
 
         if not inventory:
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет предметов для защиты!"),
+                replace_emojis("У вас нет предметов для защиты!"),
                 ephemeral=True
             )
             return
@@ -1076,7 +1076,7 @@ class ProtectItemButton(discord.ui.Button):
 
         if not options:
             await interaction.response.send_message(
-                replace_emojis("❌ Все предметы уже защищены!"),
+                replace_emojis("Все предметы уже защищены!"),
                 ephemeral=True
             )
             return
@@ -1119,10 +1119,10 @@ class ProtectItemSelectView(discord.ui.View):
             from storage.shop_store import shop_store
             item = shop_store.get_item(selected_item_id)
 
-            await interaction.response.edit_message( view=compose(text=replace_emojis(f"✅ Предмет **{item.name}** теперь защищён питомцем!"), view=None)
+            await interaction.response.edit_message( view=compose(text=replace_emojis(f"Предмет **{item.name}** теперь защищён питомцем!"), view=None)
             )
         else:
-            await interaction.response.edit_message( view=compose(text=replace_emojis("❌ Не удалось защитить предмет."), view=None)
+            await interaction.response.edit_message( view=compose(text=replace_emojis("Не удалось защитить предмет."), view=None)
             )
 
 
@@ -1137,7 +1137,7 @@ class PetDeleteConfirmView(discord.ui.View):
     async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Вы не можете принимать решения за чужого питомца!"),
+                replace_emojis("Вы не можете принимать решения за чужого питомца!"),
                 ephemeral=True
             )
             return
@@ -1146,7 +1146,7 @@ class PetDeleteConfirmView(discord.ui.View):
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM pets WHERE pet_id = $1", self.pet_row["pet_id"])
 
-        await interaction.response.edit_message( view=text_card(replace_emojis("❌ Действие выполнено. Питомец удален."))
+        await interaction.response.edit_message( view=text_card(replace_emojis("Действие выполнено. Питомец удален."))
         )
 
         pet_name = self.pet_row["pet_name"]
@@ -1187,12 +1187,12 @@ class PetDeleteConfirmView(discord.ui.View):
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Это не ваша кнопка!"),
+                replace_emojis("Это не ваша кнопка!"),
                 ephemeral=True
             )
             return
 
-        await interaction.response.edit_message( view=text_card(replace_emojis("❌ Процесс отменен. Ваш питомец остался с вами! 🐾"))
+        await interaction.response.edit_message( view=text_card(replace_emojis("Процесс отменен. Ваш питомец остался с вами!"))
         )
 
 

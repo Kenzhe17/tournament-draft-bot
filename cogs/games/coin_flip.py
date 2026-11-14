@@ -86,7 +86,7 @@ class CoinFlipView(discord.ui.View):
     def create_game_embed(self, state: str = "menu", initiator_avatar: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f" **COIN FLIP | /coin_flip**",
+            title=f"**COIN FLIP | /coin_flip**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 

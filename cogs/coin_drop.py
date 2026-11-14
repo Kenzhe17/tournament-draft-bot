@@ -77,7 +77,7 @@ class SpeedDropView(discord.ui.View):
         await add_balance(interaction.guild_id, interaction.user.id, self.reward_amount)
 
         result_embed = discord.Embed(
-            title=f" **ИВЕНТ ЗАВЕРШЁН | НАГРАДА ЗАБРАНА**",
+            title=f"**ИВЕНТ ЗАВЕРШЁН | НАГРАДА ЗАБРАНА**",
             description=(
                 f" **Счастливчик:** {interaction.user.mention}\n"
                 f" **Выигрыш:** **`{self.reward_amount:,}`** {get_emoji('money')}\n\n"
@@ -99,7 +99,7 @@ class RaffleDropView(discord.ui.View):
 
     def build_embed(self) -> discord.Embed:
         return discord.Embed(
-            title=f" **СПОНТАННЫЙ ИВЕНТ | ЛОТЕРЕЯ МОНЕТ**",
+            title=f"**СПОНТАННЫЙ ИВЕНТ | ЛОТЕРЕЯ МОНЕТ**",
             description=(
                 f" В чате разыгрывается мешок с монетами!\n"
                 f" Награда: **`{self.reward_amount:,}`** {get_emoji('money')}\n"
@@ -192,7 +192,7 @@ class CoinDropCog(commands.Cog):
                 item.custom_id = f"speed_coin_drop_{event_id}"
 
             embed = discord.Embed(
-                title=f" **СПОНТАННЫЙ ИВЕНТ | БЫСТРЫЕ МОНЕТЫ**",
+                title=f"**СПОНТАННЫЙ ИВЕНТ | БЫСТРЫЕ МОНЕТЫ**",
                 description=(
                     f" В чате обнаружен мешок с монетами!\n"
                     f" Нажмите кнопку как можно быстрее — кто успеет первым, тот забрал куш.\n\n"
@@ -217,7 +217,7 @@ class CoinDropCog(commands.Cog):
 
             if not view.participants:
                 no_p_embed = discord.Embed(
-                    title=f" **ЛОТЕРЕЯ ЗАВЕРШЕНА | НИКОГО**",
+                    title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | НИКОГО**",
                     description=f" Никто не успел принять участие за 60 секунд. Мешок с {get_emoji('money')} сгорел!",
                     color=0xED4245
                 )
@@ -240,7 +240,7 @@ class CoinDropCog(commands.Cog):
                     await add_balance(channel.guild.id, winner.id, reward)
 
                     result_embed = discord.Embed(
-                        title=f" **ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
+                        title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
                         description=(
                             f" **Победитель:** {winner.mention}\n"
                             f" **Выигрыш:** **`{reward:,}`** {get_emoji('money')}\n"

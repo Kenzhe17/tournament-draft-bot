@@ -50,7 +50,7 @@ def _room_status_suffix(tournament, phase: str, index: int) -> str:
         cid = getattr(tournament, "channel_id", 0)
         key = match_key(str(tournament.id), phase, index)
         if room_store.has_room(gid, cid, key):
-            return " · 🗝️ Комната готова"
+            return " · Комната готова"
     except Exception:
         pass
     return " · Ожидаются данные"
@@ -279,9 +279,9 @@ def build_help_category_embed(category: str) -> discord.Embed:
         embed.add_field(
             name=f"**{cmd['name']}**",
             value=f"{cmd['description']}\n"
-                   f"📝 Параметры: {cmd['params']}\n"
-                   f"💡 Пример: `{cmd['example']}`\n"
-                   f"🔒 Доступ: {cmd['access']}",
+                   f"Параметры: {cmd['params']}\n"
+                   f"Пример: `{cmd['example']}`\n"
+                   f"Доступ: {cmd['access']}",
             inline=False
         )
 
@@ -379,8 +379,8 @@ async def build_player_stats_embed(guild_id: int, user: discord.Member) -> disco
 
     if not stats:
         embed = discord.Embed(
-            title=f"📊 Статистика {user.display_name}",
-            description="❌ Статистика не найдена. Игрок ещё не участвовал в турнирах.",
+            title=f"Статистика {user.display_name}",
+            description="Статистика не найдена. Игрок ещё не участвовал в турнирах.",
             color=discord.Color.red()
         )
         return embed
@@ -398,54 +398,54 @@ async def build_player_stats_embed(guild_id: int, user: discord.Member) -> disco
     elo_diff_text = f"+{elo_diff}" if elo_diff > 0 else str(elo_diff)
 
     embed = discord.Embed(
-        title=f"📊 Статистика {user.display_name}",
+        title=f"Статистика {user.display_name}",
         color=discord.Color.dark_blue()
     )
 
     # Basic stats
     embed.add_field(
-        name="🎯 Текущий ELO",
+        name="Текущий ELO",
         value=f"{int(stats.elo)} ({elo_diff_text} от среднего)",
         inline=True
     )
     embed.add_field(
-        name="⚔️ Матчи",
+        name="Матчи",
         value=f"{total_matches}",
         inline=True
     )
     embed.add_field(
-        name="🏆 Победы",
+        name="Победы",
         value=f"{stats.wins}",
         inline=True
     )
 
     # Performance stats
     embed.add_field(
-        name="💀 Убийства",
+        name="Убийства",
         value=f"{stats.kills}",
         inline=True
     )
     embed.add_field(
-        name="☠️ Смерти",
+        name="Смерти",
         value=f"{stats.deaths}",
         inline=True
     )
     embed.add_field(
-        name="📈 K/D",
+        name="K/D",
         value=f"{avg_kd:.2f}",
         inline=True
     )
 
     # Win rate
     embed.add_field(
-        name="📊 Винрейт",
+        name="Винрейт",
         value=f"{win_rate:.1f}%",
         inline=False
     )
 
     # Losses
     embed.add_field(
-        name="❌ Поражения",
+        name="Поражения",
         value=f"{stats.losses}",
         inline=True
     )
@@ -789,19 +789,19 @@ async def build_draft_embed(
             captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain_name
 
             if circle > tournament.current_circle or not pick:
-                lines.append(f" {captain_mention} ➔ `[Ожидание]`")
+                lines.append(f"{captain_mention} `[Ожидание]`")
             elif circle == tournament.current_circle and pick:
                 pick_id = tournament.player_user_ids.get(pick, 0)
                 pick_mention = f"<@{pick_id}>" if pick_id > 0 else pick
-                lines.append(f" {captain_mention} ➔ {pick_mention}")
+                lines.append(f"{captain_mention} {pick_mention}")
             elif circle < tournament.current_circle:
                 pick_id = tournament.player_user_ids.get(pick, 0)
                 pick_mention = f"<@{pick_id}>" if pick_id > 0 else pick
-                lines.append(f" {captain_mention} ➔ {pick_mention}")
+                lines.append(f"{captain_mention} {pick_mention}")
 
         status = ""
         if circle == tournament.current_circle:
-            status = f" ◄ `[Текущий]`"
+            status = f"`[Текущий]`"
 
         picks_sections.append(f" **Круг {circle}:{status}**\n" + "\n".join(lines))
 
@@ -810,7 +810,7 @@ async def build_draft_embed(
     key = str(tournament.current_circle)
     available = tournament.available.get(key, [])
     if len(available) > 25:
-        warning = f"\n\n⚠️ **Внимание:** В пуле более 25 игроков! Выбор ограничен текущим кругом."
+        warning = f"\n\n**Внимание:** В пуле более 25 игроков! Выбор ограничен текущим кругом."
 
     description = (
         f"{replace_emojis(current_line)}\n\n"
@@ -820,7 +820,7 @@ async def build_draft_embed(
     )
 
     embed = discord.Embed(
-        title=f" ⚔️ Порядок капитанов | Фаза Драфта",
+        title=f"Порядок капитанов | Фаза Драфта",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -835,7 +835,7 @@ async def build_teams_embed(
     # This function is kept for backward compatibility but shouldn't be used
     # since we skip the TEAMS phase now
     embed = discord.Embed(
-        title="🏆 Сформированные Команды",
+        title="Сформированные Команды",
         color=discord.Color.dark_green(),
     )
     await _add_teams_block_to_embed(embed, guild, tournament)
@@ -899,9 +899,9 @@ async def build_qualifiers_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
-        footer = "🔓 СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
+        footer = "СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "qualifiers":
-        footer = "🔒 СТАВКИ ЗАКРЫТЫ"
+        footer = "СТАВКИ ЗАКРЫТЫ"
 
     description = (
         f" **Организатор:** {organizer_mention}\n\n"
@@ -1000,9 +1000,9 @@ async def build_semifinals_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "semifinal":
-        footer = "🔓 СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
+        footer = "СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "semifinal":
-        footer = "🔒 СТАВКИ ЗАКРЫТЫ"
+        footer = "СТАВКИ ЗАКРЫТЫ"
 
     description = (
         f" **Организатор:** {organizer_mention}\n\n"
@@ -1091,9 +1091,9 @@ async def build_final_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
-        footer = "🔓 СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
+        footer = "СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "final":
-        footer = "🔒 СТАВКИ ЗАКРЫТЫ"
+        footer = "СТАВКИ ЗАКРЫТЫ"
 
     description = (
         f" **Организатор:** {organizer_mention}\n\n"
@@ -1319,7 +1319,7 @@ async def build_winner_embed(
         f" **Best AVG:** {best_avg_player if best_avg_player else 'Нет данных'} ({best_avg_display})\n"
         f" **Max Kills:** {best_kills_player if best_kills_player else 'Нет данных'} ({best_kills_display})\n"
         f" **Лудик:** {max_payout_player if max_payout_player else 'Нет данных'} ({max_payout_display} {get_emoji('money') if max_payout > 0 else ''})\n\n"
-        f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
+        f"Поздравляем победителей! Спасибо всем за участие"
     )
 
     embed = discord.Embed(
@@ -1363,7 +1363,7 @@ def build_level_up_embed(stats, old_level: int, new_level: int) -> tuple[discord
     progress_bar = create_progress_bar(current_xp, xp_needed)
 
     embed = discord.Embed(
-        title="🎉 ПОВЫШЕНИЕ УРОВНЯ!",
+        title="ПОВЫШЕНИЕ УРОВНЯ!",
         color=discord.Color.gold(),
     )
     embed.add_field(
@@ -1418,19 +1418,19 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
     # Set title and color based on type
     if leaderboard_type == "level":
-        title = f" ЛИДЕРЫ СЕРВЕРА | УРОВЕНЬ И ОПЫТ"
+        title = f"ЛИДЕРЫ СЕРВЕРА | УРОВЕНЬ И ОПЫТ"
         color = discord.Color.from_rgb(155, 89, 182)  # Пастельно-фиолетовый
     elif leaderboard_type == "money":
-        title = f" ЛИДЕРЫ СЕРВЕРА | БАЛАНС МОНЕТ"
+        title = f"ЛИДЕРЫ СЕРВЕРА | БАЛАНС МОНЕТ"
         color = discord.Color.from_rgb(241, 196, 15)  # Пастельно-золотой
     elif leaderboard_type == "ulti_elo":
-        title = f" ЛИДЕРЫ СЕРВЕРА | ULTIMATUM ELO"
+        title = f"ЛИДЕРЫ СЕРВЕРА | ULTIMATUM ELO"
         color = discord.Color.from_rgb(46, 204, 113)  # Пастельно-зеленый
     elif leaderboard_type == "rep":
-        title = f" ЛИДЕРЫ СЕРВЕРА | РЕПУТАЦИЯ"
+        title = f"ЛИДЕРЫ СЕРВЕРА | РЕПУТАЦИЯ"
         color = discord.Color.from_rgb(142, 68, 173)  # Пастельно-фиолетовый
     else:  # elo
-        title = f" ЛИДЕРЫ СЕРВЕРА | ELO"
+        title = f"ЛИДЕРЫ СЕРВЕРА | ELO"
         color = discord.Color.from_rgb(231, 76, 60)  # Пастельно-красный
 
     # Get total pages based on type

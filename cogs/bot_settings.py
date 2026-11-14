@@ -38,7 +38,7 @@ class BotSettingsCog(commands.Cog):
         if interaction.user.id != BOT_OWNER_ID:
             logger.warning(f"User {interaction.user.id} is not bot owner (BOT_OWNER_ID={BOT_OWNER_ID})")
             await interaction.response.send_message(
-                "❌ Только владелец бота может использовать эту команду.",
+                "Только владелец бота может использовать эту команду.",
                 ephemeral=True
             )
             return
@@ -54,19 +54,19 @@ class BotSettingsCog(commands.Cog):
         if welcome is not None:
             settings["welcome_enabled"] = welcome
             status = "включены" if welcome else "отключены"
-            response_messages.append(f"{replace_emojis('✅')} Welcome сообщения {status}.")
+            response_messages.append(f"Welcome сообщения {status}.")
             logger.info(f"Welcome enabled set to {welcome}")
         
         if coin_drop is not None:
             settings["coin_drop_enabled"] = coin_drop
             status = "включены" if coin_drop else "отключены"
-            response_messages.append(f"{replace_emojis('✅')} Спонтанные ивенты {status}.")
+            response_messages.append(f"Спонтанные ивенты {status}.")
             logger.info(f"Coin drop enabled set to {coin_drop}")
         
         if welcome is None and coin_drop is None:
             logger.warning("No options specified")
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Укажите хотя бы одну опцию для изменения.",
+                f"Укажите хотя бы одну опцию для изменения.",
                 ephemeral=True
             )
             return

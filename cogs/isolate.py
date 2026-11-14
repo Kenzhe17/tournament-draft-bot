@@ -45,7 +45,7 @@ class Isolate(commands.Cog):
         # Проверка на владельца бота
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Эта команда доступна только владельцу бота.",
+                "Эта команда доступна только владельцу бота.",
                 ephemeral=True
             )
             return
@@ -64,7 +64,7 @@ class Isolate(commands.Cog):
         # Проверка если уже включен
         if ISOLATION_STATE_FILE.exists():
             await interaction.followup.send(
-                "⚠️ Режим изоляции уже активен.",
+                "Режим изоляции уже активен.",
                 ephemeral=True
             )
             return
@@ -72,7 +72,7 @@ class Isolate(commands.Cog):
         guild = interaction.guild
         if not guild:
             await interaction.followup.send(
-                "❌ Команда может быть использована только на сервере.",
+                "Команда может быть использована только на сервере.",
                 ephemeral=True
             )
             return
@@ -85,7 +85,7 @@ class Isolate(commands.Cog):
             await self.apply_isolation(guild, snapshot)
             
             await interaction.followup.send(
-                "✅ Сервер успешно изолирован. Все каналы скрыты.",
+                "Сервер успешно изолирован. Все каналы скрыты.",
                 ephemeral=True
             )
             logger.info(f"Изоляция включена на сервере {guild.id} пользователем {interaction.user.id}")
@@ -93,7 +93,7 @@ class Isolate(commands.Cog):
         except Exception as e:
             logger.error(f"Ошибка при включении изоляции: {e}", exc_info=True)
             await interaction.followup.send(
-                f"❌ Ошибка при включении изоляции: {str(e)}",
+                f"Ошибка при включении изоляции: {str(e)}",
                 ephemeral=True
             )
             # Удалить snapshot если произошла ошибка
@@ -106,7 +106,7 @@ class Isolate(commands.Cog):
         # Проверка если не включен
         if not ISOLATION_STATE_FILE.exists():
             await interaction.followup.send(
-                "⚠️ Режим изоляции не активен или снимок прав не найден.",
+                "Режим изоляции не активен или снимок прав не найден.",
                 ephemeral=True
             )
             return
@@ -114,7 +114,7 @@ class Isolate(commands.Cog):
         guild = interaction.guild
         if not guild:
             await interaction.followup.send(
-                "❌ Команда может быть использована только на сервере.",
+                "Команда может быть использована только на сервере.",
                 ephemeral=True
             )
             return
@@ -131,7 +131,7 @@ class Isolate(commands.Cog):
             ISOLATION_STATE_FILE.unlink()
             
             await interaction.followup.send(
-                "✅ Режим изоляции отключён. Права доступа к каналам восстановлены в исходное состояние.",
+                "Режим изоляции отключён. Права доступа к каналам восстановлены в исходное состояние.",
                 ephemeral=True
             )
             logger.info(f"Изоляция отключена на сервере {guild.id} пользователем {interaction.user.id}")
@@ -139,7 +139,7 @@ class Isolate(commands.Cog):
         except Exception as e:
             logger.error(f"Ошибка при отключении изоляции: {e}", exc_info=True)
             await interaction.followup.send(
-                f"❌ Ошибка при отключении изоляции: {str(e)}",
+                f"Ошибка при отключении изоляции: {str(e)}",
                 ephemeral=True
             )
 

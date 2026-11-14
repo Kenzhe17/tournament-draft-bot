@@ -59,7 +59,7 @@ class RouletteView(discord.ui.View):
     def create_embed(self, state: str = "menu", result: int = None, choice: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f" **РУЛЕТКА | /roulette**",
+            title=f"**РУЛЕТКА | /roulette**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 

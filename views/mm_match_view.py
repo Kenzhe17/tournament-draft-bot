@@ -438,7 +438,7 @@ class MmRulesBtn(discord.ui.DynamicItem[discord.ui.Button], template=T_RULES):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(
-            view=DesignView(title="📜 Правила матча", timeout=60).text(RULES_TEXT),
+            view=DesignView(title="Правила матча", timeout=60).text(RULES_TEXT),
             ephemeral=True,
         )
 
@@ -545,18 +545,18 @@ class MmKDModal(discord.ui.Modal):
         tournament = _ctx(interaction, self.gid, self.cid, self.tid)
         if tournament is None:
             await interaction.response.send_message(
-                "❌ Матч не найден или уже завершён.", ephemeral=True
+                "Матч не найден или уже завершён.", ephemeral=True
             )
             return
         meta = meta_of(tournament) or {}
         if meta.get("state") == "done" or tournament.phase == TournamentPhase.COMPLETE:
             await interaction.response.send_message(
-                "❌ Матч уже завершён.", ephemeral=True
+                "Матч уже завершён.", ephemeral=True
             )
             return
         if not _can_fill(tournament, interaction.user, interaction.guild):
             await interaction.response.send_message(
-                "❌ Заполнять K/D может только капитан команды "
+                "Заполнять K/D может только капитан команды "
                 "или организатор.", ephemeral=True
             )
             return
@@ -564,7 +564,7 @@ class MmKDModal(discord.ui.Modal):
         if not is_org_check(interaction.user, interaction.guild):
             if not _is_captain(tournament, interaction.user.id, self.team_index):
                 await interaction.response.send_message(
-                    "❌ Вы не капитан этой команды.", ephemeral=True
+                    "Вы не капитан этой команды.", ephemeral=True
                 )
                 return
 
@@ -572,7 +572,7 @@ class MmKDModal(discord.ui.Modal):
         current = _team_players(tournament, self.team_index)
         if set(current) != set(self.players):
             await interaction.response.send_message(
-                "❌ Состав команды изменился — форма устарела.",
+                "Состав команды изменился — форма устарела.",
                 ephemeral=True,
             )
             return
@@ -587,7 +587,7 @@ class MmKDModal(discord.ui.Modal):
             parsed = kd_stat.parse_kd(item.value)
             if parsed is None:
                 await interaction.response.send_message(
-                    f"❌ Неверный формат K/D для **{player}**. "
+                    f"Неверный формат K/D для **{player}**. "
                     "Введите два числа через `/`, например `7/4`.",
                     ephemeral=True,
                 )
@@ -619,7 +619,7 @@ class MmKDModal(discord.ui.Modal):
         store.set(tournament)
 
         await interaction.response.send_message(
-            f"✅ Статистика команды сохранена ({len(stats)}/4).",
+            f"Статистика команды сохранена ({len(stats)}/4).",
             ephemeral=True,
         )
         await _refresh_card(interaction, tournament)
@@ -641,26 +641,26 @@ class MmScoreModal(discord.ui.Modal, title="Счёт матча"):
         tournament = _ctx(interaction, self.gid, self.cid, self.tid)
         if tournament is None:
             await interaction.response.send_message(
-                "❌ Матч не найден или уже завершён.", ephemeral=True
+                "Матч не найден или уже завершён.", ephemeral=True
             )
             return
         if not _can_confirm(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                "❌ Подтверждать результат может только организатор "
+                "Подтверждать результат может только организатор "
                 "или администратор.", ephemeral=True
             )
             return
         meta = meta_of(tournament) or {}
         if meta.get("state") != "check":
             await interaction.response.send_message(
-                "❌ Статистика заполнена не полностью — подтверждение "
+                "Статистика заполнена не полностью — подтверждение "
                 "результата пока недоступно.", ephemeral=True
             )
             return
         score = kd_stat.parse_match_score(self.score_input.value)
         if score is None:
             await interaction.response.send_message(
-                "❌ Некорректный счёт. Kazakhstan — до 5 побед: "
+                "Некорректный счёт. Kazakhstan — до 5 побед: "
                 "5:0, 5:1, 5:2, 5:3 или 5:4.", ephemeral=True
             )
             return
@@ -722,18 +722,18 @@ async def handle_kd_click(interaction: discord.Interaction) -> None:
     tournament = _ctx(interaction, gid, cid, tid)
     if tournament is None:
         await interaction.response.send_message(
-            "❌ Матч не найден или уже завершён.", ephemeral=True
+            "Матч не найден или уже завершён.", ephemeral=True
         )
         return
     meta = meta_of(tournament) or {}
     if meta.get("state") == "done":
         await interaction.response.send_message(
-            "❌ Матч уже завершён.", ephemeral=True
+            "Матч уже завершён.", ephemeral=True
         )
         return
     if not _can_fill(tournament, interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ Заполнять K/D может только капитан команды "
+            "Заполнять K/D может только капитан команды "
             "или организатор.", ephemeral=True
         )
         return
@@ -747,7 +747,7 @@ async def handle_kd_click(interaction: discord.Interaction) -> None:
     is_org = is_org_check(interaction.user, interaction.guild)
     if own_team is None and not is_org:
         await interaction.response.send_message(
-            "❌ Вы не капитан ни одной команды этого матча.",
+            "Вы не капитан ни одной команды этого матча.",
             ephemeral=True,
         )
         return
@@ -799,19 +799,19 @@ async def handle_win_click(interaction: discord.Interaction, side: str) -> None:
     tournament = _ctx(interaction, gid, cid, tid)
     if tournament is None:
         await interaction.response.send_message(
-            "❌ Матч не найден или уже завершён.", ephemeral=True
+            "Матч не найден или уже завершён.", ephemeral=True
         )
         return
     if not _can_confirm(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ Подтверждать результат может только организатор "
+            "Подтверждать результат может только организатор "
             "или администратор.", ephemeral=True
         )
         return
     meta = meta_of(tournament) or {}
     if meta.get("state") != "check":
         await interaction.response.send_message(
-            "❌ Статистика заполнена не полностью — подтверждение "
+            "Статистика заполнена не полностью — подтверждение "
             "результата пока недоступно.", ephemeral=True
         )
         return
@@ -827,19 +827,19 @@ async def handle_wsel_click(interaction: discord.Interaction) -> None:
     tournament = _ctx(interaction, gid, cid, tid)
     if tournament is None:
         await interaction.response.send_message(
-            "❌ Матч не найден или уже завершён.", ephemeral=True
+            "Матч не найден или уже завершён.", ephemeral=True
         )
         return
     if not _can_confirm(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ Подтверждать результат может только организатор "
+            "Подтверждать результат может только организатор "
             "или администратор.", ephemeral=True
         )
         return
     meta = meta_of(tournament) or {}
     if meta.get("state") != "check":
         await interaction.response.send_message(
-            "❌ Статистика заполнена не полностью — подтверждение "
+            "Статистика заполнена не полностью — подтверждение "
             "результата пока недоступно.", ephemeral=True
         )
         return
@@ -847,7 +847,7 @@ async def handle_wsel_click(interaction: discord.Interaction) -> None:
     side = values[0] if values else ""
     if side not in ("a", "b"):
         await interaction.response.send_message(
-            "❌ Не выбран победитель.", ephemeral=True
+            "Не выбран победитель.", ephemeral=True
         )
         return
     await interaction.response.send_modal(
@@ -866,12 +866,12 @@ async def handle_confirm_click(interaction: discord.Interaction) -> None:
     tournament = _ctx(interaction, gid, cid, tid)
     if tournament is None:
         await interaction.response.send_message(
-            "❌ Матч не найден или уже завершён.", ephemeral=True
+            "Матч не найден или уже завершён.", ephemeral=True
         )
         return
     if not _can_confirm(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ Подтверждать результат может только организатор "
+            "Подтверждать результат может только организатор "
             "или администратор.", ephemeral=True
         )
         return
@@ -880,10 +880,10 @@ async def handle_confirm_click(interaction: discord.Interaction) -> None:
         interaction, tournament, side, (w, l)
     )
     if not ok:
-        await interaction.followup.send(f"❌ {err}", ephemeral=True)
+        await interaction.followup.send(f"{err}", ephemeral=True)
         return
     await interaction.followup.send(
-        "✅ Результат матча подтверждён.", ephemeral=True
+        "Результат матча подтверждён.", ephemeral=True
     )
 
 
@@ -901,12 +901,12 @@ async def handle_cancel_click(interaction: discord.Interaction) -> None:
     tournament = _ctx(interaction, gid, cid, tid)
     if tournament is None:
         await interaction.response.send_message(
-            "❌ Матч не найден или уже завершён.", ephemeral=True
+            "Матч не найден или уже завершён.", ephemeral=True
         )
         return
     if not _can_confirm(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ Недостаточно прав.", ephemeral=True
+            "Недостаточно прав.", ephemeral=True
         )
         return
     meta = meta_of(tournament)
@@ -915,7 +915,7 @@ async def handle_cancel_click(interaction: discord.Interaction) -> None:
         meta["status_text"] = "ожидается"
         store.set(tournament)
         await interaction.response.send_message(
-            "↩️ Проверка отменена — статистику можно исправить.",
+            "Проверка отменена — статистику можно исправить.",
             ephemeral=True,
         )
         await _refresh_card(interaction, tournament)

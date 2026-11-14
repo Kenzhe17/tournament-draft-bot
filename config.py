@@ -557,6 +557,35 @@ STANDARD_EMOJIS = {
     "a_dot_smaller": "⋮",
 }
 
+# Эмодзи, используемые только для украшения интерфейса.
+# Всегда возвращают пустую строку, чтобы не попадать в CV2-карточки.
+# Смысловые эмодзи (валюта, рейтинги, игровые иконки, редкости) сюда не входят.
+DECORATIVE_EMOJI_KEYS = {
+    # Навигация и стрелки
+    "arrow_left", "arrow_right", "white_arrow", "white_dot",
+    "sub_directory", "sub_middle",
+    "a_sparkle", "a_star", "a_triple_dots", "a_dot_smaller",
+    "back", "forward", "refresh", "dropdown", "settings", "eye",
+    # Статусы и уведомления
+    "success", "error", "warning", "info", "loading", "check", "cross",
+    "question", "link",
+    # Коммуникация и модерация
+    "pin", "megaphone", "new", "comment", "announce",
+    "delete", "block",
+    # Игры и разделы (декоративные иконки меню)
+    "game", "dice", "slots", "roulette", "rps", "brain",
+    "draft", "match", "screenshot", "stats", "damage",
+    "freefire", "pet", "sparkle", "star", "clock",
+    "skull", "target", "sword", "team", "profile",
+    "shop", "gift", "daily", "bet", "bank", "tournament",
+    "room", "tag",
+    "case_basic", "case_premium", "case_elite", "case_special",
+    # Assets 2.0 декоративные
+    "arcade", "boost", "favorite", "home", "inventory", "moderation",
+    "music", "partners", "rules", "security", "streams", "support",
+}
+
+
 def _emoji_tag(emoji_name: str, custom_id: str) -> str:
     """Discord custom emoji tag. Имена эмодзи не могут содержать пробелы."""
     safe_name = emoji_name.replace(" ", "_")
@@ -565,6 +594,9 @@ def _emoji_tag(emoji_name: str, custom_id: str) -> str:
 
 def get_emoji(emoji_name: str) -> str:
     """Get custom emoji with ID or fallback to standard emoji."""
+
+    if emoji_name in DECORATIVE_EMOJI_KEYS:
+        return ""
 
     # Check rank emojis
     if emoji_name in RANK_EMOJIS:
@@ -627,6 +659,20 @@ def replace_emojis(text: str) -> str:
         "🔙": "back",
         "🔽": "dropdown",
         "🆕": "new",
+        "➡️": "arrow_right",
+        "→": "white_arrow",
+        "▶": "forward",
+        "◀": "back",
+        "⬅️": "arrow_left",
+
+        # Decorative status markers
+        "❓": "question",
+        "⏳": "loading",
+        "ℹ️": "info",
+        "🟢": "success",
+        "🔵": "info",
+        "🟡": "warning",
+        "🔒": "security",
 
         # Communication
         "💬": "comment",
@@ -675,7 +721,6 @@ def replace_emojis(text: str) -> str:
         "🏠": "room",
 
         # Additional symbols for replacement
-        "⬅️": "arrow_left",
         "⋯": "a_triple_dots",
 
         # Case emojis

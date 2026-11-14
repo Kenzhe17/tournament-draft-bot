@@ -114,7 +114,7 @@ class BROrganizerMenuButton(Button):
         # Check if bot owner or specific user (582145013358657549)
         if interaction.user.id != BOT_OWNER_ID and interaction.user.id not in ADMIN_USER_IDS:
             await interaction.response.send_message(
-                "❌ Только владелец бота или организатор могут управлять BR турниром.",
+                "Только владелец бота или организатор могут управлять BR турниром.",
                 ephemeral=True
             )
             return
@@ -240,14 +240,14 @@ class StartBRButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
 
         if tournament.phase != BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
-                "❌ BR турнир не в фазе регистрации.",
+                "BR турнир не в фазе регистрации.",
                 ephemeral=True
             )
             return
@@ -262,7 +262,7 @@ class StartBRButton(Button):
             tournament.players = [p for p in tournament.players if p["id"] not in vac_ids]
             br_store.set(tournament)
             await interaction.response.send_message(
-                f"⚠️ Перед стартом исключены игроки с активным VAC "
+                f"Перед стартом исключены игроки с активным VAC "
                 f"({before - len(tournament.players)}). Нажмите «Старт BR» ещё раз.",
                 ephemeral=True
             )
@@ -272,14 +272,14 @@ class StartBRButton(Button):
         player_count = len(tournament.players)
         if player_count < 20:
             await interaction.response.send_message(
-                f"❌ Нужно минимум 20 игроков (текущих: {player_count}).",
+                f"Нужно минимум 20 игроков (текущих: {player_count}).",
                 ephemeral=True
             )
             return
 
         if player_count % 4 != 0:
             await interaction.response.send_message(
-                f"❌ Количество игроков должно делиться на 4 (текущих: {player_count}).",
+                f"Количество игроков должно делиться на 4 (текущих: {player_count}).",
                 ephemeral=True
             )
             return
@@ -352,7 +352,7 @@ class StartBRButton(Button):
             team_name = team.get("name", f"Команда {i+1}")
             players = team.get("players", [])
             players_str = ", ".join(players) if players else ""
-            num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
+            num_emoji = num_emojis[i] if i < len(num_emojis) else ""
 
             teams_text.append(
                 f"{num_emoji} {team_name}\n"
@@ -370,7 +370,7 @@ class StartBRButton(Button):
                 f" Команд: {team_count}\n\n"
                 f" **Команды:**\n"
                 + "\n".join(teams_text) + "\n\n"
-                f"{replace_emojis('a_dot_smaller')} Капитаны могут переименовать свои команды в течение 1 минуты."
+                f"Капитаны могут переименовать свои команды в течение 1 минуты."
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -397,7 +397,7 @@ class JoinBRButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament or tournament.phase != BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
-                "❌ BR турнир не в фазе регистрации.",
+                "BR турнир не в фазе регистрации.",
                 ephemeral=True
             )
             return
@@ -421,7 +421,7 @@ class JoinBRButton(Button):
         # Добавить игрока
         if not tournament.add_player(user_name, user_id):
             await interaction.response.send_message(
-                "❌ Не удалось присоединиться (лимит 48 или уже зарегистрирован, или вы в другом турнире).",
+                "Не удалось присоединиться (лимит 48 или уже зарегистрирован, или вы в другом турнире).",
                 ephemeral=True
             )
             return
@@ -445,7 +445,7 @@ class JoinBRButton(Button):
                 f" {players_text}\n\n"
                 f" **Правила:**\n"
                 f" Нажмите кнопку 'Войти' для регистрации.\n\n"
-                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+                f"Используйте кнопки ниже для регистрации на турнир"
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -470,7 +470,7 @@ class LeaveBRButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament or tournament.phase != BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
-                "❌ BR турнир не в фазе регистрации.",
+                "BR турнир не в фазе регистрации.",
                 ephemeral=True
             )
             return
@@ -480,7 +480,7 @@ class LeaveBRButton(Button):
         # Удалить игрока
         if not tournament.remove_player(user_id):
             await interaction.response.send_message(
-                "❌ Вы не зарегистрированы.",
+                "Вы не зарегистрированы.",
                 ephemeral=True
             )
             return
@@ -504,7 +504,7 @@ class LeaveBRButton(Button):
                 f" {players_text}\n\n"
                 f" **Правила:**\n"
                 f" Нажмите кнопку 'Войти' для регистрации.\n\n"
-                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+                f"Используйте кнопки ниже для регистрации на турнир"
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -529,14 +529,14 @@ class LeaveTournamentButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament or tournament.phase != BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
-                "❌ BR турнир не в фазе регистрации.",
+                "BR турнир не в фазе регистрации.",
                 ephemeral=True
             )
             return
 
         if tournament.formation.value != "team":
             await interaction.response.send_message(
-                "❌ Эта кнопка только для team формата.",
+                "Эта кнопка только для team формата.",
                 ephemeral=True
             )
             return
@@ -546,7 +546,7 @@ class LeaveTournamentButton(Button):
         user_team = team_store.get_by_captain(interaction.user.id)
         if not user_team:
             await interaction.response.send_message(
-                "❌ Вы не капитан зарегистрированной команды.",
+                "Вы не капитан зарегистрированной команды.",
                 ephemeral=True
             )
             return
@@ -554,7 +554,7 @@ class LeaveTournamentButton(Button):
         # Check if team is registered in tournament
         if user_team.team_id not in tournament.registered_teams:
             await interaction.response.send_message(
-                "❌ Ваша команда не зарегистрирована в этом турнире.",
+                "Ваша команда не зарегистрирована в этом турнире.",
                 ephemeral=True
             )
             return
@@ -582,8 +582,8 @@ class LeaveTournamentButton(Button):
         teams_header = f" **Команды:**"
         teams_content = "\n".join(team_list) if team_list else f" *"
         rules_header = f" **Правила:**"
-        rules_content = f" Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
-        footer = f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+        rules_content = f" Нажмите кнопку 'Зарегистрировать Команду' для регистрации вашей команды."
+        footer = f"Используйте кнопки ниже для регистрации на турнир"
 
         description = (
             f"{organizer_line}\n\n"
@@ -608,7 +608,7 @@ class LeaveTournamentButton(Button):
         await interaction.response.edit_message( view=compose(embed, view))
 
         await interaction.followup.send(
-            f"✅ Команда '{user_team.team_name}' вышла из турнира.",
+            f"Команда '{user_team.team_name}' вышла из турнира.",
             ephemeral=True
         )
 
@@ -631,14 +631,14 @@ class RegisterTeamButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
 
         if tournament.phase != BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
-                "❌ BR турнир не в фазе регистрации.",
+                "BR турнир не в фазе регистрации.",
                 ephemeral=True
             )
             return
@@ -647,7 +647,7 @@ class RegisterTeamButton(Button):
         team = team_store.get_by_captain(interaction.user.id)
         if not team:
             await interaction.response.send_message(
-                f"❌ Вы не капитан команды! Создайте команду через `/team create` в канале <#{BR_TEAM_CHANNEL_ID}>.",
+                f"Вы не капитан команды! Создайте команду через `/team create` в канале <#{BR_TEAM_CHANNEL_ID}>.",
                 ephemeral=True
             )
             return
@@ -655,7 +655,7 @@ class RegisterTeamButton(Button):
         # Check if team is full (4 players)
         if not team.is_full():
             await interaction.response.send_message(
-                f"❌ В команде {team.member_count()}/4 игроков! Нужно 4 игрока для регистрации.",
+                f"В команде {team.member_count()}/4 игроков! Нужно 4 игрока для регистрации.",
                 ephemeral=True
             )
             return
@@ -663,7 +663,7 @@ class RegisterTeamButton(Button):
         # Check if team already registered
         if team.team_id in tournament.registered_teams:
             await interaction.response.send_message(
-                "❌ Ваша команда уже зарегистрирована!",
+                "Ваша команда уже зарегистрирована!",
                 ephemeral=True
             )
             return
@@ -683,7 +683,7 @@ class RegisterTeamButton(Button):
                     f"<@{member_id}> (до <t:{ts}:R>)"
                 )
             await interaction.response.send_message(
-                "❌ Регистрация невозможна: активен VAC у "
+                "Регистрация невозможна: активен VAC у "
                 + ", ".join(parts) + ".",
                 ephemeral=True
             )
@@ -739,8 +739,8 @@ class RegisterTeamButton(Button):
         teams_header = f" **Команды:**"
         teams_content = "\n".join(team_list) if team_list else f" *"
         rules_header = f" **Правила:**"
-        rules_content = f" Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
-        footer = f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+        rules_content = f" Нажмите кнопку 'Зарегистрировать Команду' для регистрации вашей команды."
+        footer = f"Используйте кнопки ниже для регистрации на турнир"
 
         print(f"organizer_line: {organizer_line}")
         print(f"info_header: {info_header}")
@@ -772,7 +772,7 @@ class RegisterTeamButton(Button):
         await interaction.response.edit_message( view=compose(embed, view))
 
         await interaction.followup.send(
-            f"✅ Команда '{team.team_name}' зарегистрирована как {team_emoji}!",
+            f"Команда '{team.team_name}' зарегистрирована как {team_emoji}!",
             ephemeral=True
         )
 
@@ -793,7 +793,7 @@ class RemoveTeamButton(Button):
         # Check if bot owner
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Только владелец бота может удалять команды.",
+                "Только владелец бота может удалять команды.",
                 ephemeral=True
             )
             return
@@ -801,14 +801,14 @@ class RemoveTeamButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
 
         if tournament.phase != BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
-                "❌ BR турнир не в фазе регистрации.",
+                "BR турнир не в фазе регистрации.",
                 ephemeral=True
             )
             return
@@ -829,7 +829,7 @@ class RemoveTeamButton(Button):
 
         if not options:
             await interaction.response.send_message(
-                "❌ Нет зарегистрированных команд для удаления.",
+                "Нет зарегистрированных команд для удаления.",
                 ephemeral=True
             )
             return
@@ -861,7 +861,7 @@ class RemoveTeamSelectView(View):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -946,8 +946,8 @@ class RemoveTeamSelectView(View):
                             f" **Команды:**\n"
                             f"{team_list_str}\n\n"
                             f" **Правила:**\n"
-                            f" Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
-                            f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+                            f" Нажмите кнопку 'Зарегистрировать Команду' для регистрации вашей команды.\n\n"
+                            f"Используйте кнопки ниже для регистрации на турнир"
                         ),
                         color=discord.Color.from_rgb(69, 69, 69)
                     )
@@ -968,7 +968,7 @@ class RemoveTeamSelectView(View):
                 traceback.print_exc()
         else:
             await interaction.response.send_message(
-                "❌ Команда не найдена в турнире.",
+                "Команда не найдена в турнире.",
                 ephemeral=True
             )
 
@@ -989,7 +989,7 @@ class DeleteBRPlayerButton(Button):
         # Check if bot owner
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Только владелец бота может удалять игроков.",
+                "Только владелец бота может удалять игроков.",
                 ephemeral=True
             )
             return
@@ -997,7 +997,7 @@ class DeleteBRPlayerButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -1005,7 +1005,7 @@ class DeleteBRPlayerButton(Button):
         # Create select menu with all players (paginated, 16 per page)
         if not tournament.players:
             await interaction.response.send_message(
-                "❌ Нет зарегистрированных игроков.",
+                "Нет зарегистрированных игроков.",
                 ephemeral=True
             )
             return
@@ -1054,7 +1054,7 @@ class RemoveBRPlayerSelect(Select):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -1062,7 +1062,7 @@ class RemoveBRPlayerSelect(Select):
         # Remove player
         if not tournament.remove_player(user_id):
             await interaction.response.send_message(
-                "❌ Игрок не найден.",
+                "Игрок не найден.",
                 ephemeral=True
             )
             return
@@ -1074,7 +1074,7 @@ class RemoveBRPlayerSelect(Select):
         channel = interaction.guild.get_channel(self.channel_id)
         if not channel or not tournament.message_id:
             await interaction.response.send_message(
-                "❌ Не удалось обновить сообщение турнира.",
+                "Не удалось обновить сообщение турнира.",
                 ephemeral=True
             )
             return
@@ -1096,7 +1096,7 @@ class RemoveBRPlayerSelect(Select):
                     f" Игроков: {len(tournament.players)}/48\n\n"
                     f" **Зарегистрированные игроки:**\n"
                     f"{players_text}\n\n"
-                    f"{replace_emojis('a_dot_smaller')} Зарегистрируйтесь для участия!"
+                    f"Зарегистрируйтесь для участия!"
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
@@ -1106,13 +1106,13 @@ class RemoveBRPlayerSelect(Select):
             reg_view = BRRegistrationView(self.guild_id, self.channel_id, tournament)
             await message.edit( view=compose(embed, reg_view))
             await interaction.response.send_message(
-                "✅ Игрок удален.",
+                "Игрок удален.",
                 ephemeral=True
             )
         except Exception as e:
             logger.error(f"Error updating BR message after player removal: {e}")
             await interaction.response.send_message(
-                "❌ Не удалось обновить сообщение турнира.",
+                "Не удалось обновить сообщение турнира.",
                 ephemeral=True
             )
 
@@ -1145,7 +1145,7 @@ class RemoveBRPlayerPrevButton(Button):
 
     def __init__(self, guild_id: int, channel_id: int, players: list, page: int):
         super().__init__(
-            label="◀",
+            label="Назад",
             style=discord.ButtonStyle.secondary,
             custom_id=f"br_remove_prev:{guild_id}:{channel_id}:{page}"
         )
@@ -1165,7 +1165,7 @@ class RemoveBRPlayerNextButton(Button):
 
     def __init__(self, guild_id: int, channel_id: int, players: list, page: int):
         super().__init__(
-            label="▶",
+            label="Вперёд",
             style=discord.ButtonStyle.secondary,
             custom_id=f"br_remove_next:{guild_id}:{channel_id}:{page}"
         )
@@ -1196,7 +1196,7 @@ class DeleteBRButton(Button):
         # Проверка на владельца
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Только владелец бота может удалить турнир.",
+                "Только владелец бота может удалить турнир.",
                 ephemeral=True
             )
             return
@@ -1204,7 +1204,7 @@ class DeleteBRButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -1255,7 +1255,7 @@ class DeleteBRButton(Button):
         br_store.delete(self.guild_id, self.channel_id)
 
         await interaction.response.send_message(
-            "✅ BR турнир удален.",
+            "BR турнир удален.",
             ephemeral=True
         )
 
@@ -1276,7 +1276,7 @@ class BRRoomButton(Button):
         # Проверка на владельца
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Только владелец бота может открыть комнату.",
+                "Только владелец бота может открыть комнату.",
                 ephemeral=True
             )
             return
@@ -1284,7 +1284,7 @@ class BRRoomButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -1310,7 +1310,7 @@ class BRDataButton(Button):
         # Проверка на владельца
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Только владелец бота может отправить данные.",
+                "Только владелец бота может отправить данные.",
                 ephemeral=True
             )
             return
@@ -1318,7 +1318,7 @@ class BRDataButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -1326,20 +1326,20 @@ class BRDataButton(Button):
         # Check if room data exists
         if not tournament.room_data:
             await interaction.response.send_message(
-                "❌ Сначала откройте комнату.",
+                "Сначала откройте комнату.",
                 ephemeral=True
             )
             return
 
         # Close the ephemeral menu
-        await interaction.response.edit_message( view=compose(text="✅ Данные отправлены", view=None))
+        await interaction.response.edit_message( view=compose(text="Данные отправлены", view=None))
 
         # Send room data to channel
         try:
             channel = interaction.guild.get_channel(BR_DATA_CHANNEL_ID)
             if not channel:
                 await interaction.followup.send(
-                    "❌ Канал для данных не найден.",
+                    "Канал для данных не найден.",
                     ephemeral=True
                 )
                 return
@@ -1373,7 +1373,7 @@ class BRDataButton(Button):
         except Exception as e:
             logger.error(f"Error sending BR data: {e}")
             await interaction.followup.send(
-                "❌ Не удалось отправить данные.",
+                "Не удалось отправить данные.",
                 ephemeral=True
             )
 
@@ -1404,7 +1404,7 @@ class BRRoomModal(Modal):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -1417,7 +1417,7 @@ class BRRoomModal(Modal):
         br_store.set(tournament)
 
         await interaction.response.send_message(
-            "✅ Комната сохранена. Нажмите 'Данные' для отправки.",
+            "Комната сохранена. Нажмите 'Данные' для отправки.",
             ephemeral=True
         )
 
@@ -1438,7 +1438,7 @@ class StartBRButton(Button):
         # Проверка на владельца
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Только владелец бота может начать турнир.",
+                "Только владелец бота может начать турнир.",
                 ephemeral=True
             )
             return
@@ -1446,7 +1446,7 @@ class StartBRButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -1455,7 +1455,7 @@ class StartBRButton(Button):
         if tournament.formation.value == "team":
             if len(tournament.registered_teams) < 5:
                 await interaction.response.send_message(
-                    "❌ Нельзя начать: нужно минимум 5 команд.",
+                    "Нельзя начать: нужно минимум 5 команд.",
                     ephemeral=True
                 )
                 return
@@ -1463,7 +1463,7 @@ class StartBRButton(Button):
             # Сформировать команды из зарегистрированных
             if not tournament.form_teams_from_registered():
                 await interaction.response.send_message(
-                    "❌ Не удалось сформировать команды из зарегистрированных.",
+                    "Не удалось сформировать команды из зарегистрированных.",
                     ephemeral=True
                 )
                 return
@@ -1540,7 +1540,7 @@ class StartBRButton(Button):
                 team_name = team_data["team_name"]
                 players_str = team_data["players_str"]
                 points = team_data["points"]
-                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
 
                 teams_text.append(
                     f"{num_emoji} {team_name} ({points} очков)\n"
@@ -1564,7 +1564,7 @@ class StartBRButton(Button):
             channel = interaction.guild.get_channel(self.channel_id)
             if not channel or not tournament.message_id:
                 await interaction.response.send_message(
-                    "❌ Не удалось обновить сообщение турнира.",
+                    "Не удалось обновить сообщение турнира.",
                     ephemeral=True
                 )
                 return
@@ -1573,20 +1573,20 @@ class StartBRButton(Button):
                 message = await channel.fetch_message(tournament.message_id)
                 await message.edit( view=compose(embed, view))
                 await interaction.response.send_message(
-                    "✅ Турнир запущен!",
+                    "Турнир запущен!",
                     ephemeral=True
                 )
             except Exception as e:
                 logger.error("Ошибка при обновлении сообщения: %s", e)
                 await interaction.response.send_message(
-                    "❌ Не удалось обновить сообщение турнира.",
+                    "Не удалось обновить сообщение турнира.",
                     ephemeral=True
                 )
             return
         else:
             if len(tournament.players) < 20 or len(tournament.players) % 4 != 0:
                 await interaction.response.send_message(
-                    "❌ Нельзя начать: нужно 20+ игроков и количество должно делиться на 4.",
+                    "Нельзя начать: нужно 20+ игроков и количество должно делиться на 4.",
                     ephemeral=True
                 )
                 return
@@ -1594,7 +1594,7 @@ class StartBRButton(Button):
             # Сформировать команды
             if not tournament.form_teams_random():
                 await interaction.response.send_message(
-                    "❌ Не удалось сформировать команды.",
+                    "Не удалось сформировать команды.",
                     ephemeral=True
                 )
                 return
@@ -1644,7 +1644,7 @@ class StartBRButton(Button):
             team_name = team.get("name", f"Команда {i+1}")
             players = team.get("players", [])
             players_str = ", ".join(players) if players else ""
-            num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
+            num_emoji = num_emojis[i] if i < len(num_emojis) else ""
 
             teams_text.append(
                 f"{num_emoji} {team_name}\n"
@@ -1673,7 +1673,7 @@ class StartBRButton(Button):
         channel = interaction.guild.get_channel(self.channel_id)
         if not channel or not tournament.message_id:
             await interaction.response.send_message(
-                "❌ Не удалось обновить сообщение турнира.",
+                "Не удалось обновить сообщение турнира.",
                 ephemeral=True
             )
             return
@@ -1682,13 +1682,13 @@ class StartBRButton(Button):
             message = await channel.fetch_message(tournament.message_id)
             await message.edit( view=compose(embed, view))
             await interaction.response.send_message(
-                "✅ Турнир запущен!",
+                "Турнир запущен!",
                 ephemeral=True
             )
         except Exception as e:
             logger.error(f"Error updating BR message after start: {e}")
             await interaction.response.send_message(
-                "❌ Не удалось обновить сообщение турнира.",
+                "Не удалось обновить сообщение турнира.",
                 ephemeral=True
             )
 
@@ -1724,7 +1724,7 @@ class StartBermudaButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Только владелец бота может начать Bermuda.",
+                "Только владелец бота может начать Bermuda.",
                 ephemeral=True
             )
             return
@@ -1732,7 +1732,7 @@ class StartBermudaButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -1792,7 +1792,7 @@ class StartBermudaButton(Button):
             team_name = team_data["team_name"]
             players_str = team_data["players_str"]
             points = team_data["points"]
-            num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+            num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
 
             teams_text.append(
                 f"{num_emoji} {team_name} ({points} очков)\n"
@@ -1843,13 +1843,13 @@ class BRStatsButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
 
         # Close the ephemeral menu
-        await interaction.response.edit_message( view=compose(text="✅ Открыт ввод статистики", view=None))
+        await interaction.response.edit_message( view=compose(text="Открыт ввод статистики", view=None))
 
         # Show team group selection view
         view = BRTeamGroupSelectView(self.guild_id, self.channel_id, tournament)
@@ -1994,14 +1994,14 @@ class BRSingleTeamStatsModal(Modal):
 
             if place < 1 or place > 12:
                 await interaction.response.send_message(
-                    "❌ Место должно быть от 1 до 12.",
+                    "Место должно быть от 1 до 12.",
                     ephemeral=True
                 )
                 return
 
             if kills < 0 or kills > 50:
                 await interaction.response.send_message(
-                    "❌ Убийства должны быть от 0 до 50.",
+                    "Убийства должны быть от 0 до 50.",
                     ephemeral=True
                 )
                 return
@@ -2067,7 +2067,7 @@ class BRSingleTeamStatsModal(Modal):
                         team_name = team_data["team_name"]
                         players_str = team_data["players_str"]
                         points = team_data["points"]
-                        num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                        num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
 
                         teams_text.append(
                             f"{num_emoji} {team_name} ({points} очков)\n"
@@ -2093,12 +2093,12 @@ class BRSingleTeamStatsModal(Modal):
                     logger.error(f"Error updating BR message after stats save: {e}")
 
             await interaction.response.send_message(
-                "✅ Статистика сохранена.",
+                "Статистика сохранена.",
                 ephemeral=True
             )
         except ValueError:
             await interaction.response.send_message(
-                "❌ Введите корректные числа.",
+                "Введите корректные числа.",
                 ephemeral=True
             )
 
@@ -2196,7 +2196,7 @@ class BRConfirmPurgatoryButton(Button):
             br_store.set(self.tournament)
 
             # Close the ephemeral menu
-            await interaction.response.edit_message( view=compose(text="✅ Показать итоги", view=None))
+            await interaction.response.edit_message( view=compose(text="Показать итоги", view=None))
 
             # Update main message with results embed
             channel = interaction.guild.get_channel(self.channel_id)
@@ -2243,7 +2243,7 @@ class BRConfirmPurgatoryButton(Button):
 
                 teams_text = []
                 for rank, team_data in enumerate(teams_with_total_points):
-                    num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                    num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
                     teams_text.append(
                         f"{num_emoji} {team_data['captain']} ({team_data['total_points']} очков)\n"
                         f"  {team_data['players_str']}\n"
@@ -2283,7 +2283,7 @@ class BRConfirmPurgatoryButton(Button):
             br_store.set(self.tournament)
 
             # Close the ephemeral menu
-            await interaction.response.edit_message( view=compose(text=f"✅ Переход к {map_display}", view=None))
+            await interaction.response.edit_message( view=compose(text=f"Переход к {map_display}", view=None))
 
         # Update main message with Purgatory embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2343,7 +2343,7 @@ class BRConfirmPurgatoryButton(Button):
                 team_name = team_data["team_name"]
                 players_str = team_data["players_str"]
                 points = team_data["points"]
-                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
 
                 teams_text.append(
                     f"{num_emoji} {team_name} ({points} очков)\n"
@@ -2399,7 +2399,7 @@ class BRConfirmKalahariButton(Button):
             br_store.set(self.tournament)
 
             # Close the ephemeral menu
-            await interaction.response.edit_message( view=compose(text="✅ Показать итоги", view=None))
+            await interaction.response.edit_message( view=compose(text="Показать итоги", view=None))
 
             # Update main message with results embed
             channel = interaction.guild.get_channel(self.channel_id)
@@ -2446,7 +2446,7 @@ class BRConfirmKalahariButton(Button):
 
                 teams_text = []
                 for rank, team_data in enumerate(teams_with_total_points):
-                    num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                    num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
                     teams_text.append(
                         f"{num_emoji} {team_data['captain']} ({team_data['total_points']} очков)\n"
                         f"  {team_data['players_str']}\n"
@@ -2486,7 +2486,7 @@ class BRConfirmKalahariButton(Button):
             br_store.set(self.tournament)
 
             # Close the ephemeral menu
-            await interaction.response.edit_message( view=compose(text=f"✅ Переход к {map_display}", view=None))
+            await interaction.response.edit_message( view=compose(text=f"Переход к {map_display}", view=None))
 
         # Update main message with Kalahari embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2546,7 +2546,7 @@ class BRConfirmKalahariButton(Button):
                 team_name = team_data["team_name"]
                 players_str = team_data["players_str"]
                 points = team_data["points"]
-                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
 
                 teams_text.append(
                     f"{num_emoji} {team_name} ({points} очков)\n"
@@ -2603,7 +2603,7 @@ class BRConfirmNextMapButton(Button):
         br_store.set(self.tournament)
 
         # Close the ephemeral menu
-        await interaction.response.edit_message( view=compose(text=f"✅ Переход к {map_display}", view=None))
+        await interaction.response.edit_message( view=compose(text=f"Переход к {map_display}", view=None))
 
         # Update main message with next map embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2653,7 +2653,7 @@ class BRConfirmNextMapButton(Button):
             # Build display with sorted teams
             teams_text = []
             for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
-                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
                 teams_text.append(
                     f"{num_emoji} {captain} ({points} очков)\n"
                     f"  {players_str}\n"
@@ -2700,7 +2700,7 @@ class BRShowResultsButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -2710,7 +2710,7 @@ class BRShowResultsButton(Button):
         br_store.set(tournament)
 
         # Close the ephemeral menu
-        await interaction.response.edit_message( view=compose(text="✅ Показать итоги", view=None))
+        await interaction.response.edit_message( view=compose(text="Показать итоги", view=None))
 
         # Update main message with final results embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2756,7 +2756,7 @@ class BRShowResultsButton(Button):
 
             teams_text = []
             for rank, team_data in enumerate(teams_with_total_points):
-                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
                 teams_text.append(
                     f"{num_emoji} {team_data['captain']} ({team_data['total_points']} очков)\n"
                     f"  {team_data['players_str']}\n"
@@ -2802,7 +2802,7 @@ class BRNextMapButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -2821,7 +2821,7 @@ class BRNextMapButton(Button):
         br_store.set(tournament)
 
         # Close the ephemeral menu
-        await interaction.response.edit_message( view=compose(text=f"✅ Переход к {self.next_map.capitalize()}", view=None))
+        await interaction.response.edit_message( view=compose(text=f"Переход к {self.next_map.capitalize()}", view=None))
 
         # Update main message with next map embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2871,7 +2871,7 @@ class BRNextMapButton(Button):
             # Build display with sorted teams
             teams_text = []
             for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
-                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
                 teams_text.append(
                     f"{num_emoji} {captain} ({points} очков)\n"
                     f"  {players_str}\n"
@@ -2921,7 +2921,7 @@ class BRConfirmResultsButton(Button):
         br_store.set(self.tournament)
 
         # Close the ephemeral menu
-        await interaction.response.edit_message( view=compose(text="✅ Показать итоги", view=None))
+        await interaction.response.edit_message( view=compose(text="Показать итоги", view=None))
 
         # Update main message with final results embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2973,7 +2973,7 @@ class BRConfirmResultsButton(Button):
                 players_str = team_data["players_str"]
                 total_points = team_data["total_points"]
                 original_index = team_data["index"]
-                num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[i] if i < len(num_emojis) else ""
 
                 # Add medals for top 3
                 if i == 0:
@@ -3031,7 +3031,7 @@ class BRPurgatoryButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Только владелец бота может перейти к Чистилище.",
+                "Только владелец бота может перейти к Чистилище.",
                 ephemeral=True
             )
             return
@@ -3039,7 +3039,7 @@ class BRPurgatoryButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -3108,7 +3108,7 @@ class BRPurgatoryButton(Button):
             team_name = team_data["team_name"]
             players_str = team_data["players_str"]
             points = team_data["points"]
-            num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+            num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
 
             teams_text.append(
                 f"{num_emoji} {team_name} ({points} очков)\n"
@@ -3132,7 +3132,7 @@ class BRPurgatoryButton(Button):
         channel = interaction.guild.get_channel(self.channel_id)
         if not channel or not tournament.message_id:
             await interaction.response.send_message(
-                "❌ Не удалось обновить сообщение турнира.",
+                "Не удалось обновить сообщение турнира.",
                 ephemeral=True
             )
             return
@@ -3141,13 +3141,13 @@ class BRPurgatoryButton(Button):
             message = await channel.fetch_message(tournament.message_id)
             await message.edit( view=compose(embed, view))
             await interaction.response.send_message(
-                "✅ Переход к Чистилище.",
+                "Переход к Чистилище.",
                 ephemeral=True
             )
         except Exception as e:
             logger.error(f"Error updating BR message for Purgatory: {e}")
             await interaction.response.send_message(
-                "❌ Не удалось обновить сообщение турнира.",
+                "Не удалось обновить сообщение турнира.",
                 ephemeral=True
             )
 
@@ -3167,7 +3167,7 @@ class BRKalahariButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ Только владелец бота может перейти к Калахари.",
+                "Только владелец бота может перейти к Калахари.",
                 ephemeral=True
             )
             return
@@ -3175,7 +3175,7 @@ class BRKalahariButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -3248,7 +3248,7 @@ class BRKalahariButton(Button):
             team_name = team_data["team_name"]
             players_str = team_data["players_str"]
             points = team_data["points"]
-            num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+            num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
 
             teams_text.append(
                 f"{num_emoji} {team_name} ({points} очков)\n"
@@ -3272,7 +3272,7 @@ class BRKalahariButton(Button):
         channel = interaction.guild.get_channel(self.channel_id)
         if not channel or not tournament.message_id:
             await interaction.response.send_message(
-                "❌ Не удалось обновить сообщение турнира.",
+                "Не удалось обновить сообщение турнира.",
                 ephemeral=True
             )
             return
@@ -3281,13 +3281,13 @@ class BRKalahariButton(Button):
             message = await channel.fetch_message(tournament.message_id)
             await message.edit( view=compose(embed, view))
             await interaction.response.send_message(
-                "✅ Переход к Калахари.",
+                "Переход к Калахари.",
                 ephemeral=True
             )
         except Exception as e:
             logger.error(f"Error updating BR message for Kalahari: {e}")
             await interaction.response.send_message(
-                "❌ Не удалось обновить сообщение турнира.",
+                "Не удалось обновить сообщение турнира.",
                 ephemeral=True
             )
 
@@ -3309,7 +3309,7 @@ class TeamNameButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -3324,7 +3324,7 @@ class TeamNameButton(Button):
 
         if team_index is None:
             await interaction.response.send_message(
-                "❌ Вы не капитан ни одной команды.",
+                "Вы не капитан ни одной команды.",
                 ephemeral=True
             )
             return
@@ -3332,7 +3332,7 @@ class TeamNameButton(Button):
         # Check if this captain can still rename
         if not tournament.team_rename_remaining.get(team_index, False):
             await interaction.response.send_message(
-                "❌ Вы уже переименовали свою команду или время истекло.",
+                "Вы уже переименовали свою команду или время истекло.",
                 ephemeral=True
             )
             return
@@ -3365,7 +3365,7 @@ class TeamNameModal(Modal):
 
         if not new_name:
             await interaction.response.send_message(
-                "❌ Название не может быть пустым.",
+                "Название не может быть пустым.",
                 ephemeral=True
             )
             return
@@ -3373,7 +3373,7 @@ class TeamNameModal(Modal):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -3381,7 +3381,7 @@ class TeamNameModal(Modal):
         # Изменить название
         if not tournament.rename_team(self.team_index, new_name, self.captain_name):
             await interaction.response.send_message(
-                "❌ Не удалось изменить название (возможно уже переименовано).",
+                "Не удалось изменить название (возможно уже переименовано).",
                 ephemeral=True
             )
             return
@@ -3399,7 +3399,7 @@ class TeamNameModal(Modal):
             team_name = team.get("name", f"Команда {i+1}")
             players = team.get("players", [])
             players_str = ", ".join(players) if players else ""
-            num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
+            num_emoji = num_emojis[i] if i < len(num_emojis) else ""
 
             teams_text.append(
                 f"{num_emoji} {team_name}\n"
@@ -3474,7 +3474,7 @@ class MapSelectMenu(Select):
             tournament = br_store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.response.send_message(
-                    "❌ BR турнир не найден.",
+                    "BR турнир не найден.",
                     ephemeral=True
                 )
                 return
@@ -3485,7 +3485,7 @@ class MapSelectMenu(Select):
 
             if not channel:
                 await interaction.response.send_message(
-                    "❌ Канал для данных не найден.",
+                    "Канал для данных не найден.",
                     ephemeral=True
                 )
                 return
@@ -3498,7 +3498,7 @@ class MapSelectMenu(Select):
             }
             current_map_name = map_names.get(tournament.current_map, tournament.current_map)
 
-            data_text = f"📊 **Данные BR турнира - {current_map_name}**\n\n"
+            data_text = f"**Данные BR турнира - {current_map_name}**\n\n"
             for i, team in enumerate(tournament.teams):
                 team_name = team.get("name", f"Команда {i+1}")
                 stats = team.get("stats", {})
@@ -3514,7 +3514,7 @@ class MapSelectMenu(Select):
                 await channel.send(data_text)
 
             await interaction.response.send_message(
-                "✅ Данные отправлены.",
+                "Данные отправлены.",
                 ephemeral=True
             )
         else:
@@ -3522,7 +3522,7 @@ class MapSelectMenu(Select):
             tournament = br_store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.response.send_message(
-                    "❌ BR турнир не найден.",
+                    "BR турнир не найден.",
                     ephemeral=True
                 )
                 return
@@ -3581,7 +3581,7 @@ class MapSelectMenu(Select):
             # Build display with sorted teams
             teams_text = []
             for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
-                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
                 teams_text.append(
                     f"{num_emoji} {captain} ({points} очков)\n"
                     f"  {players_str}\n"
@@ -3599,7 +3599,7 @@ class MapSelectMenu(Select):
                     + "\n".join(teams_text) + "\n\n"
                     f" **Правила:**\n"
                     f" Выберите группу команд для ввода статистики.\n\n"
-                    f"{replace_emojis('a_dot_smaller')} Введите место (1-12) и убийства (0-50) для каждой команды."
+                    f"Введите место (1-12) и убийства (0-50) для каждой команды."
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
@@ -3645,7 +3645,7 @@ class TeamGroupButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -3691,7 +3691,7 @@ class TeamButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -3717,7 +3717,7 @@ class BackToMapButton(Button):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -3745,7 +3745,7 @@ class BackToMapButton(Button):
             players_str = ", ".join(players) if players else ""
             num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
                       get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
-            emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
+            emoji = num_emojis[i] if i < len(num_emojis) else ""
 
             # Calculate total points so far
             total_points = 0
@@ -3778,7 +3778,7 @@ class BackToMapButton(Button):
                 + "\n".join(teams_text) + "\n\n"
                 f" **Правила:**\n"
                 f" Выберите действие для ввода статистики или отправки данных.\n\n"
-                f"{replace_emojis('a_dot_smaller')} Данные пингуют роль BR игроков."
+                f"Данные пингуют роль BR игроков."
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -3817,7 +3817,7 @@ class BRStatsModal(Modal):
             kills = int(parts[1])
         except ValueError:
             await interaction.response.send_message(
-                "❌ Неверный формат. Используйте: место/киллы (например: 1/23)",
+                "Неверный формат. Используйте: место/киллы (например: 1/23)",
                 ephemeral=True
             )
             return
@@ -3825,14 +3825,14 @@ class BRStatsModal(Modal):
         # Валидация
         if place < 1 or place > 12:
             await interaction.response.send_message(
-                "❌ Место должно быть от 1 до 12.",
+                "Место должно быть от 1 до 12.",
                 ephemeral=True
             )
             return
 
         if kills < 0 or kills > 50:
             await interaction.response.send_message(
-                "❌ Киллы должны быть от 0 до 50.",
+                "Киллы должны быть от 0 до 50.",
                 ephemeral=True
             )
             return
@@ -3840,7 +3840,7 @@ class BRStatsModal(Modal):
         tournament = br_store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не найден.",
+                "BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -3848,7 +3848,7 @@ class BRStatsModal(Modal):
         # Сохранить статистику
         if not tournament.set_team_stats(self.team_index, self.map_name, place, kills):
             await interaction.response.send_message(
-                "❌ Не удалось сохранить статистику.",
+                "Не удалось сохранить статистику.",
                 ephemeral=True
             )
             return
@@ -3887,7 +3887,7 @@ class BRStatsModal(Modal):
         # Build display with sorted teams
         teams_text = []
         for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
-            num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+            num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
             teams_text.append(
                 f"{num_emoji} {captain} ({points} очков)\n"
                 f"  {players_str}\n"
@@ -4023,7 +4023,7 @@ class BRStatsModal(Modal):
                 # Build display with sorted teams
                 teams_text = []
                 for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
-                    num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                    num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
                     teams_text.append(
                         f"{num_emoji} {captain} ({points} очков)\n"
                         f"  {players_str}\n"
@@ -4089,7 +4089,7 @@ class BRStatsModal(Modal):
             # Build display with sorted teams
             teams_text = []
             for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
-                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else ""
                 teams_text.append(
                     f"{num_emoji} {captain} ({points} очков)\n"
                     f"  {players_str}\n"
@@ -4107,7 +4107,7 @@ class BRStatsModal(Modal):
                     + "\n".join(teams_text) + "\n\n"
                     f" **Правила:**\n"
                     f" Выберите группу команд для ввода статистики.\n\n"
-                    f"{replace_emojis('a_dot_smaller')} Введите место (1-12) и убийства (0-50) для каждой команды."
+                    f"Введите место (1-12) и убийства (0-50) для каждой команды."
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
             )

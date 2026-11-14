@@ -34,12 +34,12 @@ class LogicPuzzleView(discord.ui.View):
             self.hint_index += 1
 
             embed = discord.Embed(
-                title="🧩 Логические задачи",
+                title="Логические задачи",
                 description=f"**Ставка:** {self.bet} 🪙\n**Множитель:** 4x\n\n**Задача:**\n{self.question}",
                 color=discord.Color.purple()
             )
             embed.add_field(
-                name="💡 Подсказка",
+                name="Подсказка",
                 value=hint,
                 inline=False
             )
@@ -57,7 +57,7 @@ class LogicPuzzleView(discord.ui.View):
             await interaction.response.edit_message( view=compose(embed, view))
         else:
             await interaction.response.send_message(
-                replace_emojis("❌ Все подсказки использованы!"),
+                replace_emojis("Все подсказки использованы!"),
                 ephemeral=True
             )
 
@@ -98,7 +98,7 @@ class LogicAnswerModal(discord.ui.Modal, title="Ваш ответ"):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Правильно!"),
+                title=replace_emojis("Правильно!"),
                 description=f"**Задача:** {self.question}\n**Ответ:** {self.answer}\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
@@ -108,7 +108,7 @@ class LogicAnswerModal(discord.ui.Modal, title="Ваш ответ"):
             if self.attempts > 0:
                 # Ещё есть попытки
                 embed = discord.Embed(
-                    title=replace_emojis("❌ Неправильно!"),
+                    title=replace_emojis("Неправильно!"),
                     description=f"**Ваш ответ:** {user_answer}\n**Осталось попыток:** {self.attempts}",
                     color=discord.Color.orange()
                 )
@@ -116,7 +116,7 @@ class LogicAnswerModal(discord.ui.Modal, title="Ваш ответ"):
                 # Показать подсказку если есть
                 if self.hint_index < len(self.hints):
                     embed.add_field(
-                        name="💡 Подсказка",
+                        name="Подсказка",
                         value=self.hints[self.hint_index],
                         inline=False
                     )
@@ -131,7 +131,7 @@ class LogicAnswerModal(discord.ui.Modal, title="Ваш ответ"):
             else:
                 # Попытки закончились
                 embed = discord.Embed(
-                    title=replace_emojis("❌ Попытки закончились!"),
+                    title=replace_emojis("Попытки закончились!"),
                     description=f"**Ваш ответ:** {user_answer}\n**Правильный ответ:** {self.answer}\n**Потеря:** {self.bet} 🪙",
                     color=discord.Color.red()
                 )

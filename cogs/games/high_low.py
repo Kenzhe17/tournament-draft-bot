@@ -60,7 +60,7 @@ class HighLowView(discord.ui.View):
     def create_embed(self, state: str = "playing", result: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f" **HIGH-LOW | /high_low**",
+            title=f"**HIGH-LOW | /high_low**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
@@ -180,7 +180,7 @@ class HighLowHigherButton(discord.ui.Button):
     """Кнопка выбора 'Выше'."""
 
     def __init__(self, game_view: HighLowView):
-        super().__init__(style=discord.ButtonStyle.success, label="⬆️ Выше")
+        super().__init__(style=discord.ButtonStyle.success, label="Выше")
         self.game_view = game_view
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -199,7 +199,7 @@ class HighLowLowerButton(discord.ui.Button):
     """Кнопка выбора 'Ниже'."""
 
     def __init__(self, game_view: HighLowView):
-        super().__init__(style=discord.ButtonStyle.danger, label="⬇️ Ниже")
+        super().__init__(style=discord.ButtonStyle.danger, label="Ниже")
         self.game_view = game_view
 
     async def callback(self, interaction: discord.Interaction) -> None:

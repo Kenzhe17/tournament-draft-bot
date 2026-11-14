@@ -47,7 +47,7 @@ class FinalWinnerButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут фиксировать результаты."),
+                replace_emojis("Только организаторы (роль 'org') могут фиксировать результаты."),
                 ephemeral=True,
             )
             return
@@ -55,21 +55,21 @@ class FinalWinnerButton(discord.ui.Button):
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament or tournament.phase != TournamentPhase.FINAL:
             await interaction.response.send_message(
-                replace_emojis("❌ Финал не активен."),
+                replace_emojis("Финал не активен."),
                 ephemeral=True,
             )
             return
 
         if self.team_index not in tournament.final_teams:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверная команда."),
+                replace_emojis("Неверная команда."),
                 ephemeral=True,
             )
             return
 
         if tournament.final_pending_winner is not None:
             await interaction.response.send_message(
-                replace_emojis("❌ Результат финала уже выбран. Ожидается заполнение статистики."),
+                replace_emojis("Результат финала уже выбран. Ожидается заполнение статистики."),
                 ephemeral=True,
             )
             return
@@ -80,7 +80,7 @@ class FinalWinnerButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.send_message(
-            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику."),
+            replace_emojis("Победитель выбран. Капитаны команд могут заполнить статистику."),
             ephemeral=True,
         )
 

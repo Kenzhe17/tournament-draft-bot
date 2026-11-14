@@ -23,7 +23,7 @@ def command_cooldown(ttl: int = 5):
             # Check if user is on cooldown
             if await get_cooldown(guild_id, user_id, command_name):
                 await interaction.response.send_message(
-                    f"⏳ Подождите {ttl} секунд перед повторным использованием команды!",
+                    f"Подождите {ttl} секунд перед повторным использованием команды!",
                     ephemeral=True
                 )
                 return
@@ -54,7 +54,7 @@ def mini_game_cooldown(ttl: int = 3):
             # Check if user is on cooldown
             if await get_cooldown(guild_id, user_id, command_name):
                 await interaction.response.send_message(
-                    f"⏳ Подождите {ttl} секунд перед повторной игрой!",
+                    f"Подождите {ttl} секунд перед повторной игрой!",
                     ephemeral=True
                 )
                 return

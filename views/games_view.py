@@ -85,7 +85,7 @@ class GameCategorySelect(Select):
         # Создать список игр
         games_list = []
         for game in page_games:
-            status = "🔓" if game.status in ("ready", "available") else "🔒"
+            status = "Открыта" if game.status in ("ready", "available") else "Скоро"
             games_list.append(f" {status} **{game.name}**")
             games_list.append(f" {game.short_description}")
             games_list.append("")  # Пустая строка между играми
@@ -94,7 +94,7 @@ class GameCategorySelect(Select):
 
         embed = discord.Embed(
             title=f" {category_info['name'].upper()} | Страница {page} из {total_pages}",
-            description=f" {category_info['description']}\n\n **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {page} из {total_pages}\n Игр в категории: {len(games)}\n\n{replace_emojis('•')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+            description=f" {category_info['description']}\n\n **Информация о категории:**\nСтраница: {page} из {total_pages}\n Игр в категории: {len(games)}\n\n**Игры на странице:**\n{games_text}\n\nВыберите игру в меню ниже или используйте кнопки пагинации",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -145,13 +145,13 @@ class GameSelect(Select):
         for game in games:
             options.append(
                 discord.SelectOption(
-                    label=f"{game.emoji}︱{game.name}",
+                    label=game.name,
                     value=game.id
                 )
             )
 
         super().__init__(
-            placeholder=replace_emojis("🎮 Выберите игру для просмотра..."),
+            placeholder="Выберите игру для просмотра...",
             min_values=1,
             max_values=1,
             options=options
@@ -170,7 +170,7 @@ class GameSelect(Select):
             return
 
         # Создать карточку игры
-        category_info = CATEGORIES.get(game.category, {"color": discord.Color.blue(), "emoji": "🎮", "name": "Категория"})
+        category_info = CATEGORIES.get(game.category, {"color": discord.Color.blue(), "emoji": "", "name": "Категория"})
 
         # Статус игры
         if game.status in ("ready", "available"):
@@ -180,7 +180,7 @@ class GameSelect(Select):
 
         embed = discord.Embed(
             title=f" {game.name.upper()} | Игровой режим",
-            description=f" {game.short_description}\n\n{replace_emojis('•')} **Информация об игре:**\n Канал: <#{GAMES_CHANNEL_ID}>\n Команда: `/{game.command} bet:100`\n Категория: {category_info['name']}\n Множитель: {game.multiplier}x\n Мин. ставка: {game.min_bet} {get_emoji('money')}\n Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n Статус: {status_text}\n\n{replace_emojis('•')} **Правила и особенности:**\n {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
+            description=f" {game.short_description}\n\n**Информация об игре:**\n Канал: <#{GAMES_CHANNEL_ID}>\n Команда: `/{game.command} bet:100`\n Категория: {category_info['name']}\n Множитель: {game.multiplier}x\n Мин. ставка: {game.min_bet} {get_emoji('money')}\n Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n Статус: {status_text}\n\n**Правила и особенности:**\n {game.how_to_play}\n\nНажмите кнопку ниже для запуска игры или вернитесь в меню",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -247,7 +247,7 @@ class PlayButton(Button):
                 guide_text = "Информация недоступна"
 
             embed = discord.Embed(
-                title=f"{replace_emojis('📖')} {self.game.name}",
+                title=f"{self.game.name}",
                 description=guide_text,
                 color=discord.Color.from_rgb(218, 165, 32)  # goldenrod
             )
@@ -255,8 +255,8 @@ class PlayButton(Button):
             command = f"/{self.game.command} bet:100"
 
             embed = discord.Embed(
-                title=f"{replace_emojis('📖')} Как начать игру {self.game.name}",
-                description=f"Играйте на канале <#{GAMES_CHANNEL_ID}>\n\n**Команда:** `{command}`\n\n{replace_emojis('💡')} Скопируйте команду, замените значение ставки и отправьте её в чат.",
+                title=f"Как начать игру {self.game.name}",
+                description=f"Играйте на канале <#{GAMES_CHANNEL_ID}>\n\n**Команда:** `{command}`\n\nСкопируйте команду, замените значение ставки и отправьте её в чат.",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
 
@@ -295,7 +295,7 @@ class BackToCategoryButton(Button):
         # Создать список игр
         games_list = []
         for game in page_games:
-            status = "🔓" if game.status in ("ready", "available") else "🔒"
+            status = "Открыта" if game.status in ("ready", "available") else "Скоро"
             games_list.append(f" {status} **{game.name}**")
             games_list.append(f" {game.short_description}")
             games_list.append("")  # Пустая строка между играми
@@ -304,7 +304,7 @@ class BackToCategoryButton(Button):
 
         embed = discord.Embed(
             title=f" {category_info['name'].upper()} | Страница {page} из {total_pages}",
-            description=f" {category_info['description']}\n\n **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {page} из {total_pages}\n{replace_emojis('a_dot_smaller')} Игр в категории: {len(games)}\n\n **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+            description=f" {category_info['description']}\n\n **Информация о категории:**\nСтраница: {page} из {total_pages}\nИгр в категории: {len(games)}\n\n **Игры на странице:**\n{games_text}\n\nВыберите игру в меню ниже или используйте кнопки пагинации",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -344,8 +344,8 @@ class BackToMainMenuButton(Button):
         dev_games = [g for g in all_games if g.status == "dev"]
 
         embed = discord.Embed(
-            title=f" МИНИ-ИГРЫ | Главное меню",
-            description=f" {interaction.user.mention}\n\n **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n **Статус игр:**\n{replace_emojis('a_dot_smaller')} 🔓 Реализовано: **{len(ready_games)}** игр\n{replace_emojis('a_dot_smaller')} � В разработке: **{len(dev_games)}** игр\n\n **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
+            title=f"МИНИ-ИГРЫ | Главное меню",
+            description=f" {interaction.user.mention}\n\n **Информация:**\nВаш баланс: {balance:,} {get_emoji('money')}\n\n **Статус игр:**\n🔓 Реализовано: **{len(ready_games)}** игр\n� В разработке: **{len(dev_games)}** игр\n\n **Категории:**\n**Игры на удачу**\nБыстрые игры на риск: монетка, кубики, угадай число и др.\n**Викторины и головоломки**\nИнтеллектуальные состязания, викторины и слова.\n**Казино и ставки**\nСлоты, рулетка, баккара, лотерея и высокие ставки.\n\nВыберите категорию в меню ниже для просмотра списка игр",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -359,7 +359,7 @@ class BackButton(Button):
 
     def __init__(self, user_id: int, guild_id: int, category: str, page: int, total_pages: int):
         super().__init__(
-            label="◀",
+            label="Назад",
             style=discord.ButtonStyle.primary,
             custom_id=f"back_page_{category}_{page}",
             disabled=page == 1
@@ -385,7 +385,7 @@ class BackButton(Button):
             games_list = []
             for game in page_games:
                 mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
-                status = "🔓" if game.status in ("ready", "available") else "🔒"
+                status = "Открыта" if game.status in ("ready", "available") else "Скоро"
                 games_list.append(f" {status} **{game.name}** • `[{mode}]`")
                 games_list.append(f" {game.short_description}")
                 games_list.append("")  # Пустая строка между играми
@@ -394,7 +394,7 @@ class BackButton(Button):
 
             embed = discord.Embed(
                 title=f" {category_info['name'].upper()} | Страница {new_page} из {self.total_pages}",
-                description=f" {category_info['description']}\n\n **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n Игр в категории: {len(games)}\n\n{replace_emojis('•')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+                description=f" {category_info['description']}\n\n **Информация о категории:**\nСтраница: {new_page} из {self.total_pages}\n Игр в категории: {len(games)}\n\n**Игры на странице:**\n{games_text}\n\nВыберите игру в меню ниже или используйте кнопки пагинации",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -415,7 +415,7 @@ class ForwardButton(Button):
 
     def __init__(self, user_id: int, guild_id: int, category: str, page: int, total_pages: int):
         super().__init__(
-            label="▶",
+            label="Вперёд",
             style=discord.ButtonStyle.primary,
             custom_id=f"forward_page_{category}_{page}",
             disabled=page == total_pages
@@ -441,7 +441,7 @@ class ForwardButton(Button):
             games_list = []
             for game in page_games:
                 mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
-                status = "🔓" if game.status in ("ready", "available") else "🔒"
+                status = "Открыта" if game.status in ("ready", "available") else "Скоро"
                 games_list.append(f" {status} **{game.name}** • `[{mode}]`")
                 games_list.append(f" {game.short_description}")
                 games_list.append("")  # Пустая строка между играми
@@ -450,7 +450,7 @@ class ForwardButton(Button):
 
             embed = discord.Embed(
                 title=f" {category_info['name'].upper()} | Страница {new_page} из {self.total_pages}",
-                description=f" {category_info['description']}\n\n **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n Игр в категории: {len(games)}\n\n{replace_emojis('•')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+                description=f" {category_info['description']}\n\n **Информация о категории:**\nСтраница: {new_page} из {self.total_pages}\n Игр в категории: {len(games)}\n\n**Игры на странице:**\n{games_text}\n\nВыберите игру в меню ниже или используйте кнопки пагинации",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)

@@ -30,24 +30,24 @@ class NumberBetModal(Modal, title=replace_emojis("🎲 Угадай число")
             bet = int(self.bet.value)
             guess = int(self.guess.value)
         except ValueError:
-            await interaction.response.send_message(replace_emojis("❌ Введите корректные числа!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Введите корректные числа!"), ephemeral=True)
             return
 
         if guess < 1 or guess > 100:
-            await interaction.response.send_message(replace_emojis("❌ Число должно быть от 1 до 100!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Число должно быть от 1 до 100!"), ephemeral=True)
             return
 
         if bet < 20:
-            await interaction.response.send_message(replace_emojis("❌ Минимальная ставка: 20 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Минимальная ставка: 20 🪙"), ephemeral=True)
             return
 
         if bet > 500:
-            await interaction.response.send_message(replace_emojis("❌ Максимальная ставка: 500 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Максимальная ставка: 500 🪙"), ephemeral=True)
             return
 
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
         if balance < bet:
-            await interaction.response.send_message(replace_emojis("❌ Недостаточно монет!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Недостаточно монет!"), ephemeral=True)
             return
 
         # Списать ставку
@@ -99,13 +99,13 @@ class GuessNumberGameView(View):
         self.bet = bet
         self.game = game
 
-    @button(label="Сделать попытку", style=discord.ButtonStyle.primary, emoji="🎯")
+    @button(label="Сделать попытку", style=discord.ButtonStyle.primary)
     async def make_guess(self, interaction: discord.Interaction, button: Button) -> None:
         """Открыть modal для ввода числа."""
         modal = NumberGuessModal(self.guild_id, self.user_id, self.bet, self.game)
         await interaction.response.send_modal(modal)
 
-    @button(label="Сдаться", style=discord.ButtonStyle.danger, emoji="🏳️")
+    @button(label="Сдаться", style=discord.ButtonStyle.danger)
     async def give_up(self, interaction: discord.Interaction, button: Button) -> None:
         """Сдаться и потерять ставку."""
         self.game.game_over = True
@@ -138,11 +138,11 @@ class NumberGuessModal(Modal, title=replace_emojis("🎯 Сделать попы
         try:
             guess = int(self.guess.value)
         except ValueError:
-            await interaction.response.send_message(replace_emojis("❌ Введите корректное число!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Введите корректное число!"), ephemeral=True)
             return
 
         if guess < 1 or guess > 100:
-            await interaction.response.send_message(replace_emojis("❌ Число должно быть от 1 до 100!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Число должно быть от 1 до 100!"), ephemeral=True)
             return
 
         result, message = self.game.make_guess(guess)
