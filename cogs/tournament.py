@@ -1224,8 +1224,8 @@ class TournamentCog(commands.Cog):
     #     await interaction.response.send_modal(MinigameTournamentModal(interaction.guild_id, interaction.user.id))
 
     @player_group.command(name="profile", description="Показать ваш профиль")
-    @app_commands.describe(user="Пользователь (пусто = ваш профиль)", limit="Количество матчей для графика ELO (макс 30)")
-    async def profile(self, interaction: discord.Interaction, user: discord.Member = None, limit: int = 10) -> None:
+    @app_commands.describe(user="Пользователь (пусто = ваш профиль)")
+    async def profile(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
         """Показать детальный профиль игрока (CV2, без PNG)."""
         from views.profile_view import build_profile_layout
 
@@ -1234,7 +1234,10 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.defer()
         layout = await build_profile_layout(interaction.guild, target_user)
-        await interaction.followup.send(view=layout)
+        await interaction.followup.send(
+            view=layout,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
     @player_set_group.command(name="bio", description="Установить описание профиля (раз в 7 дней)")
     @app_commands.describe(value="Текст описания (до 256 символов)")
