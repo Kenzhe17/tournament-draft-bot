@@ -269,6 +269,8 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.reputation")
         await self.load_extension("cogs.info")
         await self.load_extension("cogs.vac")
+        await self.load_extension("cogs.banner")
+        await self.load_extension("cogs.banner_admin")
 
         # Регистрация общих групп команд (/player, /economy, /games, ...)
         from cogs.groups import ROOT_GROUPS
