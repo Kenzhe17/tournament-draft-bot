@@ -150,12 +150,14 @@ def test_mm_match_view_active_state():
     view = build_mm_match_view(_mm_tournament("active"), match_num=7)
     ids = _custom_ids(view)
     assert "mmatch:kd:1:500:0" in ids or any(i.startswith("mmatch:kd:") for i in ids)
-    assert "mmatch:rules" in ids
     # Нет кнопок подтверждения в активном состоянии
     assert not any(i.startswith("mmatch:win:") for i in ids)
+    # Classic: без кнопки «Правила» и блока «ИНФОРМАЦИЯ»
+    assert "mmatch:rules" not in ids
     text = _texts(view)
     assert "НАЧАЛСЯ" in text
-    assert "Kazakhstan" in text
+    assert "ИНФОРМАЦИЯ" not in text
+    assert "Kazakhstan" not in text
 
 
 def test_mm_match_view_done_state():
@@ -181,11 +183,11 @@ def test_mm_match_view_check_state():
     t = _mm_tournament("check")
     view = build_mm_match_view(t, match_num=7)
     ids = _custom_ids(view)
-    # Кнопки победителя A и B + редактирование + отмена + правила
+    # Кнопки победителя A и B + редактирование + отмена (без «Правила»)
     assert any(i.startswith("mmatch:win:a:") for i in ids)
     assert any(i.startswith("mmatch:win:b:") for i in ids)
     assert any(i.startswith("mmatch:edit:") for i in ids)
     assert any(i.startswith("mmatch:cancel:") for i in ids)
-    assert "mmatch:rules" in ids
+    assert "mmatch:rules" not in ids
     text = _texts(view)
     assert "ПРОВЕРКА РЕЗУЛЬТАТА" in text

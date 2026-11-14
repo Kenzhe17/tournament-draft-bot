@@ -11,12 +11,6 @@ from storage.bet_store import bet_store
 from storage.player_stats_store import player_stats_store
 from utils.cosmetics import format_player_name
 
-SCREENSHOT_RULE_LINE = (
-    "📸 Скриншот результатов загружает только капитан победившей "
-    "команды — в формате 16:9."
-)
-
-
 # Helper функции для визуальных улучшений
 def get_rarity_color(rarity: str) -> discord.Color:
     """Получить цвет по редкости предмета."""
@@ -656,10 +650,6 @@ async def build_setup_embed(
             elo_dict[player_name] = int(stats.elo)
 
     # Build description based on formation mode
-    ruleset = getattr(tournament, "ruleset", "") or ""
-    rules_line = ""
-    if ruleset:
-        rules_line = f" Правила: {_ruleset_label(ruleset)}\n"
     if tournament.formation_mode == FormationMode.RANDOM:
         # RANDOM mode: show players pool
         current = len(tournament.players_pool)
@@ -688,7 +678,6 @@ async def build_setup_embed(
             f" Размер: {tournament.size.value}\n"
             f" Режим формирования: {formation_text}\n"
             f" Статус регистрации: {status_text}\n"
-            f"{rules_line}\n"
             f" **Пул игроков:**\n"
             f" {players_text}\n\n"
             f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
@@ -722,7 +711,6 @@ async def build_setup_embed(
             f" Размер: {tournament.size.value}\n"
             f" Режим формирования: {formation_text}\n"
             f" Статус регистрации: {status_text}\n"
-            f"{rules_line}\n"
             + "\n\n".join(circle_sections) + "\n\n"
             f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
@@ -926,7 +914,6 @@ async def build_qualifiers_embed(
         (embed.description or "")
         + "\n\n **Участники команд:**\n"
         + "\n".join(team_lines)
-        + f"\n\n{SCREENSHOT_RULE_LINE}"
     )
 
     # Add empty field for gap before betting section
@@ -1027,7 +1014,6 @@ async def build_semifinals_embed(
         (embed.description or "")
         + "\n\n **Участники команд:**\n"
         + "\n".join(team_lines)
-        + f"\n\n{SCREENSHOT_RULE_LINE}"
     )
 
     # Add empty field for gap before betting section
@@ -1120,7 +1106,6 @@ async def build_final_embed(
     embed.description = (
         (embed.description or "")
         + "\n".join(final_team_lines)
-        + f"\n\n{SCREENSHOT_RULE_LINE}"
     )
 
     # Add empty field for gap before betting section
@@ -1346,25 +1331,7 @@ async def build_embed_for_phase(
         embed = await build_winner_embed(tournament, guild)
     else:
         embed = discord.Embed(title="Ошибка", color=discord.Color.red())
-    # Выбранные правила матча (голосование BRAZIL/KAZAKHSTAN) —
-    # показываем в карточках всех фаз после настройки.
-    ruleset = getattr(tournament, "ruleset", "") or ""
-    if ruleset and len(embed.fields) < 25:
-        embed.add_field(
-            name="📜 Правила матча",
-            value=_ruleset_label(ruleset),
-            inline=False,
-        )
     return embed
-
-
-def _ruleset_label(ruleset: str) -> str:
-    """Метка правил матча (только Kazakhstan в новых турнирах)."""
-    key = (ruleset or "").lower()
-    return {
-        "kazakhstan": "🇰🇿 Kazakhstan",
-        "brazil": "🇧🇷 Brazil",
-    }.get(key, ruleset or "—")
 
 
 def build_level_up_embed(stats, old_level: int, new_level: int) -> tuple[discord.Embed, discord.File | None]:

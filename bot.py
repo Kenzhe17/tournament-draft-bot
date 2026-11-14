@@ -973,6 +973,23 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.error(f"Error restoring org role view: {e}")
 
+        # Classic layout: обновить карточки анонсов матчей и MM-матчей
+        # (убраны блок «ИНФОРМАЦИЯ» и кнопки «Правила»). Одноразово
+        # при старте, идемпотентно, результаты не затрагиваются.
+        async def _refresh_match_cards() -> None:
+            try:
+                from services.match_announcer import refresh_announced_cards
+                await refresh_announced_cards(self)
+            except Exception as exc:
+                logger.warning("Match card refresh failed: %s", exc)
+            try:
+                from views.mm_match_view import refresh_mm_cards
+                await refresh_mm_cards(self)
+            except Exception as exc:
+                logger.warning("MM card refresh failed: %s", exc)
+
+        self.loop.create_task(_refresh_match_cards())
+
         # Ультиматум 2.0: восстановить активные турниры после рестарта
         # (обновить карточки регистрации/сетки в каналах).
         try:

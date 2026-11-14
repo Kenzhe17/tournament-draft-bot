@@ -142,16 +142,70 @@ def _match_card_view(
     view.text(f"**{name_a}** vs **{name_b}**")
     view.text(f"**{name_a}**\n{_roster_names(tournament, t1)}")
     view.text(f"**{name_b}**\n{_roster_names(tournament, t2)}")
-    view.sep()
-    view.text(
-        "**ИНФОРМАЦИЯ**\n"
-        "Режим: 4×4\n"
-        "Правила: Kazakhstan\n"
-        "Формат: до 5 побед\n"
-        "Результат: ожидается"
-    )
-    view.row(MatchRulesButton())
     return view
+
+
+async def refresh_announced_cards(bot: "discord.Client") -> None:
+    """Обновить уже опубликованные карточки анонсов матчей.
+
+    После смены layout (убраны блок «ИНФОРМАЦИЯ» и кнопка
+    «📜 Правила») один раз при старте редактирует сообщения
+    активных матчей текущей фазы. Нумерация матчей сохраняется
+    (get_or_assign идемпотентен), результаты не затрагиваются —
+    карточка содержит только анонс и составы.
+    """
+    for tournament in store.all():
+        if tournament.phase == TournamentPhase.COMPLETE:
+            continue
+        mcards = tournament.match_cards or {}
+        if not mcards:
+            continue
+        guild = bot.get_guild(tournament.guild_id)
+        if guild is None:
+            continue
+        channel = guild.get_channel(tournament.channel_id)
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(tournament.channel_id)
+            except Exception:
+                channel = None
+        if not isinstance(channel, discord.TextChannel):
+            continue
+
+        phase_map = {
+            (mt, mi): (mt, mi, t1, t2)
+            for mt, mi, t1, t2 in _phase_matches(tournament)
+        }
+        dirty = False
+        for key, entry in mcards.items():
+            mid = entry.get("message_id")
+            if not mid or entry.get("layout_v2"):
+                continue
+            match = phase_map.get((entry.get("match_type"), entry.get("match_index")))
+            if match is None:
+                # Матч не из текущей фазы (завершён/устарел) — не трогаем.
+                entry["layout_v2"] = True
+                dirty = True
+                continue
+            try:
+                number = await match_number_store.get_or_assign(key)
+                mt, mi, t1, t2 = match
+                msg = await channel.fetch_message(int(mid))
+                await msg.edit(
+                    view=_match_card_view(
+                        tournament, number, _match_label(mt, mi),
+                        _team_display(tournament, t1),
+                        _team_display(tournament, t2), t1, t2,
+                    ),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                entry["layout_v2"] = True
+                dirty = True
+            except Exception as exc:
+                logger.warning(
+                    "Match card refresh failed (%s): %s", key, exc)
+        if dirty:
+            store.set(tournament)
 
 
 async def announce_phase_matches(

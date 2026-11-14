@@ -163,6 +163,45 @@ async def _refresh_card(
         logger.warning("MM match card refresh failed: %s", exc)
 
 
+async def refresh_mm_cards(bot) -> None:
+    """Обновить карточки всех MM-матчей при старте.
+
+    После смены layout (убраны блок «ИНФОРМАЦИЯ» и кнопка
+    «Правила») редактирует сообщения карточек — и активных, и
+    завершённых (содержимое результата не меняется, только
+    оформление). Идемпотентно, ошибки по одной карточке не
+    прерывают остальные.
+    """
+    from storage.json_store import store as _store
+
+    for tournament in _store.all():
+        if not getattr(tournament, "mm_search_channel_id", 0):
+            continue
+        meta = meta_of(tournament)
+        mid = (meta or {}).get("card_message_id")
+        if not mid:
+            continue
+        try:
+            guild = bot.get_guild(tournament.guild_id)
+            if guild is None:
+                continue
+            channel = guild.get_channel(tournament.channel_id)
+            if channel is None:
+                channel = await guild.fetch_channel(tournament.channel_id)
+            msg = await channel.fetch_message(int(mid))
+            await msg.edit(
+                view=build_mm_match_view(
+                    tournament, (meta or {}).get("match_num", 0)
+                ),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except Exception as exc:
+            logger.warning(
+                "MM card startup refresh failed (tournament %s): %s",
+                tournament.id, exc,
+            )
+
+
 # ---------------------------------------------------------------------------
 # Сборка CV2-карточки
 # ---------------------------------------------------------------------------
@@ -194,19 +233,10 @@ def build_mm_match_view(tournament: Tournament, match_num: int = 0) -> DesignVie
         if elo_lines:
             view.sep()
             view.text("**ИЗМЕНЕНИЕ ELO**\n" + "\n".join(elo_lines))
-        view.row(_rules_button())
         return view
 
     view.text(f"**КОМАНДА A — {name_a}**\n{_roster_mentions(tournament, 0)}")
     view.text(f"**КОМАНДА B — {name_b}**\n{_roster_mentions(tournament, 1)}")
-    view.sep()
-    view.text(
-        "**ИНФОРМАЦИЯ**\n"
-        "Режим: Squad 4×4\n"
-        "Правила: Kazakhstan\n"
-        "Формат: до 5 побед\n"
-        f"Результат: {meta.get('status_text') or 'ожидается'}"
-    )
     view.sep()
 
     if state == "check":
@@ -223,7 +253,6 @@ def build_mm_match_view(tournament: Tournament, match_num: int = 0) -> DesignVie
         view.row(
             _edit_button(gid, cid, tid),
             _cancel_button(gid, cid, tid),
-            _rules_button(),
         )
     else:
         view.text(
@@ -231,10 +260,7 @@ def build_mm_match_view(tournament: Tournament, match_num: int = 0) -> DesignVie
             "Ожидается. Капитаны команд заполняют статистику K/D "
             "своих игроков кнопкой ниже."
         )
-        view.row(
-            _kd_button(gid, cid, tid),
-            _rules_button(),
-        )
+        view.row(_kd_button(gid, cid, tid))
     return view
 
 
@@ -296,14 +322,6 @@ def _cancel_button(gid: int, cid: int, tid: int) -> discord.ui.Button:
         style=discord.ButtonStyle.danger,
         label="Отмена",
         custom_id=f"mmatch:cancel:{gid}:{cid}:{tid}",
-    )
-
-
-def _rules_button() -> discord.ui.Button:
-    return discord.ui.Button(
-        style=discord.ButtonStyle.secondary,
-        label="Правила",
-        custom_id="mmatch:rules",
     )
 
 
