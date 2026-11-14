@@ -179,13 +179,13 @@ class BlackjackActionView(discord.ui.View):
         self.dealer_hand = dealer_hand
         self.game = game
 
-    @discord.ui.button(label="📥 Взять карту", style=discord.ButtonStyle.primary, custom_id="blackjack_hit")
+    @discord.ui.button(label="Взять карту", style=discord.ButtonStyle.primary, custom_id="blackjack_hit")
     async def hit_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Взять карту."""
         view = BlackjackView(self.guild_id, self.user_id, self.bet, self.deck, self.player_hand, self.dealer_hand, self.game)
         await view.hit(interaction)
 
-    @discord.ui.button(label="✋ Остановиться", style=discord.ButtonStyle.secondary, custom_id="blackjack_stand")
+    @discord.ui.button(label="Остановиться", style=discord.ButtonStyle.secondary, custom_id="blackjack_stand")
     async def stand_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Остановиться."""
         view = BlackjackView(self.guild_id, self.user_id, self.bet, self.deck, self.player_hand, self.dealer_hand, self.game)

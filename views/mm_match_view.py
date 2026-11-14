@@ -34,6 +34,11 @@ MATCH_INDEX = 0
 # custom_id шаблоны
 T_KD = re.compile(r"^mmatch:kd:(?P<gid>\d+):(?P<cid>\d+):(?P<tid>\d+)$")
 T_WIN = re.compile(r"^mmatch:win:(?P<side>[ab]):(?P<gid>\d+):(?P<cid>\d+):(?P<tid>\d+)$")
+T_WSEL = re.compile(r"^mmatch:winsel:(?P<gid>\d+):(?P<cid>\d+):(?P<tid>\d+)$")
+T_CONFIRM = re.compile(
+    r"^mmatch:cf:(?P<side>[ab]):(?P<gid>\d+):(?P<cid>\d+):(?P<tid>\d+)"
+    r":(?P<w>\d+):(?P<l>\d+)$"
+)
 T_EDIT = re.compile(r"^mmatch:edit:(?P<gid>\d+):(?P<cid>\d+):(?P<tid>\d+)$")
 T_CANCEL = re.compile(r"^mmatch:cancel:(?P<gid>\d+):(?P<cid>\d+):(?P<tid>\d+)$")
 T_RULES = re.compile(r"^mmatch:rules$")
@@ -248,10 +253,7 @@ def build_mm_match_view(tournament: Tournament, match_num: int = 0) -> DesignVie
             "Статистика восьми игроков заполнена (K/D). "
             "Организатор выбирает победителя и счёт."
         )
-        view.row(
-            _win_button("a", gid, cid, tid, name_a),
-            _win_button("b", gid, cid, tid, name_b),
-        )
+        view.row(_winner_select(gid, cid, tid, name_a, name_b))
         view.row(
             _edit_button(gid, cid, tid),
             _cancel_button(gid, cid, tid),
@@ -304,10 +306,31 @@ def _kd_button(gid: int, cid: int, tid: int) -> discord.ui.Button:
 
 
 def _win_button(side: str, gid: int, cid: int, tid: int, label: str) -> discord.ui.Button:
+    """Legacy-кнопка победителя — только для старых карточек."""
     return discord.ui.Button(
-        style=discord.ButtonStyle.success,
+        style=discord.ButtonStyle.secondary,
         label=f"Победитель: {label[:20]}",
         custom_id=f"mmatch:win:{side}:{gid}:{cid}:{tid}",
+    )
+
+
+def _winner_select(
+    gid: int, cid: int, tid: int, name_a: str, name_b: str
+) -> discord.ui.Select:
+    """Select победителя — выбор ещё не подтверждение результата."""
+    return discord.ui.Select(
+        placeholder="Выберите победителя",
+        custom_id=f"mmatch:winsel:{gid}:{cid}:{tid}",
+        options=[
+            discord.SelectOption(
+                label=f"Победитель: {name_a[:90]}",
+                value="a",
+                description="Команда A"),
+            discord.SelectOption(
+                label=f"Победитель: {name_b[:90]}",
+                value="b",
+                description="Команда B"),
+        ],
     )
 
 
@@ -420,6 +443,64 @@ class MmRulesBtn(discord.ui.DynamicItem[discord.ui.Button], template=T_RULES):
         )
 
 
+class MmWinSel(discord.ui.DynamicItem[discord.ui.Select], template=T_WSEL):
+    """Persistent Select «Выберите победителя» (шаг 1 CHECK-флоу)."""
+
+    def __init__(self, custom_id: str) -> None:
+        super().__init__(discord.ui.Select(
+            placeholder="Выберите победителя",
+            custom_id=custom_id,
+            options=[
+                discord.SelectOption(label="Команда A", value="a"),
+                discord.SelectOption(label="Команда B", value="b"),
+            ],
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(str(interaction.data.get("custom_id") or item.custom_id))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await handle_wsel_click(interaction)
+
+
+class MmConfirmBtn(discord.ui.DynamicItem[discord.ui.Button], template=T_CONFIRM):
+    """Persistent-кнопка «Подтвердить результат» (шаг 4 CHECK-флоу)."""
+
+    def __init__(self, custom_id: str) -> None:
+        super().__init__(discord.ui.Button(
+            style=discord.ButtonStyle.success,
+            label="Подтвердить результат",
+            custom_id=custom_id,
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(str(interaction.data.get("custom_id") or item.custom_id))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await handle_confirm_click(interaction)
+
+
+class _ReviewCancelButton(discord.ui.Button):
+    """Вторичная кнопка 'Отмена' на карточке проверки результата."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="Отмена",
+            custom_id="mmatch:cf_cancel",
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view = DesignView(title="Отменено", timeout=60)
+        view.text("Ввод результата отменён — матч не завершён.")
+        try:
+            await interaction.response.edit_message(view=view)
+        except discord.NotFound:
+            pass
+
+
 class MmMatchTemplateView(discord.ui.View):
     """Регистрируется один раз в setup_hook — dispatch по шаблонам."""
 
@@ -427,6 +508,8 @@ class MmMatchTemplateView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(MmKDBtn("mmatch:kd:0:0:0"))
         self.add_item(MmWinBtn("mmatch:win:a:0:0:0"))
+        self.add_item(MmWinSel("mmatch:winsel:0:0:0"))
+        self.add_item(MmConfirmBtn("mmatch:cf:a:0:0:0:5:0"))
         self.add_item(MmEditBtn("mmatch:edit:0:0:0"))
         self.add_item(MmCancelBtn("mmatch:cancel:0:0:0"))
         self.add_item(MmRulesBtn())
@@ -581,15 +664,37 @@ class MmScoreModal(discord.ui.Modal, title="Счёт матча"):
                 "5:0, 5:1, 5:2, 5:3 или 5:4.", ephemeral=True
             )
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        ok, err = await finalize_mm_match(
-            interaction, tournament, self.side, score
+
+        # Шаг 3 — проверка результата перед финальным подтверждением.
+        # ELO/статистика применяются только по кнопке «Подтвердить
+        # результат» на этой карточке.
+        w, l = score
+        winner_idx = 0 if self.side == "a" else 1
+        winner_name = _team_name(tournament, winner_idx)
+        loser_name = _team_name(tournament, 1 - winner_idx)
+        score_display = (
+            f"{w}:{l}" if self.side == "a" else f"{l}:{w}"
         )
-        if not ok:
-            await interaction.followup.send(f"❌ {err}", ephemeral=True)
-            return
-        await interaction.followup.send(
-            "✅ Результат матча подтверждён.", ephemeral=True
+        gid, cid, tid = self.gid, self.cid, self.tid
+        confirm_id = (
+            f"mmatch:cf:{self.side}:{gid}:{cid}:{tid}:{w}:{l}"
+        )
+        review = DesignView(title="Проверьте результат", timeout=300)
+        review.text(
+            f"**Победитель:** {winner_name}\n"
+            f"**Счёт:** {score_display}\n"
+            f"**Проигравший:** {loser_name}\n"
+            "-# ELO и статистика будут начислены только после "
+            "подтверждения."
+        )
+        review.row(discord.ui.Button(
+            style=discord.ButtonStyle.success,
+            label="Подтвердить результат",
+            custom_id=confirm_id,
+        ))
+        review.row(_ReviewCancelButton())
+        await interaction.response.send_message(
+            view=review, ephemeral=True
         )
 
 
@@ -711,6 +816,75 @@ async def handle_win_click(interaction: discord.Interaction, side: str) -> None:
         )
         return
     await interaction.response.send_modal(MmScoreModal(gid, cid, tid, side))
+
+
+async def handle_wsel_click(interaction: discord.Interaction) -> None:
+    """Select победителя → модалка счёта (только организатор)."""
+    m = T_WSEL.match(str(interaction.data.get("custom_id", "")))
+    if not m:
+        return
+    gid, cid, tid = int(m.group("gid")), int(m.group("cid")), int(m.group("tid"))
+    tournament = _ctx(interaction, gid, cid, tid)
+    if tournament is None:
+        await interaction.response.send_message(
+            "❌ Матч не найден или уже завершён.", ephemeral=True
+        )
+        return
+    if not _can_confirm(interaction.user, interaction.guild):
+        await interaction.response.send_message(
+            "❌ Подтверждать результат может только организатор "
+            "или администратор.", ephemeral=True
+        )
+        return
+    meta = meta_of(tournament) or {}
+    if meta.get("state") != "check":
+        await interaction.response.send_message(
+            "❌ Статистика заполнена не полностью — подтверждение "
+            "результата пока недоступно.", ephemeral=True
+        )
+        return
+    values = interaction.data.get("values") or []
+    side = values[0] if values else ""
+    if side not in ("a", "b"):
+        await interaction.response.send_message(
+            "❌ Не выбран победитель.", ephemeral=True
+        )
+        return
+    await interaction.response.send_modal(
+        MmScoreModal(gid, cid, tid, side)
+    )
+
+
+async def handle_confirm_click(interaction: discord.Interaction) -> None:
+    """Финальное «Подтвердить результат» на карточке проверки."""
+    m = T_CONFIRM.match(str(interaction.data.get("custom_id", "")))
+    if not m:
+        return
+    side = m.group("side")
+    gid, cid, tid = int(m.group("gid")), int(m.group("cid")), int(m.group("tid"))
+    w, l = int(m.group("w")), int(m.group("l"))
+    tournament = _ctx(interaction, gid, cid, tid)
+    if tournament is None:
+        await interaction.response.send_message(
+            "❌ Матч не найден или уже завершён.", ephemeral=True
+        )
+        return
+    if not _can_confirm(interaction.user, interaction.guild):
+        await interaction.response.send_message(
+            "❌ Подтверждать результат может только организатор "
+            "или администратор.", ephemeral=True
+        )
+        return
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    ok, err = await finalize_mm_match(
+        interaction, tournament, side, (w, l)
+    )
+    if not ok:
+        await interaction.followup.send(f"❌ {err}", ephemeral=True)
+        return
+    await interaction.followup.send(
+        "✅ Результат матча подтверждён.", ephemeral=True
+    )
 
 
 async def handle_edit_click(interaction: discord.Interaction) -> None:

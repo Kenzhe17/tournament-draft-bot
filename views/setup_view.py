@@ -1175,8 +1175,8 @@ class StartTournamentButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
-            style=discord.ButtonStyle.success,
-            label="Старт",
+            style=discord.ButtonStyle.primary,
+            label="Начать турнир",
             custom_id=f"start_tournament:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
@@ -1399,10 +1399,9 @@ class ToggleRegistrationButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, channel_id: int, is_open: bool):
         self.is_open = is_open
-        label = "Закрыть" if is_open else "Открыть"
-        style = discord.ButtonStyle.danger if is_open else discord.ButtonStyle.primary
+        label = "Закрыть набор" if is_open else "Открыть набор"
         super().__init__(
-            style=style,
+            style=discord.ButtonStyle.secondary,
             label=label,
             custom_id=f"toggle_registration:{guild_id}:{channel_id}",
         )
@@ -1444,7 +1443,7 @@ class ToggleRegistrationButton(discord.ui.Button):
         new_view = OrgMenuView(tournament)
         action = "закрыта" if new_state == RegistrationState.CLOSED else "открыта"
         try:
-            await interaction.response.edit_message( view=compose(text="Организаторское меню:", view=new_view)
+            await interaction.response.edit_message( view=compose(text=_org_menu_text(tournament), view=new_view)
             )
         except discord.NotFound:
             pass
@@ -1456,9 +1455,8 @@ class ToggleIsolationButton(discord.ui.Button):
     def __init__(self, guild_id: int, channel_id: int, is_isolated: bool):
         self.is_isolated = is_isolated
         label = "Отключить S" if is_isolated else "Включить S"
-        style = discord.ButtonStyle.primary if is_isolated else discord.ButtonStyle.danger
         super().__init__(
-            style=style,
+            style=discord.ButtonStyle.secondary,
             label=label,
             custom_id=f"toggle_isolation:{guild_id}:{channel_id}",
         )
@@ -1505,7 +1503,7 @@ class ToggleIsolationButton(discord.ui.Button):
         new_view = OrgMenuView(tournament)
         action = "отключена" if new_state == RegistrationState.OPEN else "включена"
         try:
-            await interaction.response.edit_message( view=compose(text="Организаторское меню:", view=new_view)
+            await interaction.response.edit_message( view=compose(text=_org_menu_text(tournament), view=new_view)
             )
         except discord.NotFound:
             pass
@@ -1587,60 +1585,235 @@ class OrgMenuButton(discord.ui.Button):
 
         # Create org menu view
         view = OrgMenuView(tournament)
-        
+
         try:
             await interaction.response.send_message(
-                view=compose(text="Организаторское меню:", view=view),
+                view=compose(text=_org_menu_text(tournament), view=view),
                 ephemeral=True
             )
         except discord.InteractionResponded:
             pass
 
 
+def _org_menu_text(tournament: Tournament) -> str:
+    """Сводка карточки 'УПРАВЛЕНИЕ ТУРНИРОМ'."""
+    size = int(tournament.size.value)
+    if tournament.formation_mode in (
+        FormationMode.ELO, FormationMode.SKILL, FormationMode.DRAFT
+    ):
+        total = sum(
+            len(getattr(tournament, f"circle{i}", []))
+            for i in range(1, 5)
+        )
+    else:
+        total = len(tournament.players_pool)
+    reg = {
+        RegistrationState.OPEN: "набор открыт",
+        RegistrationState.CLOSED: "набор закрыт",
+        RegistrationState.ISOLATED: "изолирован",
+    }.get(tournament.registration, str(tournament.registration))
+    mode = getattr(tournament.formation_mode, "value",
+                   str(tournament.formation_mode))
+    return (
+        "### УПРАВЛЕНИЕ ТУРНИРОМ\n"
+        f"- Размер: **{size}** участников\n"
+        f"- Участники: **{total}/{size}**\n"
+        f"- Режим: **{mode}**\n"
+        f"- Набор: {reg}"
+    )
+
+
+class OrgBackButton(discord.ui.Button):
+    """Кнопка 'Назад' — вернуть основную карточку орг-меню."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="Назад",
+            custom_id=f"org_back:{guild_id}:{channel_id}",
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Нет активного турнира."),
+                    ephemeral=True)
+            except discord.NotFound:
+                pass
+            return
+        try:
+            await interaction.response.edit_message(
+                view=compose(text=_org_menu_text(tournament),
+                             view=OrgMenuView(tournament)))
+        except discord.NotFound:
+            pass
+
+
+class _OrgSubPanel(discord.ui.View):
+    """Организаторская подпанель: контекстные действия + 'Назад'."""
+
+    def __init__(self, tournament: Tournament, *buttons):
+        super().__init__(timeout=None)
+        self.tournament = tournament
+        for b in buttons:
+            self.add_item(b)
+        self.add_item(OrgBackButton(
+            tournament.guild_id, tournament.channel_id))
+
+
+class OrgPlayersPanel(_OrgSubPanel):
+    """Управление участниками: удалить / обменять / переместить / добавить."""
+
+    def __init__(self, tournament: Tournament):
+        gid, cid = tournament.guild_id, tournament.channel_id
+        buttons = [
+            DeletePlayerButton(gid, cid),
+            SwapPlayersButton(gid, cid),
+            MovePlayerButton(gid, cid),
+        ]
+        if tournament.formation_mode in (
+            FormationMode.ELO, FormationMode.SKILL, FormationMode.DRAFT
+        ):
+            for circle in range(1, 5):
+                buttons.append(AdminAddButton(
+                    gid, cid, circle, circle_names[circle]))
+        super().__init__(tournament, *buttons)
+
+
+class OrgSettingsPanel(_OrgSubPanel):
+    """Настройки регистрации: набор, изоляция, лимиты кругов."""
+
+    def __init__(self, tournament: Tournament):
+        gid, cid = tournament.guild_id, tournament.channel_id
+        buttons = []
+        if tournament.registration != RegistrationState.ISOLATED:
+            buttons.append(ToggleRegistrationButton(
+                gid, cid, tournament.registration == RegistrationState.OPEN))
+        buttons.append(ToggleIsolationButton(
+            gid, cid, tournament.registration == RegistrationState.ISOLATED))
+        buttons.append(LimitButton(gid, cid))
+        super().__init__(tournament, *buttons)
+
+
+class OrgAutoPanel(_OrgSubPanel):
+    """Автораспределение по ELO/SKILL."""
+
+    def __init__(self, tournament: Tournament):
+        gid, cid = tournament.guild_id, tournament.channel_id
+        if tournament.formation_mode == FormationMode.ELO:
+            button = AutoDistributeButton(gid, cid)
+        else:
+            button = AutoDistributeAvgButton(gid, cid)
+        super().__init__(tournament, button)
+
+
+class OrgNotifyPanel(_OrgSubPanel):
+    """Уведомление о турнире."""
+
+    def __init__(self, tournament: Tournament):
+        super().__init__(
+            tournament, NotifyButton(
+                tournament.guild_id, tournament.channel_id))
+
+
+class OrgActionSelect(discord.ui.Select):
+    """Select 'Выберите действие' — вход в контекстные подпанели."""
+
+    def __init__(self, guild_id: int, channel_id: int,
+                 formation_mode):
+        options = [
+            discord.SelectOption(
+                label="Управление игроками",
+                value="players",
+                description="Удалить, обменять, переместить, добавить"),
+        ]
+        if formation_mode in (FormationMode.ELO, FormationMode.SKILL):
+            options.append(discord.SelectOption(
+                label="Автораспределение",
+                value="auto",
+                description="Распределить участников автоматически"))
+        options += [
+            discord.SelectOption(
+                label="Настройки регистрации",
+                value="settings",
+                description="Набор, изоляция, лимиты кругов"),
+            discord.SelectOption(
+                label="Уведомление",
+                value="notify",
+                description="Отправить анонс турнира"),
+        ]
+        super().__init__(
+            placeholder="Выберите действие",
+            options=options,
+            custom_id=f"org_action:{guild_id}:{channel_id}",
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Нет активного турнира."),
+                    ephemeral=True)
+            except discord.NotFound:
+                pass
+            return
+
+        value = self.values[0] if self.values else ""
+        panel_cls = {
+            "players": OrgPlayersPanel,
+            "settings": OrgSettingsPanel,
+            "notify": OrgNotifyPanel,
+        }.get(value)
+        if value == "auto" and tournament.formation_mode in (
+            FormationMode.ELO, FormationMode.SKILL
+        ):
+            panel_cls = OrgAutoPanel
+        if panel_cls is None:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Действие недоступно в текущем режиме."),
+                    ephemeral=True)
+            except discord.NotFound:
+                pass
+            return
+
+        titles = {
+            "players": "Управление игроками",
+            "auto": "Автораспределение",
+            "settings": "Настройки регистрации",
+            "notify": "Уведомление",
+        }
+        panel = panel_cls(tournament)
+        try:
+            await interaction.response.edit_message(
+                view=compose(text=f"### {titles[value]}", view=panel))
+        except discord.NotFound:
+            pass
+
+
 class OrgMenuView(discord.ui.View):
-    """View с организаторскими кнопками."""
+    """Орг-меню: сводка турнира + Select действий + главные кнопки."""
 
     def __init__(self, tournament: Tournament):
         super().__init__(timeout=None)
         self.tournament = tournament
+        gid, cid = tournament.guild_id, tournament.channel_id
 
-        # Add all org buttons
-        delete_button = DeletePlayerButton(tournament.guild_id, tournament.channel_id)
-        self.add_item(delete_button)
+        self.add_item(OrgActionSelect(gid, cid, tournament.formation_mode))
 
-        swap_button = SwapPlayersButton(tournament.guild_id, tournament.channel_id)
-        self.add_item(swap_button)
-
-        move_button = MovePlayerButton(tournament.guild_id, tournament.channel_id)
-        self.add_item(move_button)
-
-        # Add auto-distribute buttons based on formation mode
-        if tournament.formation_mode == FormationMode.ELO:
-            auto_distribute_button = AutoDistributeButton(tournament.guild_id, tournament.channel_id)
-            self.add_item(auto_distribute_button)
-        elif tournament.formation_mode == FormationMode.SKILL:
-            auto_distribute_avg_button = AutoDistributeAvgButton(tournament.guild_id, tournament.channel_id)
-            self.add_item(auto_distribute_avg_button)
-
-        start_button = StartTournamentButton(tournament.guild_id, tournament.channel_id)
-        self.add_item(start_button)
-
-        # Show toggle registration button only if not isolated
+        # Главные действия остаются на основной карточке
+        self.add_item(StartTournamentButton(gid, cid))
         if tournament.registration != RegistrationState.ISOLATED:
-            toggle_button = ToggleRegistrationButton(tournament.guild_id, tournament.channel_id, tournament.registration == RegistrationState.OPEN)
-            self.add_item(toggle_button)
-
-        # Show isolation button
-        isolation_button = ToggleIsolationButton(tournament.guild_id, tournament.channel_id, tournament.registration == RegistrationState.ISOLATED)
-        self.add_item(isolation_button)
-
-        # Add limit button
-        limit_button = LimitButton(tournament.guild_id, tournament.channel_id)
-        self.add_item(limit_button)
-
-        # Add notification button
-        notify_button = NotifyButton(tournament.guild_id, tournament.channel_id)
-        self.add_item(notify_button)
+            self.add_item(ToggleRegistrationButton(
+                gid, cid,
+                tournament.registration == RegistrationState.OPEN))
 
 
 class NotifyButton(discord.ui.Button):

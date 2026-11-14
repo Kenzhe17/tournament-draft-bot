@@ -151,24 +151,24 @@ def build_registration_view(
     if tournament.status == "REGISTRATION":
         if is_duo:
             view.row(
-                btn("Создать дуэт", style="success", custom_id=f"{CID}:duo:new:{tournament.id}", emoji_key="team"),
-                btn("Выйти из дуэта", style="danger", custom_id=f"{CID}:duo:leave:{tournament.id}", emoji_key="cross"),
+                btn("Создать дуэт", style="primary", custom_id=f"{CID}:duo:new:{tournament.id}", emoji_key="team"),
+                btn("Выйти из дуэта", style="secondary", custom_id=f"{CID}:duo:leave:{tournament.id}", emoji_key="cross"),
             )
         else:
             view.row(
-                btn("Участвовать", style="success", custom_id=f"{CID}:join:{tournament.id}", emoji_key="check"),
-                btn("Покинуть", style="danger", custom_id=f"{CID}:leave:{tournament.id}", emoji_key="cross"),
+                btn("Участвовать", style="primary", custom_id=f"{CID}:join:{tournament.id}", emoji_key="check"),
+                btn("Покинуть", style="secondary", custom_id=f"{CID}:leave:{tournament.id}", emoji_key="cross"),
             )
         view.row(
-            btn("⚙️ Организатор", style="secondary", custom_id=f"{CID}:org:{tournament.id}", emoji_key="settings"),
+            btn("Управление", style="secondary", custom_id=f"{CID}:org:{tournament.id}", emoji_key="settings"),
         )
     else:
         view.row(
-            btn("🏆 Сетка турнира", style="primary", custom_id=f"{CID}:br:open:{tournament.id}", emoji_key="trophy"),
-            btn("🎮 Матчи", style="primary", custom_id=f"{CID}:br:matches:{tournament.id}", emoji_key="sword"),
+            btn("Сетка", style="primary", custom_id=f"{CID}:br:open:{tournament.id}", emoji_key="trophy"),
+            btn("Матчи", style="primary", custom_id=f"{CID}:br:matches:{tournament.id}", emoji_key="sword"),
         )
         view.row(
-            btn("⚙️ Организатор", style="secondary", custom_id=f"{CID}:org:{tournament.id}", emoji_key="settings"),
+            btn("Управление", style="secondary", custom_id=f"{CID}:org:{tournament.id}", emoji_key="settings"),
         )
     return view
 
@@ -264,12 +264,12 @@ def build_bracket_view(
         if i + 3000 < len(text):
             view.sep()
     view.row(
-        btn("🎮 Матчи", style="primary", custom_id=f"{CID}:br:matches:{tournament.id}", emoji_key="sword"),
-        btn("🔄 Обновить", style="secondary", custom_id=f"{CID}:br:refresh:{tournament.id}", emoji_key="refresh"),
-        btn("🖼️ PNG", style="secondary", custom_id=f"{CID}:br:png:{tournament.id}", emoji_key="screenshot"),
+        btn("Матчи", style="primary", custom_id=f"{CID}:br:matches:{tournament.id}", emoji_key="sword"),
+        btn("Обновить", style="secondary", custom_id=f"{CID}:br:refresh:{tournament.id}", emoji_key="refresh"),
+        btn("PNG", style="secondary", custom_id=f"{CID}:br:png:{tournament.id}", emoji_key="screenshot"),
     )
     view.row(
-        btn("⚙️ Организатор", style="secondary", custom_id=f"{CID}:org:{tournament.id}", emoji_key="settings"),
+        btn("Управление", style="secondary", custom_id=f"{CID}:org:{tournament.id}", emoji_key="settings"),
     )
     return view
 
@@ -350,7 +350,7 @@ def build_matches_panel(
     )
     if not active:
         view.text(muted("Нет активных матчей."))
-        view.row(btn("🔙 К сетке", style="secondary", custom_id=f"{CID}:br:open:{tournament.id}"))
+        view.row(btn("К сетке", style="secondary", custom_id=f"{CID}:br:open:{tournament.id}"))
         return view
 
     lines = []
@@ -376,7 +376,7 @@ def build_matches_panel(
     )
     view.row(sel)
     view.row(
-        btn("🔙 К сетке", style="secondary", custom_id=f"{CID}:br:open:{tournament.id}"),
+        btn("К сетке", style="secondary", custom_id=f"{CID}:br:open:{tournament.id}"),
     )
     return view
 
@@ -454,13 +454,13 @@ def build_match_detail(
         a_label = (ea.label() if ea else "A")[:60]
         b_label = (eb.label() if eb else "B")[:60]
         view.row(
-            btn(f"Победа: {a_label}", style="success",
+            btn(f"Победа: {a_label}", style="secondary",
                 custom_id=f"{CID}:vote:{m.id}:a", emoji_key="winner"),
-            btn(f"Победа: {b_label}", style="success",
+            btn(f"Победа: {b_label}", style="secondary",
                 custom_id=f"{CID}:vote:{m.id}:b", emoji_key="winner"),
         )
         view.row(
-            btn("🗝️ Комната", style="secondary", custom_id=f"{CID}:room:{m.id}", emoji_key="room"),
+            btn("Комната", style="secondary", custom_id=f"{CID}:room:{m.id}", emoji_key="room"),
         )
     elif m.status == "DISPUTED":
         view.text("⚠️ Спор — ожидается решение организатора.")
@@ -470,7 +470,7 @@ def build_match_detail(
     elif not can_see_room:
         view.text(muted("Действия доступны участникам матча."))
     view.row(
-        btn("🔙 К матчам", style="secondary", custom_id=f"{CID}:br:matches:{tournament.id}"),
+        btn("К матчам", style="secondary", custom_id=f"{CID}:br:matches:{tournament.id}"),
     )
     return view
 
@@ -493,19 +493,21 @@ def build_org_menu(tournament: UltTournament) -> DesignView:
     view.sep()
     if tournament.status == "REGISTRATION":
         view.row(
-            btn("▶️ Старт", style="success", custom_id=f"{CID}:org:start:{tournament.id}", emoji_key="match"),
-            btn("🔓 Открыть/Закрыть", style="secondary", custom_id=f"{CID}:org:open:{tournament.id}", emoji_key="security"),
+            btn("Старт", style="primary", custom_id=f"{CID}:org:start:{tournament.id}", emoji_key="match"),
+            btn("Открыть/Закрыть", style="secondary", custom_id=f"{CID}:org:open:{tournament.id}", emoji_key="security"),
         )
         view.row(
-            btn("🗑️ Удалить турнир", style="danger", custom_id=f"{CID}:org:delete:{tournament.id}", emoji_key="delete"),
+            btn("Удалить турнир", style="danger", custom_id=f"{CID}:org:delete:{tournament.id}", emoji_key="delete"),
         )
     else:
         view.row(
-            btn("🔧 Исправить результат", style="secondary",
+            btn("Исправить результат", style="secondary",
                 custom_id=f"{CID}:org:fix:{tournament.id}", emoji_key="warning"),
-            btn("🗑️ Удалить турнир", style="danger", custom_id=f"{CID}:org:delete:{tournament.id}", emoji_key="delete"),
         )
         view.row(
-            btn("🔓 Открыть/Закрыть", style="secondary", custom_id=f"{CID}:org:open:{tournament.id}", emoji_key="security"),
+            btn("Удалить турнир", style="danger", custom_id=f"{CID}:org:delete:{tournament.id}", emoji_key="delete"),
+        )
+        view.row(
+            btn("Открыть/Закрыть", style="secondary", custom_id=f"{CID}:org:open:{tournament.id}", emoji_key="security"),
         )
     return view

@@ -3,66 +3,117 @@ from config import replace_emojis, get_emoji
 
 import discord
 from utils.design import compose, text_card
-from discord.ui import View, Button, button
+from discord.ui import View, Button, Select
+from discord import SelectOption
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from bot import TournamentBot
 
 
-class MatchSelectView(View):
-    """View for selecting a match to bet on."""
+def _match_names(tournament, team_a: int, team_b: int) -> tuple[str, str]:
+    team_a_data = (
+        tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+    )
+    team_b_data = (
+        tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+    )
+    captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+    captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+    name_a = tournament.team_names.get(team_a, captain_a)
+    name_b = tournament.team_names.get(team_b, captain_b)
+    return name_a, name_b
 
-    def __init__(self, guild_id: int, channel_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
-        super().__init__(timeout=None)
+
+class MatchSelectView(View):
+    """Выбор матча для ставки — один Select вместо ряда кнопок."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament,
+                 matches: list[tuple[int, int]], match_type: str):
+        super().__init__(timeout=300)
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.tournament = tournament
         self.matches = matches
         self.match_type = match_type
-        
-        # Add buttons for each match
-        for i, (team_a, team_b) in enumerate(matches):
-            team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-            team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-            captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-            captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-            name_a = tournament.team_names.get(team_a, captain_a)
-            name_b = tournament.team_names.get(team_b, captain_b)
-            
-            button = Button(
-                label=f"Игра #{i + 1}: {name_a} vs {name_b}",
-                style=discord.ButtonStyle.primary,
-                custom_id=f"match_{i}"
+
+        options = []
+        for i, (team_a, team_b) in enumerate(matches[:25]):
+            name_a, name_b = _match_names(tournament, team_a, team_b)
+            label = f"Матч #{i + 1} — {name_a} vs {name_b}"
+            options.append(SelectOption(
+                label=label[:100], value=str(i),
+                description=f"{name_a[:45]} vs {name_b[:45]}",
+            ))
+        if options:
+            select = Select(
+                placeholder="Выберите матч",
+                options=options,
+                custom_id="bet_match_select",
+                min_values=1,
+                max_values=1,
             )
-            button.callback = self._create_match_callback(i, team_a, team_b, name_a, name_b)
-            self.add_item(button)
-    
-    def _create_match_callback(self, match_index: int, team_a: int, team_b: int, name_a: str, name_b: str):
-        """Create a callback for a match button."""
-        async def callback(interaction: discord.Interaction):
-            team_view = TeamSelectView(
-                self.guild_id,
-                self.channel_id,
-                self.tournament,
-                match_index,
-                team_a,
-                team_b,
-                name_a,
-                name_b,
-                self.match_type
+            async def _cb(interaction, _s=select):
+                await self._on_select(interaction, _s)
+            select.callback = _cb
+            self.add_item(select)
+
+    async def _on_select(self, interaction: discord.Interaction,
+                         select: Select) -> None:
+        try:
+            idx = int(select.values[0])
+        except (ValueError, IndexError):
+            await interaction.response.send_message(
+                "❌ Некорректный выбор.", ephemeral=True)
+            return
+        if idx >= len(self.matches):
+            await interaction.response.send_message(
+                "❌ Матч не найден.", ephemeral=True)
+            return
+        team_a, team_b = self.matches[idx]
+        name_a, name_b = _match_names(self.tournament, team_a, team_b)
+
+        # Актуальные коэффициенты для карточки выбора команды
+        odds_a = odds_b = 1.9
+        try:
+            from storage.bet_store import bet_store
+            match_id = (
+                f"{self.tournament.id}_{self.match_type}_{idx}"
             )
-            await interaction.response.send_message( view=compose(text="Выберите команду:", view=team_view),
-                ephemeral=True
-            )
-        return callback
+            odds_data = await bet_store.get_current_odds_sync(match_id)
+            if odds_data:
+                odds_a = odds_data.team_a_odds
+                odds_b = odds_data.team_b_odds
+        except Exception:
+            pass
+
+        team_view = TeamSelectView(
+            self.guild_id, self.channel_id, self.tournament,
+            idx, team_a, team_b, name_a, name_b,
+            self.match_type, odds_a, odds_b,
+        )
+        await interaction.response.send_message(
+            view=compose(
+                text=(
+                    f"### Матч #{idx + 1}\n"
+                    f"**{name_a}** `{odds_a:.2f}x` vs "
+                    f"**{name_b}** `{odds_b:.2f}x`\n"
+                    "-# Выберите команду."
+                ),
+                view=team_view,
+            ),
+            ephemeral=True,
+        )
 
 
 class TeamSelectView(View):
-    """View for selecting a team to bet on."""
+    """Выбор команды — две компактные secondary-кнопки."""
 
-    def __init__(self, guild_id: int, channel_id: int, tournament, match_index: int, team_a: int, team_b: int, name_a: str, name_b: str, match_type: str):
-        super().__init__(timeout=None)
+    def __init__(self, guild_id: int, channel_id: int, tournament,
+                 match_index: int, team_a: int, team_b: int,
+                 name_a: str, name_b: str, match_type: str,
+                 odds_a: float = 1.9, odds_b: float = 1.9):
+        super().__init__(timeout=300)
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.tournament = tournament
@@ -72,16 +123,19 @@ class TeamSelectView(View):
         self.name_a = name_a
         self.name_b = name_b
         self.match_type = match_type
-        
-        # Add buttons dynamically
-        team_a_btn = Button(label=name_a, style=discord.ButtonStyle.primary)
-        team_a_btn.callback = self.team_a_button
-        self.add_item(team_a_btn)
-        
-        team_b_btn = Button(label=name_b, style=discord.ButtonStyle.primary)
-        team_b_btn.callback = self.team_b_button
-        self.add_item(team_b_btn)
-    
+        self.odds_a = odds_a
+        self.odds_b = odds_b
+
+        btn_a = Button(
+            label=name_a[:80], style=discord.ButtonStyle.secondary)
+        btn_a.callback = self.team_a_button
+        self.add_item(btn_a)
+
+        btn_b = Button(
+            label=name_b[:80], style=discord.ButtonStyle.secondary)
+        btn_b.callback = self.team_b_button
+        self.add_item(btn_b)
+
     async def team_a_button(self, interaction: discord.Interaction):
         """Handle team A selection."""
         # Проверка: игрок не может ставить против своей команды
@@ -134,7 +188,7 @@ class ViewBetsButton(Button):
 
     def __init__(self, guild_id: int, channel_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
         super().__init__(
-            label="📊 Посмотреть ставки",
+            label="Посмотреть ставки",
             style=discord.ButtonStyle.secondary,
             custom_id="view_bets"
         )
@@ -143,25 +197,19 @@ class ViewBetsButton(Button):
         self.tournament = tournament
         self.matches = matches
         self.match_type = match_type
-    
+
     async def callback(self, interaction: discord.Interaction):
         """Show detailed bets for all matches."""
         from storage.bet_store import bet_store
-        
+
         bets_text = []
         for i, (team_a, team_b) in enumerate(self.matches):
             match_id = f"{self.tournament.id}_{self.match_type}_{i}"
             bets = await bet_store.get_bets_by_match(self.tournament.id, match_id)
-            
-            team_a_data = self.tournament.teams[team_a] if team_a < len(self.tournament.teams) else {}
-            team_b_data = self.tournament.teams[team_b] if team_b < len(self.tournament.teams) else {}
-            captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-            captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-            name_a = self.tournament.team_names.get(team_a, captain_a)
-            name_b = self.tournament.team_names.get(team_b, captain_b)
-            
+
+            name_a, name_b = _match_names(self.tournament, team_a, team_b)
+
             # Get odds for this match
-            from storage.bet_store import bet_store
             current_odds = await bet_store.get_current_odds_sync(match_id)
             if current_odds:
                 odds_a = current_odds.team_a_odds
@@ -169,9 +217,11 @@ class ViewBetsButton(Button):
             else:
                 odds_a = 1.9
                 odds_b = 1.9
-            
-            star_emoji = ""
-            match_text = f"{star_emoji} Игра #{i + 1}: {name_a} `{odds_a:.2f}x` vs {name_b} `{odds_b:.2f}x`\n\n"
+
+            match_text = (
+                f"Матч #{i + 1}: {name_a} `{odds_a:.2f}x` vs "
+                f"{name_b} `{odds_b:.2f}x`\n\n"
+            )
 
             # Group bets by team (using team_index)
             team_a_bets = [b for b in bets if b.team_index == 0]
@@ -181,7 +231,7 @@ class ViewBetsButton(Button):
             team_a_total = sum(b.amount for b in team_a_bets)
             team_b_total = sum(b.amount for b in team_b_bets)
 
-            match_text += f" `Ставки:`\n"
+            match_text += f"`Ставки:`\n"
 
             if team_a_bets:
                 users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {get_emoji('money')})" for b in team_a_bets]
@@ -196,9 +246,9 @@ class ViewBetsButton(Button):
                 match_text += f">  **{name_b}**: {team_b_total:,} {get_emoji('money')} - {users_str}\n"
             else:
                 match_text += f">  **{name_b}**: *Нет ставок*\n"
-            
+
             bets_text.append(match_text)
-        
+
         await interaction.response.send_message(
             view=text_card("\n".join(bets_text)),
             ephemeral=True,
@@ -209,16 +259,15 @@ class ToggleBettingButton(Button):
     """Button for admin to toggle betting open/close."""
 
     def __init__(self, guild_id: int, channel_id: int, betting_open: bool):
-        label = "🔒 Закрыть ставки" if betting_open else "🔓 Открыть ставки"
-        style = discord.ButtonStyle.danger if betting_open else discord.ButtonStyle.success
+        label = "Закрыть ставки" if betting_open else "Открыть ставки"
         super().__init__(
             label=label,
-            style=style,
+            style=discord.ButtonStyle.secondary,
             custom_id="toggle_betting"
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
-    
+
     async def callback(self, interaction: discord.Interaction):
         """Toggle betting for the tournament."""
         try:
@@ -240,17 +289,17 @@ class ToggleBettingButton(Button):
                     ephemeral=True
                 )
                 return
-            
+
             # Toggle betting status
             tournament.betting_open = not tournament.betting_open
             status = "открыты" if tournament.betting_open else "закрыты"
             store.set(tournament)
-            
+
             await interaction.response.send_message(
                 replace_emojis("✅ Ставки {status}."),
                 ephemeral=True
             )
-            
+
             # Update the tournament message
             from bot import TournamentBot
             bot = interaction.client
@@ -281,7 +330,7 @@ class BetButton(Button):
         is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
         super().__init__(
             label="Сделать ставку",
-            style=discord.ButtonStyle.success,
+            style=discord.ButtonStyle.primary,
             custom_id="place_bet",
             disabled=not is_open
         )
@@ -290,7 +339,7 @@ class BetButton(Button):
         self.tournament = tournament
         self.matches = matches
         self.match_type = match_type
-    
+
     async def callback(self, interaction: discord.Interaction):
         """Open match selection view."""
         if not self.tournament.is_betting_open() or self.tournament.betting_phase != self.match_type:
@@ -299,7 +348,7 @@ class BetButton(Button):
                 ephemeral=True
             )
             return
-        
+
         match_view = MatchSelectView(
             self.guild_id,
             self.channel_id,
@@ -307,6 +356,6 @@ class BetButton(Button):
             self.matches,
             self.match_type
         )
-        await interaction.response.send_message( view=compose(text="Выберите матч:", view=match_view),
+        await interaction.response.send_message( view=compose(text="Выберите матч для ставки:", view=match_view),
             ephemeral=True
         )

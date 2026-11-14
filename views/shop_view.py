@@ -91,7 +91,7 @@ class ShopCategorySelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(
-                label="⭐ Значки",
+                label="Значки",
                 value="icons",
                 description="Косметические иконы профиля"
             ),
@@ -101,7 +101,7 @@ class ShopCategorySelect(discord.ui.Select):
                 description="Префиксы для никнейма в чате"
             ),
             discord.SelectOption(
-                label="👑 Discord Роли & Доступы",
+                label="Discord Роли & Доступы",
                 value="roles",
                 description="Роли и права"
             ),
@@ -111,7 +111,7 @@ class ShopCategorySelect(discord.ui.Select):
                 description="Награды и удача"
             ),
             discord.SelectOption(
-                label="🐾 Питомцы",
+                label="Питомцы",
                 value="pets",
                 description="RPG-питомцы с способностями"
             ),

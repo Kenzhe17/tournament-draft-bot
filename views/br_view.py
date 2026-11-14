@@ -104,7 +104,7 @@ class BROrganizerMenuButton(Button):
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="Орг Меню",
+            label="Управление",
             custom_id=f"br_org_menu:{guild_id}:{channel_id}"
         )
         self.guild_id = guild_id
@@ -207,7 +207,7 @@ class BRCloseMenuButton(Button):
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
-            style=discord.ButtonStyle.danger,
+            style=discord.ButtonStyle.secondary,
             label="Закрыть",
             custom_id=f"br_close_menu:{guild_id}:{channel_id}"
         )
@@ -386,8 +386,8 @@ class JoinBRButton(Button):
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
-            style=discord.ButtonStyle.success,
-            label="Войти",
+            style=discord.ButtonStyle.primary,
+            label="Участвовать",
             custom_id=f"br_join:{guild_id}:{channel_id}"
         )
         self.guild_id = guild_id
@@ -459,8 +459,8 @@ class LeaveBRButton(Button):
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
-            style=discord.ButtonStyle.danger,
-            label="Выйти",
+            style=discord.ButtonStyle.secondary,
+            label="Покинуть",
             custom_id=f"br_leave:{guild_id}:{channel_id}"
         )
         self.guild_id = guild_id
@@ -518,8 +518,8 @@ class LeaveTournamentButton(Button):
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
-            style=discord.ButtonStyle.danger,
-            label="Выйти",
+            style=discord.ButtonStyle.secondary,
+            label="Покинуть",
             custom_id=f"br_leave_tournament:{guild_id}:{channel_id}"
         )
         self.guild_id = guild_id
@@ -618,8 +618,8 @@ class RegisterTeamButton(Button):
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
-            style=discord.ButtonStyle.success,
-            label="🏆 Зарегистрировать Команду",
+            style=discord.ButtonStyle.primary,
+            label="Зарегистрировать команду",
             custom_id=f"br_register_team:{guild_id}:{channel_id}"
         )
         self.guild_id = guild_id
@@ -1146,7 +1146,7 @@ class RemoveBRPlayerPrevButton(Button):
     def __init__(self, guild_id: int, channel_id: int, players: list, page: int):
         super().__init__(
             label="◀",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id=f"br_remove_prev:{guild_id}:{channel_id}:{page}"
         )
         self.guild_id = guild_id
@@ -1166,7 +1166,7 @@ class RemoveBRPlayerNextButton(Button):
     def __init__(self, guild_id: int, channel_id: int, players: list, page: int):
         super().__init__(
             label="▶",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id=f"br_remove_next:{guild_id}:{channel_id}:{page}"
         )
         self.guild_id = guild_id
@@ -1265,7 +1265,7 @@ class BRRoomButton(Button):
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             label="Комната",
             custom_id=f"br_room:{guild_id}:{channel_id}"
         )
@@ -1714,8 +1714,8 @@ class StartBermudaButton(Button):
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
-            style=discord.ButtonStyle.success,
-            label="Start Bermuda",
+            style=discord.ButtonStyle.primary,
+            label="Начать турнир",
             custom_id=f"br_start_bermuda:{guild_id}:{channel_id}"
         )
         self.guild_id = guild_id

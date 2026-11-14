@@ -183,9 +183,11 @@ def test_mm_match_view_check_state():
     t = _mm_tournament("check")
     view = build_mm_match_view(t, match_num=7)
     ids = _custom_ids(view)
-    # Кнопки победителя A и B + редактирование + отмена (без «Правила»)
-    assert any(i.startswith("mmatch:win:a:") for i in ids)
-    assert any(i.startswith("mmatch:win:b:") for i in ids)
+    # CHECK-флоу 2.0: Select победителя + редактирование + отмена
+    # (без «Правила»); legacy-кнопки mmatch:win:* на новых карточках
+    # не выводятся — старые сообщения обрабатываются шаблоном.
+    assert any(i.startswith("mmatch:winsel:") for i in ids)
+    assert not any(i.startswith("mmatch:win:") for i in ids)
     assert any(i.startswith("mmatch:edit:") for i in ids)
     assert any(i.startswith("mmatch:cancel:") for i in ids)
     assert "mmatch:rules" not in ids

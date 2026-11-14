@@ -587,6 +587,16 @@ class TournamentBot(commands.Bot):
             async with perf_metrics.async_timing("view_build_ms"):
                 view = self.build_view_for_tournament(tournament)
                 self._register_view(view)
+                if (
+                    tournament.phase == TournamentPhase.DRAFT
+                    and view is not None
+                    and hasattr(view, "enrich_with_sr")
+                ):
+                    try:
+                        await view.enrich_with_sr(guild.id)
+                    except Exception:
+                        logger.debug(
+                            "draft SR enrich failed", exc_info=True)
                 payload = compose(embed, view)
                 sig = _message_signature(embed, payload)
 

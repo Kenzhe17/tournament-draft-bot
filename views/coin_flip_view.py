@@ -62,12 +62,12 @@ class CoinFlipGameView(View):
         self.session = session
         self.is_pve = is_pve
 
-    @discord.ui.button(label="🦅 Орел", style=discord.ButtonStyle.primary, custom_id="coin_heads")
+    @discord.ui.button(label="Орел", style=discord.ButtonStyle.primary, custom_id="coin_heads")
     async def heads_button(self, interaction: discord.Interaction, button: Button) -> None:
         """Handle heads choice."""
         await self.handle_choice(interaction, CoinSide.HEADS)
 
-    @discord.ui.button(label="🪙 Решка", style=discord.ButtonStyle.primary, custom_id="coin_tails")
+    @discord.ui.button(label="Решка", style=discord.ButtonStyle.primary, custom_id="coin_tails")
     async def tails_button(self, interaction: discord.Interaction, button: Button) -> None:
         """Handle tails choice."""
         await self.handle_choice(interaction, CoinSide.TAILS)

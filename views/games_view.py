@@ -325,7 +325,7 @@ class BackToMainMenuButton(Button):
 
     def __init__(self, user_id: int, guild_id: int):
         super().__init__(
-            label="🚪 В главное меню",
+            label="В главное меню",
             style=discord.ButtonStyle.secondary,
             custom_id="back_to_main"
         )

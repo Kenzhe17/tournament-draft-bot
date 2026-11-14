@@ -264,18 +264,53 @@ class PlayerSelect(discord.ui.Select):
 class DraftView(discord.ui.View):
     """Persistent View с Select Menu для драфта."""
 
-    def __init__(self, guild_id: int, channel_id: int, available_players: list[str]):
+    def __init__(self, guild_id: int, channel_id: int,
+                 available_players: list[str],
+                 player_user_ids: dict[str, int] | None = None):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.channel_id = channel_id
-        options = [
-            discord.SelectOption(label=p, value=p) for p in available_players[:25]
-        ]
+        self.available_players = list(available_players)
+        self.player_user_ids = player_user_ids or {}
+        self._sr_by_uid: dict[int, float] = {}
+        self._add_select()
+
+    def _options(self) -> list[discord.SelectOption]:
+        options = []
+        for p in self.available_players[:25]:
+            sr = self._sr_by_uid.get(self.player_user_ids.get(p, 0))
+            description = f"SR {sr:.1f}" if sr is not None else None
+            options.append(discord.SelectOption(
+                label=p, value=p, description=description))
+        return options
+
+    def _add_select(self) -> None:
+        options = self._options()
         if options:
-            self.add_item(PlayerSelect(guild_id, channel_id, options))
-        # Add warning if more than 25 players available
-        if len(available_players) > 25:
-            self._warning = replace_emojis(f"⚠️ Показано 25 из {len(available_players)} игроков")
+            self.add_item(PlayerSelect(
+                self.guild_id, self.channel_id, options))
+
+    async def enrich_with_sr(self, guild_id: int) -> None:
+        """Подтянуть SR игроков в description опций Select.
+
+        Вызывается из update_tournament_message (async) — View
+        остаётся синхронным для build_view_for_tournament.
+        """
+        try:
+            from storage.player_stats_store import player_stats_store
+            stats_list = await player_stats_store.get_all(guild_id)
+        except Exception:
+            return
+        self._sr_by_uid = {
+            s.user_id: float(getattr(s, "skill_rating", 0) or 0)
+            for s in stats_list
+            if getattr(s, "skill_rating", None)
+        }
+        # Пересобрать Select с обновлёнными описаниями
+        for item in list(self.children):
+            if isinstance(item, PlayerSelect):
+                self.remove_item(item)
+        self._add_select()
 
 
 def build_draft_view(tournament: Tournament) -> DraftView | None:
@@ -290,4 +325,7 @@ def build_draft_view(tournament: Tournament) -> DraftView | None:
     picker_pos = tournament.current_picker_position()
     if picker_pos is None:
         return None
-    return DraftView(tournament.guild_id, tournament.channel_id, available)
+    return DraftView(
+        tournament.guild_id, tournament.channel_id, available,
+        player_user_ids=dict(getattr(tournament, "player_user_ids", {}) or {}),
+    )

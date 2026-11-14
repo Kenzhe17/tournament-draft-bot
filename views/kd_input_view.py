@@ -81,7 +81,7 @@ class ProcessMatchButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_info: dict):
         super().__init__(
-            label="✅ Обработать результат",
+            label="Обработать результат",
             style=discord.ButtonStyle.success,
             custom_id=f"process_match:{guild_id}:{channel_id}",
         )

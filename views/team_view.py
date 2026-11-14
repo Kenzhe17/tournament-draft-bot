@@ -100,7 +100,7 @@ class TeamMenuButton(discord.ui.Button):
 
     def __init__(self, team: Team, status_view=None):
         super().__init__(
-            label="⚙️ Меню",
+            label="Меню",
             style=discord.ButtonStyle.primary,
             custom_id="team_menu"
         )
@@ -130,7 +130,7 @@ class TeamLeaveButton(discord.ui.Button):
 
     def __init__(self, team: Team, user_id: int, status_view=None):
         super().__init__(
-            label="🚪 Выйти",
+            label="Выйти",
             style=discord.ButtonStyle.danger,
             custom_id="team_leave"
         )
@@ -193,7 +193,7 @@ class TeamJoinButton(discord.ui.Button):
 
     def __init__(self, team: Team, status_view=None):
         super().__init__(
-            label="🔑 Войти",
+            label="Войти",
             style=discord.ButtonStyle.success,
             custom_id="team_join"
         )

@@ -46,8 +46,97 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _team_display_name(tournament, team_index: int) -> str:
+    team_data = (
+        tournament.teams[team_index]
+        if team_index < len(tournament.teams) else {}
+    )
+    captain = team_data.get("captain", f"П{team_index + 1}")
+    return tournament.team_names.get(team_index, captain)
+
+
+async def _open_admin_stats_match(
+    interaction: discord.Interaction,
+    guild_id: int,
+    channel_id: int,
+    tournament,
+    match_type: str,
+    match_index: int,
+    match: list,
+) -> None:
+    """Общая логика «выбран матч» для админ-статистики:
+    обе команды заполнены → подтверждение, иначе → выбор команды."""
+    match_id = f"{tournament.id}_{match_type}_{match_index}"
+
+    team_a_filled = any(
+        tournament.teams[match[0]].get(f"circle{c}")
+        in tournament.temp_match_stats.get(match_id, {})
+        for c in range(1, 5)
+    )
+    team_b_filled = any(
+        tournament.teams[match[1]].get(f"circle{c}")
+        in tournament.temp_match_stats.get(match_id, {})
+        for c in range(1, 5)
+    )
+
+    if team_a_filled and team_b_filled:
+        try:
+            view = AdminStatsConfirmView(
+                guild_id, channel_id, tournament,
+                match_type, match_index, match)
+            embed = _build_admin_stats_embed(tournament, match_type, match_index, match)
+            await interaction.response.send_message(
+                view=compose(embed, view), ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error creating AdminConfirmView: {e}", exc_info=True)
+            await interaction.response.send_message(
+                replace_emojis(f"❌ Ошибка при создании окна подтверждения: {e}"),
+                ephemeral=True
+            )
+    else:
+        team_view = AdminStatsTeamSelectView(
+            guild_id, channel_id, tournament,
+            match_type, match_index, match)
+        embed = discord.Embed(
+            title=replace_emojis("Выберите команду"),
+            description="Выберите команду для заполнения статистики:",
+            color=discord.Color.gold()
+        )
+        await interaction.response.send_message(
+            view=compose(embed, team_view), ephemeral=True)
+
+
+def _build_admin_stats_embed(tournament, match_type: str, match_index: int, match: list) -> discord.Embed:
+    """Embed со статистикой обеих команд матча."""
+    match_id = f"{tournament.id}_{match_type}_{match_index}"
+    stats = tournament.temp_match_stats.get(match_id, {})
+
+    team_a_data = tournament.teams[match[0]] if match[0] < len(tournament.teams) else {}
+    team_b_data = tournament.teams[match[1]] if match[1] < len(tournament.teams) else {}
+    team_a_name = tournament.team_names.get(match[0], team_a_data.get("captain", f"Team {match[0]}"))
+    team_b_name = tournament.team_names.get(match[1], team_b_data.get("captain", f"Team {match[1]}"))
+
+    def _lines(team_data):
+        out = []
+        for c in range(1, 5):
+            player = team_data.get(f"circle{c}")
+            if player and player in stats:
+                s = stats[player]
+                out.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
+        return out
+
+    embed = discord.Embed(
+        title=replace_emojis("Статистика матча"),
+        description=f"**{team_a_name}** vs **{team_b_name}**",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name=team_a_name, value="\n".join(_lines(team_a_data)) or "Нет данных", inline=True)
+    embed.add_field(name=team_b_name, value="\n".join(_lines(team_b_data)) or "Нет данных", inline=True)
+    return embed
+
+
 class AdminStatsMatchSelectView(discord.ui.View):
-    """View for admin to select a match, then a team, then fill stats for that team."""
+    """Выбор матча для админ-статистики — один Select вместо ряда кнопок."""
 
     def __init__(self, guild_id: int, channel_id: int, tournament, match_type: str):
         super().__init__(timeout=None)
@@ -56,7 +145,6 @@ class AdminStatsMatchSelectView(discord.ui.View):
         self.tournament = tournament
         self.match_type = match_type
 
-        # Add buttons for each match
         if match_type == "qualifier":
             matches = tournament.qualifier_matches
         elif match_type == "semifinal":
@@ -66,17 +154,60 @@ class AdminStatsMatchSelectView(discord.ui.View):
         else:
             return
 
-        for i, match in enumerate(matches):
-            # Get team names
-            teams = []
-            for team_index in match:
-                team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
-                captain = team_data.get("captain", f"П{team_index + 1}")
-                team_name = tournament.team_names.get(team_index, captain)
-                teams.append(team_name)
+        options = []
+        for i, match in enumerate(matches[:25]):
+            name_a = _team_display_name(tournament, match[0])
+            name_b = _team_display_name(tournament, match[1])
+            options.append(discord.SelectOption(
+                label=f"Матч #{i + 1} — {name_a} vs {name_b}"[:100],
+                value=str(i),
+                description=f"{name_a[:45]} vs {name_b[:45]}",
+            ))
+        if options:
+            select = discord.ui.Select(
+                placeholder="Выберите матч",
+                options=options,
+                custom_id=f"admin_stats_match:{guild_id}:{channel_id}:{match_type}",
+                min_values=1,
+                max_values=1,
+            )
+            async def _cb(interaction, _s=select):
+                await self._on_select(interaction, _s)
+            select.callback = _cb
+            self.add_item(select)
 
-            label = f"Игра #{i + 1}: {teams[0]} vs {teams[1]}"
-            self.add_item(AdminStatsMatchButton(guild_id, channel_id, tournament, match_type, i, label, match))
+    async def _on_select(self, interaction: discord.Interaction,
+                         select: discord.ui.Select) -> None:
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                ephemeral=True
+            )
+            return
+
+        try:
+            idx = int(select.values[0])
+        except (ValueError, IndexError):
+            await interaction.response.send_message(
+                replace_emojis("❌ Некорректный выбор."), ephemeral=True)
+            return
+
+        if self.match_type == "qualifier":
+            matches = self.tournament.qualifier_matches
+        elif self.match_type == "semifinal":
+            matches = self.tournament.semifinal_matches
+        elif self.match_type == "final":
+            matches = [self.tournament.final_teams]
+        else:
+            return
+        if idx >= len(matches):
+            await interaction.response.send_message(
+                replace_emojis("❌ Матч не найден."), ephemeral=True)
+            return
+
+        await _open_admin_stats_match(
+            interaction, self.guild_id, self.channel_id,
+            self.tournament, self.match_type, idx, matches[idx])
 
 
 class AdminStatsMatchButton(discord.ui.Button):
@@ -107,86 +238,14 @@ class AdminStatsMatchButton(discord.ui.Button):
             )
             return
 
-        # Check if both teams have stats filled
-        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
-
-        # For both RANDOM and ELO/SKILL modes, check circles
-        team_a_filled = any(
-            self.tournament.teams[self.match[0]].get(f"circle{c}") in self.tournament.temp_match_stats.get(match_id, {})
-            for c in range(1, 5)
-        )
-        team_b_filled = any(
-            self.tournament.teams[self.match[1]].get(f"circle{c}") in self.tournament.temp_match_stats.get(match_id, {})
-            for c in range(1, 5)
-        )
-
-        logging.info(f"Team filled status: team_a={team_a_filled}, team_b={team_b_filled}, match_id={match_id}")
-
-        if team_a_filled and team_b_filled:
-            # Both teams filled - show confirmation view
-            logging.info("Both teams filled, creating AdminConfirmView")
-            try:
-                view = AdminStatsConfirmView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.match)
-                embed = self._build_stats_embed()
-                logging.info("AdminConfirmView created, sending message")
-                await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-                logging.info("Message sent successfully")
-            except Exception as e:
-                import logging
-                logging.error(f"Error creating or sending AdminConfirmView: {e}", exc_info=True)
-                await interaction.response.send_message(
-                    replace_emojis(f"❌ Ошибка при создании окна подтверждения: {e}"),
-                    ephemeral=True
-                )
-        else:
-            # Not both filled - show team selection
-            logging.info(f"Not both teams filled, showing team selection")
-            team_view = AdminStatsTeamSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.match)
-            embed = discord.Embed(
-                title=replace_emojis("📊 Выберите команду"),
-                description="Выберите команду для заполнения статистики:",
-                color=discord.Color.gold()
-            )
-            await interaction.response.send_message( view=compose(embed, team_view), ephemeral=True)
+        await _open_admin_stats_match(
+            interaction, self.guild_id, self.channel_id,
+            self.tournament, self.match_type, self.match_index, self.match)
 
     def _build_stats_embed(self) -> discord.Embed:
         """Build embed showing stats for both teams."""
-        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
-        stats = self.tournament.temp_match_stats.get(match_id, {})
-
-        team_a_data = self.tournament.teams[self.match[0]] if self.match[0] < len(self.tournament.teams) else {}
-        team_b_data = self.tournament.teams[self.match[1]] if self.match[1] < len(self.tournament.teams) else {}
-        team_a_name = self.tournament.team_names.get(self.match[0], team_a_data.get("captain", f"Team {self.match[0]}"))
-        team_b_name = self.tournament.team_names.get(self.match[1], team_b_data.get("captain", f"Team {self.match[1]}"))
-
-        # Build team A stats
-        team_a_stats = []
-        # Use circles for both RANDOM and ELO/SKILL modes
-        for c in range(1, 5):
-            player = team_a_data.get(f"circle{c}")
-            if player and player in stats:
-                s = stats[player]
-                team_a_stats.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
-
-        # Build team B stats
-        team_b_stats = []
-        # Use circles for both RANDOM and ELO/SKILL modes
-        for c in range(1, 5):
-            player = team_b_data.get(f"circle{c}")
-            if player and player in stats:
-                s = stats[player]
-                team_b_stats.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
-
-        embed = discord.Embed(
-            title=replace_emojis("📊 Статистика матча"),
-            description=f"**{team_a_name}** vs **{team_b_name}**",
-            color=discord.Color.gold()
-        )
-
-        embed.add_field(name=f"{team_a_name}", value="\n".join(team_a_stats) or "Нет данных", inline=True)
-        embed.add_field(name=f"{team_b_name}", value="\n".join(team_b_stats) or "Нет данных", inline=True)
-
-        return embed
+        return _build_admin_stats_embed(
+            self.tournament, self.match_type, self.match_index, self.match)
 
 
 class AdminStatsConfirmView(discord.ui.View):
@@ -1071,8 +1130,92 @@ class TeamsView(discord.ui.View):
         #     self.add_item(TeamNameButton(guild_id, channel_id, tournament))
 
 
+def _match_for_type(tournament, match_type: str, match_index: int):
+    if match_type == "qualifier":
+        return tournament.qualifier_matches[match_index]
+    if match_type == "semifinal":
+        return tournament.semifinal_matches[match_index]
+    if match_type == "final":
+        return (tournament.final_teams[0], tournament.final_teams[1])
+    return None
+
+
+async def _open_match_result_card(
+    interaction: discord.Interaction,
+    tournament,
+    match_type: str,
+    match_index: int,
+    match: tuple,
+) -> None:
+    """Карточка матча: статистика 8 игроков + выбор победителя."""
+    match_id = f"{tournament.id}_{match_type}_{match_index}"
+    temp_stats = tournament.temp_match_stats.get(match_id, {})
+
+    if not temp_stats:
+        embed = discord.Embed(
+            title=replace_emojis("Статистика не заполнена"),
+            description=replace_emojis(
+                "Сначала заполните статистику через 'Заполнить статистику' → "
+                "выберите этот матч → заполните данные для обеих команд.\n\n"
+                "После заполнения статистики возвращайтесь сюда для выбора победителя."
+            ),
+            color=discord.Color.orange()
+        )
+        await interaction.response.edit_message(view=compose(embed, None))
+        return
+
+    team_a_index, team_b_index = match
+    team_a_data = tournament.teams[team_a_index] if team_a_index < len(tournament.teams) else {}
+    team_b_data = tournament.teams[team_b_index] if team_b_index < len(tournament.teams) else {}
+    team_a_name = tournament.team_names.get(team_a_index, team_a_data.get("captain", f"Team {team_a_index}"))
+    team_b_name = tournament.team_names.get(team_b_index, team_b_data.get("captain", f"Team {team_b_index}"))
+
+    embed = discord.Embed(
+        title=replace_emojis("Статистика матча"),
+        description=f"{team_a_name} vs {team_b_name}",
+        color=discord.Color.blue()
+    )
+
+    def _stats_lines(team_data):
+        lines = []
+        if tournament.formation_mode == FormationMode.RANDOM:
+            captain = team_data.get("captain")
+            if captain and captain in temp_stats:
+                kd = temp_stats[captain]
+                lines.append(f"{captain}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+            for player in team_data.get("players", []):
+                if player in temp_stats:
+                    kd = temp_stats[player]
+                    lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+        else:
+            for circle in range(1, 5):
+                player = team_data.get(f"circle{circle}")
+                if player and player in temp_stats:
+                    kd = temp_stats[player]
+                    lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+        return lines
+
+    lines_a = _stats_lines(team_a_data)
+    if lines_a:
+        embed.add_field(name=team_a_name, value="\n".join(lines_a), inline=False)
+    lines_b = _stats_lines(team_b_data)
+    if lines_b:
+        embed.add_field(name=team_b_name, value="\n".join(lines_b), inline=False)
+
+    teams = [
+        (team_a_index, team_a_name),
+        (team_b_index, team_b_name),
+    ]
+    team_view = TeamWinnerSelectView(
+        tournament.guild_id, tournament.channel_id,
+        tournament, match_type, match_index, teams, match)
+
+    await interaction.response.edit_message(view=compose(embed, team_view))
+
+
 class MatchWinnerSelectView(discord.ui.View):
-    """View for selecting match winners."""
+    """Выбор матча для фиксации результата — один Select вместо
+    ряда кнопок (квалификация до 8 матчей)."""
 
     def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str):
         super().__init__(timeout=None)
@@ -1081,33 +1224,75 @@ class MatchWinnerSelectView(discord.ui.View):
         self.tournament = tournament
         self.match_type = match_type
 
-        # Add buttons for available matches based on match type
         if match_type == "qualifier":
-            for i, (team1, team2) in enumerate(tournament.qualifier_matches):
-                if tournament.qualifier_winners[i] is None:
-                    team1_name = self._get_team_name(team1)
-                    team2_name = self._get_team_name(team2)
-                    self.add_item(MatchButton(guild_id, channel_id, tournament, "qualifier", i, f"Игра #{i + 1}: {team1_name} vs {team2_name}"))
+            matches = tournament.qualifier_matches
+            winners = tournament.qualifier_winners
         elif match_type == "semifinal":
-            for i, (team1, team2) in enumerate(tournament.semifinal_matches):
-                if tournament.semifinal_winners[i] is None:
-                    team1_name = self._get_team_name(team1)
-                    team2_name = self._get_team_name(team2)
-                    self.add_item(MatchButton(guild_id, channel_id, tournament, "semifinal", i, f"Игра #{i + 1}: {team1_name} vs {team2_name}"))
+            matches = tournament.semifinal_matches
+            winners = tournament.semifinal_winners
         elif match_type == "final":
-            team1_name = self._get_team_name(tournament.final_teams[0])
-            team2_name = self._get_team_name(tournament.final_teams[1])
-            self.add_item(MatchButton(guild_id, channel_id, tournament, "final", 0, f"Финал: {team1_name} vs {team2_name}"))
+            matches = [tournament.final_teams]
+            winners = [tournament.final_pending_winner]
+        else:
+            return
 
-    def _get_team_name(self, team_index: int) -> str:
-        """Get team name or default to captain name."""
-        team_data = self.tournament.teams[team_index] if team_index < len(self.tournament.teams) else {}
-        captain = team_data.get("captain", f"П{team_index + 1}")
-        return self.tournament.team_names.get(team_index, captain)
+        options = []
+        for i, (team1, team2) in enumerate(matches[:25]):
+            done = i < len(winners) and winners[i] is not None
+            if done:
+                continue
+            name_a = _team_display_name(tournament, team1)
+            name_b = _team_display_name(tournament, team2)
+            label = (
+                f"Финал: {name_a} vs {name_b}" if match_type == "final"
+                else f"Матч #{i + 1} — {name_a} vs {name_b}"
+            )
+            options.append(discord.SelectOption(
+                label=label[:100], value=str(i),
+                description=f"{name_a[:45]} vs {name_b[:45]}",
+            ))
+
+        if options:
+            select = discord.ui.Select(
+                placeholder="Выберите матч",
+                options=options,
+                custom_id=f"winner_match:{guild_id}:{channel_id}:{match_type}",
+                min_values=1,
+                max_values=1,
+            )
+            async def _cb(interaction, _s=select):
+                await self._on_select(interaction, _s)
+            select.callback = _cb
+            self.add_item(select)
+
+    async def _on_select(self, interaction: discord.Interaction,
+                         select: discord.ui.Select) -> None:
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                ephemeral=True
+            )
+            return
+
+        try:
+            idx = int(select.values[0])
+        except (ValueError, IndexError):
+            await interaction.response.send_message(
+                replace_emojis("❌ Некорректный выбор."), ephemeral=True)
+            return
+
+        match = _match_for_type(self.tournament, self.match_type, idx)
+        if match is None:
+            await interaction.response.send_message(
+                replace_emojis("❌ Матч не найден."), ephemeral=True)
+            return
+
+        await _open_match_result_card(
+            interaction, self.tournament, self.match_type, idx, match)
 
 
 class MatchButton(discord.ui.Button):
-    """Button to select a match."""
+    """Legacy-кнопка выбора матча (совместимость со старыми сообщениями)."""
 
     def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, label: str):
         super().__init__(
@@ -1125,107 +1310,14 @@ class MatchButton(discord.ui.Button):
         import logging
         logging.info(f"MatchButton callback: match_type={self.match_type}, match_index={self.match_index}")
 
-        # Get teams for this match
-        if self.match_type == "qualifier":
-            match = self.tournament.qualifier_matches[self.match_index]
-        elif self.match_type == "semifinal":
-            match = self.tournament.semifinal_matches[self.match_index]
-        elif self.match_type == "final":
-            match = self.tournament.final_teams
-        else:
+        match = _match_for_type(self.tournament, self.match_type, self.match_index)
+        if match is None:
             await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True)
             return
 
-        # Check if stats are filled
-        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
-        temp_stats = self.tournament.temp_match_stats.get(match_id, {})
-
-        logging.info(f"MatchButton: match_id={match_id}, temp_stats_filled={len(temp_stats) > 0}")
-
-        if not temp_stats:
-            # No stats - ask admin to fill stats first
-            embed = discord.Embed(
-                title=replace_emojis("⚠️ Статистика не заполнена"),
-                description=replace_emojis(
-                    "Сначала заполните статистику через 'Заполнить статистику' → выберите этот матч → заполните данные для обеих команд.\n\n"
-                    "После заполнения статистики возвращайтесь сюда для выбора победителя."
-                ),
-                color=discord.Color.orange()
-            )
-            await interaction.response.edit_message( view=compose(embed, None))
-            return
-
-        # Stats are filled - show stats with winner selection buttons
-        # Get team names - use team_names dict if available, otherwise use captain
-        teams = []
-        for team_index in match:
-            team_data = self.tournament.teams[team_index] if team_index < len(self.tournament.teams) else {}
-            captain = team_data.get("captain", f"П{team_index + 1}")
-            # Use team_names if set, otherwise use captain name
-            team_name = self.tournament.team_names.get(team_index, captain)
-            teams.append((team_index, team_name))
-
-        # Build stats embed
-        team_a_index, team_b_index = match
-        team_a_data = self.tournament.teams[team_a_index] if team_a_index < len(self.tournament.teams) else {}
-        team_b_data = self.tournament.teams[team_b_index] if team_b_index < len(self.tournament.teams) else {}
-        team_a_name = self.tournament.team_names.get(team_a_index, team_a_data.get("captain", f"Team {team_a_index}"))
-        team_b_name = self.tournament.team_names.get(team_b_index, team_b_data.get("captain", f"Team {team_b_index}"))
-        
-        embed = discord.Embed(
-            title=replace_emojis("📊 Статистика матча"),
-            description=f"{team_a_name} vs {team_b_name}",
-            color=discord.Color.blue()
-        )
-        
-        # Add team A stats
-        team_a_stats_lines = []
-        if self.tournament.formation_mode == FormationMode.RANDOM:
-            # Random mode: captain + players
-            captain = team_a_data.get("captain")
-            if captain and captain in temp_stats:
-                kd = temp_stats[captain]
-                team_a_stats_lines.append(f"{captain}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
-            for player in team_a_data.get("players", []):
-                if player in temp_stats:
-                    kd = temp_stats[player]
-                    team_a_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
-        else:
-            # ELO/SKILL mode: circles
-            for circle in range(1, 5):
-                player = team_a_data.get(f"circle{circle}")
-                if player and player in temp_stats:
-                    kd = temp_stats[player]
-                    team_a_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
-        if team_a_stats_lines:
-            embed.add_field(name=team_a_name, value="\n".join(team_a_stats_lines), inline=False)
-        
-        # Add team B stats
-        team_b_stats_lines = []
-        if self.tournament.formation_mode == FormationMode.RANDOM:
-            # Random mode: captain + players
-            captain = team_b_data.get("captain")
-            if captain and captain in temp_stats:
-                kd = temp_stats[captain]
-                team_b_stats_lines.append(f"{captain}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
-            for player in team_b_data.get("players", []):
-                if player in temp_stats:
-                    kd = temp_stats[player]
-                    team_b_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
-        else:
-            # ELO/SKILL mode: circles
-            for circle in range(1, 5):
-                player = team_b_data.get(f"circle{circle}")
-                if player and player in temp_stats:
-                    kd = temp_stats[player]
-                    team_b_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
-        if team_b_stats_lines:
-            embed.add_field(name=team_b_name, value="\n".join(team_b_stats_lines), inline=False)
-
-        # Create view with winner selection buttons
-        team_view = TeamWinnerSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, teams, match)
-
-        await interaction.response.edit_message( view=compose(embed, team_view))
+        await _open_match_result_card(
+            interaction, self.tournament, self.match_type,
+            self.match_index, match)
 
 
 class TeamWinnerSelectView(discord.ui.View):
@@ -1260,8 +1352,8 @@ class TeamWinnerButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: tuple, disabled: bool = False):
         super().__init__(
-            label=team_name,
-            style=discord.ButtonStyle.success,
+            label=team_name[:80],
+            style=discord.ButtonStyle.secondary,
             custom_id=f"team_winner_select:{guild_id}:{channel_id}:{match_type}:{match_index}:{team_index}",
             disabled=disabled
         )
@@ -1338,23 +1430,23 @@ class AdminPanelSelect(discord.ui.Select):
             match_view = MatchWinnerSelectView(
                 self.guild_id, self.channel_id, self.tournament, self.match_type
             )
-            embed = discord.Embed(
-                description=replace_emojis("🏆 **Выберите матч для фиксации результата:**"),
-                color=discord.Color.green(),
-            )
             await interaction.response.send_message(
-                embed=embed, view=match_view, ephemeral=True,
+                view=compose(
+                    text="**Выберите матч для фиксации результата:**",
+                    view=match_view,
+                ),
+                ephemeral=True,
             )
         elif selected == "fill_stats":
             match_view = AdminStatsMatchSelectView(
                 self.guild_id, self.channel_id, self.tournament, self.match_type
             )
-            embed = discord.Embed(
-                description=replace_emojis("🏆 **Выберите матч для внесения статистики:**"),
-                color=discord.Color.green(),
-            )
             await interaction.response.send_message(
-                embed=embed, view=match_view, ephemeral=True,
+                view=compose(
+                    text="**Выберите матч для внесения статистики:**",
+                    view=match_view,
+                ),
+                ephemeral=True,
             )
 
 

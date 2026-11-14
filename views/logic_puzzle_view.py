@@ -26,7 +26,7 @@ class LogicPuzzleView(discord.ui.View):
         """Показать модал для ввода ответа."""
         await interaction.response.send_modal(LogicAnswerModal(self.guild_id, self.user_id, self.bet, self.question, self.answer, self.hints, self.attempts, self.hint_index))
 
-    @discord.ui.button(label="💡 Подсказка", style=discord.ButtonStyle.secondary, custom_id="logic_hint")
+    @discord.ui.button(label="Подсказка", style=discord.ButtonStyle.secondary, custom_id="logic_hint")
     async def hint_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Показать подсказку."""
         if self.hint_index < len(self.hints):
