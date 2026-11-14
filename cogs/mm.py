@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
@@ -67,8 +66,6 @@ MATCH_START_RETRY_COOLDOWN = 120.0
 # Сколько считается «живым» запуск матча между LOCKED и созданием турнира.
 _BEGIN_INFLIGHT_TTL = 300.0
 
-# Баннер панели очереди (MediaGallery attachment://)
-QUEUE_BANNER_PATH = Path(__file__).resolve().parent.parent / "assets" / "queue_banner.png"
 
 
 class _NoopResponse:
@@ -377,14 +374,8 @@ class MMCog(commands.Cog):
 
         await interaction.response.send_message("Поиск создан!", ephemeral=True)
 
-        banner_file = (
-            discord.File(QUEUE_BANNER_PATH, filename="queue_banner.png")
-            if QUEUE_BANNER_PATH.exists()
-            else None
-        )
         message = await interaction.channel.send(
             view=build_queue_panel(search),
-            file=banner_file,
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
@@ -679,15 +670,42 @@ class MMCog(commands.Cog):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _live_mm_tournament(guild_id: int, search_channel_id: int) -> Tournament | None:
-        """Активный MM-турнир, созданный из этого поиска (если есть)."""
+    def _live_mm_tournament(
+        guild_id: int,
+        search_channel_id: int,
+        match_num: int = 0,
+    ) -> Tournament | None:
+        """Активный MM-турнир этого поиска.
+
+        ``match_num > 0`` — только турнир того же поколения запуска
+        (meta.match_num в карточке); ``0`` — любой активный турнир
+        поиска (для reconcile/unlock-проверок).
+        """
         for t in store.get_by_guild(guild_id):
             if (
                 getattr(t, "mm_search_channel_id", 0) == search_channel_id
                 and t.phase != TournamentPhase.COMPLETE
             ):
+                if match_num:
+                    meta = meta_of(t) or {}
+                    if meta.get("match_num") != match_num:
+                        continue
                 return t
         return None
+
+    @classmethod
+    def _pending_mm_tournament(cls, search: MMSearch) -> Tournament | None:
+        """Турнир текущего поколения запуска (search.match_num).
+
+        Поколение 0 (очередь ещё не запускалась) → None: параллельные
+        матчи из одной очереди разрешены, старые активные турниры
+        поиска НЕ блокируют новый запуск.
+        """
+        if not search.match_num:
+            return None
+        return cls._live_mm_tournament(
+            search.guild_id, search.channel_id, search.match_num
+        )
 
     async def _match_sweeper(self) -> None:
         """Фоновая задача: запуск отложенных матчей + reconcile пула."""
@@ -700,7 +718,7 @@ class MMCog(commands.Cog):
                     for s in mm_search_store.all():
                         if not s.is_full:
                             continue
-                        if self._live_mm_tournament(s.guild_id, s.channel_id):
+                        if self._pending_mm_tournament(s) is not None:
                             continue
                         key = (s.guild_id, s.channel_id)
                         if time.time() - self._begin_inflight.get(key, 0.0) < _BEGIN_INFLIGHT_TTL:
@@ -714,21 +732,29 @@ class MMCog(commands.Cog):
                     for s in mm_search_store.all():
                         if not s.is_locked:
                             continue
-                        if self._live_mm_tournament(s.guild_id, s.channel_id):
+                        # Ждущая канала заполненная очередь — легитимное
+                        # состояние, sweeper loop1 сам перезапустит матч.
+                        if s.is_waiting_channel and s.is_full:
+                            continue
+                        if s.match_num and self._live_mm_tournament(
+                            s.guild_id, s.channel_id, s.match_num
+                        ) is not None:
                             continue
                         key = (s.guild_id, s.channel_id)
                         if time.time() - self._begin_inflight.get(key, 0.0) < _BEGIN_INFLIGHT_TTL:
                             continue
-                        # Слот пула, зарезервированный под этот матч —
-                        # не трогаем (запуск в процессе между acquire и
-                        # созданием турнира покрыт inflight TTL).
-                        s.state = QUEUE_OPEN
-                        s.match_num = 0
-                        s.timer_started = bool(s.players)
+                        # Зависший запуск без живого матча: заполненная
+                        # очередь → WAITING (sweeper дошлёт), пустая → OPEN.
+                        if s.is_full:
+                            s.state = QUEUE_WAITING_CHANNEL
+                        else:
+                            s.state = QUEUE_OPEN
+                            s.match_num = 0
+                        s.timer_started = bool(s.players) and not s.is_full
                         mm_search_store.set(s)
                         await self._update_queue_panel(s)
                         logger.warning(
-                            "Stuck MM queue unlocked: %s/%s",
+                            "Stuck MM queue restored: %s/%s",
                             s.guild_id, s.channel_id,
                         )
                 except Exception as exc:
@@ -771,7 +797,11 @@ class MMCog(commands.Cog):
         возвращают существующий процесс вместо создания дубля.
         """
         key = (search.guild_id, search.channel_id)
-        existing = self._live_mm_tournament(search.guild_id, search.channel_id)
+        # Идемпотентность по поколению запуска: блокируем только
+        # повтор того же match_num. Поколение 0 (новый набор) не
+        # блокируется старыми активными матчами этого поиска —
+        # параллельные матчи из одной очереди разрешены.
+        existing = self._pending_mm_tournament(search)
         if existing is not None:
             logger.info(
                 "_begin_match: live MM tournament %s exists for %s/%s — skip",
@@ -900,6 +930,16 @@ class MMCog(commands.Cog):
             )
             tournament.mm_search_channel_id = search.channel_id
             tournament.mm_preset_channel_id = channel.id
+            # id = guild_id_мс: два параллельных MM-матча могут попасть
+            # в одну миллисекунду → коллизия match_id/finalize_lock.
+            # Суффикс поколения делает id уникальным.
+            if any(
+                t.id == tournament.id
+                for t in store.get_by_guild(search.guild_id)
+            ):
+                tournament.id = (
+                    f"{tournament.id}_{search.channel_id}_{match_num}"
+                )
             tournament.registration = RegistrationState.CLOSED
             tournament.is_test = True
             tournament.betting_open = False
@@ -957,6 +997,17 @@ class MMCog(commands.Cog):
 
         except Exception as exc:
             logger.error("_begin_match failed: %s", exc, exc_info=True)
+            # Турнир мог быть создан до сбоя (канал/карточка) —
+            # удаляем сироту, иначе она навсегда держит слот пула.
+            if tournament is not None:
+                try:
+                    store.delete(tournament.guild_id, tournament.channel_id)
+                except Exception:
+                    try:
+                        tournament.phase = TournamentPhase.COMPLETE
+                        store.set(tournament)
+                    except Exception:
+                        pass
             try:
                 if channel is not None:
                     await self._release_pool_channel(channel)
@@ -1367,22 +1418,42 @@ class MMCog(commands.Cog):
                 except Exception as exc:
                     logger.warning("add_view for queue panel failed: %s", exc)
 
-                if search.is_locked and not self._live_mm_tournament(
-                    search.guild_id, search.channel_id
-                ):
-                    # Блокировка без живого матча — снимаем
-                    # (WAITING_CHANNEL sweeper сам перезапустит)
-                    search.state = QUEUE_OPEN
-                    search.match_num = 0
-                    search.timer_started = bool(search.players)
-                    mm_search_store.set(search)
-                    if search.is_full and search.players:
-                        key = (search.guild_id, search.channel_id)
-                        task = self._search_timers.get(key)
-                        if task is None or task.done():
-                            self._start_search_timer(
-                                search.guild_id, search.channel_id
-                            )
+                if search.is_locked:
+                    # Турнир текущего поколения (match_num) — живой
+                    # матч, очередь корректно закрыта до его конца.
+                    live = (
+                        self._live_mm_tournament(
+                            search.guild_id, search.channel_id,
+                            search.match_num,
+                        )
+                        if search.match_num else None
+                    )
+                    # WAITING_CHANNEL — легитимное ожидание слота пула:
+                    # сохраняем игроков и match_num, sweeper перезапустит
+                    # матч автоматически после освобождения канала.
+                    waiting_full = (
+                        search.is_waiting_channel and search.is_full
+                    )
+                    if live is None and not waiting_full:
+                        # Блокировка без живого матча — аварийное
+                        # состояние: заполненная очередь → WAITING
+                        # (sweeper дошлёт), иначе → OPEN.
+                        if search.is_full:
+                            search.state = QUEUE_WAITING_CHANNEL
+                        else:
+                            search.state = QUEUE_OPEN
+                            search.match_num = 0
+                        search.timer_started = (
+                            bool(search.players) and not search.is_full
+                        )
+                        mm_search_store.set(search)
+                        if search.is_full and search.players:
+                            key = (search.guild_id, search.channel_id)
+                            task = self._search_timers.get(key)
+                            if task is None or task.done():
+                                self._start_search_timer(
+                                    search.guild_id, search.channel_id
+                                )
                 if (
                     search.state == QUEUE_OPEN
                     and search.players

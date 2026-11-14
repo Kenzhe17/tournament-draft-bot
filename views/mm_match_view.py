@@ -13,6 +13,7 @@ json_store, регистрировать view на сообщение не ну�
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
@@ -735,7 +736,33 @@ async def handle_cancel_click(interaction: discord.Interaction) -> None:
 # ---------------------------------------------------------------------------
 
 
+# Per-match asyncio-lock финализации: два одновременных нажатия
+# «Подтвердить» сериализуются, второй видит уже завершённое состояние.
+_FINALIZE_LOCKS: dict[str, asyncio.Lock] = {}
+
+
 async def finalize_mm_match(
+    interaction: discord.Interaction,
+    tournament: Tournament,
+    winner_side: str,
+    score: tuple[int, int],
+) -> tuple[bool, str]:
+    """Финализация MM-матча под per-match lock (защита от double-click)."""
+    mid = match_id_of(tournament)
+    lock = _FINALIZE_LOCKS.setdefault(mid, asyncio.Lock())
+    async with lock:
+        try:
+            return await _finalize_mm_match_locked(
+                interaction, tournament, winner_side, score
+            )
+        except Exception as exc:
+            # Ошибка БД/хранилища: матч остаётся в check, статистика
+            # не применилась (флаг откачен), повторная попытка возможна.
+            logger.exception("MM finalize failed for %s", mid)
+            return False, f"Ошибка подтверждения: {exc}"
+
+
+async def _finalize_mm_match_locked(
     interaction: discord.Interaction,
     tournament: Tournament,
     winner_side: str,
@@ -782,23 +809,32 @@ async def finalize_mm_match(
         else f"{score_w}:{score_l}"
     )
 
-    # 1. ELO/статистика/монеты — идемпотентно через processed_elo_matches
-    applied = await process_match_result(
-        tournament.guild_id,
-        tournament,
-        {
-            "match_type": MATCH_TYPE,
-            "match_index": MATCH_INDEX,
-            "winning_team_index": winning_team_index,
-            "team1_index": team1_index,
-            "team2_index": team2_index,
-            "temp_kd_data": temp_stats,
-            "finalize_match_id": mid,
-        },
-        interaction,
-    )
-    if not applied:
-        return False, "Результат уже обработан."
+    # DB-authoritative resume: stats_done/done → статистика/ELO уже
+    # применены транзакцией set_many (краш между ней и store.set).
+    # Не начисляем ELO повторно — продолжаем с истории/подтверждения.
+    from storage import finalize_store
+
+    fstatus = await finalize_store.get_status(tournament.guild_id, mid)
+    stats_applied = fstatus in ("stats_done", "done")
+
+    if not stats_applied:
+        # 1. ELO/статистика/монеты — идемпотентно через processed_elo_matches
+        applied = await process_match_result(
+            tournament.guild_id,
+            tournament,
+            {
+                "match_type": MATCH_TYPE,
+                "match_index": MATCH_INDEX,
+                "winning_team_index": winning_team_index,
+                "team1_index": team1_index,
+                "team2_index": team2_index,
+                "temp_kd_data": temp_stats,
+                "finalize_match_id": mid,
+            },
+            interaction,
+        )
+        if not applied:
+            return False, "Результат уже обработан."
 
     # 2. История матчей для всех 8 игроков
     await _save_match_histories(
@@ -816,6 +852,10 @@ async def finalize_mm_match(
     meta["status_text"] = "подтверждено"
     meta["elo_lines"] = await _elo_lines(tournament, roster)
     store.set(tournament)
+
+    # Финализация полностью завершена — DB-маркер 'done' для resume
+    # после рестарта (stats_done → история/подтверждение уже сделаны).
+    await finalize_store.mark_done(tournament.guild_id, mid)
 
     # 5. Обновить карточку «ЗАВЕРШЁН», затем освободить канал
     try:

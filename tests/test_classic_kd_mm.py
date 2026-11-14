@@ -115,17 +115,47 @@ def _mm_tournament(state: str = "active") -> Tournament:
     return t
 
 
+def _walk(view):
+    """Все элементы LayoutView рекурсивно."""
+    out = []
+
+    def rec(item):
+        out.append(item)
+        for ch in getattr(item, "children", []) or []:
+            rec(ch)
+
+    rec(view)
+    return out
+
+
+def _custom_ids(view) -> set[str]:
+    return {
+        getattr(i, "custom_id", "")
+        for i in _walk(view)
+        if getattr(i, "custom_id", "")
+    }
+
+
+def _texts(view) -> str:
+    return "\n".join(
+        getattr(i, "content", "")
+        for i in _walk(view)
+        if getattr(i, "content", "")
+    )
+
+
 def test_mm_match_view_active_state():
     from views.mm_match_view import build_mm_match_view
 
     view = build_mm_match_view(_mm_tournament("active"), match_num=7)
-    assert view is not None
-    # Есть кнопка заполнения K/D в активном состоянии
-    labels = [
-        getattr(getattr(item, "children", item), "label", "")
-        for item in []
-    ]
-    del labels  # smoke: сборка не падает
+    ids = _custom_ids(view)
+    assert "mmatch:kd:1:500:0" in ids or any(i.startswith("mmatch:kd:") for i in ids)
+    assert "mmatch:rules" in ids
+    # Нет кнопок подтверждения в активном состоянии
+    assert not any(i.startswith("mmatch:win:") for i in ids)
+    text = _texts(view)
+    assert "НАЧАЛСЯ" in text
+    assert "Kazakhstan" in text
 
 
 def test_mm_match_view_done_state():
@@ -137,7 +167,12 @@ def test_mm_match_view_done_state():
         elo_lines=["P1: +25"],
     )
     view = build_mm_match_view(t, match_num=7)
-    assert view is not None
+    ids = _custom_ids(view)
+    assert not any(i.startswith("mmatch:kd:") for i in ids)
+    text = _texts(view)
+    assert "ЗАВЕРШЁН" in text
+    assert "5:3" in text
+    assert "подтверждено" in text
 
 
 def test_mm_match_view_check_state():
@@ -145,4 +180,12 @@ def test_mm_match_view_check_state():
 
     t = _mm_tournament("check")
     view = build_mm_match_view(t, match_num=7)
-    assert view is not None
+    ids = _custom_ids(view)
+    # Кнопки победителя A и B + редактирование + отмена + правила
+    assert any(i.startswith("mmatch:win:a:") for i in ids)
+    assert any(i.startswith("mmatch:win:b:") for i in ids)
+    assert any(i.startswith("mmatch:edit:") for i in ids)
+    assert any(i.startswith("mmatch:cancel:") for i in ids)
+    assert "mmatch:rules" in ids
+    text = _texts(view)
+    assert "ПРОВЕРКА РЕЗУЛЬТАТА" in text

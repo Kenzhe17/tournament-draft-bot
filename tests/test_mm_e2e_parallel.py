@@ -217,11 +217,68 @@ async def test_third_match_waits_then_starts_after_release(e2e):
     assert not s3.is_waiting_channel
 
 
+def _refill(search: MMSearch, tag: str) -> None:
+    """Имитация повторного набора 8 игроков в той же очереди."""
+    search.clear()
+    for i in range(8):
+        name = f"{tag}P{i}"
+        search.players.append(name)
+        search.player_user_ids[name] = 2000 + i
+
+
 @pytest.mark.asyncio
-async def test_begin_match_idempotent_no_duplicate(e2e):
-    """Повторный вызов для того же поиска не создаёт второй матч."""
+async def test_parallel_matches_from_one_queue(e2e):
+    """Одна очередь: матч1 → повторные 8 → матч2 (параллельно) →
+    третьи 8 → WAITING_CHANNEL (оба канала заняты)."""
+    s1 = _search(1, 10, "A")
+
+    t1, err1 = await e2e.cog._begin_match(s1, _shim(e2e, s1))
+    assert err1 is None and t1 is not None
+
+    # Первый матч активен — НЕ блокирует новый запуск того же поиска
+    _refill(s1, "B")
+    t2, err2 = await e2e.cog._begin_match(s1, _shim(e2e, s1))
+    assert err2 is None and t2 is not None
+    assert t2.id != t1.id
+    assert t2.channel_id != t1.channel_id
+    assert {t1.channel_id, t2.channel_id} == {501, 502}
+
+    # Третьи 8 игроков — оба канала заняты → WAITING_CHANNEL
+    _refill(s1, "C")
+    t3, err3 = await e2e.cog._begin_match(s1, _shim(e2e, s1))
+    assert t3 is None
+    assert "заняты" in (err3 or "")
+    assert s1.is_waiting_channel
+    assert s1.match_num > 0  # поколение запуска сохранено
+
+
+@pytest.mark.asyncio
+async def test_same_generation_idempotent(e2e):
+    """Повтор _begin_match для того же match_num возвращает
+    существующий турнир, а не создаёт дубль."""
     s1 = _search(1, 10, "A")
     t1, _ = await e2e.cog._begin_match(s1, _shim(e2e, s1))
+    assert t1 is not None
+
+    # Турнир generation = match_num из meta; search очищен →
+    # эмулируем состояние «pending retry того же поколения»:
+    meta = t1.match_channels[str(t1.channel_id)]
+    s1.match_num = meta["match_num"]
+    s1.state = "waiting_channel"
+    s1.players = ["X"] * 8  # is_full для sweeper-проверок
+
     t1b, err = await e2e.cog._begin_match(s1, _shim(e2e, s1))
-    assert t1b is t1 or t1b.id == t1.id
-    assert len(e2e.channels[0].sent) + len(e2e.channels[1].sent) == 1
+    assert t1b is t1
+    assert err is None
+    # Дубля нет: карточка отправлена один раз
+    assert sum(len(c.sent) for c in e2e.channels) == 1
+
+
+def test_pending_mm_tournament_generation(e2e):
+    """_pending_mm_tournament: gen 0 → None, чужой match_num → None,
+    свой match_num → турнир."""
+    s = MMSearch(guild_id=1, channel_id=10, format=MMFormat.SQUAD)
+    assert e2e.cog._pending_mm_tournament(s) is None
+
+    s.match_num = 77
+    assert e2e.cog._pending_mm_tournament(s) is None
