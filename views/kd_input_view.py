@@ -145,7 +145,7 @@ class ProcessMatchButton(discord.ui.Button):
 
 
 async def process_match_result(guild_id: int, tournament: Tournament, match_info: dict, interaction: discord.Interaction = None) -> bool:
-    """Process match result — новая ELO-система (FACEIT-style).
+    """Process match result — классическая система ELO (commit 831874f).
 
     Начисляет ELO один раз на матч (processed_elo_matches), XP и монеты.
     Возвращает True, если статистика/ELO реально применены в этом вызове;
@@ -155,8 +155,10 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     from storage.json_store import store
     from models.player_stats import PlayerStats
     from utils.rating_calculator import (
-        compute_match_elo_changes,
+        calculate_team_position,
+        calculate_balanced_elo_change,
         update_player_stats_from_match,
+        get_server_average_elo,
         get_leaderboard_rank,
     )
 
@@ -179,10 +181,9 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
         temp_kd_data = match_info.get('temp_kd_data', {})
 
         # ---- Сбор данных ВСЕХ игроков матча до любых записей ----
-        # team_key -> won; stats_by_name; SR команды по всему составу (roster)
+        # team_key -> won; stats_by_name для всех участников матча
         stats_by_name: dict[str, PlayerStats] = {}
         user_id_by_name: dict[str, int] = {}
-        team_sr_values: dict[str, float] = {}
         match_players: list[dict] = []
         level_up_notifications: list[tuple] = []
 
@@ -198,7 +199,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                 ]
                 member_names = [n for n in member_names if n]
 
-            sr_values = []
             for name in member_names:
                 user_id = tournament.player_user_ids.get(name, 0)
                 user_id_by_name[name] = user_id
@@ -208,7 +208,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                         guild_id=guild_id, user_id=user_id, name=name, elo=1000
                     )
                 stats_by_name[name] = stats
-                sr_values.append(stats.skill_rating)
 
                 kd = temp_kd_data.get(name)
                 if kd is None:
@@ -220,20 +219,59 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                     "won": won,
                     "kills": kd.get('kills', 0),
                     "deaths": kd.get('deaths', 0),
-                    "skill_rating": stats.skill_rating,
                 })
 
-            if sr_values:
-                team_sr_values[team_key] = sum(sr_values) / len(sr_values)
+        # ---- Классическая система ELO (как в коммите 831874f) ----
+        # Средний ELO сервера для catch-up бонуса — строго ДО начислений
+        avg_server_elo = await get_server_average_elo(guild_id)
 
-        # Ранги ELO-лидерборда — строго ДО начисления за этот матч
-        for p in match_players:
-            p["elo_rank"] = await get_leaderboard_rank(
-                guild_id, user_id_by_name.get(p["name"], 0)
-            )
+        # Средний ELO лобби (параметр формулы, на результат не влияет)
+        lobby_elos = [s.elo for s in stats_by_name.values()]
+        lobby_avg_elo = sum(lobby_elos) / len(lobby_elos) if lobby_elos else 0.0
 
-        # ---- Расчёт ELO по новой системе ----
-        elo_results = compute_match_elo_changes(match_players, team_sr_values)
+        elo_change_by_name: dict[str, int] = {}
+
+        for team_key, team_index in (("a", team1_index), ("b", team2_index)):
+            team_won = team_index == winning_team_index
+            team_players = [p for p in match_players if p["team"] == team_key]
+
+            # Позиции внутри команды по K/D и текущему ELO
+            players_for_position = [
+                (p["name"], p["kills"], p["deaths"], stats_by_name[p["name"]].elo)
+                for p in team_players
+            ]
+            positions = calculate_team_position(players_for_position)
+            position_map = {name: pos for name, pos in positions}
+
+            for p in team_players:
+                name = p["name"]
+                stats = stats_by_name[name]
+                user_id = user_id_by_name.get(name, 0)
+
+                # Ранг ELO-лидерборда — строго ДО начисления за этот матч
+                leaderboard_rank = await get_leaderboard_rank(guild_id, user_id)
+
+                elo_change_by_name[name] = calculate_balanced_elo_change(
+                    position=position_map.get(name, 1),
+                    team_won=team_won,
+                    kills=p["kills"],
+                    deaths=p["deaths"],
+                    current_elo=stats.elo,
+                    avg_kills=stats.avg_kills if stats.games > 0 else 0.0,
+                    avg_deaths=stats.avg_deaths if stats.games > 0 else 0.0,
+                    avg_server_elo=avg_server_elo,
+                    lobby_avg_elo=lobby_avg_elo,
+                    leaderboard_rank=leaderboard_rank,
+                )
+
+                logger.info(
+                    "ELO calc %s: won=%s pos=%s rank=%s elo=%s "
+                    "kd=%d/%d avg=%.2f/%.2f -> %+d",
+                    name, team_won, position_map.get(name, 1), leaderboard_rank,
+                    stats.elo, p["kills"], p["deaths"],
+                    stats.avg_kills, stats.avg_deaths,
+                    elo_change_by_name[name],
+                )
 
         # ---- Применение: статистика → баланс ----
         pending_stats: list = []
@@ -242,8 +280,7 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             user_id = user_id_by_name.get(name, 0)
             stats = stats_by_name[name]
             won = p["won"]
-            result = elo_results[name]
-            elo_change = result["elo_change"]
+            elo_change = elo_change_by_name[name]
 
             # Update stats
             updated_stats = update_player_stats_from_match(
