@@ -60,7 +60,11 @@ class EloCog(commands.Cog):
         embed.add_field(name="Поражения", value=str(player["losses"]), inline=True)
         embed.add_field(name="K-Factor", value="32", inline=True)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        from utils.design import compose
+
+        await interaction.response.send_message(
+            view=compose(embed=embed), ephemeral=True
+        )
 
     @player_group.command(name="ulti_history", description="История матчей рейтинга Ультиматума")
     @app_commands.describe(формат="Соло или Дуо")
@@ -100,7 +104,11 @@ class EloCog(commands.Cog):
                 inline=False,
             )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        from utils.design import compose
+
+        await interaction.response.send_message(
+            view=compose(embed=embed), ephemeral=True
+        )
 
 
 async def setup(bot: commands.Bot) -> None:

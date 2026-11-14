@@ -199,8 +199,9 @@ class ViewBetsButton(Button):
             
             bets_text.append(match_text)
         
-        await interaction.response.send_message( view=text_card("\n").join(bets_text),
-            ephemeral=True
+        await interaction.response.send_message(
+            view=text_card("\n".join(bets_text)),
+            ephemeral=True,
         )
 
 
