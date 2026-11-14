@@ -779,12 +779,27 @@ async def _finalize_mm_match_locked(
     meta = meta_of(tournament)
     if meta is None or meta.get("state") != "check":
         return False, "Матч не в состоянии проверки результата."
-    if tournament.phase == TournamentPhase.COMPLETE:
-        return False, "Матч уже завершён."
 
     mid = match_id_of(tournament)
-    if mid in tournament.processed_elo_matches:
-        return False, "Результат уже был подтверждён."
+
+    # DB-authoritative статус ЧИТАЕМ ДО in-memory флага:
+    # processed_elo_matches может быть выставлен при уже применённом
+    # ELO, а история/payouts — упасть. Статус 'done' → полностью
+    # завершено; 'stats_done' → ELO не трогаем, доводим остальные
+    # этапы; отсутствие записи → статистика ещё не применялась.
+    # Ошибка чтения БД пробрасывается — 'нет записи' и 'БД недоступна'
+    # нельзя смешивать (иначе повторное начисление).
+    from storage import finalize_store
+
+    fstatus = await finalize_store.get_status(tournament.guild_id, mid)
+    if fstatus == "done":
+        return False, "Результат уже подтверждён."
+    stats_applied = fstatus == "stats_done"
+
+    # COMPLETE без DB-маркёра done — либо финализация в процессе
+    # (stats_done → resume), либо рассинхрон: не трогаем ELO.
+    if tournament.phase == TournamentPhase.COMPLETE and not stats_applied:
+        return False, "Матч уже завершён."
 
     team1_index, team2_index = 0, 1
     winning_team_index = 0 if winner_side == "a" else 1
@@ -809,16 +824,17 @@ async def _finalize_mm_match_locked(
         else f"{score_w}:{score_l}"
     )
 
-    # DB-authoritative resume: stats_done/done → статистика/ELO уже
-    # применены транзакцией set_many (краш между ней и store.set).
-    # Не начисляем ELO повторно — продолжаем с истории/подтверждения.
-    from storage import finalize_store
-
-    fstatus = await finalize_store.get_status(tournament.guild_id, mid)
-    stats_applied = fstatus in ("stats_done", "done")
-
     if not stats_applied:
-        # 1. ELO/статистика/монеты — идемпотентно через processed_elo_matches
+        if mid in tournament.processed_elo_matches:
+            # In-memory флаг без DB-маркёра stats_done — расхождение
+            # (например, set_many без finalize_match_id). Повторное
+            # начисление недопустимо — требуем восстановления маркёра.
+            return False, (
+                "Статистика помечена обработанной, но DB-маркер "
+                "отсутствует. Повторите подтверждение позже."
+            )
+        # 1. ELO/статистика/монеты — транзакция set_many +
+        #    идемпотентные match_coin_grants
         applied = await process_match_result(
             tournament.guild_id,
             tournament,
@@ -853,16 +869,20 @@ async def _finalize_mm_match_locked(
     meta["elo_lines"] = await _elo_lines(tournament, roster)
     store.set(tournament)
 
-    # Финализация полностью завершена — DB-маркер 'done' для resume
-    # после рестарта (stats_done → история/подтверждение уже сделаны).
-    await finalize_store.mark_done(tournament.guild_id, mid)
-
-    # 5. Обновить карточку «ЗАВЕРШЁН», затем освободить канал
+    # 5. Обновить карточку «ЗАВЕРШЁН», затем освободить канал.
+    #    Освобождение ДО mark_done: сбой записи маркёра не должен
+    #    оставлять канал занятым.
     try:
         await _refresh_card(interaction, tournament)
     except Exception as exc:
         logger.warning("MM done card update failed: %s", exc)
     await _release_match_channel(interaction.guild, tournament)
+
+    # 6. DB-маркер 'done' — последним шагом. Если он упадёт, матч уже
+    #    полностью завершён (ELO/история/подтверждение/канал), а статус
+    #    остаётся 'stats_done' — повторный проход безопасен: все этапы
+    #    идемпотентны, mark_done просто дозапишется.
+    await finalize_store.mark_done(tournament.guild_id, mid)
     return True, ""
 
 

@@ -268,16 +268,21 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             if new_level > old_level:
                 level_up_notifications.append((name, user_id, updated_stats, old_level, new_level))
 
-            # Add coin rewards (50-100 per match)
+            # Add coin rewards (50-100 per match). Идемпотентно по
+            # match_id: повторная финализация после частичного сбоя
+            # не начислит монеты дважды; total_earnings учитывает
+            # фактически выданную (или ранее выданную) сумму.
             import random
             coin_reward = random.randint(50, 100)
             if won:
                 coin_reward += 50  # Bonus coins for winning
-            updated_stats.total_earnings += coin_reward
 
-            # Add coins to user balance
             from storage.user_balance_store import user_balance_store
-            await user_balance_store.add_balance(guild_id, user_id, coin_reward)
+            credited_coins = await user_balance_store.add_balance_once(
+                guild_id, user_id, coin_reward,
+                match_info.get("finalize_match_id") or match_id,
+            )
+            updated_stats.total_earnings += credited_coins
 
             logger.info(
                 f"Saving stats for {name}: elo={updated_stats.elo}, elo_change={elo_change}, "
@@ -287,9 +292,9 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             pending_stats.append(updated_stats)
 
         # Статистика всех игроков — одной транзакцией: сбой не оставляет
-        # половину команды с начисленным ELO. Монеты начисляются
-        # поигроково до этого (не покрываются транзакцией — осознанный
-        # компромисс: coins идемпотентны только через processed-флаг).
+        # половину команды с начисленным ELO. Монеты уже выданы
+        # идемпотентно через match_coin_grants (add_balance_once) —
+        # повторный прогон вернёт те же суммы без двойного начисления.
         if pending_stats:
             await player_stats_store.set_many(
                 pending_stats,
