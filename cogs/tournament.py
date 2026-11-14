@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Literal, Optional
 
 import discord
-from utils.design import compose, text_card, smart_view
+from utils.design import compose, text_card
 
 from discord import app_commands
 from discord.ext import commands
@@ -279,24 +279,32 @@ class TournamentCog(commands.Cog):
                 return
             # Завершённый турнир нельзя просто удалить — архивируем
             # результаты/историю, затем освобождаем слот канала.
-            from storage.tournament_archive import tournament_archive
-            tournament_archive.archive(existing)
+            # Если архивация не удалась — слот НЕ освобождается:
+            # сообщаем организатору и прерываем создание, чтобы
+            # не потерять результаты предыдущего турнира.
+            from services import tournament_lifecycle
             from services import tournament_audit_service as audit_svc
+            released = await tournament_lifecycle.release_completed_tournament(
+                interaction.guild, existing,
+                channel=interaction.channel,
+            )
+            if not released:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "Не удалось сохранить архив завершённого "
+                        "турнира — слот канала НЕ освобождён. "
+                        "Новый турнир не создан, повторите попытку."
+                    ),
+                    ephemeral=True,
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
             await audit_svc.record_interaction(
                 interaction,
                 tournament_id=str(existing.id),
                 action=audit_svc.A.TOURNAMENT_ARCHIVED,
                 after={"phase": "complete", "winner": existing.winner_team_index},
             )
-            if existing.message_id:
-                try:
-                    channel = interaction.guild.get_channel(existing.channel_id)
-                    if channel:
-                        message = await channel.fetch_message(existing.message_id)
-                        await message.edit(view=smart_view(message, None))
-                except Exception:
-                    pass
-            store.delete(interaction.guild_id, interaction.channel_id)
 
         # Validate size
         try:

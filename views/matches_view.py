@@ -565,13 +565,27 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         except Exception as _exc:
             logger.warning("audit confirm failed: %s", _exc)
 
-        # Update tournament message
+        # Update tournament message — результат проверяем:
+        # матч уже сохранён (ELO/история не дублируются), но если
+        # карточка не обновилась, организатор должен об этом знать.
         from bot import TournamentBot
         bot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
-
+        card_updated = True
         try:
-            await interaction.response.edit_message( view=text_card(f"Победитель {self.team_name} подтверждён!")
+            card_updated = await bot.update_tournament_message(
+                interaction.guild, tournament)
+        except Exception as exc:
+            logger.warning("final card update failed: %s", exc)
+            card_updated = False
+
+        result_text = f"Победитель {self.team_name} подтверждён!"
+        if not card_updated:
+            result_text += (
+                "\n-# Итоговая карточка не обновилась — "
+                "обратитесь к администратору бота."
+            )
+        try:
+            await interaction.response.edit_message( view=text_card(result_text)
             )
         except (discord.NotFound, discord.InteractionResponded):
             # Interaction expired or already responded, use followup instead

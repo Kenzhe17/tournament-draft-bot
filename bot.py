@@ -564,6 +564,26 @@ class TournamentBot(commands.Bot):
         полный rebuild, поэтому изменения от пользователя
         отражаются немедленно.
         """
+        # Защита от гонки: если в канале уже другой турнир
+        # (завершённый заархивирован, создан новый), запоздавшее
+        # обновление СТАРОГО объекта не должно перезаписывать
+        # карточку нового турнира или воскрешать старую фазу.
+        try:
+            from storage.json_store import store as _tstore
+            _current = _tstore.get(guild.id, tournament.channel_id)
+        except Exception:
+            _current = None
+        if (
+            _current is not None
+            and str(_current.id) != str(tournament.id)
+        ):
+            logger.info(
+                "update_tournament_message: пропуск устаревшего "
+                "турнира %s (в канале %s активен %s)",
+                tournament.id, tournament.channel_id, _current.id,
+            )
+            return True
+
         if not tournament.message_id:
             logger.warning("Нет message_id для сервера %s", guild.id)
             return False
@@ -595,7 +615,14 @@ class TournamentBot(commands.Bot):
                 _TOURNAMENT_FP_CACHE.pop(next(iter(_TOURNAMENT_FP_CACHE)))
             _TOURNAMENT_FP_CACHE[fp_key] = {"fp": fp, "ts": now}
 
-        key = f"{guild.id}:{tournament.channel_id}"
+        # Ключ кэша — по СООБЩЕНИЮ турнира (message_id уникален),
+        # а не по каналу: два турнира в одном канале (старый
+        # завершённый + новый) не должны делить кэш и редактировать
+        # чужие карточки.
+        key = (
+            f"{guild.id}:{tournament.channel_id}:"
+            f"{tournament.id}:{tournament.message_id}"
+        )
         async with _edit_lock(key):
             channel = guild.get_channel(tournament.channel_id)
             if channel is None:
