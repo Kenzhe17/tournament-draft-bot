@@ -1130,6 +1130,7 @@ class AdminConfirmView(View):
                     raise
 
                 # Award coins for tournament participation based on placement
+                earnings_map: dict = {}
                 try:
                     earnings_map = await tournament.distribute_earnings(self.guild_id)
                     logging.info(f"Distributed tournament earnings: {earnings_map}")
@@ -1177,6 +1178,10 @@ class AdminConfirmView(View):
                         after={
                             "winner_team_index":
                                 tournament.winner_team_index,
+                            "earnings": {
+                                str(k): v for k, v in
+                                (locals().get("earnings_map") or {}).items()
+                            },
                         },
                         dedup_key=(
                             f"earnings:{tournament.id}"

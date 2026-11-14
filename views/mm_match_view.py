@@ -1154,6 +1154,7 @@ async def _finalize_mm_match_locked(
                 "winner_side": winner_side,
                 "score": score_str,
                 "phase": tournament.phase.value,
+                "elo": meta.get("elo_lines", []),
             },
             dedup_key=f"mmconfirm:{mid}",
         )
