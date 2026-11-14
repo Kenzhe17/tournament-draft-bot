@@ -146,90 +146,44 @@ def _match_card_view(
 
 
 async def refresh_announced_cards(bot: "discord.Client") -> None:
-    """Обновить уже опубликованные карточки анонсов матчей.
+    """Startup-cleanup: удалить legacy-карточки анонсов матчей.
 
-    После смены layout (убраны блок «ИНФОРМАЦИЯ» и кнопка
-    «📜 Правила») один раз при старте редактирует сообщения
-    активных матчей текущей фазы. Нумерация матчей сохраняется
-    (get_or_assign идемпотентен), результаты не затрагиваются —
-    карточка содержит только анонс и составы.
+    В канале турнира остаётся одно публичное сообщение; ранее
+    анонсированные карточки матчей удаляются адресно по
+    сохранённым message_id. Сообщения участников не трогаем.
     """
     for tournament in store.all():
         if tournament.phase == TournamentPhase.COMPLETE:
             continue
-        mcards = tournament.match_cards or {}
-        if not mcards:
+        if not (tournament.match_cards or {}):
+            continue
+        if getattr(tournament, "mm_search_channel_id", 0):
             continue
         guild = bot.get_guild(tournament.guild_id)
         if guild is None:
             continue
-        channel = guild.get_channel(tournament.channel_id)
-        if channel is None:
-            try:
-                channel = await guild.fetch_channel(tournament.channel_id)
-            except Exception:
-                channel = None
-        if not isinstance(channel, discord.TextChannel):
-            continue
-
-        phase_map = {
-            (mt, mi): (mt, mi, t1, t2)
-            for mt, mi, t1, t2 in _phase_matches(tournament)
-        }
-        dirty = False
-        for key, entry in mcards.items():
-            mid = entry.get("message_id")
-            if not mid or entry.get("layout_v2"):
-                continue
-            match = phase_map.get((entry.get("match_type"), entry.get("match_index")))
-            if match is None:
-                # Матч не из текущей фазы (завершён/устарел) — не трогаем.
-                entry["layout_v2"] = True
-                dirty = True
-                continue
-            try:
-                number = await match_number_store.get_or_assign(key)
-                mt, mi, t1, t2 = match
-                msg = await channel.fetch_message(int(mid))
-                await msg.edit(
-                    view=_match_card_view(
-                        tournament, number, _match_label(mt, mi),
-                        _team_display(tournament, t1),
-                        _team_display(tournament, t2), t1, t2,
-                    ),
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                entry["layout_v2"] = True
-                dirty = True
-            except discord.NotFound:
-                # Сообщение удалено — помечаем, чтобы не ретраить
-                # при каждом старте.
-                entry["layout_v2"] = True
-                dirty = True
-            except Exception as exc:
-                logger.warning(
-                    "Match card refresh failed (%s): %s", key, exc)
-        if dirty:
-            store.set(tournament)
+        try:
+            await delete_announced_cards(tournament, guild)
+        except Exception as exc:
+            logger.warning(
+                "Announced cards cleanup failed (tournament %s): %s",
+                tournament.id, exc)
 
 
-async def announce_phase_matches(
+async def delete_announced_cards(
     tournament: Tournament,
     guild: discord.Guild,
-    bot: "discord.Client | None" = None,
-) -> None:
-    """Анонсировать все ещё не анонсированные матчи текущей фазы.
+) -> int:
+    """Удалить ранее анонсированные карточки матчей (адресно).
 
-    Идемпотентно: факт анонса — match_number_store.is_announced(key).
+    В канале турнира должно оставаться только одно публичное
+    сообщение — сама карточка турнира. Карточки анонсов матчей
+    удаляются по сохранённым message_id; сообщения участников
+    и матчей MM (другой канал/хранилище) не затрагиваются.
     """
-    matches = _phase_matches(tournament)
-    if not matches:
-        return
-    # MM-матчи публикуют собственную карточку в канале пула —
-    # здесь их не дублируем.
-    if getattr(tournament, "mm_search_channel_id", 0):
-        return
-
+    mcards = tournament.match_cards or {}
+    if not mcards:
+        return 0
     channel = guild.get_channel(tournament.channel_id)
     if channel is None:
         try:
@@ -237,42 +191,52 @@ async def announce_phase_matches(
         except Exception:
             channel = None
     if not isinstance(channel, discord.TextChannel):
-        return
-
-    mcards = tournament.match_cards
-    if mcards is None:
-        mcards = tournament.match_cards = {}
-
-    for match_type, match_index, t1, t2 in matches:
-        key = _match_key(tournament, match_type, match_index)
-        entry = mcards.get(key) or {}
-        if entry.get("announced") or await match_number_store.is_announced(key):
+        return 0
+    removed = 0
+    for key, entry in list(mcards.items()):
+        mid = entry.get("message_id")
+        if not mid:
             continue
-
         try:
-            number = await match_number_store.get_or_assign(key)
-            name_a = _team_display(tournament, t1)
-            name_b = _team_display(tournament, t2)
-            label = _match_label(match_type, match_index)
-
-            msg = await channel.send(
-                view=_match_card_view(
-                    tournament, number, label, name_a, name_b, t1, t2,
-                ),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-            mcards[key] = {
-                "match_type": match_type,
-                "match_index": match_index,
-                "message_id": msg.id,
-                "announced": True,
-                "announced_at": time.time(),
-            }
-            store.set(tournament)
-            await match_number_store.mark_announced(key)
-            logger.info(
-                "Match #%d announced: %s %s vs %s (tournament %s)",
-                number, label, name_a, name_b, tournament.id,
-            )
+            msg = await channel.fetch_message(int(mid))
+            await msg.delete()
+            removed += 1
+        except discord.NotFound:
+            pass
         except Exception as exc:
-            logger.error("Match announce failed for %s: %s", key, exc)
+            logger.warning(
+                "Announced card delete failed (%s): %s", key, exc)
+    tournament.match_cards = {}
+    try:
+        store.set(tournament)
+    except Exception as exc:
+        logger.warning("match_cards cleanup persist failed: %s", exc)
+    if removed:
+        logger.info(
+            "Deleted %d announced match cards (tournament %s)",
+            removed, tournament.id,
+        )
+    return removed
+
+
+async def announce_phase_matches(
+    tournament: Tournament,
+    guild: discord.Guild,
+    bot: "discord.Client | None" = None,
+) -> None:
+    """LEGACY: отдельные карточки анонсов больше не создаются.
+
+    В канале турнира остаётся одно публичное сообщение; все
+    действия — через его кнопки, ephemeral-карточки и Modal.
+    Функция сохранена для совместимости вызовов: при каждом
+    обновлении удаляет ранее анонсированные карточки матчей.
+    """
+    matches = _phase_matches(tournament)
+    if not matches:
+        return
+    # MM-матчи публикуют собственную карточку в канале пула —
+    # здесь их не дублируем и не трогаем.
+    if getattr(tournament, "mm_search_channel_id", 0):
+        return
+    await delete_announced_cards(tournament, guild)
+    return

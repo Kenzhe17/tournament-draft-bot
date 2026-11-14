@@ -117,3 +117,8 @@ class FinalView(discord.ui.View):
             if not _team_stats_filled(tournament, match_id, final_teams[1]):
                 self.add_item(CaptainFillButton(
                     guild_id, channel_id, tournament, "final", 0, final_teams[1]))
+
+        # Данные комнат (ID/пароль Free Fire) — участники и организаторы
+        from views.room_view import room_buttons
+        for btn in room_buttons(guild_id, channel_id):
+            self.add_item(btn)

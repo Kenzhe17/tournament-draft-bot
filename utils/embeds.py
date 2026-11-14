@@ -37,6 +37,25 @@ def get_phase_color(phase: TournamentPhase) -> discord.Color:
     return colors.get(phase, discord.Color.default())
 
 
+def _room_status_suffix(tournament, phase: str, index: int) -> str:
+    """Публичный статус комнаты матча: только «готова»/«ожидаются».
+
+    Пароль и ID публично не отображаются — детали видны участникам
+    матча и организаторам через ephemeral-карточку.
+    """
+    try:
+        from storage.room_store import match_key, room_store
+
+        gid = getattr(tournament, "guild_id", 0)
+        cid = getattr(tournament, "channel_id", 0)
+        key = match_key(str(tournament.id), phase, index)
+        if room_store.has_room(gid, cid, key):
+            return " · 🗝️ Комната готова"
+    except Exception:
+        pass
+    return " · Ожидаются данные"
+
+
 def create_progress_bar(current: int, total: int, length: int = 10) -> str:
     """Создать текстовый прогресс-бар."""
     if total == 0:
@@ -874,6 +893,7 @@ async def build_qualifiers_embed(
 
         matches_section.append(
             f" **Отбор #{i + 1}:**  **{name_a}:** vs  **{name_b}:** {winner_info}"
+            f"{_room_status_suffix(tournament, 'qualifier', i)}"
         )
 
     # Build footer
@@ -974,6 +994,7 @@ async def build_semifinals_embed(
 
         matches_section.append(
             f" **Игра #{i + 1}:** {name_a} vs {name_b}{winner_info}"
+            f"{_room_status_suffix(tournament, 'semifinal', i)}"
         )
 
     # Build footer
@@ -1077,7 +1098,8 @@ async def build_final_embed(
     description = (
         f" **Организатор:** {organizer_mention}\n\n"
         f" **Главная битва:**\n"
-        f" **Финал:** {name_a} vs {name_b}{winner_info}\n\n\n\n"
+        f" **Финал:** {name_a} vs {name_b}{winner_info}"
+        f"{_room_status_suffix(tournament, 'final', 0)}\n\n\n\n"
         f" **Участники команд:**\n"
     )
 

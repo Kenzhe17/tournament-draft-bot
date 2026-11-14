@@ -1494,6 +1494,11 @@ class QualifiersView(discord.ui.View):
                         guild_id, channel_id, tournament, "qualifier", i, team_idx
                     ))
 
+        # Данные комнат (ID/пароль Free Fire) — участники и организаторы
+        from views.room_view import room_buttons
+        for btn in room_buttons(guild_id, channel_id):
+            self.add_item(btn)
+
 
 class SemifinalsView(discord.ui.View):
     """View с кнопками полуфиналов (классика: админ-панель,
@@ -1520,3 +1525,8 @@ class SemifinalsView(discord.ui.View):
                     self.add_item(CaptainFillButton(
                         guild_id, channel_id, tournament, "semifinal", i, team_idx
                     ))
+
+        # Данные комнат (ID/пароль Free Fire) — участники и организаторы
+        from views.room_view import room_buttons
+        for btn in room_buttons(guild_id, channel_id):
+            self.add_item(btn)
