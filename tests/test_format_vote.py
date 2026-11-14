@@ -562,6 +562,29 @@ class TestVoteGenerations:
         fv._TIMERS.clear()
 
     @pytest.mark.asyncio
+    async def test_restore_rerenders_done_vote_ui(
+        self, env, monkeypatch
+    ):
+        """После restart done-голосование с устаревшей карточкой
+        получает UI-обновление до финального вида."""
+        s = _prep(env, monkeypatch)
+        s["vote_status"] = "done"
+        s["selected_format"] = "brazil"
+        s["vote_message_id"] = 5
+        s["vote_deadline"] = time.time() - 10
+
+        class _Bot:
+            def add_view(self, v):
+                pass
+
+            def get_guild(self, gid):
+                return None
+
+        monkeypatch.setattr(fv.store, "all", lambda: [env.tournament])
+        await fv.restore_format_votes(_Bot())
+        assert f"vote:{s['vote_id']}" in fv._UI_DIRTY
+
+    @pytest.mark.asyncio
     async def test_cancel_cleans_timer_and_lock(self, env, monkeypatch):
         s = _prep(env, monkeypatch)
         key = f"vote:{s['vote_id']}"
@@ -570,7 +593,10 @@ class TestVoteGenerations:
         fv.cancel_open_format_votes(env.tournament)
         assert s["vote_status"] == "cancelled"
         assert key not in fv._TIMERS
-        assert key not in fv._LOCKS
+        # Lock-объект намеренно сохраняется: удаление при
+        # ожидающих захвата создало бы второй lock для ключа.
+        # UI-обновление (отключение кнопок) поставлено в очередь.
+        assert key in fv._UI_DIRTY
 
 
 # ---------------------------------------------------------------------------
@@ -628,20 +654,28 @@ class TestUiWorker:
         await asyncio.sleep(0.6)
         assert edits, "UI-worker не отредактировал сообщение"
         import discord as _d
-        last_btns = [
-            c for c in edits[-1].walk_children()
-            if isinstance(c, _d.ui.Button)
-        ]
-        assert all(b.disabled for b in last_btns)
-        # Ни один edit после финализации не показывает открытый вид.
-        for v in edits:
-            btns = [
-                c for c in v.walk_children()
+
+        def _btns(view):
+            return [
+                c for c in view.walk_children()
                 if isinstance(c, _d.ui.Button)
             ]
-            if edits.index(v) == len(edits) - 1:
-                continue
-            assert any(not b.disabled for b in btns) or True
+
+        last_btns = _btns(edits[-1])
+        assert all(b.disabled for b in last_btns)
+        # Настоящая проверка порядка: после первого edit с
+        # финальным (disabled) видом ни один PATCH не должен
+        # показать снова открытые кнопки.
+        seen_final = False
+        for v in edits:
+            btns = _btns(v)
+            if all(b.disabled for b in btns):
+                seen_final = True
+            else:
+                assert not seen_final, (
+                    "открытый вид отрендерен после финального"
+                )
+        assert seen_final
 
     @pytest.mark.asyncio
     async def test_ui_updates_coalesced(self, env, monkeypatch):
@@ -680,6 +714,49 @@ class TestUiWorker:
         await asyncio.sleep(0.6)
         assert len(edits) <= 2  # debounce схлопывает серию кликов
         assert len(s["votes"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_ui_worker_retries_transient_errors(
+        self, env, monkeypatch
+    ):
+        """Временные ошибки Discord (429/5xx) → retry с backoff,
+        сообщение в итоге обновлено."""
+        fv.prepare_format_vote(env.tournament, "final", 0, 2)
+        s = _state(env)
+        s["vote_message_id"] = 5
+        attempts = {"n": 0}
+        edits = []
+
+        class _Msg:
+            async def edit(self, view=None, **kw):
+                attempts["n"] += 1
+                if attempts["n"] < 3:
+                    raise RuntimeError("HTTP 500")
+                edits.append(view)
+
+        class _Ch:
+            id = 2
+
+            async def fetch_message(self, mid):
+                return _Msg()
+
+        class _G:
+            def get_channel(self, cid):
+                return _Ch()
+
+            async def fetch_channel(self, cid):
+                return _Ch()
+
+        monkeypatch.setattr(fv, "store_bot_guild", lambda gid: _G())
+        monkeypatch.setattr(
+            "services.format_vote._mirror_to_pg",
+            lambda *a, **k: _noop(),
+        )
+        ix = _Ix(env, 1, _cid(env, "brazil"))
+        await fv.handle_vote_click(ix, "brazil")
+        await asyncio.sleep(2.5)  # debounce + retry backoff
+        assert attempts["n"] >= 3
+        assert edits
 
 
 # ---------------------------------------------------------------------------

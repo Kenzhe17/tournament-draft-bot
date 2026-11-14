@@ -15,8 +15,6 @@ import logging
 import random
 import secrets
 import time
-from typing import Any
-
 import discord
 
 from storage.json_store import store
@@ -66,6 +64,7 @@ _TIMERS: dict[str, asyncio.Task] = {}
 _UI_DIRTY: dict[str, int] = {}
 _UI_TASKS: dict[str, asyncio.Task] = {}
 _UI_CTX: dict[str, tuple] = {}  # key -> (gid, cid, vote_id)
+_UI_FAILS: dict[str, int] = {}  # key -> подряд неудачных flush'ей
 
 
 def _new_vote_id() -> str:
@@ -444,7 +443,15 @@ def _schedule_vote_ui(guild_id: int, channel_id: int, vote_id: str) -> None:
 
 
 async def _vote_ui_worker(key: str) -> None:
-    """Debounce + актуальное состояние на момент flush."""
+    """Debounce + актуальное состояние на момент flush.
+
+    При временных ошибках Discord (429/5xx/timeout) правка
+    повторяется с backoff; processed не продвигается, пока
+    поколение не отрендерено — следующий flush покажет
+    актуальное состояние. После _UI_MAX_FAILS неудачных
+    раундов воркер сдаётся (лог error), следующее
+    _schedule_vote_ui запустит его заново.
+    """
     processed = 0
     cancelled = False
     try:
@@ -453,16 +460,36 @@ async def _vote_ui_worker(key: str) -> None:
             dirty = _UI_DIRTY.get(key, 0)
             if dirty <= processed:
                 return
-            processed = dirty
             gid, cid, vote_id = _UI_CTX.get(key, (0, 0, ""))
             found = _find_vote(gid, cid, vote_id)
             if found is None:
-                continue  # голосование удалено — править нечего
+                processed = dirty  # голосование удалено — править нечего
+                continue
             tournament, _meta, fv, mt, mi = found
             try:
-                await _edit_vote_message(tournament, mt, mi, fv)
+                await _edit_vote_message_retry(
+                    tournament, mt, mi, fv, vote_id
+                )
+                processed = dirty
+                _UI_FAILS.pop(key, None)
+            except _VoteMessageGone:
+                processed = dirty  # сообщение удалено — дальше нечего
+                _UI_FAILS.pop(key, None)
             except Exception as exc:
-                logger.warning("Vote UI edit failed %s: %s", vote_id, exc)
+                fails = _UI_FAILS.get(key, 0) + 1
+                _UI_FAILS[key] = fails
+                logger.warning(
+                    "Vote UI edit failed %s (attempt %d): %s",
+                    vote_id, fails, exc,
+                )
+                if fails >= _UI_MAX_FAILS:
+                    logger.error(
+                        "Vote UI edit giving up %s after %d rounds",
+                        vote_id, fails,
+                    )
+                    processed = dirty
+                    _UI_FAILS.pop(key, None)
+                # иначе processed < dirty → повтор на след. итерации
     except asyncio.CancelledError:
         cancelled = True
         raise
@@ -475,8 +502,50 @@ async def _vote_ui_worker(key: str) -> None:
                 else:
                     _UI_DIRTY.pop(key, None)
                     _UI_CTX.pop(key, None)
+                    _UI_FAILS.pop(key, None)
             except (RuntimeError, KeyError):
                 pass
+
+
+_UI_MAX_FAILS = 5
+
+
+class _VoteMessageGone(Exception):
+    "Внутренняя метка: сообщение голосования удалено (404)."
+
+
+async def _edit_vote_message_retry(tournament, match_type: str,
+                                   match_index: int, fv: dict,
+                                   vote_id: str) -> None:
+    """_edit_vote_message с retry на временные ошибки Discord.
+
+    404 (сообщение удалено) не ретраится — _VoteMessageGone.
+    Остальные ошибки: до 3 попыток, пауза учитывает retry_after
+    (Discord 429) и экспоненциально растёт.
+    """
+    delay = 0.4
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            await _edit_vote_message(tournament, match_type,
+                                     match_index, fv)
+            return
+        except Exception as exc:
+            last_exc = exc
+            if getattr(exc, "status", None) == 404:
+                raise _VoteMessageGone(vote_id) from exc
+            wait = delay
+            ra = getattr(exc, "retry_after", None)
+            if ra is not None:
+                wait = max(wait, float(ra) + 0.2)
+            wait = min(wait, 5.0)
+            logger.info(
+                "Vote UI edit retry %d/%d %s in %.1fs: %s",
+                attempt + 1, 3, vote_id, wait, exc,
+            )
+            await asyncio.sleep(wait)
+            delay *= 2
+    raise last_exc  # type: ignore[misc]
 
 
 async def _edit_vote_message(tournament, match_type: str,
@@ -509,7 +578,15 @@ async def handle_vote_click(
     Discord API (edit сообщения, ephemeral) и финализация
     выполняются ПОСЛЕ освобождения lock — вложенного захвата
     и долгих вызовов внутри критической секции нет.
+
+    Interaction подтверждается (defer) СРАЗУ: финализация
+    (PG + Discord API) и ожидание lock могут превысить 3-сек
+    окно ответа Discord → иначе Unknown interaction.
     """
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except Exception:
+        pass  # уже отвечено/неивается — идём дальше
     custom_id = (interaction.data or {}).get("custom_id", "")
     parsed = _parse_custom_id(custom_id)
     legacy = False
@@ -893,16 +970,14 @@ async def finalize_format_vote(
     except Exception as exc:
         logger.warning("Format vote card update failed: %s", exc)
 
-    # Завершённое голосование: снять таймер. Lock-запись удаляем
-    # только если она не захвачена — иначе in-flight обработчик
-    # продолжил бы работать со «старым» lock-объектом, а новый
-    # _lock(key) создал бы второй → потеря сериализации.
+    # Завершённое голосование: снять таймер. Lock-объект в
+    # _LOCKS НЕ удаляем: даже «свободный» asyncio.Lock может
+    # иметь ожидающих захвата — удаление создало бы второй
+    # lock для того же ключа и потерю сериализации. Объекты
+    # малы и ограничены числом голосований — утечки нет.
     task = _TIMERS.pop(key, None)
     if task is not None and task is not asyncio.current_task():
         task.cancel()
-    lk = _LOCKS.get(key)
-    if lk is not None and not lk.locked():
-        _LOCKS.pop(key, None)
     logger.info(
         "mm_diag event=vote_finalized vote_id=%s match_id=%s "
         "channel_id=%s selected=%s votes=%s",
@@ -942,9 +1017,8 @@ def cancel_open_format_votes(tournament) -> None:
         task = _TIMERS.pop(key, None)
         if task is not None:
             task.cancel()
-        lk = _LOCKS.get(key)
-        if lk is not None and not lk.locked():
-            _LOCKS.pop(key, None)
+        # Lock не удаляем (см. finalize_format_vote) — возможны
+        # ожидающие захвата.
         # Кнопки на сообщении должны отключиться — UI-worker
         # отрендерит актуальное (cancelled) состояние.
         _schedule_vote_ui(gid, cid, fv.get("vote_id") or "")
@@ -997,6 +1071,13 @@ async def restore_format_votes(bot) -> None:
                     fv.get("match_id"), exc,
                 )
             if fv.get("vote_status") != "open":
+                # done/cancelled: карточка могла остаться в
+                # открытом виде (крах до финального edit) —
+                # UI-worker перерендерит актуальное состояние.
+                if fv.get("vote_message_id"):
+                    _schedule_vote_ui(
+                        gid, cid, fv.get("vote_id") or ""
+                    )
                 continue
             if time.time() > float(fv.get("vote_deadline") or 0):
                 guild = bot.get_guild(gid)
