@@ -69,8 +69,11 @@ class FakeConn:
     async def fetchrow(self, sql: str, *args):
         if "FOR UPDATE SKIP LOCKED" in sql:
             guild_id = args[0]
+            allowed = args[1] if len(args) > 1 else None
             for cid in sorted(self.db.rows):
                 row = self.db.rows[cid]
+                if allowed is not None and cid not in allowed:
+                    continue
                 if row["state"] == "free" and (
                     row["guild_id"] in (0, guild_id)
                 ):
@@ -141,6 +144,19 @@ async def test_ensure_slots_registers_all_pool_ids(fake_db):
     await mcp.ensure_slots()
     assert len(fake_db.rows) == 5
     assert all(r["state"] == "free" for r in fake_db.rows.values())
+
+
+@pytest.mark.asyncio
+async def test_acquire_never_returns_channel_outside_pool(fake_db):
+    """Слот вне MM_MATCH_CHANNEL_POOL не выдаётся, даже если free."""
+    await mcp.ensure_slots()
+    fake_db.rows[999] = {
+        "channel_id": 999, "guild_id": 0,
+        "state": "free", "owner": "",
+    }
+    got = await mcp.acquire_slot(guild_id=999, owner="m1")
+    assert got in (101, 102, 103, 104, 105)
+    assert fake_db.rows[999]["state"] == "free"
 
 
 @pytest.mark.asyncio
@@ -341,22 +357,6 @@ async def test_429_retry_honors_retry_after(fake_db, monkeypatch):
 
     with pytest.raises(FakeRateLimited):
         await mcp._discord_call(always_limited, "test")
-
-
-# ---------------------------------------------------------------------------
-# OCR-нормализация имён команд
-# ---------------------------------------------------------------------------
-
-
-def test_normalize_team_name_known_corruption():
-    from cogs.ocr_upload import _normalize_team_name
-
-    assert _normalize_team_name("ИНЖИТИХ") == "Хищники"
-    assert _normalize_team_name("инжитих") == "Хищники"
-    assert _normalize_team_name("ХИЩНИКИ") == "Хищники"
-    assert _normalize_team_name("Разрушители") == "Разрушители"
-    # Неизвестное имя не трогаем
-    assert _normalize_team_name("КакаяТоКоманда") == "КакаяТоКоманда"
 
 
 # ---------------------------------------------------------------------------

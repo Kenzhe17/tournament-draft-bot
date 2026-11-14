@@ -168,7 +168,7 @@ class Tournament:
 
     # Выбранные правила матча (BRAZIL/KAZAKHSTAN) — голосование
     # после «Старт» в /tournament create, до формирования команд.
-    ruleset: str = ""
+    ruleset: str = "kazakhstan"  # r!z3 CLASSIC: только Kazakhstan
     rules_vote: dict = field(default_factory=dict)
     captains: list[str] = field(default_factory=list)  # Display names
     circle1: list[str] = field(default_factory=list)  # Captain circle (display names)

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import random
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Optional
 
 import discord
 from utils.design import compose, text_card, smart_view
@@ -49,13 +49,15 @@ logger = logging.getLogger(__name__)
 # Tournaments 2.0: /tournament create разрешает только эти режимы.
 # Legacy-значения FormationMode (elo/skill/random/random-auto)
 # остаются валидными для уже созданных турниров и /mmsquad.
-ALLOWED_CREATE_FORMATIONS = (FormationMode.DRAFT, FormationMode.BALANCED_SR)
+ALLOWED_CREATE_FORMATIONS = (
+    FormationMode.DRAFT, FormationMode.BALANCED_SR, FormationMode.RANDOM,
+)
 
 
 def parse_create_formation(raw: str) -> FormationMode | None:
     """Режим формирования для /tournament create или None.
 
-    Возвращает FormationMode только для draft/balanced-sr;
+    Возвращает FormationMode только для draft/balanced-sr/random;
     неизвестные и legacy-значения → None (серверная валидация
     дублирует Literal-выбор в UI).
     """
@@ -102,13 +104,13 @@ class TournamentCog(commands.Cog):
     tournament_group = app_commands.Group(name="tournament", description="Управление турнирами")
 
     @tournament_group.command(name="create", description="Создать новый турнир")
-    @app_commands.describe(size="Размер турнира: 16 или 32 игрока (8 — legacy)", formation="Режим: draft (ручной драфт) или balanced-sr (балансировка по SR)")
+    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока", formation="Режим: draft (драфт капитанами), balanced-sr (балансировка по SR) или random (случайно)")
     @is_org()
     async def tournament_create(
         self,
         interaction: discord.Interaction,
         size: str,
-        formation: Literal["draft", "balanced-sr"] = "draft",
+        formation: Literal["draft", "balanced-sr", "random"] = "draft",
     ) -> None:
         """Создать турнир с указанным размером."""
         # Проверить если канал заблокирован поиском (только если есть активные игроки)
@@ -160,14 +162,15 @@ class TournamentCog(commands.Cog):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Validate formation mode — Tournaments 2.0: только draft и
-        # balanced-sr. Legacy-значения FormationMode сохраняются для
-        # старых турниров и /mmsquad, но создание через /tournament
-        # create ими запрещено (проверка и на сервере, не только в UI).
+        # Validate formation mode — r!z3 CLASSIC: только draft,
+        # balanced-sr и random. Legacy-значения FormationMode
+        # сохраняются для старых турниров и /mmsquad, но создание
+        # через /tournament create ими запрещено (проверка и на
+        # сервере, не только в UI).
         formation_mode = parse_create_formation(formation)
         if formation_mode is None:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверный режим формирования. Доступны: draft, balanced-sr."),
+                replace_emojis("❌ Неверный режим формирования. Доступны: draft, balanced-sr, random."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -276,23 +279,6 @@ class TournamentCog(commands.Cog):
             except Exception as e:
                 logger.warning(f"Не удалось удалить сообщение турнира: {e}")
 
-        # Отключить голосование за формат в MM-матчах этого турнира
-        try:
-            from services.format_vote import cancel_open_format_votes
-
-            cancel_open_format_votes(existing)
-        except Exception as exc:
-            logger.warning("Format vote cancel failed: %s", exc)
-
-        # Отменить голосование за правила, если турнир удалён
-        # во время RULES_VOTING.
-        try:
-            from services.rules_vote import cancel_rules_vote
-
-            cancel_rules_vote(existing)
-        except Exception as exc:
-            logger.warning("Rules vote cancel failed: %s", exc)
-
         store.delete(interaction.guild_id, interaction.channel_id)
         logger.info("Турнир удален на сервере %s", interaction.guild_id)
 
@@ -372,18 +358,23 @@ class TournamentCog(commands.Cog):
         operation="Тестовая операция",
         keep_players="(normal/fill) Сохранить реальных игроков",
         no_bots="(normal/fill) Только реальные игроки, без ботов",
+        формат="(ultimatum/fill) Формат Ультиматума",
     )
     @app_commands.choices(
         category=[
             app_commands.Choice(name="Обычный", value="normal"),
             app_commands.Choice(name="Battle Royale", value="br"),
-            app_commands.Choice(name="Ultimatum", value="ultimatum"),
+            app_commands.Choice(name="Ультиматум", value="ultimatum"),
         ],
         operation=[
             app_commands.Choice(name="Заполнить ботами", value="fill"),
             app_commands.Choice(name="Заполнить ботами-командами", value="fill_teams"),
             app_commands.Choice(name="Заполнить статистику", value="fill_stats"),
             app_commands.Choice(name="Запуск только с реальными", value="start_real"),
+        ],
+        формат=[
+            app_commands.Choice(name="Ультиматум Соло", value="solo"),
+            app_commands.Choice(name="Ультиматум Дуо", value="duo"),
         ],
     )
     async def tournament_test(
@@ -393,6 +384,7 @@ class TournamentCog(commands.Cog):
         operation: app_commands.Choice[str],
         keep_players: bool = False,
         no_bots: bool = False,
+        формат: Optional[app_commands.Choice[str]] = None,
     ) -> None:
         """Единая команда тестовых операций: /tournament test."""
         cat, op = category.value, operation.value
@@ -440,7 +432,10 @@ class TournamentCog(commands.Cog):
                 "❌ Целевой ког не загружен.", ephemeral=True
             )
             return
-        await cmd.callback(cog, interaction)
+        if cat == "ultimatum":
+            await cmd.callback(cog, interaction, формат)
+        else:
+            await cmd.callback(cog, interaction)
 
     @is_bot_owner()
     async def test_start(self, interaction: discord.Interaction, keep_players: bool = False, no_bots: bool = False) -> None:
@@ -1231,26 +1226,15 @@ class TournamentCog(commands.Cog):
     @player_group.command(name="profile", description="Показать ваш профиль")
     @app_commands.describe(user="Пользователь (пусто = ваш профиль)", limit="Количество матчей для графика ELO (макс 30)")
     async def profile(self, interaction: discord.Interaction, user: discord.Member = None, limit: int = 10) -> None:
-        """Показать детальный профиль игрока."""
-        from views.profile_view import ProfileView
+        """Показать детальный профиль игрока (CV2, без PNG)."""
+        from views.profile_view import build_profile_layout
 
         # Если пользователь не указан, показываем профиль автора
         target_user = user if user else interaction.user
-        is_owner = target_user.id == interaction.user.id
 
-        from services.profile_card import build_profile_png
-
-        # Рендер PNG ~3с — сначала defer, иначе interaction протухает (404)
         await interaction.response.defer()
-        png = await build_profile_png(interaction.guild, target_user)
-
-        # Кнопки только для владельца
-        view = ProfileView(interaction.guild_id, target_user.id, is_owner)
-
-        await interaction.followup.send(
-            file=discord.File(__import__("io").BytesIO(png), filename="profile.png"),
-            view=view,
-        )
+        layout = await build_profile_layout(interaction.guild, target_user)
+        await interaction.followup.send(view=layout)
 
     @player_set_group.command(name="bio", description="Установить описание профиля (раз в 7 дней)")
     @app_commands.describe(value="Текст описания (до 256 символов)")
@@ -3028,10 +3012,10 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f"{dot}  `/mm delete` — Удалить поиски на сервере (орг)\n"
                 f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
                 f"{dot}  `/br create|delete` — Battle Royale (орг)\n"
-                f"{dot}  `/ultimatum create|delete` — Ультиматум (орг)\n"
+                f"{dot}  `/tournament ультиматум создать|удалить` — Ультиматум (орг)\n"
                 f"{dot}  `/team create|status|delete` — Команды для BR\n"
                 f"{dot}  `/ff info|stats` — Статистика Free Fire\n"
-                f"{dot}  `/player ulti`, `/player ulti_history` — Статистика Ultimatum\n"
+                f"{dot}  `/player ulti`, `/player ulti_history` — Рейтинг Ультиматума (Соло/Дуо)\n"
                 + footer
             ),
             color=gray,
@@ -3161,7 +3145,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f" **Система рангов по уровням:**\n{rank_lines}\n\n"
                 f"{dot} `/top` — ELO-таблица лидеров\n"
                 f"{dot} `/player rank` — Текущий ранг и прогресс\n"
-                f"{dot} `/player ulti` — Рейтинг Ultimatum"
+                f"{dot} `/player ulti` — Рейтинг Ультиматума"
             ),
             color=gray,
         )
@@ -3174,7 +3158,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f" **Турниры:**\n"
                 f"{dot}  `/tournament create|delete|deleteall|test` — Сетка турнира\n"
                 f"{dot}  `/br create|delete|test_fill|test_teams|test_stats` — Battle Royale\n"
-                f"{dot}  `/ultimatum create|delete|test_fill` — Ультиматум\n"
+                f"{dot}  `/tournament ультиматум создать|удалить|сетка|статус|история|исправить` — Ультиматум\n"
                 f"{dot}  `/mm squad|delete|test` — Matchmaking 4×4\n"
                 f"{dot}  `/team create|delete|status` — Команды BR\n\n"
                 f" **Сервер и контент:**\n"

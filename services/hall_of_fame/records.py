@@ -27,7 +27,7 @@ CATEGORIES = [
     ("results", "Результаты матчей"),
     ("rating", "Рейтинг"),
     ("tournaments", "Турниры"),
-    ("ultimatum", "Ultimatum"),
+    ("ultimatum", "Ультиматум"),
     ("economy", "Экономика"),
     ("community", "Сообщество"),
 ]
@@ -321,10 +321,10 @@ async def compute_all(guild_id: int) -> dict[str, CategoryData]:
         r = ulti["top_elo"]
         uid = int(r["discord_id"])
         u, nm = rec_for(uid, r.get("username") or "")
-        c.records.append(Record("Максимальный Ultimatum ELO",
+        c.records.append(Record("Максимальный рейтинг Ультиматума",
                                 f"{int(r['peak_elo']):,} ELO", u, nm))
     else:
-        c.records.append(Record("Максимальный Ultimatum ELO", available=False))
+        c.records.append(Record("Максимальный рейтинг Ультиматума", available=False))
     if ulti.get("top_wins"):
         r = ulti["top_wins"]
         uid = int(r["discord_id"])
@@ -339,11 +339,11 @@ async def compute_all(guild_id: int) -> dict[str, CategoryData]:
         uid = int(r["discord_id"])
         u, nm = rec_for(uid, r.get("username") or "")
         wr = int(r["wins"]) / max(1, int(r["rated_matches"])) * 100
-        c.records.append(Record("Лучший WinRate Ultimatum",
+        c.records.append(Record("Лучший WinRate Ультиматума",
                                 f"{wr:.1f}%", u, nm,
                                 f"{int(r['rated_matches'])} дуэлей"))
     else:
-        c.records.append(Record("Лучший WinRate Ultimatum", available=False))
+        c.records.append(Record("Лучший WinRate Ультиматума", available=False))
     if ulti.get("top_duels"):
         r = ulti["top_duels"]
         uid = int(r["discord_id"])

@@ -613,6 +613,16 @@ async def init_db() -> None:
             from ultimatum import ULTIMATUM_SCHEMA, ELO_SCHEMA
             await conn.execute(ULTIMATUM_SCHEMA)
             await conn.execute(ELO_SCHEMA)
+            # Разовый перенос старого Solo ELO в ult_elo_ratings
+            # (ON CONFLICT DO NOTHING — идемпотентно, история
+            # elo_history остаётся в легаси-таблице).
+            try:
+                from ultimatum.elo import ult_elo_store
+                migrated = await ult_elo_store.migrate_legacy_solo()
+                if migrated:
+                    logger.info("Migrated %d legacy ultimatum ELO rows", migrated)
+            except Exception as e:
+                logger.warning("Legacy ultimatum ELO migration skipped: %s", e)
             logger.info("Ultimatum tables initialized successfully")
         except ImportError as e:
             logger.error(f"Failed to initialize database: {e}")

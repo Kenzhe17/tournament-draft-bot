@@ -17,7 +17,28 @@ from storage.bet_store import bet_store
 from storage.user_balance_store import user_balance_store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_org_check
-from views.room_buttons import RoomButton, AdminRoomsButton
+from views.bet_views import BetButton, ViewBetsButton
+
+
+def team_roster_names(tournament, team_index: int) -> list[str]:
+    """Имена игроков команды (players-список или circle1..4)."""
+    if team_index >= len(tournament.teams):
+        return []
+    data = tournament.teams[team_index] or {}
+    players = [p for p in (data.get("players") or []) if p]
+    if players:
+        return players
+    return [
+        data.get(f"circle{c}") for c in range(1, 5)
+        if data.get(f"circle{c}")
+    ]
+
+
+def team_match_stats_filled(tournament, match_id: str, team_index: int) -> bool:
+    """Все игроки команды внесли K/D в temp_match_stats."""
+    stats = tournament.temp_match_stats.get(match_id, {})
+    roster = team_roster_names(tournament, team_index)
+    return bool(roster) and all(p in stats for p in roster)
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -590,17 +611,14 @@ class AdminStatsTeamButton(discord.ui.Button):
         team_data = self.tournament.teams[self.team_index] if self.team_index < len(self.tournament.teams) else {}
         players = []
 
-        if self.tournament.formation_mode == FormationMode.RANDOM:
-            # Random mode: use circles (circle1-4) which already have captain assigned
-            for circle in range(1, 5):
-                player = team_data.get(f"circle{circle}")
-                if player:
-                    players.append(player)
-        elif self.tournament.formation_mode == FormationMode.RANDOM_AUTO:
-            # Random-auto mode: use teams.players list
-            players = team_data.get("players", [])
+        if self.tournament.formation_mode in (
+            FormationMode.RANDOM, FormationMode.RANDOM_AUTO,
+            FormationMode.BALANCED_SR,
+        ):
+            # Random/auto/balanced режимы: teams.players
+            players = [p for p in team_data.get("players", []) if p]
         else:
-            # ELO/SKILL mode: circles
+            # ELO/SKILL/draft режимы: circles
             for circle in range(1, 5):
                 player = team_data.get(f"circle{circle}")
                 if player:
@@ -640,14 +658,13 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
                 stats = existing_stats[player_name]
                 existing_kd = (
                     f"{stats.get('kills', 0)}/{stats.get('deaths', 0)}"
-                    f"/{stats.get('assists', 0)}/{stats.get('damage', 0)}"
                 )
 
             kd_input = discord.ui.TextInput(
-                label=f"K/D/A/DMG {player_name}",
-                placeholder="8/2/1/1500",
+                label=f"K/D {player_name}",
+                placeholder="7/4",
                 required=True,
-                max_length=20,
+                max_length=12,
                 default=existing_kd if existing_kd else None
             )
             setattr(self, f"kd_{i}", kd_input)
@@ -663,48 +680,27 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
         match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         stats = {}
 
-        from utils.kd_parse import parse_kd_stat_value
+        from utils import kd_stat
 
         for i, player_name in enumerate(self.players):
             kd_field = getattr(self, f"kd_{i}")
 
-            try:
-                parsed = parse_kd_stat_value(kd_field.value)
-                if parsed is None:
-                    raise ValueError("Invalid format")
-
-                kills = parsed["kills"]
-                deaths = parsed["deaths"]
-                assists = parsed["assists"]
-                damage = parsed["damage"]
-
-                # Validate ranges
-                if kills < 0 or kills > 35:
-                    await interaction.followup.send(
-                        replace_emojis(f"⚠️ Некорректный формат у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10/2/1500"),
-                        ephemeral=True
-                    )
-                    return
-
-                if deaths < 0 or deaths > 15:
-                    await interaction.followup.send(
-                        replace_emojis(f"⚠️ Некорректный формат у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10/2/1500"),
-                        ephemeral=True
-                    )
-                    return
-
-                stats[player_name] = {
-                    "kills": kills,
-                    "deaths": deaths,
-                    "assists": assists,
-                    "damage": damage
-                }
-            except (ValueError, IndexError):
+            parsed = kd_stat.parse_kd(kd_field.value)
+            if parsed is None:
                 await interaction.followup.send(
-                    replace_emojis(f"⚠️ Некорректный формат у {player_name}! Используйте K/D или K/D/A/DMG. Пример: 24/10 или 24/10/2/1500"),
+                    replace_emojis(
+                        f"⚠️ Некорректный формат K/D у {player_name}! "
+                        "Введите два целых неотрицательных числа через `/`. "
+                        "Пример: 7/4"
+                    ),
                     ephemeral=True
                 )
                 return
+
+            stats[player_name] = {
+                "kills": parsed[0],
+                "deaths": parsed[1],
+            }
 
         # Store in tournament temp stats
         tournament = store.get(self.guild_id, self.channel_id)
@@ -1302,8 +1298,71 @@ class TeamWinnerButton(discord.ui.Button):
         await interaction.response.edit_message( view=compose(embed, confirmation_view))
 
 
+class AdminPanelSelect(discord.ui.Select):
+    """Панель организатора: победитель / статистика (r!z3 CLASSIC)."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament, match_type: str):
+        options = [
+            discord.SelectOption(
+                label="Выбрать победителя",
+                value="select_winner",
+                description="Зафиксировать победителя матча",
+            ),
+            discord.SelectOption(
+                label="Заполнить статистику",
+                value="fill_stats",
+                description="Внести/исправить K/D матча",
+            ),
+        ]
+        super().__init__(
+            placeholder="Панель организатора...",
+            options=options,
+            custom_id=f"admin_panel:{guild_id}:{channel_id}:{match_type}",
+            min_values=1,
+            max_values=1,
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+        self.match_type = match_type
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                ephemeral=True,
+            )
+            return
+
+        selected = self.values[0]
+
+        if selected == "select_winner":
+            match_view = MatchWinnerSelectView(
+                self.guild_id, self.channel_id, self.tournament, self.match_type
+            )
+            embed = discord.Embed(
+                description=replace_emojis("🏆 **Выберите матч для фиксации результата:**"),
+                color=discord.Color.green(),
+            )
+            await interaction.response.send_message(
+                embed=embed, view=match_view, ephemeral=True,
+            )
+        elif selected == "fill_stats":
+            match_view = AdminStatsMatchSelectView(
+                self.guild_id, self.channel_id, self.tournament, self.match_type
+            )
+            embed = discord.Embed(
+                description=replace_emojis("🏆 **Выберите матч для внесения статистики:**"),
+                color=discord.Color.green(),
+            )
+            await interaction.response.send_message(
+                embed=embed, view=match_view, ephemeral=True,
+            )
+
+
 class QualifiersView(discord.ui.View):
-    """View с кнопками победителей отборочных матчей."""
+    """View с кнопками отборочных матчей (классика: админ-панель,
+    ставки, кнопки капитанов K/D)."""
 
     def __init__(self, guild_id: int, channel_id: int, matches: list[tuple[int, int]], winners: list, tournament):
         super().__init__(timeout=None)
@@ -1311,35 +1370,28 @@ class QualifiersView(discord.ui.View):
         self.channel_id = channel_id
         self.tournament = tournament
 
-        # Admin-панель (победитель/статистика/комнаты) убрана —
-        # результаты идут через OCR-скриншот, комнаты — через RoomButton
+        self.add_item(AdminPanelSelect(guild_id, channel_id, tournament, "qualifier"))
 
-        # Team name button disabled - no team name changes allowed
-        # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
-        # if has_editable_team:
-        #     self.add_item(TeamNameButton(guild_id, tournament))
+        self.add_item(BetButton(guild_id, self.channel_id, tournament, matches, "qualifiers"))
+        self.add_item(ViewBetsButton(guild_id, self.channel_id, tournament, matches, "qualifiers"))
 
-        # Add room buttons for each match (only if not filled)
-        for i, (team_a, team_b) in enumerate(matches):
-            # Check if room is already filled
-            if i not in tournament.qualifier_rooms:
-                # Get team names
-                team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-                team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-                captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-                captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-                name_a = tournament.team_names.get(team_a, captain_a)
-                name_b = tournament.team_names.get(team_b, captain_b)
-
-                self.add_item(RoomButton("qualifier", i, team_a, team_b, name_a, name_b, is_admin=False))
-
-        # Комнаты — через RoomButton; скриншоты загружаются
-        # только рабочей карточкой матча в канале результатов
-        # (MatchScreenshotButton из публичной сетки убран).
+        # Кнопки капитанов «Заполнить K/D» для незавершённых матчей
+        from views.match_stats_view import CaptainFillButton
+        for i, winner in enumerate(tournament.qualifier_winners):
+            if winner is not None:
+                continue
+            match = matches[i]
+            match_id = f"{tournament.id}_qualifier_{i}"
+            for team_idx in match:
+                if not team_match_stats_filled(tournament, match_id, team_idx):
+                    self.add_item(CaptainFillButton(
+                        guild_id, channel_id, tournament, "qualifier", i, team_idx
+                    ))
 
 
 class SemifinalsView(discord.ui.View):
-    """View с кнопками победителей полуфиналов."""
+    """View с кнопками полуфиналов (классика: админ-панель,
+    ставки, кнопки капитанов K/D)."""
 
     def __init__(self, guild_id: int, channel_id: int, matches: list[tuple[int, int]], winners: list, tournament):
         super().__init__(timeout=None)
@@ -1347,28 +1399,18 @@ class SemifinalsView(discord.ui.View):
         self.channel_id = channel_id
         self.tournament = tournament
 
-        # Admin-панель (победитель/статистика/комнаты) убрана —
-        # результаты идут через OCR-скриншот, комнаты — через RoomButton
+        self.add_item(AdminPanelSelect(guild_id, channel_id, tournament, "semifinal"))
 
-        # Team name button disabled - no team name changes allowed
-        # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
-        # if has_editable_team:
-        #     self.add_item(TeamNameButton(guild_id, tournament))
+        self.add_item(BetButton(guild_id, self.channel_id, tournament, matches, "semifinal"))
+        self.add_item(ViewBetsButton(guild_id, self.channel_id, tournament, matches, "semifinal"))
 
-        # Add room buttons for each match (only if not filled)
-        for i, (team_a, team_b) in enumerate(matches):
-            # Check if room is already filled
-            if i not in tournament.semifinal_rooms:
-                # Get team names
-                team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-                team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-                captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-                captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-                name_a = tournament.team_names.get(team_a, captain_a)
-                name_b = tournament.team_names.get(team_b, captain_b)
-
-                self.add_item(RoomButton("semifinal", i, team_a, team_b, name_a, name_b, is_admin=False))
-
-        # Скриншоты загружаются только рабочей карточкой матча
-        # в канале результатов — кнопок «📸 Игра N» в публичной
-        # сетке нет.
+        from views.match_stats_view import CaptainFillButton
+        for i, match in enumerate(matches):
+            if tournament.semifinal_winners[i] is not None:
+                continue
+            match_id = f"{tournament.id}_semifinal_{i}"
+            for team_idx in match:
+                if not team_match_stats_filled(tournament, match_id, team_idx):
+                    self.add_item(CaptainFillButton(
+                        guild_id, channel_id, tournament, "semifinal", i, team_idx
+                    ))

@@ -1268,13 +1268,9 @@ class StartTournamentButton(discord.ui.Button):
                     pass
                 return
 
-        # Обязательная фаза голосования за правила (BRAZIL/KAZAKHSTAN)
-        # до формирования команд. После итогов сервис сам вызовет
-        # launch_tournament_formation — команды не формируются
-        # до завершения голосования.
-        from services.rules_vote import start_rules_vote
-
-        await start_rules_vote(
+        # r!z3 CLASSIC: без голосований за правила — только
+        # Kazakhstan. Сразу формируем команды и запускаем турнир.
+        await launch_tournament_formation(
             interaction.guild, interaction.channel, tournament,
             interaction.client,
         )
@@ -1284,10 +1280,7 @@ class StartTournamentButton(discord.ui.Button):
 
         try:
             await interaction.response.send_message(
-                replace_emojis(
-                    "🗳 Голосование за правила запущено — 20 секунд. "
-                    "Формирование команд начнётся автоматически."
-                ),
+                replace_emojis("✅ Турнир запущен!"),
                 ephemeral=True,
             )
         except discord.NotFound:
@@ -1302,8 +1295,8 @@ async def launch_tournament_formation(
 ) -> None:
     """Сформировать команды и запустить турнир после голосования.
 
-    Вызывается из services.rules_vote после подведения итогов
-    (или из восстановления после рестарта). Повторный запуск
+    Вызывается кнопкой «Старт» в фазе SETUP.
+    (или восстановлением после рестарта). Повторный запуск
     защищён проверкой фазы RULES_VOTING на стороне сервиса.
     """
     # Handle automatic formation modes (random / balanced-sr): команды

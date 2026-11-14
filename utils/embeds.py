@@ -659,12 +659,7 @@ async def build_setup_embed(
     ruleset = getattr(tournament, "ruleset", "") or ""
     rules_line = ""
     if ruleset:
-        try:
-            from services.rules_vote import ruleset_label
-
-            rules_line = f" Правила: {ruleset_label(ruleset)}\n"
-        except Exception:
-            rules_line = ""
+        rules_line = f" Правила: {_ruleset_label(ruleset)}\n"
     if tournament.formation_mode == FormationMode.RANDOM:
         # RANDOM mode: show players pool
         current = len(tournament.players_pool)
@@ -1355,17 +1350,21 @@ async def build_embed_for_phase(
     # показываем в карточках всех фаз после настройки.
     ruleset = getattr(tournament, "ruleset", "") or ""
     if ruleset and len(embed.fields) < 25:
-        try:
-            from services.rules_vote import ruleset_label
-
-            embed.add_field(
-                name="📜 Правила матча",
-                value=ruleset_label(ruleset),
-                inline=False,
-            )
-        except Exception:
-            pass
+        embed.add_field(
+            name="📜 Правила матча",
+            value=_ruleset_label(ruleset),
+            inline=False,
+        )
     return embed
+
+
+def _ruleset_label(ruleset: str) -> str:
+    """Метка правил матча (только Kazakhstan в новых турнирах)."""
+    key = (ruleset or "").lower()
+    return {
+        "kazakhstan": "🇰🇿 Kazakhstan",
+        "brazil": "🇧🇷 Brazil",
+    }.get(key, ruleset or "—")
 
 
 def build_level_up_embed(stats, old_level: int, new_level: int) -> tuple[discord.Embed, discord.File | None]:
@@ -1403,7 +1402,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     from storage.redis_client import get_leaderboard, set_leaderboard
     from cogs.tournament import get_rank_emoji
     from config import replace_emojis
-    from ultimatum.elo_store import elo_store
+    from ultimatum.elo import ult_elo_store as elo_store
 
     # Try to get from cache first
     cached_data = await get_leaderboard(guild_id, leaderboard_type)
@@ -1417,7 +1416,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
         elif leaderboard_type == "money":
             players = await player_stats_store.get_leaderboard_by_earnings(guild_id, page, per_page=10)
         elif leaderboard_type == "ulti_elo":
-            players = await elo_store.get_leaderboard(limit=10, offset=(page - 1) * 10)
+            players = await elo_store.get_leaderboard("solo", limit=10, offset=(page - 1) * 10)
         elif leaderboard_type == "rep":
             from storage.reputation_store import reputation_store
             players = await reputation_store.get_rep_leaderboard(guild_id, page, per_page=10)
@@ -1447,7 +1446,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
     # Get total pages based on type
     if leaderboard_type == "ulti_elo":
-        total_pages = await elo_store.get_leaderboard_count()
+        total_pages = await elo_store.get_leaderboard_count("solo")
         total_pages = (total_pages + 9) // 10  # Round up
     elif leaderboard_type == "rep":
         from storage.reputation_store import reputation_store
@@ -1511,8 +1510,9 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             else:
                 rank_emoji = f"{rank}."
 
-            # Ultimatum Elo players are dicts with 'username' and 'elo'
-            username = player.get('username', 'Unknown')
+            # Ultimatum Elo players are dicts with 'discord_id' and 'elo'
+            uid = player.get('discord_id')
+            username = player.get('username') or (f"<@{uid}>" if uid else "Unknown")
             elo = player.get('elo', 0)
 
             line = f"{rank_emoji} {username} — {elo} Elo"

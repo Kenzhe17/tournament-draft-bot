@@ -159,11 +159,11 @@ class TestIsolationBehavior:
             "1561707634938351728", "1196165488565289012",
         }
         files = [
-            "bot.py", "cogs/mm.py", "cogs/ocr_upload.py",
+            "bot.py", "cogs/mm.py",
             "cogs/coin_drop.py", "cogs/ultimatum.py",
-            "views/br_view.py", "views/room_modal.py",
-            "views/games_view.py", "views/ocr_match_view.py",
-            "views/ultimatum_room_modal.py", "ultimatum/tournament.py",
+            "views/br_view.py", "views/games_view.py",
+            "views/ultimatum_view.py", "ultimatum/service.py",
+            "ultimatum/store.py", "ultimatum/bracket.py",
             "services/welcome_card.py", "storage/pet_store.py",
             "utils/permissions.py", "cogs/moderation.py",
         ]

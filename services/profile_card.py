@@ -1,8 +1,7 @@
-"""Сбор данных и генерация PNG-карточки профиля игрока."""
+"""Сбор данных профиля игрока (CV2; PNG-рендер удалён)."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 import discord
@@ -12,8 +11,7 @@ from storage.player_stats_store import player_stats_store
 from storage.user_balance_store import user_balance_store
 from storage.shop_store import inventory_store
 from storage.match_history_store import match_history_store
-from utils.ranks import rank_for_level, rank_badge_path
-from utils.profile_renderer import render_profile_png_async
+from utils.ranks import rank_for_level
 
 logger = logging.getLogger(__name__)
 
@@ -22,28 +20,6 @@ def _default_stats(guild_id: int, user_id: int, name: str) -> PlayerStats:
     return PlayerStats(
         guild_id=guild_id, user_id=user_id, name=name, elo=1000,
     )
-
-
-async def _fetch_avatar(user: discord.User) -> bytes | None:
-    try:
-        asset = user.display_avatar
-        if asset is None:
-            return None
-        return await asset.read()
-    except Exception:
-        logger.warning("Avatar fetch failed for %s", user.id)
-        return None
-
-
-async def _fetch_badge(level: int) -> bytes | None:
-    path = rank_badge_path(level)
-    if path is None:
-        return None
-    try:
-        return path.read_bytes()
-    except Exception:
-        logger.warning("Rank badge read failed: %s", path)
-        return None
 
 
 async def collect_profile_data(guild: discord.Guild,
@@ -69,12 +45,12 @@ async def collect_profile_data(guild: discord.Guild,
     wins = sum(1 for h in history if h.result == "win")
     losses = sum(1 for h in history if h.result == "loss")
 
-    # Ультиматум
+    # Ультиматум (Соло + Дуо рейтинги)
     ult_matches = ult_wins = 0
     ult_elo = 1000
     try:
-        from ultimatum.elo_store import elo_store
-        u = await elo_store.get_player(user.id)
+        from ultimatum.elo import ult_elo_store
+        u = await ult_elo_store.get_rating(user.id, "solo")
         if u:
             ult_matches = int(u.get("rated_matches") or 0)
             ult_wins = int(u.get("wins") or 0)
@@ -123,9 +99,8 @@ async def collect_profile_data(guild: discord.Guild,
         "matches": games,
         "wins": stats.wins or 0,
         "winrate": round(stats.win_rate, 1),
-        "kda": round(stats.kda_ratio, 2),
+        "kda": round(stats.total_kills / max(stats.total_deaths, 1), 2),
         "avg_kills": round(stats.avg_kills, 2),
-        "avg_damage": round(stats.avg_damage),
         "max_kills": stats.best_match_kills or 0,
         "balance": balance,
         "items": items,
@@ -142,15 +117,6 @@ async def collect_profile_data(guild: discord.Guild,
             f"Winrate {ult_wins / ult_matches * 100:.0f}%"
             if ult_matches else "Пока нет сыгранных матчей"
         ),
-        "_badge_level": stats.level,
     }
 
 
-async def build_profile_png(guild: discord.Guild, user: discord.User,
-                            limit: int = 10) -> bytes:
-    """Полный пайплайн: данные → аватар/бейдж → PNG."""
-    data = await collect_profile_data(guild, user)
-    avatar, badge = await asyncio.gather(
-        _fetch_avatar(user), _fetch_badge(data.pop("_badge_level"))
-    )
-    return await render_profile_png_async(data, avatar, badge)

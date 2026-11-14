@@ -10,7 +10,7 @@ from storage.redis_client import set_minigame_session, get_minigame_session, del
 from utils.logger import log_game_play, log_balance_change, log_error
 
 
-class NumberBetModal(Modal, title=replace_emojis("🎲 Угадай число"):
+class NumberBetModal(Modal, title=replace_emojis("🎲 Угадай число")):
     """Modal для ввода ставки и первого числа."""
 
     bet = TextInput(label="Ставка (монеты)", placeholder="Введите сумму ставки", min_length=1, max_length=10)
@@ -119,7 +119,7 @@ class GuessNumberGameView(View):
         await interaction.response.edit_message( view=compose(embed, None))
 
 
-class NumberGuessModal(Modal, title=replace_emojis("🎯 Сделать попытку"):
+class NumberGuessModal(Modal, title=replace_emojis("🎯 Сделать попытку")):
     """Modal для ввода числа."""
 
     guess = TextInput(label="Ваше число (1-100)", placeholder="Введите число от 1 до 100", min_length=1, max_length=3)

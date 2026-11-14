@@ -110,7 +110,7 @@ class GuessEmojiGameView(View):
         await interaction.response.edit_message( view=compose(embed, None))
 
 
-class EmojiGuessModal(Modal, title=replace_emojis("🎯 Сделать попытку"):
+class EmojiGuessModal(Modal, title=replace_emojis("🎯 Сделать попытку")):
     """Modal для ввода эмодзи."""
 
     guess = TextInput(label="Ваш эмодзи", placeholder="Введите эмодзи (например: 🐕)", min_length=1, max_length=5)

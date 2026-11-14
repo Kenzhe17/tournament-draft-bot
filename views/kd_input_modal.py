@@ -75,7 +75,7 @@ class KDInputModal(discord.ui.Modal):
             store.set(tournament)
 
         await interaction.response.send_message(
-            replace_emojis("✅ Статистика для {self.player_name}: {kills}/{deaths}"),
+            replace_emojis(f"✅ Статистика для {self.player_name}: {kills}/{deaths}"),
             ephemeral=True
         )
 

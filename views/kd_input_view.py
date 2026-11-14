@@ -219,8 +219,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                 "won": won,
                 "kills": kd.get('kills', 0),
                 "deaths": kd.get('deaths', 0),
-                "assists": kd.get('assists', 0),
-                "damage": kd.get('damage', 0),
                 "skill_rating": stats.skill_rating,
             })
 
@@ -253,8 +251,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             deaths=p["deaths"],
             elo_change=elo_change,
             team_won=won,
-            assists=p.get("assists", 0),
-            damage=p.get("damage", 0),
         )
 
         # Pet ELO bonus removed — pet ability no longer affects ELO
@@ -339,8 +335,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
         tournament.temp_match_stats[match_id][player] = {
             "kills": kd.get("kills", 0),
             "deaths": kd.get("deaths", 0),
-            "assists": kd.get("assists", 0),
-            "damage": kd.get("damage", 0),
         }
     store.set(tournament)
     return True

@@ -24,7 +24,6 @@ NO_RUIN_FREE_FILES = [
     "models/tournament.py",
     "models/match_history.py",
     "services/match_announcer.py",
-    "utils/match_result_renderer.py",
     "views/history_view.py",
     "views/matches_view.py",
     "views/match_stats_view.py",

@@ -39,9 +39,9 @@ class TopCategorySelect(discord.ui.Select):
                 emoji="⚔️"
             ),
             discord.SelectOption(
-                label="Топ по Ultimatum Elo",
+                label="Топ по Ультиматуму",
                 value="ulti_elo",
-                description="Рейтинг Ultimatum 1v1",
+                description="Рейтинг Ультиматума (Соло)",
                 emoji="🎮"
             ),
             discord.SelectOption(

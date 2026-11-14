@@ -168,9 +168,9 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
 
         parts = ["**Сводка**"]
         parts.append(f" Матчей: {total} • Побед: {wins} `({win_rate:.1f}%)` • Поражений: {losses}")
-        parts.append(f" K/D/A: {stats.get('total_kills', 0)}/{stats.get('total_deaths', 0)}/{stats.get('total_assists', 0)}")
-        parts.append(f" K+A/D: {stats.get('kda_ratio', stats.get('kd_ratio', 0)):.2f} • Средний урон: {stats.get('avg_damage', 0):,.0f}")
-        parts.append(f" Всего урона: {stats.get('total_damage', 0):,.0f}")
+        kd = stats.get('total_kills', 0) / max(stats.get('total_deaths', 0), 1)
+        parts.append(f" K/D: {stats.get('total_kills', 0)}/{stats.get('total_deaths', 0)}")
+        parts.append(f" K/D Ratio: {kd:.2f}")
 
         if matches:
             parts.append("")
@@ -203,8 +203,7 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
                 f" {('✅' if won else '❌')} {result_text} • ELO {match.elo_change:+d}",
                 "",
                 "**Ваша статистика**",
-                f" K/D/A: {match.kills}/{match.deaths}/{match.assists}",
-                f" Урон: {match.damage:,.0f}",
+                f" K/D: {match.kills}/{match.deaths}",
                 "",
                 f"**Союзники ({match.team_name})**",
                 f" {_format_players(match.teammates, user_id, user_name)}",
