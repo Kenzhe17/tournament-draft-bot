@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
@@ -20,8 +21,26 @@ from config import (
     BOT_OWNER_ID,
     DATA_DIR,
     MANAGER_ROLE_ID,
-    WELCOME_BANNER_URL,
 )
+
+# PNG-баннер «Ranked Matchmaking» (поиск матчей) сверху панели.
+ORG_BANNER_FILENAME = "ranked.png"
+ORG_BANNER_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "assets"
+    / "info"
+    / ORG_BANNER_FILENAME
+)
+
+
+def org_banner_file() -> discord.File | None:
+    """Файл баннера для attachment:// — прикреплять к каждому
+    send/edit сообщения панели."""
+    if ORG_BANNER_PATH.exists():
+        return discord.File(
+            str(ORG_BANNER_PATH), filename=ORG_BANNER_FILENAME
+        )
+    return None
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -322,10 +341,11 @@ async def _handle_role_button(
 
         new_view = OrgPanelView(guild=guild, state=state)
 
+    banner = org_banner_file()
     try:
         await interaction.response.edit_message(
             view=new_view,
-            attachments=[],
+            attachments=[banner] if banner else [],
             allowed_mentions=_NO_MENTIONS,
         )
     except Exception:
@@ -436,9 +456,10 @@ class _ResetConfirmButton(discord.ui.Button):
             channel = guild.get_channel(channel_id) or interaction.channel
             if channel is not None and state.message_id:
                 message = await channel.fetch_message(state.message_id)
+                banner = org_banner_file()
                 await message.edit(
                     view=new_view,
-                    attachments=[],
+                    attachments=[banner] if banner else [],
                     allowed_mentions=_NO_MENTIONS,
                 )
         except Exception:
@@ -484,10 +505,12 @@ class OrgPanelView(discord.ui.LayoutView):
 
         container = discord.ui.Container()
 
-        if WELCOME_BANNER_URL:
+        if ORG_BANNER_PATH.exists():
             container.add_item(
                 discord.ui.MediaGallery(
-                    discord.MediaGalleryItem(media=WELCOME_BANNER_URL)
+                    discord.MediaGalleryItem(
+                        media=f"attachment://{ORG_BANNER_FILENAME}"
+                    )
                 )
             )
             container.add_item(_sep(large=True))
@@ -569,9 +592,14 @@ async def setup_org_role_message(
 
     view = OrgPanelView(guild=guild, state=state)
 
+    banner = org_banner_file()
+    kwargs = {}
+    if banner is not None:
+        kwargs["file"] = banner
     message = await channel.send(
         view=view,
         allowed_mentions=_NO_MENTIONS,
+        **kwargs,
     )
 
     # Save message info

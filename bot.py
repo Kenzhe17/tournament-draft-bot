@@ -946,7 +946,9 @@ class TournamentBot(commands.Bot):
             logger.error(f"Ошибка синхронизации команд: {e}")
 
         # Restore org role panel if it exists
-        from views.org_role_view import load_state, OrgPanelView
+        from views.org_role_view import (
+            load_state, OrgPanelView, org_banner_file,
+        )
         state = load_state()
         if state.message_id > 0 and state.channel_id > 0 and state.guild_id > 0:
             try:
@@ -961,9 +963,12 @@ class TournamentBot(commands.Bot):
                             # Пересобираем сообщение в новый CV2-вид
                             # (баннер + статусы + кнопки в одном сообщении).
                             try:
+                                banner = org_banner_file()
                                 await message.edit(
                                     view=view,
-                                    attachments=[],
+                                    attachments=(
+                                        [banner] if banner else []
+                                    ),
                                     allowed_mentions=(
                                         discord.AllowedMentions.none()
                                     ),
