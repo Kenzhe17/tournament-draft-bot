@@ -55,9 +55,11 @@ async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float
 class PlayerSelectView(discord.ui.View):
     """View с пагинацией для выбора игрока."""
 
-    def __init__(self, players: list[str], guild_id: int, channel_id: int, action: str, first_player: str = None):
+    def __init__(self, players: list[tuple[str, str]], guild_id: int, channel_id: int, action: str, first_player: str = None):
         super().__init__(timeout=180)  # 3 minutes timeout instead of None
-        self.players = sorted(players)
+        # players: [(label, value)] — value это user_id (строкой)
+        # или 'n:<имя>' для записей без Discord ID.
+        self.players = sorted(players, key=lambda e: e[0].lower())
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.action = action  # "delete", "swap_first", or "swap_second"
@@ -88,7 +90,10 @@ class PlayerSelectView(discord.ui.View):
             placeholder=f"Выберите игрока ({self.page}/{self.total_pages})",
             min_values=1,
             max_values=1,
-            options=[discord.SelectOption(label=player, value=player) for player in current_players]
+            options=[
+                discord.SelectOption(label=label[:100], value=value)
+                for label, value in current_players
+            ]
         )
         select.custom_id = f"player_select:{self.action}:{self.guild_id}:{self.channel_id}:{self.page}"
 
@@ -395,85 +400,382 @@ circle_names = {
 }
 
 
-class AdminAddModal(discord.ui.Modal):
-    """Модальное окно для админа добавления игрока."""
+# ---------------------------------------------------------------------------
+# Идентификация игроков по Discord user_id
+#
+# Модель турнира хранит отображаемые имена в кругах, а user_id — в
+# player_user_ids. Все org-операции (добавить/удалить/обменять/
+# переместить) оперируют токеном=user_id, чтобы одинаковые
+# display_name разных пользователей не смешивались.
+# ---------------------------------------------------------------------------
+
+
+def _name_for_uid(tournament: Tournament, user_id: int) -> str | None:
+    """Отображаемое имя игрока по Discord user_id."""
+    for name, uid in tournament.player_user_ids.items():
+        if uid == user_id:
+            return name
+    return None
+
+
+def _find_entry_by_uid(
+    tournament: Tournament, user_id: int
+) -> tuple[str | None, int | str | None]:
+    """Запись игрока по user_id → (stored_name, location).
+
+    location: 1-4 — номер круга, 'pool' — players_pool,
+    None — имя есть в player_user_ids, но не найдено в кругах.
+    Возвращает (None, None) если игрока нет в турнире.
+    """
+    name = _name_for_uid(tournament, user_id)
+    if name is None:
+        return None, None
+    for circle in range(1, 5):
+        if name in tournament.circle_list(circle):
+            return name, circle
+    if name in tournament.players_pool:
+        return name, "pool"
+    return name, None
+
+
+def _unique_player_name(
+    tournament: Tournament, base: str, user_id: int
+) -> str:
+    """Свободное отображаемое имя для user_id.
+
+    Если display_name уже занят ДРУГИМ пользователем, добавляем
+    короткий числовой суффикс — идентичность остаётся по user_id.
+    """
+    base = (base or "").strip() or str(user_id)
+    taken = tournament.all_players | set(tournament.players_pool)
+    if base not in taken:
+        return base
+    if tournament.player_user_ids.get(base, 0) == user_id:
+        return base
+    tag = f"·{user_id % 10000:04d}"
+    candidate = f"{base} {tag}"
+    n = 2
+    while candidate in taken:
+        candidate = f"{base} {tag}-{n}"
+        n += 1
+    return candidate
+
+
+def _player_select_entries(tournament: Tournament) -> list[tuple[str, str]]:
+    """(label, value) для PlayerSelectView.
+
+    value = str(user_id) для записей с Discord ID, иначе 'n:<имя>'.
+    """
+    if tournament.formation_mode in (
+        FormationMode.RANDOM, FormationMode.BALANCED_SR
+    ):
+        names = list(tournament.players_pool)
+    else:
+        names = list(tournament.all_players)
+    entries = []
+    for name in names:
+        uid = tournament.player_user_ids.get(name, 0)
+        value = str(uid) if uid and uid > 0 else f"n:{name}"
+        entries.append((name, value))
+    return entries
+
+
+def _resolve_player_token(
+    tournament: Tournament, token: str
+) -> str | None:
+    """value из PlayerSelectView → имя игрока в турнире."""
+    if not token:
+        return None
+    if token.startswith("n:"):
+        return token[2:]
+    try:
+        uid = int(token)
+    except (TypeError, ValueError):
+        return token
+    return _name_for_uid(tournament, uid)
+
+
+async def _resolve_discord_user(
+    interaction: discord.Interaction, user_id: int
+) -> tuple[str, str | None]:
+    """Актуальный Discord-ник выбранного пользователя (без изменений)."""
+    guild = interaction.guild
+    member = guild.get_member(user_id) if guild is not None else None
+    if member is None and guild is not None:
+        try:
+            member = await guild.fetch_member(user_id)
+        except Exception:
+            member = None
+    if member is not None:
+        try:
+            avatar = str(member.display_avatar.url)
+        except Exception:
+            avatar = None
+        return member.display_name, avatar
+
+    resolved = (interaction.data.get("resolved") or {}).get("users") or {}
+    payload = resolved.get(str(user_id)) or {}
+    name = (
+        payload.get("global_name")
+        or payload.get("username")
+        or str(user_id)
+    )
+    avatar_hash = payload.get("avatar")
+    avatar = None
+    if avatar_hash:
+        ext = "gif" if avatar_hash.startswith("a_") else "png"
+        avatar = (
+            f"https://cdn.discordapp.com/avatars/"
+            f"{user_id}/{avatar_hash}.{ext}"
+        )
+    return name, avatar
+
+
+class AdminAddUserView(discord.ui.View):
+    """Выбор пользователя Discord для добавления в круг (org only).
+
+    После выбора показывается карточка с участником и кнопкой
+    «Добавить»; если пользователь уже в другом круге этого турнира —
+    предложение перемещения с подтверждением.
+    """
 
     def __init__(self, guild_id: int, channel_id: int, circle: int):
-        super().__init__(title=f"Добавить в {circle_names[circle]}")
+        super().__init__(timeout=180)
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.circle = circle
-
-        self.name_input = discord.ui.TextInput(
-            label="Имя игрока",
-            placeholder="Введите имя игрока",
-            required=True,
-            max_length=50,
+        select = discord.ui.UserSelect(
+            placeholder="Найдите пользователя",
+            min_values=1,
+            max_values=1,
+            custom_id=(
+                f"admin_add_user:{guild_id}:{channel_id}:{circle}"
+            ),
         )
-        self.add_item(self.name_input)
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        tournament = store.get(self.guild_id, self.channel_id)
+        async def _cb(interaction: discord.Interaction, _s=select):
+            await self._on_pick(interaction, _s)
+
+        select.callback = _cb
+        self.add_item(select)
+
+    def _tournament(self):
+        return store.get(self.guild_id, self.channel_id)
+
+    async def _on_pick(
+        self, interaction: discord.Interaction, select: discord.ui.UserSelect
+    ) -> None:
+        from utils.permissions import is_org_check
+
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Только организаторы (роль 'org') могут "
+                    "добавлять игроков."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        tournament = self._tournament()
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."), ephemeral=True)
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        player_name = self.name_input.value.strip()
-
-        # Check if circle is full (except circle4)
-        if self.circle != 4:
-            circle_list = getattr(tournament, f"circle{self.circle}")
-            limit = tournament.circle_limit(self.circle)
-            if len(circle_list) >= limit:
-                await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Круг {self.circle} уже заполнен (максимум {limit} игрока).",
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-
-        # Check if player already in tournament
-        if player_name in tournament.all_players:
-            await interaction.response.send_message(
-                replace_emojis("❌ Этот игрок уже участвует в турнире."),
-                ephemeral=True
+                replace_emojis("❌ Турнир не в фазе настройки."),
+                ephemeral=True,
             )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Get user_id from Discord member
-        user_id = 0
-        from utils.cosmetics import clean_nickname
-        for member in interaction.guild.members:
-            if clean_nickname(member.display_name) == player_name:
-                user_id = member.id
-                break
+        try:
+            user_id = int(select.values[0])
+        except (TypeError, ValueError, IndexError):
+            await interaction.response.send_message(
+                replace_emojis("❌ Некорректный выбор пользователя."),
+                ephemeral=True,
+            )
+            return
 
-        # VAC — админское добавление тоже проверяется
-        if user_id:
-            from services import vac_service
-            vac = await vac_service.check_vac(self.guild_id, user_id)
-            if vac is not None:
-                reason = vac.get("reason")
-                reason_part = f" ({reason})" if reason else ""
-                await interaction.response.send_message(
-                    f"{replace_emojis('❌')} У {player_name} активен VAC{reason_part} "
-                    f"(до <t:{int(vac['expires_at'].timestamp())}:R>).",
-                    ephemeral=True
+        display_name, _avatar_url = await _resolve_discord_user(
+            interaction, user_id
+        )
+        display_name = (display_name or "").strip() or str(user_id)
+
+        existing_name, location = _find_entry_by_uid(tournament, user_id)
+        if existing_name is not None:
+            if location == self.circle:
+                text = (
+                    f"**{existing_name}** уже находится в "
+                    f"{circle_names[self.circle]}."
                 )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
+                view = None
+            elif isinstance(location, int):
+                text = (
+                    f"**{existing_name}** уже состоит в "
+                    f"{circle_names[location]}.\n"
+                    f"Переместить в {circle_names[self.circle]}?"
+                )
+                view = _AdminMoveConfirmView(
+                    self.guild_id, self.channel_id, self.circle,
+                    user_id, display_name, location,
+                )
+            else:
+                text = f"**{existing_name}** уже участвует в турнире."
+                view = None
+            await interaction.response.edit_message(
+                view=compose(text=text, view=view)
+            )
+            return
+
+        confirm = _AdminAddConfirmView(
+            self.guild_id, self.channel_id, self.circle,
+            user_id, display_name,
+        )
+        await interaction.response.edit_message(
+            view=compose(
+                text=(
+                    f"**{display_name}**\n"
+                    f"Добавить в {circle_names[self.circle]}?"
+                ),
+                view=confirm,
+            )
+        )
+
+
+class _AdminAddConfirmView(discord.ui.View):
+    """Подтверждение добавления выбранного пользователя в круг."""
+
+    def __init__(
+        self, guild_id: int, channel_id: int, circle: int,
+        user_id: int, display_name: str,
+    ):
+        super().__init__(timeout=180)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.circle = circle
+        self.user_id = user_id
+        self.display_name = display_name
+
+        add_btn = discord.ui.Button(
+            style=discord.ButtonStyle.success,
+            label="Добавить",
+            custom_id=(
+                f"admin_add_ok:{guild_id}:{channel_id}:{circle}:{user_id}"
+            ),
+        )
+        add_btn.callback = self._on_add
+        self.add_item(add_btn)
+
+        cancel_btn = discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            label="Отмена",
+            custom_id=f"admin_add_cancel:{guild_id}:{channel_id}",
+        )
+        cancel_btn.callback = self._on_cancel
+        self.add_item(cancel_btn)
+
+    async def _on_cancel(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(
+            view=compose(text="Добавление отменено.")
+        )
+
+    async def _on_add(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Только организаторы (роль 'org') могут "
+                    "добавлять игроков."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament or tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.edit_message(
+                view=compose(
+                    text=replace_emojis("❌ Турнир не в фазе настройки.")
+                )
+            )
+            return
+
+        # Повторная регистрация — перепроверяем на свежих данных
+        existing_name, location = _find_entry_by_uid(
+            tournament, self.user_id
+        )
+        if existing_name is not None:
+            where = (
+                circle_names.get(location, "турнире")
+                if isinstance(location, int)
+                else "турнире"
+            )
+            await interaction.response.edit_message(
+                view=compose(
+                    text=f"**{existing_name}** уже участвует ({where})."
+                )
+            )
+            return
+
+        # VAC
+        from services import vac_service
+        vac = await vac_service.check_vac(self.guild_id, self.user_id)
+        if vac is not None:
+            await interaction.response.edit_message(
+                view=compose(
+                    text=vac_service.vac_blocked_text(
+                        int(vac["expires_at"].timestamp()),
+                        reason=vac.get("reason"),
+                        level=vac.get("level"),
+                    )
+                )
+            )
+            return
+
+        # Другой активный турнир
+        for other in store.get_by_guild(self.guild_id):
+            if other.id == tournament.id:
+                continue
+            if other.is_player_active(self.user_id):
+                await interaction.response.edit_message(
+                    view=compose(
+                        text=replace_emojis(
+                            "❌ Этот пользователь уже участвует "
+                            "в другом активном турнире."
+                        )
+                    )
+                )
                 return
 
-        # Add player with user_id
-        success = tournament.add_player_to_circle(self.circle, player_name, user_id, store)
+        # Лимит круга (circle_limit сам возвращает inf для
+        # неограниченных кругов)
+        circle_list = tournament.circle_list(self.circle)
+        limit = tournament.circle_limit(self.circle)
+        if limit != float("inf") and len(circle_list) >= limit:
+            await interaction.response.edit_message(
+                view=compose(
+                    text=(
+                        f"❌ {circle_names[self.circle]} уже "
+                        f"заполнен (максимум {limit})."
+                    )
+                )
+            )
+            return
+
+        player_name = _unique_player_name(
+            tournament, self.display_name, self.user_id
+        )
+        success = tournament.add_player_to_circle(
+            self.circle, player_name, self.user_id, store
+        )
         if not success:
-            await interaction.response.send_message(
-                replace_emojis("❌ Не удалось добавить игрока. Возможно игрок уже участвует в другом активном турнире."),
-                ephemeral=True
+            await interaction.response.edit_message(
+                view=compose(
+                    text=replace_emojis(
+                        "❌ Не удалось добавить игрока. Возможно, "
+                        "он уже участвует в другом активном турнире."
+                    )
+                )
             )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         store.set(tournament)
@@ -481,11 +783,141 @@ class AdminAddModal(discord.ui.Modal):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
-        await interaction.response.send_message(
-            f"{replace_emojis('✅')} Игрок {player_name} добавлен в {circle_names[self.circle]}!",
-            ephemeral=True
+        await interaction.response.edit_message(
+            view=compose(
+                text=(
+                    f"✅ **{player_name}** добавлен в "
+                    f"{circle_names[self.circle]}."
+                )
+            )
         )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
+
+
+class _AdminMoveConfirmView(discord.ui.View):
+    """Подтверждение перемещения игрока между кругами одного турнира."""
+
+    def __init__(
+        self, guild_id: int, channel_id: int, target_circle: int,
+        user_id: int, display_name: str, from_circle: int,
+    ):
+        super().__init__(timeout=180)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.target_circle = target_circle
+        self.user_id = user_id
+        self.display_name = display_name
+        self.from_circle = from_circle
+
+        move_btn = discord.ui.Button(
+            style=discord.ButtonStyle.primary,
+            label="Переместить",
+            custom_id=(
+                f"admin_move_ok:{guild_id}:{channel_id}:"
+                f"{target_circle}:{user_id}"
+            ),
+        )
+        move_btn.callback = self._on_move
+        self.add_item(move_btn)
+
+        cancel_btn = discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            label="Отмена",
+            custom_id=f"admin_move_cancel:{guild_id}:{channel_id}",
+        )
+        cancel_btn.callback = self._on_cancel
+        self.add_item(cancel_btn)
+
+    async def _on_cancel(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(
+            view=compose(text="Перемещение отменено.")
+        )
+
+    async def _on_move(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Только организаторы (роль 'org') могут "
+                    "перемещать игроков."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament or tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.edit_message(
+                view=compose(
+                    text=replace_emojis("❌ Турнир не в фазе настройки.")
+                )
+            )
+            return
+
+        player_name, location = _find_entry_by_uid(
+            tournament, self.user_id
+        )
+        if player_name is None or not isinstance(location, int):
+            await interaction.response.edit_message(
+                view=compose(
+                    text=replace_emojis(
+                        "❌ Игрок больше не найден в турнире."
+                    )
+                )
+            )
+            return
+        if location == self.target_circle:
+            await interaction.response.edit_message(
+                view=compose(
+                    text=(
+                        f"**{player_name}** уже находится в "
+                        f"{circle_names[self.target_circle]}."
+                    )
+                )
+            )
+            return
+
+        # Лимит целевого круга
+        target_list = tournament.circle_list(self.target_circle)
+        limit = tournament.circle_limit(self.target_circle)
+        if limit != float("inf") and len(target_list) >= limit:
+            await interaction.response.edit_message(
+                view=compose(
+                    text=(
+                        f"❌ {circle_names[self.target_circle]} "
+                        f"уже заполнен (максимум {limit})."
+                    )
+                )
+            )
+            return
+
+        # Перемещение по свежим данным: убрать из текущего круга,
+        # добавить в целевой. Идентичность — по user_id.
+        source_list = tournament.circle_list(location)
+        if player_name in source_list:
+            source_list.remove(player_name)
+            tournament.set_circle_list(location, source_list)
+        if player_name in tournament.captains:
+            tournament.captains.remove(player_name)
+
+        target_list = tournament.circle_list(self.target_circle)
+        target_list.append(player_name)
+        tournament.set_circle_list(self.target_circle, target_list)
+
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.response.edit_message(
+            view=compose(
+                text=(
+                    f"✅ **{player_name}** перемещён: "
+                    f"{circle_names[location]} → "
+                    f"{circle_names[self.target_circle]}."
+                )
+            )
+        )
 
 
 class ExitButton(discord.ui.Button):
@@ -648,19 +1080,33 @@ class DeletePlayerButton(discord.ui.Button):
                 pass
             return
 
-        # Create select menu with pagination
-        view = PlayerSelectView(players, self.guild_id, self.channel_id, "delete")
-        
+        # Create select menu with pagination (value = Discord user_id)
+        view = PlayerSelectView(
+            _player_select_entries(tournament),
+            self.guild_id, self.channel_id, "delete",
+        )
+
         # Define the callback for player selection
-        async def delete_callback(interaction: discord.Interaction, player_name: str):
+        async def delete_callback(interaction: discord.Interaction, token: str):
             await interaction.response.defer()
-            
+
             # Reload tournament from store to get fresh data
             tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
                 try:
                     await interaction.followup.send(
                         replace_emojis("❌ Турнир не найден."),
+                        ephemeral=True
+                    )
+                except discord.NotFound:
+                    pass
+                return
+
+            player_name = _resolve_player_token(tournament, token)
+            if player_name is None:
+                try:
+                    await interaction.followup.send(
+                        replace_emojis("❌ Игрок не найден."),
                         ephemeral=True
                     )
                 except discord.NotFound:
@@ -763,19 +1209,20 @@ class SwapPlayersButton(discord.ui.Button):
                 pass
             return
 
-        # Create select menu for first player
-        view = PlayerSelectView(players, self.guild_id, self.channel_id, "swap_first")
-        
+        # Create select menu for first player (value = Discord user_id)
+        entries = _player_select_entries(tournament)
+        view = PlayerSelectView(entries, self.guild_id, self.channel_id, "swap_first")
+
         # Define the callback for first player selection
-        async def swap_first_callback(interaction: discord.Interaction, first_player: str):
+        async def swap_first_callback(interaction: discord.Interaction, token1: str):
             # Create second select menu (excluding first player)
-            remaining_players = [p for p in players if p != first_player]
-            view2 = PlayerSelectView(remaining_players, self.guild_id, self.channel_id, "swap_second", first_player)
-            
+            remaining_players = [e for e in entries if e[1] != token1]
+            view2 = PlayerSelectView(remaining_players, self.guild_id, self.channel_id, "swap_second", token1)
+
             # Define the callback for second player selection
-            async def swap_second_callback(interaction: discord.Interaction, second_player: str):
+            async def swap_second_callback(interaction: discord.Interaction, token2: str):
                 await interaction.response.defer()
-                
+
                 # Reload tournament from store to get fresh data
                 tournament = store.get(self.guild_id, self.channel_id)
                 if not tournament:
@@ -784,43 +1231,39 @@ class SwapPlayersButton(discord.ui.Button):
                         ephemeral=True
                     )
                     return
-                
-                # Swap the players
-                # Find where both players are
-                player1_pos = {}
-                player2_pos = {}
-                
-                for circle in range(1, 5):
-                    circle_list = getattr(tournament, f"circle{circle}")
-                    if first_player in circle_list:
-                        player1_pos[circle] = circle_list.index(first_player)
-                    if second_player in circle_list:
-                        player2_pos[circle] = circle_list.index(second_player)
-                
-                if not player1_pos or not player2_pos:
+
+                # Resolve tokens → stored names по Discord user_id
+                first_player = _resolve_player_token(tournament, token1)
+                second_player = _resolve_player_token(tournament, token2)
+                if not first_player or not second_player:
                     await interaction.followup.send(
                         replace_emojis("❌ Не удалось найти позиции обоих игроков."),
                         ephemeral=True
                     )
                     return
-                
-                # Swap - temporarily remove both, then re-add at swapped positions
-                for circle, idx in player1_pos.items():
+
+                # Swap the players — каждый занимает ровно один круг,
+                # меняем имена местами по позициям (работает и при
+                # нахождении в одном круге).
+                pos1 = pos2 = None
+                for circle in range(1, 5):
                     circle_list = getattr(tournament, f"circle{circle}")
-                    del circle_list[idx]
-                
-                for circle, idx in player2_pos.items():
-                    circle_list = getattr(tournament, f"circle{circle}")
-                    del circle_list[idx]
-                
-                # Re-add at swapped positions
-                for circle, idx in player1_pos.items():
-                    circle_list = getattr(tournament, f"circle{circle}")
-                    circle_list.insert(idx, second_player)
-                
-                for circle, idx in player2_pos.items():
-                    circle_list = getattr(tournament, f"circle{circle}")
-                    circle_list.insert(idx, first_player)
+                    if first_player in circle_list:
+                        pos1 = (circle, circle_list.index(first_player))
+                    if second_player in circle_list:
+                        pos2 = (circle, circle_list.index(second_player))
+
+                if not pos1 or not pos2:
+                    await interaction.followup.send(
+                        replace_emojis("❌ Не удалось найти позиции обоих игроков."),
+                        ephemeral=True
+                    )
+                    return
+
+                (c1, i1), (c2, i2) = pos1, pos2
+                list1 = getattr(tournament, f"circle{c1}")
+                list2 = getattr(tournament, f"circle{c2}")
+                list1[i1], list2[i2] = second_player, first_player
 
                 # Save
                 store.set(tournament)
@@ -831,9 +1274,12 @@ class SwapPlayersButton(discord.ui.Button):
 
             view2.set_callback(swap_second_callback)
 
+            first_name = (
+                _resolve_player_token(tournament, token1) or token1
+            )
             try:
                 await interaction.response.send_message(
-                    view=compose(text=f"Выберите игрока для обмена с `{first_player}`:", view=view2),
+                    view=compose(text=f"Выберите игрока для обмена с `{first_name}`:", view=view2),
                     ephemeral=True
                 )
             except discord.InteractionResponded:
@@ -906,11 +1352,23 @@ class MovePlayerButton(discord.ui.Button):
                 pass
             return
 
-        # Create select menu for player
-        view = PlayerSelectView(players, self.guild_id, self.channel_id, "move")
-        
+        # Create select menu for player (value = Discord user_id)
+        entries = _player_select_entries(tournament)
+        view = PlayerSelectView(entries, self.guild_id, self.channel_id, "move")
+
         # Define the callback for player selection
-        async def move_callback(interaction: discord.Interaction, selected_player: str):
+        async def move_callback(interaction: discord.Interaction, token: str):
+            selected_player = _resolve_player_token(tournament, token)
+            if selected_player is None:
+                try:
+                    await interaction.response.send_message(
+                        replace_emojis("❌ Игрок не найден."),
+                        ephemeral=True
+                    )
+                except discord.NotFound:
+                    pass
+                return
+
             # Create circle select menu
             circle_options = [
                 discord.SelectOption(label="Круг 1", value="circle1"),
@@ -1013,10 +1471,30 @@ class AdminAddButton(discord.ui.Button):
                 pass
             return
 
-        # Show modal
-        modal = AdminAddModal(self.guild_id, self.channel_id, self.circle)
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament or tournament.phase != TournamentPhase.SETUP:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        # Ephemeral CV2-карточка с UserSelect — без ручного ввода ника
+        view = AdminAddUserView(self.guild_id, self.channel_id, self.circle)
         try:
-            await interaction.response.send_modal(modal)
+            await interaction.response.send_message(
+                view=compose(
+                    text=(
+                        "### Добавить участника\n"
+                        "-# Выберите пользователя Discord."
+                    ),
+                    view=view,
+                ),
+                ephemeral=True,
+            )
         except discord.NotFound:
             pass
 
