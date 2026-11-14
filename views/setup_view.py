@@ -565,9 +565,9 @@ class AdminAddUserView(discord.ui.View):
     async def _on_pick(
         self, interaction: discord.Interaction, select: discord.ui.UserSelect
     ) -> None:
-        from utils.permissions import is_org_check
+        from utils.permissions import can_manage_channel_tournament
 
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis(
                     "❌ Только организаторы (роль 'org') могут "
@@ -678,9 +678,9 @@ class _AdminAddConfirmView(discord.ui.View):
         )
 
     async def _on_add(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
+        from utils.permissions import can_manage_channel_tournament
 
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis(
                     "❌ Только организаторы (роль 'org') могут "
@@ -833,9 +833,9 @@ class _AdminMoveConfirmView(discord.ui.View):
         )
 
     async def _on_move(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
+        from utils.permissions import can_manage_channel_tournament
 
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis(
                     "❌ Только организаторы (роль 'org') могут "
@@ -1037,8 +1037,8 @@ class DeletePlayerButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут удалять игроков."),
@@ -1166,8 +1166,8 @@ class SwapPlayersButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут менять местами игроков."),
@@ -1309,8 +1309,8 @@ class MovePlayerButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут перемещать игроков."),
@@ -1460,8 +1460,8 @@ class AdminAddButton(discord.ui.Button):
         self.circle = circle
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут добавлять игроков."),
@@ -1512,8 +1512,8 @@ class AutoDistributeButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
@@ -1586,8 +1586,8 @@ class AutoDistributeAvgButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
@@ -1661,8 +1661,8 @@ class StartTournamentButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут запускать турнир."),
@@ -1887,8 +1887,8 @@ class ToggleRegistrationButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут менять регистрацию."),
@@ -1942,8 +1942,8 @@ class ToggleIsolationButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут менять изоляцию."),
@@ -2036,11 +2036,10 @@ class OrgMenuButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_channel_organizer
-        from config import BOT_OWNER_ID
+        from utils.permissions import can_manage_channel_tournament
 
-        # Check if user is bot owner or channel organizer
-        if interaction.user.id != BOT_OWNER_ID and not is_channel_organizer(interaction.user, interaction.guild, interaction.channel_id):
+        # Проверка прав на турнир этого канала (включает владельца бота)
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     "❌ Только владелец бота или организатор могут открывать орг меню.",
@@ -2233,11 +2232,26 @@ class OrgActionSelect(discord.ui.Select):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import can_manage_channel_tournament
+
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Нет активного турнира."),
+                    ephemeral=True)
+            except discord.NotFound:
+                pass
+            return
+
+        # Права проверяются на сервере при каждом выборе —
+        # отозванный доступ прекращается без перезапуска бота.
+        if not can_manage_channel_tournament(
+            interaction.user, interaction.guild, self.channel_id
+        ):
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ У вас нет прав управлять этим турниром."),
                     ephemeral=True)
             except discord.NotFound:
                 pass
@@ -2308,12 +2322,12 @@ class NotifyButton(discord.ui.Button):
         self.cooldowns = {}  # {user_id: last_use_timestamp}
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_channel_organizer
-        from config import BOT_OWNER_ID, NOTIFICATION_ROLE_ID, NOTIFICATION_CHANNEL_ID
+        from utils.permissions import can_manage_channel_tournament
+        from config import NOTIFICATION_ROLE_ID, NOTIFICATION_CHANNEL_ID
         from datetime import datetime, timedelta
 
-        # Check if user is bot owner or channel organizer
-        if interaction.user.id != BOT_OWNER_ID and not is_channel_organizer(interaction.user, interaction.guild, interaction.channel_id):
+        # Проверка прав на турнир этого канала (включает владельца бота)
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     "❌ Только владелец бота или организатор могут отправлять уведомления.",
@@ -2453,8 +2467,8 @@ class LimitButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             try:
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут менять лимиты."),

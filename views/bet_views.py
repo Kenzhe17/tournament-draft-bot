@@ -272,10 +272,10 @@ class ToggleBettingButton(Button):
         """Toggle betting for the tournament."""
         try:
             from storage.json_store import store
-            from utils.permissions import is_org_check
+            from utils.permissions import can_manage_channel_tournament
 
             # Check if user is org
-            if not is_org_check(interaction.user, interaction.guild):
+            if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
                 await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут менять статус ставок."),
                     ephemeral=True

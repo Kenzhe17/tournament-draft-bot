@@ -11,6 +11,8 @@ import discord
 from utils.design import compose
 from discord.ui import Modal, TextInput, View, Button, button
 
+from models.tournament import TournamentPhase
+
 if TYPE_CHECKING:
     from models.tournament import Tournament
 
@@ -251,9 +253,9 @@ class AdminFillButton(Button):
         self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
+        from utils.permissions import can_manage_channel_tournament
 
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(replace_emojis("❌ Только организаторы (роль 'org')."), ephemeral=True)
             return
 
@@ -484,10 +486,23 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
                 "deaths": parsed[1],
             }
 
-        # Store in tournament temp stats
-        tournament = store.get(self.guild_id, self.channel_id)
+        # Store in tournament temp stats — актуальная запись и
+        # повторная проверка прав перед изменением.
+        from utils.permissions import can_manage_tournament
+
+        tournament = store.get(self.guild_id, self.tournament.channel_id)
         if not tournament:
             await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+            return
+        if tournament.phase == TournamentPhase.COMPLETE:
+            await interaction.followup.send(
+                replace_emojis("❌ Турнир завершён — статистика недоступна."),
+                ephemeral=True)
+            return
+        if not can_manage_tournament(interaction.user, interaction.guild, tournament):
+            await interaction.followup.send(
+                replace_emojis("❌ У вас нет прав управлять этим турниром."),
+                ephemeral=True)
             return
 
         # Merge with existing stats (admin fills one team at a time)
@@ -775,9 +790,45 @@ class AdminConfirmView(View):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            tournament = store.get(self.guild_id, self.channel_id)
+            # Актуальный турнир + повторная проверка прав/фазы
+            # перед любыми начислениями.
+            from utils.permissions import can_manage_tournament
+
+            tournament = store.get(self.guild_id, self.tournament.channel_id)
             if not tournament:
                 await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+                return
+            if not can_manage_tournament(interaction.user, interaction.guild, tournament):
+                await interaction.followup.send(
+                    replace_emojis("❌ У вас нет прав управлять этим турниром."),
+                    ephemeral=True)
+                return
+            # Идемпотентность: результат матча/финала не должен
+            # обрабатываться повторно (ELO защищён processed_elo_matches,
+            # но история матчей и distribute_earnings — нет).
+            if self.match_type == "final" and (
+                tournament.phase == TournamentPhase.COMPLETE
+                or tournament.winner_team_index is not None
+            ):
+                await interaction.followup.send(
+                    replace_emojis("❌ Результат финала уже подтверждён."),
+                    ephemeral=True)
+                return
+            if self.match_type == "qualifier" and (
+                self.match_index < len(tournament.qualifier_winners)
+                and tournament.qualifier_winners[self.match_index] is not None
+            ):
+                await interaction.followup.send(
+                    replace_emojis("❌ Результат этого матча уже зафиксирован."),
+                    ephemeral=True)
+                return
+            if self.match_type == "semifinal" and (
+                self.match_index < len(tournament.semifinal_pending_winners)
+                and tournament.semifinal_pending_winners[self.match_index] is not None
+            ):
+                await interaction.followup.send(
+                    replace_emojis("❌ Результат этого матча уже зафиксирован."),
+                    ephemeral=True)
                 return
 
             match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"

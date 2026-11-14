@@ -1419,7 +1419,11 @@ class Tournament:
         # Don't set phase to COMPLETE yet, wait for confirmation
 
     async def confirm_final_winner(self, team_index: int) -> None:
-        """Подтвердить победителя финала."""
+        """Подтвердить победителя финала (идемпотентно)."""
+        # Повторное подтверждение не должно перезаписывать результат
+        # или запускать побочные эффекты завершения второй раз.
+        if self.phase == TournamentPhase.COMPLETE:
+            return
         # Determine loser team
         loser_idx = self.final_teams[0] if self.final_teams[1] == team_index else self.final_teams[1]
         

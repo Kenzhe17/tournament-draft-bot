@@ -14,7 +14,7 @@ from models.tournament import TournamentPhase
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
 from utils.embeds import build_embed_for_phase
-from utils.permissions import is_org_check
+from utils.permissions import can_manage_channel_tournament
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -45,7 +45,7 @@ class FinalWinnerButton(discord.ui.Button):
         self.team_index = team_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis("❌ Только организаторы (роль 'org') могут фиксировать результаты."),
                 ephemeral=True,

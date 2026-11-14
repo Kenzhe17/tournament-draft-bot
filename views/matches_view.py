@@ -16,7 +16,7 @@ from storage.json_store import store
 from storage.bet_store import bet_store
 from storage.user_balance_store import user_balance_store
 from utils.embeds import build_embed_for_phase
-from utils.permissions import is_org_check
+from utils.permissions import can_manage_channel_tournament
 from views.bet_views import BetButton, ViewBetsButton
 
 
@@ -178,7 +178,7 @@ class AdminStatsMatchSelectView(discord.ui.View):
 
     async def _on_select(self, interaction: discord.Interaction,
                          select: discord.ui.Select) -> None:
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True
@@ -231,7 +231,7 @@ class AdminStatsMatchButton(discord.ui.Button):
         logging.info(f"AdminStatsMatchButton callback: match_type={self.match_type}, match_index={self.match_index}")
 
         # Check permissions
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True
@@ -301,10 +301,26 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         self.match = match
     
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_tournament
+
+        # Актуальный турнир из хранилища: права и фаза проверяются
+        # на момент нажатия, а не на момент отрисовки кнопки.
+        fresh = store.get(self.guild_id, self.channel_id)
+        if fresh is None:
+            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+            return
+        if not can_manage_tournament(interaction.user, interaction.guild, fresh):
             await interaction.response.send_message(
                 replace_emojis("❌ У вас нет прав!"),
+                ephemeral=True
+            )
+            return
+
+        # Идемпотентность: завершённый турнир нельзя «подтвердить»
+        # повторно — иначе ELO/история/ставки обработались бы дважды.
+        if fresh.phase == TournamentPhase.COMPLETE:
+            await interaction.response.send_message(
+                replace_emojis("❌ Результат турнира уже подтверждён."),
                 ephemeral=True
             )
             return
@@ -548,8 +564,8 @@ class CancelWinnerButton(discord.ui.Button):
         self.match = match
     
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from utils.permissions import can_manage_channel_tournament
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis("❌ У вас нет прав!"),
                 ephemeral=True
@@ -833,7 +849,7 @@ class ConfirmWinnerButton(discord.ui.Button):
         logging.info(f"ConfirmWinnerButton callback: match_type={self.match_type}, match_index={self.match_index}, team_index={self.team_index}")
 
         # Check permissions
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True
@@ -944,7 +960,7 @@ class GenerateMatchesButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis("❌ Только организаторы (роль 'org') могут генерировать матчи."),
                 ephemeral=True
@@ -1267,7 +1283,7 @@ class MatchWinnerSelectView(discord.ui.View):
 
     async def _on_select(self, interaction: discord.Interaction,
                          select: discord.ui.Select) -> None:
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True
@@ -1367,7 +1383,7 @@ class TeamWinnerButton(discord.ui.Button):
         self.match = match
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True
@@ -1417,7 +1433,7 @@ class AdminPanelSelect(discord.ui.Select):
         self.match_type = match_type
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
                 replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True,

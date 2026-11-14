@@ -95,6 +95,122 @@ async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float
         pass
 
 
+async def _perform_tournament_delete(
+    bot, guild: discord.Guild, channel_id: int, tournament: Tournament
+) -> None:
+    """Фактическое удаление активного турнира (только не-COMPLETE)."""
+    if tournament.phase == TournamentPhase.COMPLETE:
+        logger.warning(
+            "Попытка удалить завершённый турнир %s:%s — отклонено",
+            guild.id, channel_id,
+        )
+        return
+
+    # Удалить сообщение турнира если есть
+    if tournament.message_id:
+        try:
+            channel = guild.get_channel(channel_id)
+            if channel:
+                message = await channel.fetch_message(tournament.message_id)
+                await message.delete()
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение турнира: {e}")
+
+    store.delete(guild.id, channel_id)
+    logger.info("Турнир удален на сервере %s", guild.id)
+
+    # Разблокировать канал если он был заблокирован поиском
+    if hasattr(bot, 'mm_cog'):
+        from cogs.mm import LOCKED_CHANNELS
+        if channel_id in LOCKED_CHANNELS:
+            del LOCKED_CHANNELS[channel_id]
+            logger.info(f"Channel {channel_id} unlocked after tournament deletion")
+
+    # Сбросить лимит поиска если освободился турнир
+    if hasattr(bot, 'mm_cog'):
+        await bot.mm_cog.reset_search_limit(guild.id)
+
+    # Update organizer setup embed if it exists
+    from storage.organizer_store import organizer_store as org_store
+    for ch_id in TOURNAMENT_CHANNELS:
+        orgs = org_store.get(guild.id, ch_id)
+        if orgs and orgs.message_id:
+            try:
+                update_channel = guild.get_channel(ch_id)
+                if update_channel:
+                    update_message = await update_channel.fetch_message(orgs.message_id)
+                    from views.organizer_view import build_multi_channel_embed, OrganizerManagementButton
+                    from discord.ui import View
+                    new_embed = build_multi_channel_embed(guild)
+                    new_view = View()
+                    new_view.add_item(OrganizerManagementButton(guild.id, ch_id, guild))
+                    await update_message.edit( view=compose(new_embed, new_view))
+            except Exception:
+                pass
+
+
+class _DeleteTournamentConfirmView(discord.ui.View):
+    """Ephemeral-подтверждение отмены активного турнира."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(timeout=60)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+        ok = discord.ui.Button(
+            label="Подтвердить удаление",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"tourn_delete_ok:{guild_id}:{channel_id}",
+        )
+        ok.callback = self._confirm
+        self.add_item(ok)
+
+        cancel = discord.ui.Button(
+            label="Отмена",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"tourn_delete_no:{guild_id}:{channel_id}",
+        )
+        cancel.callback = self._cancel
+        self.add_item(cancel)
+
+    async def _confirm(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import can_manage_tournament
+
+        # Повторная серверная проверка: турнир мог завершиться
+        # или права — отозваться с момента показа кнопки.
+        tournament = store.get(self.guild_id, self.channel_id)
+        if tournament is None:
+            await interaction.response.edit_message(
+                view=compose(text="-# Турнир уже отсутствует.", view=None))
+            return
+        if tournament.phase == TournamentPhase.COMPLETE:
+            await interaction.response.edit_message(
+                view=compose(
+                    text=(
+                        "Турнир уже завершён и защищён от удаления. "
+                        "Результаты сохранены в истории."
+                    ),
+                    view=None))
+            return
+        if not can_manage_tournament(
+            interaction.user, interaction.guild, tournament
+        ):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав на удаление этого турнира."),
+                ephemeral=True)
+            return
+
+        await _perform_tournament_delete(
+            interaction.client, interaction.guild,
+            self.channel_id, tournament)
+        await interaction.response.edit_message(
+            view=compose(text="Турнир удалён.", view=None))
+
+    async def _cancel(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(
+            view=compose(text="-# Отменено.", view=None))
+
+
 class TournamentCog(commands.Cog):
     """Ког с командами управления турниром."""
 
@@ -140,7 +256,10 @@ class TournamentCog(commands.Cog):
                 )
                 asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
-            # Если турнир завершен, можно удалить и создать новый
+            # Завершённый турнир нельзя просто удалить — архивируем
+            # результаты/историю, затем освобождаем слот канала.
+            from storage.tournament_archive import tournament_archive
+            tournament_archive.archive(existing)
             if existing.message_id:
                 try:
                     channel = interaction.guild.get_channel(existing.channel_id)
@@ -259,7 +378,10 @@ class TournamentCog(commands.Cog):
     @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_channel_organizer_decorator()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
-        """Удалить текущий турнир."""
+        """Удалить текущий турнир (с подтверждением; завершённые
+        турниры защищены от удаления)."""
+        from utils.permissions import can_manage_tournament
+
         existing = store.get(interaction.guild_id, interaction.channel_id)
         if not existing:
             await interaction.response.send_message(
@@ -269,53 +391,46 @@ class TournamentCog(commands.Cog):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Удалить сообщение турнира если есть
-        if existing.message_id:
-            try:
-                channel = interaction.guild.get_channel(existing.channel_id)
-                if channel:
-                    message = await channel.fetch_message(existing.message_id)
-                    await message.delete()
-            except Exception as e:
-                logger.warning(f"Не удалось удалить сообщение турнира: {e}")
+        # Серверная проверка непосредственно перед удалением:
+        # завершённые турниры защищены от любых путей удаления.
+        if existing.phase == TournamentPhase.COMPLETE:
+            await interaction.response.send_message(
+                "Турнир уже завершён и защищён от удаления. "
+                "Результаты сохранены в истории. Для создания "
+                "следующего турнира используйте /tournament create",
+                ephemeral=True,
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
 
-        store.delete(interaction.guild_id, interaction.channel_id)
-        logger.info("Турнир удален на сервере %s", interaction.guild_id)
+        # Права проверяем по актуальному турниру (привязка
+        # tournament_id), а не только декоратором канала.
+        if not can_manage_tournament(
+            interaction.user, interaction.guild, existing
+        ):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав на удаление этого турнира."),
+                ephemeral=True,
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
 
-        # Разблокировать канал если он был заблокирован поиском
-        if hasattr(self.bot, 'mm_cog'):
-            from cogs.mm import LOCKED_CHANNELS
-            if interaction.channel_id in LOCKED_CHANNELS:
-                del LOCKED_CHANNELS[interaction.channel_id]
-                logger.info(f"Channel {interaction.channel_id} unlocked after tournament deletion")
-
-        # Сбросить лимит поиска если освободился турнир
-        if hasattr(self.bot, 'mm_cog'):
-            await self.bot.mm_cog.reset_search_limit(interaction.guild_id)
-
-        # Update organizer setup embed if it exists
-        from storage.organizer_store import organizer_store as org_store
-        for channel_id in TOURNAMENT_CHANNELS:
-            orgs = org_store.get(interaction.guild_id, channel_id)
-            if orgs and orgs.message_id:
-                try:
-                    update_channel = interaction.guild.get_channel(channel_id)
-                    if update_channel:
-                        update_message = await update_channel.fetch_message(orgs.message_id)
-                        from views.organizer_view import build_multi_channel_embed, OrganizerManagementButton
-                        from discord.ui import View
-                        new_embed = build_multi_channel_embed(interaction.guild)
-                        new_view = View()
-                        new_view.add_item(OrganizerManagementButton(interaction.guild_id, channel_id, interaction.guild))
-                        await update_message.edit( view=compose(new_embed, new_view))
-                except Exception:
-                    pass
-
+        # Отмена активного турнира — только с подтверждением.
+        view = _DeleteTournamentConfirmView(
+            interaction.guild_id, interaction.channel_id)
         await interaction.response.send_message(
-            "🗑️ **Турнир успешно удален.**",
-            ephemeral=True
+            view=compose(
+                text=(
+                    "### Отмена турнира\n"
+                    "Турнир будет удалён вместе с кнопками. "
+                    "Уже подтверждённые результаты и начисления "
+                    "сохраняются в истории.\n"
+                    "-# Подтвердите удаление."
+                ),
+                view=view,
+            ),
+            ephemeral=True,
         )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
 
     @tournament_group.command(name="deleteall", description="Удалить все активные турниры (только владелец бота)")
     async def tournament_deleteall(self, interaction: discord.Interaction):
@@ -330,7 +445,13 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         deleted = 0
+        skipped_completed = 0
         for t in tournaments:
+            # Завершённые турниры защищены от удаления —
+            # deleteall их не трогает.
+            if t.phase == TournamentPhase.COMPLETE:
+                skipped_completed += 1
+                continue
             try:
                 if t.message_id:
                     msg = await self.bot.fetch_message(t.message_id)
@@ -349,7 +470,12 @@ class TournamentCog(commands.Cog):
             except Exception:
                 pass
 
-        await interaction.followup.send(f"🗑️ Удалено турниров: **{deleted}**", ephemeral=True)
+        suffix = (
+            f" · завершённых защищено: **{skipped_completed}**"
+            if skipped_completed else ""
+        )
+        await interaction.followup.send(
+            f"🗑️ Удалено турниров: **{deleted}**{suffix}", ephemeral=True)
 
     @tournament_group.command(name="test", description="Тестовые операции турниров")
     @is_bot_owner()
