@@ -72,7 +72,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
     """Создать embed для категории справки."""
     categories = {
         "tournament": {
-            "emoji": "🏆",
+            "emoji": "",
             "title": "Турниры",
             "color": discord.Color.dark_purple(),
             "commands": [
@@ -128,7 +128,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "economy": {
-            "emoji": get_emoji("money"),
+            "emoji": "",
             "title": "Экономика",
             "color": discord.Color.dark_green(),
             "commands": [
@@ -163,7 +163,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "shop": {
-            "emoji": replace_emojis("shop"),
+            "emoji": "",
             "title": "Магазин",
             "color": discord.Color.dark_gold(),
             "commands": [
@@ -191,7 +191,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "profile": {
-            "emoji": "👤",
+            "emoji": "",
             "title": "Профиль",
             "color": discord.Color.dark_blue(),
             "commands": [
@@ -226,7 +226,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "admin": {
-            "emoji": replace_emojis("settings"),
+            "emoji": "",
             "title": "Админ",
             "color": discord.Color.dark_red(),
             "commands": [
@@ -271,7 +271,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
 
     cat_data = categories.get(category, categories["tournament"])
     embed = discord.Embed(
-        title=f"{cat_data['emoji']} {cat_data['title']}",
+        title=cat_data['title'],
         color=cat_data['color']
     )
 
@@ -627,7 +627,7 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
                 players.append(formatted_name)
 
         players_str = ", ".join(players) if players else "*Ожидание игроков...*"
-        emoji = team_emojis.get(i + 1, "🎮")
+        emoji = team_emojis.get(i + 1, "")
 
         teams_text.append(
             f"{emoji} **Команда {team_name}**\n"

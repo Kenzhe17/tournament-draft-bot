@@ -39,7 +39,7 @@ class TriviaView(discord.ui.View):
         )
 
         embed.add_field(
-            name=replace_emojis("📊 Прогресс"),
+            name="Прогресс",
             value=f"Правильных: {self.correct_answers}/{self.required_correct} (нужно)",
             inline=False
         )

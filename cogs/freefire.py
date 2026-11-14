@@ -88,7 +88,7 @@ async def _check_and_key(interaction: discord.Interaction, uid: str) -> bool:
     """Тег r!z3 + валидация UID + API ключ. True — можно продолжать."""
     if not _has_server_tag(interaction.user):
         await interaction.response.send_message(
-            "🚫 Команды `/ff` доступны только участникам "
+            "Команды `/ff` доступны только участникам "
             "с тегом **r!z3** в профиле Discord.",
             ephemeral=True,
         )

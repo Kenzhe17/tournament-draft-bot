@@ -590,7 +590,7 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
             title="Питомец",
             description=(
                 f" У вас нет питомца.\n"
-                f" Используйте `/shop` → **Питомцы** для покупки."
+                f" Используйте `/shop`, категория «Питомцы» для покупки."
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )

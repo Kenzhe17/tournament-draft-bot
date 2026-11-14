@@ -149,7 +149,7 @@ class FreeFireStatsView(discord.ui.LayoutView):
             items.append(_td("-# загрузка данных…"))
         elif not entry.get("ok"):
             items.append(
-                _td(f"⚠ Не удалось загрузить статистику: {entry.get('error', 'ошибка')}")
+                _td(f"Не удалось загрузить статистику: {entry.get('error', 'ошибка')}")
             )
         else:
             stats = entry["data"].get("stats") or entry["data"]
@@ -159,7 +159,7 @@ class FreeFireStatsView(discord.ui.LayoutView):
             for chunk in chunk_text(text):
                 items.append(_td(chunk))
         items.append(_sep())
-        notice = f"⚠ {self._notice} · " if self._notice else ""
+        notice = f"{self._notice} · " if self._notice else ""
         items.append(
             _td(
                 f"-# {notice}ID `{self.uid}` · {fmt.region_label(self.region)}"

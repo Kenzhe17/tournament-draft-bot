@@ -374,7 +374,7 @@ class WardrobeView(discord.ui.View):
             await self._go(interaction, view)
 
         self.add_item(self._nav_button("Поиск", discord.ButtonStyle.primary, on_search))
-        self.add_item(self._nav_button("� Мои вещи", discord.ButtonStyle.secondary, on_owned))
+        self.add_item(self._nav_button("Мои вещи", discord.ButtonStyle.secondary, on_owned))
 
     def _list_view(self, page: int) -> "WardrobeView":
         return WardrobeView(

@@ -92,7 +92,7 @@ class MatchButton(discord.ui.Button):
         team_view = TeamSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, teams)
 
         embed = discord.Embed(
-            title=replace_emojis("🎯 Выберите команду"),
+            title="Выберите команду",
             description=f"{teams[0][1]} vs {teams[1][1]}",
             color=discord.Color.gold()
         )

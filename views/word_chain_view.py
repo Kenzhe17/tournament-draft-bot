@@ -137,7 +137,7 @@ class WordChainAnswerModal(discord.ui.Modal, title="Ваше слово"):
             )
 
             embed.add_field(
-                name=replace_emojis("📊 Раунд"),
+                name="Раунд",
                 value=f"{self.round}/{self.max_rounds}",
                 inline=False
             )

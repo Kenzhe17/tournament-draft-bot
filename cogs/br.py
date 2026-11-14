@@ -154,7 +154,7 @@ class BRCog(commands.Cog):
         if tournament.formation.value == "team":
             players_label = "Команд"
             players_count = f"{len(tournament.registered_teams)}/12"
-            rules_text = "Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+            rules_text = "Нажмите кнопку 'Зарегистрировать Команду' для регистрации вашей команды."
             team_display_label = "Команды"
         else:
             players_label = "Игроков"
@@ -338,7 +338,7 @@ class BRCog(commands.Cog):
                     players_text = "\n".join(team_list) if team_list else f" *"
                     players_label = "Команд"
                     players_count = f"{len(tournament.registered_teams)}/12"
-                    rules_text = "Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+                    rules_text = "Нажмите кнопку 'Зарегистрировать Команду' для регистрации вашей команды."
                     team_display_label = "Команды"
                 else:
                     player_names = [p["name"] for p in tournament.players]

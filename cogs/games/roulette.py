@@ -140,11 +140,11 @@ class RouletteRedButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.spun:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         await self._spin(interaction, "red")
@@ -163,11 +163,11 @@ class RouletteBlackButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.spun:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         await self._spin(interaction, "black")
@@ -186,11 +186,11 @@ class RouletteEvenButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.spun:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         await self._spin(interaction, "even")
@@ -209,11 +209,11 @@ class RouletteOddButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.spun:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         await self._spin(interaction, "odd")
@@ -232,11 +232,11 @@ class RouletteSpinButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.spun:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Показать модал для ввода числа
@@ -262,11 +262,11 @@ class RouletteNumberModal(discord.ui.Modal, title="Выберите число")
         try:
             num = int(self.number.value)
             if num < 0 or num > 36:
-                await interaction.response.send_message("❌ Число должно быть от 0 до 36.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+                await interaction.response.send_message("Число должно быть от 0 до 36.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 return
             await self._spin(interaction, str(num))
         except ValueError:
-            await interaction.response.send_message("❌ Некорректное число.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Некорректное число.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
 async def _spin(self, interaction: discord.Interaction, choice: str):
@@ -348,11 +348,11 @@ class RouletteCancelButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.spun:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         self.game_view.spun = True  # до возврата — защита от гонки с on_timeout
@@ -364,7 +364,7 @@ class RouletteCancelButton(discord.ui.Button):
                 self.game_view.user_id,
                 self.game_view.bet
             )
-        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена."), allowed_mentions=discord.AllowedMentions.none())
+        await interaction.response.edit_message( view=text_card("Игра отменена. Ставка возвращена."), allowed_mentions=discord.AllowedMentions.none())
 
 
 class RoulettePlayAgainButton(discord.ui.Button):
@@ -377,12 +377,12 @@ class RoulettePlayAgainButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Защита от повторного нажатия (двойное списание ставки)
         if getattr(self, "_activated", False):
-            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже запущена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         self._activated = True
 
@@ -393,7 +393,7 @@ class RoulettePlayAgainButton(discord.ui.Button):
         balance = await user_balance_store.get_balance(guild_id, user_id)
         if balance < self.bet:
             await interaction.response.send_message(
-                f"❌ Недостаточно монет. У вас: {balance}",
+                f"Недостаточно монет. У вас: {balance}",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             self._activated = False
             return
@@ -404,7 +404,7 @@ class RoulettePlayAgainButton(discord.ui.Button):
             balance = await user_balance_store.get_balance(guild_id, user_id)
             if balance < self.bet:
                 await interaction.response.send_message(
-                    f"❌ Недостаточно монет. У вас: {balance}",
+                    f"Недостаточно монет. У вас: {balance}",
                     ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 self._activated = False
                 return
@@ -452,7 +452,7 @@ class RouletteCog(commands.Cog):
         # Проверить ставку
         if bet < 50 or bet > 3000:
             await interaction.response.send_message(
-                "❌ Ставка должна быть от 50 до 3,000 монет.",
+                "Ставка должна быть от 50 до 3,000 монет.",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
@@ -460,7 +460,7 @@ class RouletteCog(commands.Cog):
         balance = await user_balance_store.get_balance(guild_id, user_id)
         if balance < bet:
             await interaction.response.send_message(
-                f"❌ Недостаточно монет. У вас: {balance}",
+                f"Недостаточно монет. У вас: {balance}",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             self._activated = False
             return
@@ -471,7 +471,7 @@ class RouletteCog(commands.Cog):
             balance = await user_balance_store.get_balance(guild_id, user_id)
             if balance < bet:
                 await interaction.response.send_message(
-                    f"❌ Недостаточно монет. У вас: {balance}",
+                    f"Недостаточно монет. У вас: {balance}",
                     ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 self._activated = False
                 return

@@ -45,7 +45,7 @@ class ThreadCog(commands.Cog):
         clear_user_games(user_id)
 
         from datetime import datetime
-        await interaction.response.send_message(f"🗑️ Тред будет удалён <t:{int(datetime.now().timestamp()) + 2}:R>...", ephemeral=True)
+        await interaction.response.send_message(f"Тред будет удалён <t:{int(datetime.now().timestamp()) + 2}:R>...", ephemeral=True)
         import asyncio
         await asyncio.sleep(2)
         await thread.delete()

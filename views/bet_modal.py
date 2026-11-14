@@ -101,7 +101,7 @@ class _BetConfirmView(View):
             view=compose(
                 text=(
                     f"### Ставка принята\n"
-                    f"**{self.amount:,}** {get_emoji('money')} → "
+                    f"**{self.amount:,}** {get_emoji('money')} — "
                     f"**{self.team_name}** `{self.odds:.2f}x`"
                 ),
                 view=None,

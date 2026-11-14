@@ -121,15 +121,15 @@ class GuessNumberInput(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.game_over:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if getattr(self.game_view, "_resolving", False):
-            await interaction.response.send_message("⏳ Дождитесь результата предыдущего хода.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Дождитесь результата предыдущего хода.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         self.game_view._resolving = True
 
@@ -141,14 +141,14 @@ class GuessNumberInput(discord.ui.Modal):
             guess = int(self.number_input.value)
         except ValueError:
             self.game_view._resolving = False
-            await interaction.followup.send("❌ Введите корректное число.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.followup.send("Введите корректное число.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Проверить диапазон
         if guess < self.game_view.min_range or guess > self.game_view.max_range:
             self.game_view._resolving = False
             await interaction.followup.send(
-                f"❌ Число должно быть от {self.game_view.min_range} до {self.game_view.max_range}.",
+                f"Число должно быть от {self.game_view.min_range} до {self.game_view.max_range}.",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
@@ -216,11 +216,11 @@ class GuessNumberGuessButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.game_over:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Показать modal
@@ -237,11 +237,11 @@ class GuessNumberCancelButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.game_over or getattr(self.game_view, "_resolving", False):
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         self.game_view.game_over = True  # до возврата — защита от гонки с on_timeout
@@ -253,7 +253,7 @@ class GuessNumberCancelButton(discord.ui.Button):
                 self.game_view.user_id,
                 self.game_view.bet
             )
-        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена."), allowed_mentions=discord.AllowedMentions.none())
+        await interaction.response.edit_message( view=text_card("Игра отменена. Ставка возвращена."), allowed_mentions=discord.AllowedMentions.none())
 
 
 class GuessNumberPlayAgainButton(discord.ui.Button):
@@ -266,12 +266,12 @@ class GuessNumberPlayAgainButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Защита от повторного нажатия (двойное списание ставки)
         if getattr(self, "_activated", False):
-            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже запущена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         self._activated = True
 
@@ -282,7 +282,7 @@ class GuessNumberPlayAgainButton(discord.ui.Button):
         balance = await user_balance_store.get_balance(guild_id, user_id)
         if balance < self.bet:
             await interaction.response.send_message(
-                f"❌ Недостаточно монет. У вас: {balance}",
+                f"Недостаточно монет. У вас: {balance}",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             self._activated = False
             return
@@ -293,7 +293,7 @@ class GuessNumberPlayAgainButton(discord.ui.Button):
             balance = await user_balance_store.get_balance(guild_id, user_id)
             if balance < self.bet:
                 await interaction.response.send_message(
-                    f"❌ Недостаточно монет. У вас: {balance}",
+                    f"Недостаточно монет. У вас: {balance}",
                     ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 self._activated = False
                 return
@@ -340,7 +340,7 @@ class GuessNumberCog(commands.Cog):
         # Проверить ставку
         if bet < 10 or bet > 10000:
             await interaction.response.send_message(
-                "❌ Ставка должна быть от 10 до 10,000 монет.",
+                "Ставка должна быть от 10 до 10,000 монет.",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
@@ -348,7 +348,7 @@ class GuessNumberCog(commands.Cog):
         balance = await user_balance_store.get_balance(guild_id, user_id)
         if balance < bet:
             await interaction.response.send_message(
-                f"❌ Недостаточно монет. У вас: {balance}",
+                f"Недостаточно монет. У вас: {balance}",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             self._activated = False
             return
@@ -359,7 +359,7 @@ class GuessNumberCog(commands.Cog):
             balance = await user_balance_store.get_balance(guild_id, user_id)
             if balance < bet:
                 await interaction.response.send_message(
-                    f"❌ Недостаточно монет. У вас: {balance}",
+                    f"Недостаточно монет. У вас: {balance}",
                     ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 self._activated = False
                 return

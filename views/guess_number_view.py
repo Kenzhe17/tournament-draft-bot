@@ -10,7 +10,7 @@ from storage.redis_client import set_minigame_session, get_minigame_session, del
 from utils.logger import log_game_play, log_balance_change, log_error
 
 
-class NumberBetModal(Modal, title=replace_emojis("🎲 Угадай число")):
+class NumberBetModal(Modal, title="Угадай число"):
     """Modal для ввода ставки и первого числа."""
 
     bet = TextInput(label="Ставка (монеты)", placeholder="Введите сумму ставки", min_length=1, max_length=10)
@@ -62,7 +62,7 @@ class NumberBetModal(Modal, title=replace_emojis("🎲 Угадай число")
 
         # Создать embed
         embed = discord.Embed(
-            title=replace_emojis("🎲 Угадай число"),
+            title="Угадай число",
             description=message,
             color=discord.Color.blue() if result == "correct" else discord.Color.orange()
         )
@@ -110,7 +110,7 @@ class GuessNumberGameView(View):
         """Сдаться и потерять ставку."""
         self.game.game_over = True
         embed = discord.Embed(
-            title=replace_emojis("🎲 Угадай число"),
+            title="Угадай число",
             description=f"😢 Вы сдались! Загаданное число было {self.game.secret_number}.",
             color=discord.Color.red()
         )
@@ -149,7 +149,7 @@ class NumberGuessModal(Modal, title=replace_emojis("🎯 Сделать попы
 
         # Создать embed
         embed = discord.Embed(
-            title=replace_emojis("🎲 Угадай число"),
+            title="Угадай число",
             description=message,
             color=discord.Color.blue() if result == "correct" else discord.Color.orange()
         )

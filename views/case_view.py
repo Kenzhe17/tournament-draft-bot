@@ -89,7 +89,7 @@ class CaseOpenButton(discord.ui.Button):
             if pet_bonus.get("mimic_bonus", 0) > 0:
                 mimic_bonus = pet_bonus["mimic_bonus"]
                 mimic_name = pet_bonus["mimic_name"]
-                message += f"\n\n🐾 ✨ **Мимик-собиратель ({mimic_name}):** Сработал «Секретный тайник»! Питомец нашел еще +{mimic_bonus} монет."
+                message += f"\n\n🐾 **Мимик-собиратель ({mimic_name}):** Сработал «Секретный тайник»! Питомец нашел еще +{mimic_bonus} монет."
             if pet_bonus.get("golden_fox_bonus", 0) > 0:
                 fox_bonus = pet_bonus["golden_fox_bonus"]
                 fox_name = pet_bonus["golden_fox_name"]
@@ -236,7 +236,7 @@ class CaseSelect(discord.ui.Select):
             if pet_bonus.get("mimic_bonus", 0) > 0:
                 mimic_bonus = pet_bonus["mimic_bonus"]
                 mimic_name = pet_bonus["mimic_name"]
-                message += f"\n\n🐾 ✨ **Мимик-собиратель ({mimic_name}):** Сработал «Секретный тайник»! Питомец нашел еще +{mimic_bonus} монет."
+                message += f"\n\n🐾 **Мимик-собиратель ({mimic_name}):** Сработал «Секретный тайник»! Питомец нашел еще +{mimic_bonus} монет."
             if pet_bonus.get("golden_fox_bonus", 0) > 0:
                 fox_bonus = pet_bonus["golden_fox_bonus"]
                 fox_name = pet_bonus["golden_fox_name"]

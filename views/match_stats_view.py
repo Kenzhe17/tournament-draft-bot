@@ -582,7 +582,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         team_b_name = tournament.team_names.get(team_b_index, team_b_data.get("captain", f"Team {team_b_index}"))
         
         embed = discord.Embed(
-            title=replace_emojis("📊 Статистика матча"),
+            title="Статистика матча",
             description=f"{team_a_name} vs {team_b_name}",
             color=discord.Color.blue()
         )
@@ -769,7 +769,7 @@ class AdminConfirmView(View):
         view.add_item(cancel_btn)
 
         embed = discord.Embed(
-            title=replace_emojis("🏆 Выберите победителя"),
+            title="Выберите победителя",
             description=f"{team_a_name} vs {team_b_name}",
             color=discord.Color.gold()
         )

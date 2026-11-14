@@ -109,7 +109,7 @@ class HighLowView(discord.ui.View):
     async def handle_guess(self, interaction: discord.Interaction, guess: str) -> None:
         """Обработать догадку."""
         if getattr(self, "_resolving", False):
-            await interaction.response.send_message("⏳ Дождитесь результата предыдущего хода.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Дождитесь результата предыдущего хода.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         self._resolving = True
         try:
@@ -131,10 +131,10 @@ class HighLowView(discord.ui.View):
 
             if correct:
                 self.wins += 1
-                await interaction.followup.send(f"✅ Правильно! Следующее число: {next_number}", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+                await interaction.followup.send(f"Правильно! Следующее число: {next_number}", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             else:
                 self.game_over = True
-                await interaction.followup.send(f"❌ Неправильно! Следующее число: {next_number}", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+                await interaction.followup.send(f"Неправильно! Следующее число: {next_number}", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
             # Обновить текущее число
             self.current_number = next_number
@@ -185,11 +185,11 @@ class HighLowHigherButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.game_over:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         await self.game_view.handle_guess(interaction, "higher")
@@ -204,11 +204,11 @@ class HighLowLowerButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.game_over:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         await self.game_view.handle_guess(interaction, "lower")
@@ -223,11 +223,11 @@ class HighLowCancelButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.game_over or getattr(self.game_view, "_resolving", False):
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         self.game_view.game_over = True  # до возврата — защита от гонки с on_timeout
@@ -239,7 +239,7 @@ class HighLowCancelButton(discord.ui.Button):
                 self.game_view.user_id,
                 self.game_view.bet
             )
-        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена."), allowed_mentions=discord.AllowedMentions.none())
+        await interaction.response.edit_message( view=text_card("Игра отменена. Ставка возвращена."), allowed_mentions=discord.AllowedMentions.none())
 
 
 class HighLowPlayAgainButton(discord.ui.Button):
@@ -252,12 +252,12 @@ class HighLowPlayAgainButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Защита от повторного нажатия (двойное списание ставки)
         if getattr(self, "_activated", False):
-            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Игра уже запущена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         self._activated = True
 
@@ -268,7 +268,7 @@ class HighLowPlayAgainButton(discord.ui.Button):
         balance = await user_balance_store.get_balance(guild_id, user_id)
         if balance < self.bet:
             await interaction.response.send_message(
-                f"❌ Недостаточно монет. У вас: {balance}",
+                f"Недостаточно монет. У вас: {balance}",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             self._activated = False
             return
@@ -279,7 +279,7 @@ class HighLowPlayAgainButton(discord.ui.Button):
             balance = await user_balance_store.get_balance(guild_id, user_id)
             if balance < self.bet:
                 await interaction.response.send_message(
-                    f"❌ Недостаточно монет. У вас: {balance}",
+                    f"Недостаточно монет. У вас: {balance}",
                     ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 self._activated = False
                 return
@@ -324,7 +324,7 @@ class HighLowCog(commands.Cog):
         # Проверить ставку
         if bet < 10 or bet > 10000:
             await interaction.response.send_message(
-                "❌ Ставка должна быть от 10 до 10,000 монет.",
+                "Ставка должна быть от 10 до 10,000 монет.",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
@@ -332,7 +332,7 @@ class HighLowCog(commands.Cog):
         balance = await user_balance_store.get_balance(guild_id, user_id)
         if balance < bet:
             await interaction.response.send_message(
-                f"❌ Недостаточно монет. У вас: {balance}",
+                f"Недостаточно монет. У вас: {balance}",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             self._activated = False
             return
@@ -343,7 +343,7 @@ class HighLowCog(commands.Cog):
             balance = await user_balance_store.get_balance(guild_id, user_id)
             if balance < bet:
                 await interaction.response.send_message(
-                    f"❌ Недостаточно монет. У вас: {balance}",
+                    f"Недостаточно монет. У вас: {balance}",
                     ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 self._activated = False
                 return

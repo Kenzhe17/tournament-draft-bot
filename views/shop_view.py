@@ -450,7 +450,7 @@ class RaritySelect(discord.ui.Select):
                 )
             else:
                 # Icons - use the actual custom emoji from item.value
-                icon_emoji = get_emoji(item.value) if item.value else "⭐"
+                icon_emoji = get_emoji(item.value) if item.value else ""
                 items_parts.append(
                     f"{replace_emojis(sub_emoji)} {icon_emoji} **{item.name}** • {item.price} {get_emoji('money')} {replace_emojis(rare_emoji)}"
                 )
@@ -474,9 +474,9 @@ def get_item_emoji(category: str) -> str:
     """Получить эмодзи для категории товара."""
     emoji_map = {
         "icons": "",
-        "tags": replace_emojis("tag"),
+        "tags": "",
     }
-    return emoji_map.get(category, replace_emojis("shop"))
+    return emoji_map.get(category, "")
 
 
 class CosmeticSelect(discord.ui.Select):
@@ -629,7 +629,7 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
     category_label = "Значки" if item.category == "icons" else "Теги"
 
     # Icon emoji
-    icon_emoji = get_emoji(item.value) if item.value else "⭐"
+    icon_emoji = get_emoji(item.value) if item.value else ""
     # Create embed with custom emoji
     embed = discord.Embed(
         title=f"{icon_emoji} ПОКУПКА ЭМОДЗИ | {item.name}",
@@ -904,7 +904,7 @@ class BuyButton(discord.ui.Button):
             rarity_display = rarity_label.get(item.rarity, "Basic")
 
             # Icon emoji - use get_emoji
-            icon_emoji = get_emoji(item.value) if item.value else "⭐"
+            icon_emoji = get_emoji(item.value) if item.value else ""
 
             if item.category == "tags":
                 embed = discord.Embed(
@@ -990,7 +990,7 @@ class BuyCaseButton(discord.ui.Button):
                 # Добавить текст доп. награды от Мимика
                 if result.get("extra_reward"):
                     extra = result["extra_reward"]
-                    pet_bonus_text += f"\n\n🐾 ✨ **Мимик-собиратель:** Сработал «Секретный тайник»! Питомец нашел еще **+{extra}** монет."
+                    pet_bonus_text += f"\n\n🐾 **Мимик-собиратель:** Сработал «Секретный тайник»! Питомец нашел еще **+{extra}** монет."
 
             elif result["type"] == "item":
                 # Получить icon emoji для предмета
@@ -1726,12 +1726,12 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
     ab2 = pet_def["abilities"][2]
 
     # Способность 1
-    icon_1 = "🔓"
+    icon_1 = ""
     val_1 = f"{ab1['max_val']}"
     desc_1 = f"{icon_1} **{ab1['name']}** - {ab1['desc_template'].format(val=val_1)}"
 
     # Способность 2
-    icon_2 = "🔓"
+    icon_2 = ""
     val_2 = f"{ab2['max_val']}"
     desc_2 = f"{icon_2} **{ab2['name']}** - {ab2['desc_template'].format(val=val_2)}"
 
@@ -1913,7 +1913,7 @@ class OpenEggButton(discord.ui.Button):
             embed = discord.Embed(
                 title=f"{emoji_star} **ЗАГАДОЧНОЕ ЯЙЦО | ПУСТО**",
                 description=(
-                    f"{emoji_sparkle} {interaction.user.mention} аккуратно разбивает скорлупу... 🥚✨\n"
+                    f"{emoji_sparkle} {interaction.user.mention} аккуратно разбивает скорлупу... 🥚\n"
                     f"{emoji_arrow} **Результат:** Эх, яйцо оказалось пустым!\n"
                     f"{emoji_dot} *Внутри ничего не нашлось. Удача обязательно улыбнётся в следующий раз!*"
                 ),

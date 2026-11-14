@@ -1084,7 +1084,7 @@ class TournamentCog(commands.Cog):
 
         embed = discord.Embed(
             title=f"МИНИ-ИГРЫ | Главное меню",
-            description=f" {interaction.user.mention}\n\n **Информация:**\nВаш баланс: {balance:,} {get_emoji('money')}\n\n **Статус игр:**\n🔓 Реализовано: **{len(ready_games)}** игр\n🔒 В разработке: **{len(dev_games)}** игр\n\n **Категории:**\n**Игры на удачу**\nБыстрые игры на риск: монетка, кубики, угадай число и др.\n**Викторины и головоломки**\nИнтеллектуальные состязания, викторины и слова.\n**Казино и ставки**\nСлоты, рулетка, баккара, лотерея и высокие ставки.\n\nВыберите категорию в меню ниже для просмотра списка игр",
+            description=f" {interaction.user.mention}\n\n **Информация:**\nВаш баланс: {balance:,} {get_emoji('money')}\n\n **Статус игр:**\nРеализовано: **{len(ready_games)}** игр\nВ разработке: **{len(dev_games)}** игр\n\n **Категории:**\n**Игры на удачу**\nБыстрые игры на риск: монетка, кубики, угадай число и др.\n**Викторины и головоломки**\nИнтеллектуальные состязания, викторины и слова.\n**Казино и ставки**\nСлоты, рулетка, баккара, лотерея и высокие ставки.\n\nВыберите категорию в меню ниже для просмотра списка игр",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -2079,7 +2079,7 @@ class TournamentCog(commands.Cog):
             )
 
             await interaction.response.send_message(
-                replace_emojis("ELO игрока {player.display_name}: {current_elo} → {new_elo}"),
+                "ELO игрока {player.display_name}: {current_elo} → {new_elo}",
                 ephemeral=True
             )
         else:  # money
@@ -2098,7 +2098,7 @@ class TournamentCog(commands.Cog):
                 await user_balance_store.remove_balance(interaction.guild_id, player.id, amount)
 
             await interaction.response.send_message(
-                replace_emojis("Монеты игрока {player.display_name}: {current_balance} → {new_balance}"),
+                "Монеты игрока {player.display_name}: {current_balance} → {new_balance}",
                 ephemeral=True
             )
 

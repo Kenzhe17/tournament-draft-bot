@@ -577,6 +577,7 @@ DECORATIVE_EMOJI_KEYS = {
     "draft", "match", "screenshot", "stats", "damage",
     "freefire", "pet", "sparkle", "star", "clock",
     "skull", "target", "sword", "team", "profile",
+    "grow", "kill_death", "notes", "book", "light_bulb", "flash",
     "shop", "gift", "daily", "bet", "bank", "tournament",
     "room", "tag",
     "case_basic", "case_premium", "case_elite", "case_special",

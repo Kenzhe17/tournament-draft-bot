@@ -44,7 +44,7 @@ class RiddlesView(discord.ui.View):
                 inline=False
             )
             embed.add_field(
-                name="⏱️ Время",
+                name="Время",
                 value=f"Осталось попыток: {self.attempts}",
                 inline=False
             )
