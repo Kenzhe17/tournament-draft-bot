@@ -498,6 +498,20 @@ class AddOrganizerSelect(Select):
 
         organizer_store.set(self.guild_id, self.channel_id, channel_orgs)
 
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                channel_id=self.channel_id,
+                tournament_id=channel_orgs.tournament_id or None,
+                target_user_id=user_id,
+                action=audit_svc.A.ORG_ASSIGN,
+                source="organizer",
+                after={"role": "additional"},
+            )
+        except Exception:
+            pass
+
         # Update the original message
         await self._update_message(interaction)
 
@@ -584,6 +598,19 @@ class RemoveOrganizerButton(Button):
             return
 
         organizer_store.set(self.guild_id, self.channel_id, channel_orgs)
+
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                channel_id=self.channel_id,
+                tournament_id=channel_orgs.tournament_id or None,
+                target_user_id=self.organizer_id,
+                action=audit_svc.A.ORG_REMOVE,
+                source="organizer",
+            )
+        except Exception:
+            pass
 
         # Update the original message
         await self._update_message(interaction)
@@ -782,6 +809,20 @@ class TransferOrganizerSelect(Select):
             return
 
         organizer_store.set(self.guild_id, self.channel_id, channel_orgs)
+
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                channel_id=self.channel_id,
+                tournament_id=channel_orgs.tournament_id or None,
+                target_user_id=new_org_id,
+                action=audit_svc.A.ORG_TRANSFER,
+                source="organizer",
+                after={"role": "main"},
+            )
+        except Exception:
+            pass
 
         # Update the original message
         await self._update_message(interaction)

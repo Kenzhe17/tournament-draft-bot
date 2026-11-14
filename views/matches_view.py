@@ -527,6 +527,44 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
             import logging
             logging.error(f"Error resolving bets: {e}", exc_info=True)
 
+        # Аудит подтверждения результата (дедупликация по match_id —
+        # повторное нажатие/рестарт не создаёт вторую запись).
+        try:
+            from services import tournament_audit_service as audit_svc
+            _is_final = self.match_type == "final" or (
+                tournament.phase == TournamentPhase.COMPLETE)
+            await audit_svc.record_interaction(
+                interaction,
+                tournament_id=str(tournament.id),
+                match_id=match_id,
+                action=(
+                    audit_svc.A.FINAL_CONFIRM if _is_final
+                    else audit_svc.A.RESULT_CONFIRM
+                ),
+                after={
+                    "winner_team_index": self.team_index,
+                    "winning_team": winning_team_name,
+                    "phase": tournament.phase.value,
+                },
+                dedup_key=(
+                    f"confirm:{tournament.id}:{self.match_type}"
+                    f":{self.match_index}"
+                ),
+            )
+            # Переход этапа после подтверждения (QUALIFIERS→
+            # SEMIFINALS→FINAL→COMPLETE).
+            if fresh is not None and tournament.phase != fresh.phase:
+                await audit_svc.record_interaction(
+                    interaction,
+                    tournament_id=str(tournament.id),
+                    match_id=match_id,
+                    action=audit_svc.A.TOURNAMENT_NEXT_PHASE,
+                    before={"phase": fresh.phase.value},
+                    after={"phase": tournament.phase.value},
+                )
+        except Exception as _exc:
+            logger.warning("audit confirm failed: %s", _exc)
+
         # Update tournament message
         from bot import TournamentBot
         bot = interaction.client  # type: ignore[assignment]
@@ -574,6 +612,17 @@ class CancelWinnerButton(discord.ui.Button):
 
         # Return to stats view with winner selection buttons
         match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                tournament_id=str(self.tournament.id),
+                match_id=match_id,
+                action=audit_svc.A.RESULT_RESET,
+                after={"reason": "cancel_winner"},
+            )
+        except Exception:
+            pass
         temp_stats = self.tournament.temp_match_stats.get(match_id, {})
         
         team_a_index, team_b_index = self.match
@@ -786,12 +835,36 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
 
         # Update only this team's stats (remove old stats for this team first)
         team_players = set(self.players)
+        prev_team_stats = {
+            p: tournament.temp_match_stats.get(match_id, {}).get(p)
+            for p in self.players
+        }
         tournament.temp_match_stats[match_id] = {
             k: v for k, v in tournament.temp_match_stats[match_id].items()
             if k not in team_players
         }
         tournament.temp_match_stats[match_id].update(stats)
         store.set(tournament)
+
+        # Аудит исправления K/D организатором: до/после по игрокам.
+        try:
+            from services import tournament_audit_service as audit_svc
+            _kd = lambda d: (
+                f"{d.get('kills', 0)}/{d.get('deaths', 0)}"
+                if isinstance(d, dict) else None
+            )
+            await audit_svc.record_interaction(
+                interaction,
+                tournament_id=str(tournament.id),
+                match_id=match_id,
+                action=audit_svc.A.KD_ADMIN_EDIT,
+                before={
+                    p: _kd(v) for p, v in prev_team_stats.items() if v
+                },
+                after={p: _kd(stats[p]) for p in stats},
+            )
+        except Exception as _exc:
+            logger.warning("audit kd_edit failed: %s", _exc)
 
         # Update tournament message and view
         try:
@@ -922,6 +995,23 @@ class ConfirmWinnerButton(discord.ui.Button):
         }, interaction)
         logging.info("Stats processed successfully")
 
+        # Фиксируем предыдущее pending-значение для аудита
+        # «изменение результата до подтверждения».
+        if self.match_type == "qualifier":
+            _prev_winner = (
+                tournament.qualifier_winners[self.match_index]
+                if self.match_index < len(tournament.qualifier_winners)
+                else None
+            )
+        elif self.match_type == "semifinal":
+            _pend = getattr(tournament, "semifinal_pending_winners", [])
+            _prev_winner = (
+                _pend[self.match_index]
+                if self.match_index < len(_pend) else None
+            )
+        else:
+            _prev_winner = getattr(tournament, "final_pending_winner", None)
+
         # Call the appropriate winner setter based on match type (pending)
         if self.match_type == "qualifier":
             tournament.set_qualifier_winner(self.match_index, self.team_index)
@@ -931,6 +1021,31 @@ class ConfirmWinnerButton(discord.ui.Button):
             tournament.set_final_winner(self.team_index)
 
         store.set(tournament)
+
+        try:
+            from services import tournament_audit_service as audit_svc
+            _changed = (
+                _prev_winner is not None
+                and _prev_winner != self.team_index
+            )
+            await audit_svc.record_interaction(
+                interaction,
+                tournament_id=str(tournament.id),
+                match_id=match_id,
+                action=(
+                    audit_svc.A.WINNER_CHANGE if _changed
+                    else audit_svc.A.WINNER_SELECT
+                ),
+                before={"winner_team_index": _prev_winner}
+                if _prev_winner is not None else None,
+                after={
+                    "winner_team_index": self.team_index,
+                    "team": self.team_name,
+                    "pending": True,
+                },
+            )
+        except Exception as _exc:
+            logger.warning("audit winner_select failed: %s", _exc)
 
         # Update tournament message
         try:
@@ -996,6 +1111,20 @@ class GenerateMatchesButton(discord.ui.Button):
             tournament.generate_bracket()
             logger.info(f"After generate_bracket, phase: {tournament.phase.value}")
             store.set(tournament)
+
+            try:
+                from services import tournament_audit_service as audit_svc
+                await audit_svc.record_interaction(
+                    interaction,
+                    tournament_id=str(tournament.id),
+                    action=audit_svc.A.MATCH_GENERATE,
+                    after={
+                        "phase": tournament.phase.value,
+                        "size": tournament.size.value,
+                    },
+                )
+            except Exception:
+                pass
 
             # Initialize betting odds for all matches
             from storage.bet_store import bet_store

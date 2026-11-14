@@ -474,6 +474,30 @@ async def _save_room(
         m["key"], room_no, interaction.user.id, result["created"],
     )
 
+    # Аудит: ID комнаты и кто отправил — БЕЗ пароля.
+    # «До/после» не храним значения комнаты — только факт обновления.
+    try:
+        from services import tournament_audit_service as audit_svc
+        await audit_svc.record_interaction(
+            interaction,
+            channel_id=cid,
+            tournament_id=str(tournament.id),
+            match_id=m["key"],
+            action=(
+                audit_svc.A.ROOM_SUBMIT if result["created"]
+                else audit_svc.A.ROOM_UPDATE
+            ),
+            source="room",
+            after={
+                "match": m["label"],
+                "room_no": room_no,
+                "teams": list(m.get("teams", ())),
+            },
+            dedup_key=None,
+        )
+    except Exception as exc:
+        logger.warning("room audit failed: %s", exc)
+
     text = (
         f"Данные комнаты сохранены для **{m['label']}** "
         f"(комната #{room_no}).\n"

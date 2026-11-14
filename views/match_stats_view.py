@@ -193,8 +193,47 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                 tournament.temp_match_stats[match_id] = {}
 
             # Merge with existing stats (captain fills their team only)
+            prev_stats = dict(tournament.temp_match_stats.get(match_id, {}))
             tournament.temp_match_stats[match_id].update(stats)
             store.set(tournament)
+
+            # Ключи — Discord ID игроков (требование аудита:
+            # «K/D игрока 12/7 → 14/7» по user_id, не по нику).
+            _uid_map = getattr(tournament, "player_user_ids", {}) or {}
+
+            def _pk(name: str) -> str:
+                uid = _uid_map.get(name)
+                return str(uid) if uid else str(name)
+
+            try:
+                from services import tournament_audit_service as audit_svc
+                _kd = lambda d: (
+                    f"{d.get('kills', 0)}/{d.get('deaths', 0)}"
+                    if isinstance(d, dict) else None
+                )
+                await audit_svc.record_interaction(
+                    interaction,
+                    tournament_id=str(tournament.id),
+                    match_id=match_id,
+                    action=audit_svc.A.KD_CAPTAIN_SUBMIT,
+                    before={
+                        _pk(p): _kd(prev_stats.get(p))
+                        for p in stats if prev_stats.get(p)
+                    },
+                    after={_pk(p): _kd(stats[p]) for p in stats},
+                )
+                # «Начало матча» — при первой отправке K/D.
+                if not prev_stats:
+                    await audit_svc.record_interaction(
+                        interaction,
+                        tournament_id=str(tournament.id),
+                        match_id=match_id,
+                        action=audit_svc.A.MATCH_START,
+                        after={"phase": "stats"},
+                        dedup_key=f"mstart:{tournament.id}:{match_id}",
+                    )
+            except Exception:
+                pass
 
             # Save match to history for captain's team players
             # Note: This is preliminary - full history is saved when admin confirms
@@ -508,8 +547,44 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         # Merge with existing stats (admin fills one team at a time)
         if match_id not in tournament.temp_match_stats:
             tournament.temp_match_stats[match_id] = {}
+        prev_stats = dict(tournament.temp_match_stats[match_id])
         tournament.temp_match_stats[match_id].update(stats)
         store.set(tournament)
+
+        _uid_map = getattr(tournament, "player_user_ids", {}) or {}
+
+        def _pk(name: str) -> str:
+            uid = _uid_map.get(name)
+            return str(uid) if uid else str(name)
+
+        try:
+            from services import tournament_audit_service as audit_svc
+            _kd = lambda d: (
+                f"{d.get('kills', 0)}/{d.get('deaths', 0)}"
+                if isinstance(d, dict) else None
+            )
+            await audit_svc.record_interaction(
+                interaction,
+                tournament_id=str(tournament.id),
+                match_id=match_id,
+                action=audit_svc.A.KD_ADMIN_EDIT,
+                before={
+                    _pk(p): _kd(prev_stats.get(p))
+                    for p in stats if prev_stats.get(p)
+                },
+                after={_pk(p): _kd(stats[p]) for p in stats},
+            )
+            if not prev_stats:
+                await audit_svc.record_interaction(
+                    interaction,
+                    tournament_id=str(tournament.id),
+                    match_id=match_id,
+                    action=audit_svc.A.MATCH_START,
+                    after={"phase": "stats", "by": "admin"},
+                    dedup_key=f"mstart:{tournament.id}:{match_id}",
+                )
+        except Exception:
+            pass
 
         # Update tournament message to refresh view
         from bot import TournamentBot
@@ -1068,6 +1143,47 @@ class AdminConfirmView(View):
 
             # Store tournament again after winner confirmation
             store.set(tournament)
+
+            # Аудит подтверждения результата + перехода этапа +
+            # начисления наград (дедупликация по match_id).
+            try:
+                from services import tournament_audit_service as audit_svc
+                _is_final = self.match_type == "final" or (
+                    tournament.phase == TournamentPhase.COMPLETE)
+                await audit_svc.record_interaction(
+                    interaction,
+                    tournament_id=str(tournament.id),
+                    match_id=match_id,
+                    action=(
+                        audit_svc.A.FINAL_CONFIRM if _is_final
+                        else audit_svc.A.RESULT_CONFIRM
+                    ),
+                    after={
+                        "winning_team_index": winning_team_index,
+                        "winning_team": winning_team_name,
+                        "phase": tournament.phase.value,
+                    },
+                    dedup_key=(
+                        f"confirm:{tournament.id}:{self.match_type}"
+                        f":{self.match_index}"
+                    ),
+                )
+                if _is_final:
+                    await audit_svc.record_interaction(
+                        interaction,
+                        tournament_id=str(tournament.id),
+                        match_id=match_id,
+                        action=audit_svc.A.EARNINGS_AWARDED,
+                        after={
+                            "winner_team_index":
+                                tournament.winner_team_index,
+                        },
+                        dedup_key=(
+                            f"earnings:{tournament.id}"
+                        ),
+                    )
+            except Exception as _exc:
+                logging.warning("audit confirm failed: %s", _exc)
 
             try:
                 from bot import TournamentBot

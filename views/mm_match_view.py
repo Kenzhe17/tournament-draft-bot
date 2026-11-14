@@ -598,6 +598,9 @@ class MmKDModal(discord.ui.Modal):
         bucket = tournament.temp_match_stats.setdefault(mid, {})
         # Заменяем статистику только своей команды
         team_set = set(current)
+        prev_kd = {
+            p: bucket.get(p) for p in current if p in bucket
+        }
         for p in list(bucket.keys()):
             if p in team_set:
                 del bucket[p]
@@ -617,6 +620,32 @@ class MmKDModal(discord.ui.Modal):
         else:
             meta["status_text"] = "ожидается"
         store.set(tournament)
+
+        try:
+            from services import tournament_audit_service as audit_svc
+            _kd = lambda d: (
+                f"{d.get('kills', 0)}/{d.get('deaths', 0)}"
+                if isinstance(d, dict) else None
+            )
+            _uids = getattr(tournament, "player_user_ids", {}) or {}
+
+            def _pk(name: str) -> str:
+                uid = _uids.get(name)
+                return str(uid) if uid else str(name)
+
+            await audit_svc.record_interaction(
+                interaction,
+                tournament_id=str(tournament.id),
+                match_id=mid,
+                action=audit_svc.A.MM_KD_SUBMIT,
+                source="mm",
+                before={
+                    _pk(p): _kd(v) for p, v in prev_kd.items() if v
+                },
+                after={_pk(p): _kd(stats[p]) for p in stats},
+            )
+        except Exception:
+            pass
 
         await interaction.response.send_message(
             f"Статистика команды сохранена ({len(stats)}/4).",
@@ -914,6 +943,18 @@ async def handle_cancel_click(interaction: discord.Interaction) -> None:
         meta["state"] = "active"
         meta["status_text"] = "ожидается"
         store.set(tournament)
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                tournament_id=str(tournament.id),
+                match_id=match_id_of(tournament),
+                action=audit_svc.A.RESULT_RESET,
+                source="mm",
+                after={"reason": "cancel_check"},
+            )
+        except Exception:
+            pass
         await interaction.response.send_message(
             "Проверка отменена — статистику можно исправить.",
             ephemeral=True,
@@ -1098,6 +1139,26 @@ async def _finalize_mm_match_locked(
     await finalize_store.mark_done(tournament.guild_id, mid)
     meta["finalize_marker_done"] = True
     store.set(tournament)
+
+    # Аудит финального подтверждения MM-матча (дедуп по match_id —
+    # повторное нажатие/рестарт не дублирует событие).
+    try:
+        from services import tournament_audit_service as audit_svc
+        await audit_svc.record_interaction(
+            interaction,
+            tournament_id=str(tournament.id),
+            match_id=mid,
+            action=audit_svc.A.MM_RESULT_CONFIRM,
+            source="mm",
+            after={
+                "winner_side": winner_side,
+                "score": score_str,
+                "phase": tournament.phase.value,
+            },
+            dedup_key=f"mmconfirm:{mid}",
+        )
+    except Exception as _exc:
+        logger.warning("audit mm confirm failed: %s", _exc)
     return True, ""
 
 

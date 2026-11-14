@@ -96,7 +96,8 @@ async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float
 
 
 async def _perform_tournament_delete(
-    bot, guild: discord.Guild, channel_id: int, tournament: Tournament
+    bot, guild: discord.Guild, channel_id: int, tournament: Tournament,
+    actor_user_id: int | None = None,
 ) -> None:
     """Фактическое удаление активного турнира (только не-COMPLETE)."""
     if tournament.phase == TournamentPhase.COMPLETE:
@@ -118,6 +119,25 @@ async def _perform_tournament_delete(
 
     store.delete(guild.id, channel_id)
     logger.info("Турнир удален на сервере %s", guild.id)
+
+    from services import tournament_audit_service as audit_svc
+    # Отмена до старта матчей vs удаление идущего турнира.
+    _cancel_phases = {
+        TournamentPhase.SETUP, TournamentPhase.RULES_VOTING,
+        TournamentPhase.DRAFT, TournamentPhase.TEAMS,
+    }
+    await audit_svc.record(
+        guild_id=guild.id, channel_id=channel_id,
+        tournament_id=str(tournament.id),
+        actor_user_id=actor_user_id,
+        action=(
+            audit_svc.A.TOURNAMENT_CANCEL
+            if tournament.phase in _cancel_phases
+            else audit_svc.A.TOURNAMENT_DELETE
+        ),
+        before={"phase": tournament.phase.value},
+        dedup_key=f"tdelete:{tournament.id}",
+    )
 
     # Разблокировать канал если он был заблокирован поиском
     if hasattr(bot, 'mm_cog'):
@@ -202,7 +222,8 @@ class _DeleteTournamentConfirmView(discord.ui.View):
 
         await _perform_tournament_delete(
             interaction.client, interaction.guild,
-            self.channel_id, tournament)
+            self.channel_id, tournament,
+            actor_user_id=interaction.user.id)
         await interaction.response.edit_message(
             view=compose(text="Турнир удалён.", view=None))
 
@@ -260,6 +281,13 @@ class TournamentCog(commands.Cog):
             # результаты/историю, затем освобождаем слот канала.
             from storage.tournament_archive import tournament_archive
             tournament_archive.archive(existing)
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                tournament_id=str(existing.id),
+                action=audit_svc.A.TOURNAMENT_ARCHIVED,
+                after={"phase": "complete", "winner": existing.winner_team_index},
+            )
             if existing.message_id:
                 try:
                     channel = interaction.guild.get_channel(existing.channel_id)
@@ -375,6 +403,18 @@ class TournamentCog(commands.Cog):
 
         logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
 
+        from services import tournament_audit_service as audit_svc
+        await audit_svc.record_interaction(
+            interaction,
+            tournament_id=str(tournament.id),
+            action=audit_svc.A.TOURNAMENT_CREATE,
+            after={
+                "size": size,
+                "formation": formation,
+                "phase": tournament.phase.value,
+            },
+        )
+
     @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_channel_organizer_decorator()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
@@ -461,6 +501,15 @@ class TournamentCog(commands.Cog):
             try:
                 store.delete(t.guild_id, t.channel_id)
                 deleted += 1
+                from services import tournament_audit_service as audit_svc
+                await audit_svc.record(
+                    guild_id=t.guild_id, channel_id=t.channel_id,
+                    tournament_id=str(t.id),
+                    actor_user_id=interaction.user.id,
+                    action=audit_svc.A.TOURNAMENT_DELETE,
+                    before={"phase": t.phase.value, "via": "deleteall"},
+                    dedup_key=f"tdelete:{t.id}",
+                )
             except Exception as e:
                 logger.error(f"deleteall: store.delete failed for {t.guild_id}:{t.channel_id}: {e}")
 
@@ -476,6 +525,21 @@ class TournamentCog(commands.Cog):
         )
         await interaction.followup.send(
             f"Удалено турниров: **{deleted}**{suffix}", ephemeral=True)
+
+    @tournament_group.command(name="log", description="Журнал действий турнира (для организаторов)")
+    async def tournament_log(self, interaction: discord.Interaction) -> None:
+        """Ephemeral-панель аудита текущего/последнего турнира канала."""
+        from views.tournament_audit_view import (
+            _can_view, open_audit_panel)
+        # Предварительная проверка прав — журнал не открывается
+        # обычным участникам даже на чтение.
+        if not await _can_view(interaction, None):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "У вас нет прав на просмотр журнала."),
+                ephemeral=True)
+            return
+        await open_audit_panel(interaction)
 
     @tournament_group.command(name="test", description="Тестовые операции турниров")
     @is_bot_owner()
