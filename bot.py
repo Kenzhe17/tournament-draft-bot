@@ -945,11 +945,8 @@ class TournamentBot(commands.Bot):
         except Exception as e:
             logger.error(f"Ошибка синхронизации команд: {e}")
 
-        # Restore org role view if it exists
-        from views.org_role_view import (
-            load_state, OrgRoleView, build_org_role_embed,
-        )
-        from utils.design import compose as _compose_v2
+        # Restore org role panel if it exists
+        from views.org_role_view import load_state, OrgPanelView
         state = load_state()
         if state.message_id > 0 and state.channel_id > 0 and state.guild_id > 0:
             try:
@@ -959,17 +956,13 @@ class TournamentBot(commands.Bot):
                     if channel:
                         try:
                             message = await channel.fetch_message(state.message_id)
-                            view = OrgRoleView(state)
+                            view = OrgPanelView(guild=guild, state=state)
                             self.add_view(view, message_id=state.message_id)
-                            # Старые панели содержали баннер-картинку —
-                            # пересобираем сообщение в компактном виде
-                            # и снимаем вложение (одноразово при старте).
+                            # Пересобираем сообщение в новый CV2-вид
+                            # (баннер + статусы + кнопки в одном сообщении).
                             try:
                                 await message.edit(
-                                    view=_compose_v2(
-                                        build_org_role_embed(guild, state),
-                                        view,
-                                    ),
+                                    view=view,
                                     attachments=[],
                                     allowed_mentions=(
                                         discord.AllowedMentions.none()
@@ -979,7 +972,7 @@ class TournamentBot(commands.Bot):
                                 logger.warning(
                                     "Org panel re-render failed: %s", exc
                                 )
-                            logger.info("Org role view restored")
+                            logger.info("Org role panel restored")
                         except discord.NotFound:
                             logger.warning("Org role message not found, will be recreated")
             except Exception as e:
