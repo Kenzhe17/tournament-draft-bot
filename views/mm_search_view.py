@@ -12,8 +12,8 @@ import logging
 
 import discord
 
-from config import WELCOME_BANNER_URL
 from models.mm_search import MMSearch
+from utils.banner import MEDIA as BANNER_MEDIA, available as banner_available
 from utils.design.layouts import DesignView
 
 logger = logging.getLogger(__name__)
@@ -96,12 +96,12 @@ def build_queue_panel(
     """Построить V2-панель очереди (open/locked)."""
     view = DesignView(timeout=None)
 
-    # PNG-баннер сверху карточки (удалённый URL — не требует
-    # перевложений при каждом edit сообщения).
-    if WELCOME_BANNER_URL:
+    # PNG-баннер сверху карточки (attachment:// — файл прикреплён
+    # к сообщению при отправке; при edit вложение сохраняется).
+    if banner_available():
         view.component(
             discord.ui.MediaGallery(
-                discord.MediaGalleryItem(media=WELCOME_BANNER_URL)
+                discord.MediaGalleryItem(media=BANNER_MEDIA)
             )
         )
         view.sep(large=True)

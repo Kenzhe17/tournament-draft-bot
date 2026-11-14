@@ -39,8 +39,10 @@ from storage.mm_search_store import mm_search_store
 from storage.match_number_store import match_number_store
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
+from utils.banner import banner_file, edit_attachments
 from views.mm_match_view import (
     MmMatchTemplateView,
+    _team_name,
     build_mm_match_view,
     match_id_of,
     meta_of,
@@ -374,8 +376,10 @@ class MMCog(commands.Cog):
 
         await interaction.response.send_message("Поиск создан!", ephemeral=True)
 
+        banner = banner_file()
         message = await interaction.channel.send(
             view=build_queue_panel(search),
+            file=banner,
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
@@ -1006,6 +1010,31 @@ class MMCog(commands.Cog):
                 meta["card_message_id"] = msg.id
                 store.set(tournament)
 
+            # Аудит запуска MM-матча
+            try:
+                from services import tournament_audit_service as audit_svc
+                await audit_svc.record(
+                    guild_id=tournament.guild_id,
+                    channel_id=tournament.channel_id,
+                    tournament_id=str(tournament.id),
+                    match_id=match_id_of(tournament),
+                    actor_user_id=getattr(interaction, "user", None)
+                    and interaction.user.id,
+                    action=audit_svc.A.MM_MATCH_START,
+                    source="mm",
+                    after={
+                        "match_num": match_num,
+                        "channel_id": channel.id,
+                        "teams": [
+                            _team_name(tournament, i)
+                            for i in (0, 1)
+                        ],
+                    },
+                    dedup_key=f"mmstart:{tournament.id}",
+                )
+            except Exception as _exc:
+                logger.warning("audit mm start failed: %s", _exc)
+
         except Exception as exc:
             logger.error("_begin_match failed: %s", exc, exc_info=True)
             # Турнир мог быть создан до сбоя (канал/карточка) —
@@ -1136,10 +1165,14 @@ class MMCog(commands.Cog):
                 return
         try:
             message = await channel.fetch_message(search.message_id)
-            await message.edit(
+            kwargs = dict(
                 view=build_queue_panel(search),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
+            att = edit_attachments(message)
+            if att is not None:
+                kwargs["attachments"] = att
+            await message.edit(**kwargs)
         except discord.NotFound:
             logger.warning("Queue panel message %s not found", search.message_id)
         except Exception as exc:
@@ -1196,6 +1229,9 @@ class MMCog(commands.Cog):
             view=build_queue_panel(search),
             allowed_mentions=discord.AllowedMentions.none(),
         )
+        att = edit_attachments(interaction.message)
+        if att is not None:
+            kwargs["attachments"] = att
         try:
             done = interaction.response.is_done()
         except Exception:

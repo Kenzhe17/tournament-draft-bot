@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
@@ -22,25 +21,12 @@ from config import (
     DATA_DIR,
     MANAGER_ROLE_ID,
 )
-
-# PNG-баннер «Ranked Matchmaking» (поиск матчей) сверху панели.
-ORG_BANNER_FILENAME = "ranked.png"
-ORG_BANNER_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "assets"
-    / "info"
-    / ORG_BANNER_FILENAME
+from utils.banner import (
+    MEDIA as BANNER_MEDIA,
+    available as banner_available,
+    banner_file,
+    edit_attachments as banner_edit_attachments,
 )
-
-
-def org_banner_file() -> discord.File | None:
-    """Файл баннера для attachment:// — прикреплять к каждому
-    send/edit сообщения панели."""
-    if ORG_BANNER_PATH.exists():
-        return discord.File(
-            str(ORG_BANNER_PATH), filename=ORG_BANNER_FILENAME
-        )
-    return None
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -241,6 +227,7 @@ async def _handle_role_button(
         return
     uid = interaction.user.id
     result_text = ""
+    _audit_action = None
 
     async with _PANEL_LOCK:
         state = load_state()
@@ -289,6 +276,7 @@ async def _handle_role_button(
             state.message_id = interaction.message.id
             save_state(state)
             result_text = f"{role_name} сдана."
+            _audit_action = "revoke"
         elif occupied_by:
             await interaction.response.send_message(
                 "Роль уже занята.", ephemeral=True
@@ -338,15 +326,36 @@ async def _handle_role_button(
             state.message_id = interaction.message.id
             save_state(state)
             result_text = f"{role_name} взята."
+            _audit_action = "grant"
 
         new_view = OrgPanelView(guild=guild, state=state)
 
-    banner = org_banner_file()
+    if _audit_action:
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                action=(
+                    audit_svc.A.ORG_ROLE_REVOKE
+                    if _audit_action == "revoke"
+                    else audit_svc.A.ORG_ROLE_GRANT
+                ),
+                source="organizer",
+                target_user_id=uid,
+                after={"role": role_name},
+            )
+        except Exception:
+            pass
+
+    att = banner_edit_attachments(interaction.message)
+    edit_kwargs = {}
+    if att is not None:
+        edit_kwargs["attachments"] = att
     try:
         await interaction.response.edit_message(
             view=new_view,
-            attachments=[banner] if banner else [],
             allowed_mentions=_NO_MENTIONS,
+            **edit_kwargs,
         )
     except Exception:
         logger.exception("org panel edit failed")
@@ -450,17 +459,31 @@ class _ResetConfirmButton(discord.ui.Button):
             save_state(state)
             new_view = OrgPanelView(guild=guild, state=state)
 
+        try:
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                action=audit_svc.A.ORG_RESET,
+                source="organizer",
+                after={"roles": [n for _, n in _org_roles()]},
+            )
+        except Exception:
+            pass
+
         # Обновить публичную панель (не ephemeral-карточку подтверждения)
         try:
             channel_id = state.channel_id or interaction.channel_id
             channel = guild.get_channel(channel_id) or interaction.channel
             if channel is not None and state.message_id:
                 message = await channel.fetch_message(state.message_id)
-                banner = org_banner_file()
+                att = banner_edit_attachments(message)
+                edit_kwargs = {}
+                if att is not None:
+                    edit_kwargs["attachments"] = att
                 await message.edit(
                     view=new_view,
-                    attachments=[banner] if banner else [],
                     allowed_mentions=_NO_MENTIONS,
+                    **edit_kwargs,
                 )
         except Exception:
             logger.exception("org panel refresh after reset failed")
@@ -505,12 +528,10 @@ class OrgPanelView(discord.ui.LayoutView):
 
         container = discord.ui.Container()
 
-        if ORG_BANNER_PATH.exists():
+        if banner_available():
             container.add_item(
                 discord.ui.MediaGallery(
-                    discord.MediaGalleryItem(
-                        media=f"attachment://{ORG_BANNER_FILENAME}"
-                    )
+                    discord.MediaGalleryItem(media=BANNER_MEDIA)
                 )
             )
             container.add_item(_sep(large=True))
@@ -592,14 +613,10 @@ async def setup_org_role_message(
 
     view = OrgPanelView(guild=guild, state=state)
 
-    banner = org_banner_file()
-    kwargs = {}
-    if banner is not None:
-        kwargs["file"] = banner
     message = await channel.send(
         view=view,
+        file=banner_file(),
         allowed_mentions=_NO_MENTIONS,
-        **kwargs,
     )
 
     # Save message info

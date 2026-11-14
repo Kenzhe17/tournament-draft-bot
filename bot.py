@@ -241,6 +241,17 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.error("Failed to initialize database: %s", e)
 
+        # Журнал аудита: привязка бота для публикации карточек
+        # и восстановление pending-событий после рестарта/сбоя БД.
+        try:
+            from services import tournament_audit_service as audit_svc
+            audit_svc.bind_bot(self)
+            if DATABASE_URL:
+                self.loop.create_task(audit_svc.flush_pending())
+                self.loop.create_task(audit_svc.republish_unpublished())
+        except Exception as exc:
+            logger.warning("audit service init failed: %s", exc)
+
         await self.load_extension("cogs.tournament")
         await self.load_extension("cogs.games.coin_flip")
         await self.load_extension("cogs.games.dice_roll")
@@ -946,9 +957,8 @@ class TournamentBot(commands.Bot):
             logger.error(f"Ошибка синхронизации команд: {e}")
 
         # Restore org role panel if it exists
-        from views.org_role_view import (
-            load_state, OrgPanelView, org_banner_file,
-        )
+        from views.org_role_view import load_state, OrgPanelView
+        from utils.banner import edit_attachments as _banner_att
         state = load_state()
         if state.message_id > 0 and state.channel_id > 0 and state.guild_id > 0:
             try:
@@ -963,15 +973,16 @@ class TournamentBot(commands.Bot):
                             # Пересобираем сообщение в новый CV2-вид
                             # (баннер + статусы + кнопки в одном сообщении).
                             try:
-                                banner = org_banner_file()
+                                att = _banner_att(message)
+                                edit_kwargs = {}
+                                if att is not None:
+                                    edit_kwargs["attachments"] = att
                                 await message.edit(
                                     view=view,
-                                    attachments=(
-                                        [banner] if banner else []
-                                    ),
                                     allowed_mentions=(
                                         discord.AllowedMentions.none()
                                     ),
+                                    **edit_kwargs,
                                 )
                             except Exception as exc:
                                 logger.warning(
