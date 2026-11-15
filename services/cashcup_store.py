@@ -90,10 +90,10 @@ class CashCupStore:
         return self._decode(row) if row else None
 
     async def create(self, guild_id: int, channel_id: int, creator_id: int,
-                     prize: str) -> dict[str, Any]:
+                     prize: str, pool: int | None = None) -> dict[str, Any]:
         await self.ensure_schema()
         tid = uuid.uuid4().hex[:12]
-        state = {"status": "registration", "prize": prize,
+        state = {"status": "registration", "prize": prize, "pool": pool or 0,
                  "guild_id": guild_id, "created_at": datetime.now(timezone.utc).isoformat(),
                  "teams": [], "bracket": None, "payouts": []}
         pool = await get_pool()

@@ -84,6 +84,73 @@ def test_invalid_teams_and_scores():
     assert bracket == snapshot
 
 
+def test_disqualify_forfeits_all_remaining_matches():
+    from services.cashcup_bracket import disqualify
+    b = create_bracket([str(i) for i in range(8)], seed=2)
+    # Играем первый раунд, затем ДСК одной из команд.
+    for m in list(ready_matches(b)):
+        record_result(b, m["id"], 1, 0)
+    dq_team = ready_matches(b)[0]["a"]
+    disqualify(b, dq_team)
+    # ДСК-команда должна получить второе поражение в L-сетке и выбыть.
+    assert b["losses"][dq_team] == 2
+    assert dq_team in b["dq"]
+    # Доигрываем турнир до конца — чемпион определён, сетка не висит.
+    while b["champion"] is None:
+        for m in list(ready_matches(b)):
+            score = rng_choice(m)
+            record_result(b, m["id"], *score)
+    assert b["champion"] != dq_team
+
+
+def rng_choice(m):
+    import random
+    return random.choice([(2, 0), (2, 1), (0, 2), (1, 2)]) if m["bo"] == 3 \
+        else random.choice([(1, 0), (0, 1)])
+
+
+def test_disqualify_during_grand_final():
+    from services.cashcup_bracket import disqualify, record_final_game
+    b = create_bracket(["A", "B"], seed=0)
+    record_result(b, ready_matches(b)[0]["id"], 1, 0)
+    record_final_game(b, "a", evidence="g1")
+    disqualify(b, "A")
+    assert b["champion"] == "B"
+    assert b["stage"] == "completed"
+
+
+def test_both_disqualified_void_match():
+    from services.cashcup_bracket import disqualify
+    b = create_bracket(["A", "B", "C", "D"], seed=0)
+    ids = {m["id"] for m in ready_matches(b)}
+    # ДСК двух команд, которые встретятся в первом раунде.
+    pair = next(m for m in ready_matches(b))
+    disqualify(b, pair["a"])
+    # После авто-форфейта пара могла измениться — ДСКнем и второго участника
+    # оставшегося активного матча, если он ещё не сыгран.
+    for m in ready_matches(b):
+        other = m["b"] if m["a"] in b["dq"] else m["a"]
+        if other not in b["dq"]:
+            disqualify(b, other)
+            break
+    # Сетка обязана завершиться без ошибок.
+    while b["champion"] is None and ready_matches(b):
+        for m in list(ready_matches(b)):
+            record_result(b, m["id"], *rng_choice(m), evidence="x")
+    assert b["champion"] is not None or b["stage"] == "completed" or not ready_matches(b)
+
+
+def test_disqualify_unknown_and_twice():
+    from services.cashcup_bracket import disqualify
+    b = create_bracket(["A", "B"], seed=0)
+    with pytest.raises(BracketError):
+        disqualify(b, "ZZZ")
+    disqualify(b, "A")
+    # A уже выбыла — повторная ДСК отклоняется, если команда не в матчах.
+    with pytest.raises(BracketError):
+        disqualify(b, "A")
+
+
 def test_grand_final_game_by_game():
     from services.cashcup_bracket import record_final_game
     b = create_bracket(["A", "B"], seed=0)

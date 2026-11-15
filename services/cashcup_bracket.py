@@ -23,6 +23,7 @@ def create_bracket(team_ids: list[str], *, seed: int | None = None) -> dict[str,
         "incoming": [], "carry": [], "active_keys": [], "matches": [],
         "losses": {tid: 0 for tid in order}, "champion": None,
         "upper_champion": None, "seed": seed, "upper_first": True,
+        "dq": [],
     }
     _schedule(bracket)
     return bracket
@@ -34,7 +35,7 @@ def _schedule(b: dict[str, Any]) -> None:
         stage = b["stage"]
         if stage == "upper":
             if len(b["upper"]) < 2:
-                b["upper_champion"] = b["upper"][0]
+                b["upper_champion"] = b["upper"][0] if b["upper"] else None
                 b["stage"] = "lower"
                 continue
             entries = b["upper"]
@@ -66,9 +67,19 @@ def _schedule(b: dict[str, Any]) -> None:
             b["carry"] = entries[-1:] if len(entries) % 2 else []
             _make_matches(b, "L", entries[:len(entries) - len(b["carry"])], 1)
         elif stage == "grand":
-            if len(b["upper"]) != 1 or len(b["lower"]) != 1:
+            dq = set(b.get("dq", ()))
+            present = [x for x in (b["upper"][0] if b["upper"] else None,
+                                   b["lower"][0] if b["lower"] else None)
+                       if x and x not in dq]
+            if len(present) == 1:
+                # Один финалист дисквалифицирован до GF — второй объявляется чемпионом.
+                b["champion"] = present[0]
+                b["active_keys"] = []
+                b["stage"] = "completed"
+                continue
+            if len(present) != 2:
                 raise BracketError("Финалисты не определены")
-            _make_matches(b, "GF", [b["upper"][0], b["lower"][0]], 3)
+            _make_matches(b, "GF", present, 3)
         else:
             raise BracketError(f"Неизвестная стадия {stage}")
 
@@ -88,7 +99,8 @@ def _make_matches(b: dict[str, Any], prefix: str, entries: list[str], bo: int) -
 
 def ready_matches(b: dict[str, Any]) -> list[dict[str, Any]]:
     active = set(b["active_keys"])
-    return [m for m in b["matches"] if m["id"] in active and m["status"] != "completed"]
+    return [m for m in b["matches"]
+            if m["id"] in active and m["status"] == "ready"]
 
 
 def record_result(
@@ -117,25 +129,84 @@ def record_result(
         b["champion"] = winner
         b["active_keys"] = []
         b["stage"] = "completed"
+        _auto_forfeit(b)
         return m
-    if not ready_matches(b):
-        current = [x for x in b["matches"] if x["id"] in b["active_keys"]]
-        winners = [x["winner"] for x in current] + b["carry"]
-        losers = [x["loser"] for x in current]
-        if m["bracket"] == "W":
-            b["upper"] = winners
-            if len(winners) == 1:
-                b["upper_champion"] = winners[0]
-            b["incoming"] = losers
-            b["stage"] = "lower"
-        else:
-            b["lower"] = winners
-            b["round"] += 1
-            b["stage"] = "upper"
-        b["active_keys"] = []
-        b["carry"] = []
-        _schedule(b)
+    _advance(b, m)
+    _auto_forfeit(b)
     return m
+
+
+def _advance(b: dict[str, Any], m: dict[str, Any]) -> None:
+    """Переход к следующему этапу после завершения раунда."""
+    if ready_matches(b):
+        return
+    current = [x for x in b["matches"] if x["id"] in b["active_keys"]]
+    winners = [x["winner"] for x in current if x["winner"]] + b["carry"]
+    losers = ([x["loser"] for x in current if x["loser"]]
+              + [y for x in current for y in x.get("extra_losers", [])])
+    if m["bracket"] == "W":
+        b["upper"] = winners
+        if len(winners) == 1:
+            b["upper_champion"] = winners[0]
+        b["incoming"] = losers
+        b["stage"] = "lower"
+    else:
+        b["lower"] = winners
+        b["round"] += 1
+        b["stage"] = "upper"
+    b["active_keys"] = []
+    b["carry"] = []
+    _schedule(b)
+
+
+def _void_match(b: dict[str, Any], m: dict[str, Any]) -> None:
+    """Оба участника дисквалифицированы: поражение обоим, слот победителя — BYE."""
+    for tid in (m["a"], m["b"]):
+        b["losses"][tid] += 1
+    m.update(score=[0, 0], winner=None, loser=None, status="void",
+             evidence="technical:both_disqualified",
+             extra_losers=[m["a"], m["b"]])
+    _advance(b, m)
+
+
+def _auto_forfeit(b: dict[str, Any]) -> None:
+    """Автоматически завершает матчи с дисквалифицированными командами."""
+    if b["champion"] is not None:
+        return
+    dq = set(b.get("dq", ()))
+    if not dq:
+        return
+    for m in ready_matches(b):
+        sides = [s for s in (m["a"], m["b"]) if s in dq]
+        if not sides:
+            continue
+        if len(sides) == 2:
+            _void_match(b, m)
+        elif m["bracket"] == "GF":
+            # Учитываем уже сыгранные игры: победителю достаточно 2 побед.
+            loser = sides[0]
+            score = list(m["score"])
+            score[0 if loser == m["b"] else 1] = 2
+            record_result(b, m["id"], score[0], score[1],
+                          evidence="technical:forfeit")
+        else:
+            loser = sides[0]
+            score = (0, 1) if loser == m["a"] else (1, 0)
+            record_result(b, m["id"], *score, evidence="technical:forfeit")
+        return _auto_forfeit(b)
+
+
+def disqualify(b: dict[str, Any], team_id: str, *, evidence: str = "") -> str:
+    """Дисквалификация: команда проигрывает все оставшиеся матчи."""
+    if team_id not in b["losses"]:
+        raise BracketError("Команда не участвует в турнире")
+    if team_id in b.get("dq", ()):
+        raise BracketError("Команда уже дисквалифицирована")
+    if b["champion"] is not None:
+        raise BracketError("Турнир завершён")
+    b.setdefault("dq", []).append(team_id)
+    _auto_forfeit(b)
+    return team_id
 
 
 def record_final_game(b: dict[str, Any], winner_side: str, *, evidence: str) -> dict[str, Any]:
