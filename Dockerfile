@@ -20,7 +20,8 @@ ENV PYTHONUNBUFFERED=1
 ENV DATA_DIR=/app/data
 RUN mkdir -p /app/data
 
-COPY requirements.txt control_center/requirements.txt ./
+COPY requirements.txt ./
+COPY control_center/requirements.txt ./control_center/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt -r control_center/requirements.txt
 
 COPY bot.py config.py ./
