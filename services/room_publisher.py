@@ -168,7 +168,6 @@ def build_room_notify_view(
         f"**{name1} vs {name2}**",
         _roster_mentions(tournament, t1),
         _roster_mentions(tournament, t2),
-        f"Данные комнаты: <#{data_channel_id}>",
     ]
     if data_message_id:
         jump = (
