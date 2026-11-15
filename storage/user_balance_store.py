@@ -241,6 +241,94 @@ class UserBalanceStore:
             self.save()
             return taken
 
+    # Админ-корректировки: операция и изменение баланса — одна
+    # транзакция; op_id UNIQUE защищает от повторного исполнения
+    # (retry после сбоя, дублированный action request).
+    _FINANCE_DDL = """
+    CREATE TABLE IF NOT EXISTS admin_finance_ops (
+        op_id TEXT PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        user_id BIGINT NOT NULL,
+        amount INTEGER NOT NULL,
+        applied INTEGER NOT NULL,
+        new_balance INTEGER NOT NULL,
+        actor_id BIGINT NOT NULL DEFAULT 0,
+        reason TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """
+
+    async def admin_adjust(
+        self, guild_id: int, user_id: int, amount: int,
+        op_id: str, *, actor_id: int = 0, reason: str = "",
+    ) -> dict:
+        """Атомарная админ-корректировка с идемпотентностью.
+
+        Возвращает {"status": "applied"|"duplicate", ...}.
+        """
+        if amount == 0:
+            raise ValueError("amount must be non-zero")
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(self._FINANCE_DDL)
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO admin_finance_ops
+                            (op_id, guild_id, user_id, amount, applied,
+                             new_balance, actor_id, reason)
+                        VALUES ($1,$2,$3,$4,0,0,$5,$6)
+                        ON CONFLICT (op_id) DO NOTHING
+                        RETURNING op_id
+                        """,
+                        op_id, guild_id, user_id, amount,
+                        actor_id, reason[:500])
+                    if row is None:
+                        prev = await conn.fetchrow(
+                            "SELECT applied, new_balance FROM"
+                            " admin_finance_ops WHERE op_id=$1", op_id)
+                        return {"status": "duplicate",
+                                "applied": prev["applied"],
+                                "new_balance": prev["new_balance"]}
+                    await self._ensure_row(conn, guild_id, user_id)
+                    bal_row = await conn.fetchrow(
+                        "SELECT balance FROM user_balance"
+                        " WHERE guild_id=$1 AND user_id=$2 FOR UPDATE",
+                        guild_id, user_id)
+                    balance = await self._apply_decay(
+                        conn, guild_id, user_id, bal_row["balance"])
+                    if amount > 0:
+                        applied = min(amount,
+                                      max(0, _max_balance() - balance))
+                    else:
+                        applied = -min(-amount, balance)
+                    new_balance = balance + applied
+                    await conn.execute(
+                        "UPDATE user_balance SET balance=$1"
+                        " WHERE guild_id=$2 AND user_id=$3",
+                        new_balance, guild_id, user_id)
+                    await conn.execute(
+                        "UPDATE admin_finance_ops SET applied=$2,"
+                        " new_balance=$3 WHERE op_id=$1",
+                        op_id, applied, new_balance)
+                    return {"status": "applied", "applied": applied,
+                            "new_balance": new_balance}
+        # non-DB fallback: in-memory + файл ops не поддерживается —
+        # возвращаем applied без дедупликации (dev-режим).
+        if amount > 0:
+            new_balance = await self.add_balance(
+                guild_id, user_id, amount)
+            applied = amount
+        else:
+            taken = await self.deduct_balance(
+                guild_id, user_id, -amount)
+            applied = -taken
+            new_balance = await self.get_balance(guild_id, user_id)
+        return {"status": "applied", "applied": applied,
+                "new_balance": new_balance}
+
     # Идемпотентные награды за матч: одна строка гранта на
     # (match_id, user_id). Грант и начисление баланса — в одной
     # транзакции: либо оба, либо ни одного. Повторный вызов с тем же

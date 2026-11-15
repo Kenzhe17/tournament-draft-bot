@@ -174,6 +174,11 @@ async def put_template(
     gid = _gid(user, None)
     if not key or len(key) > 100:
         raise HTTPException(422, "invalid key")
+    from services.cv2_templates import TemplateError, validate_payload
+    try:
+        validate_payload(body.payload)
+    except TemplateError as exc:
+        raise HTTPException(422, str(exc)) from exc
     row = await store.set_template(
         gid or 0, key, body.payload, actor_id=user.id)
     return {"key": key, "version": row["version"], "status": "saved"}
@@ -205,3 +210,17 @@ async def moderation_reports(
     await moderation_store.ensure()
     rows = await moderation_store.reports(gid, limit=limit)
     return {"items": rows}
+
+
+@router.post("/templates/{key}/preview")
+async def preview_template(
+    key: str,
+    body: TemplateBody,
+    user: PanelUser = Depends(require_perm(rbac.PERM_PANEL_VIEW)),
+) -> dict[str, Any]:
+    """Предпросмотр шаблона без сохранения (валидация + текст)."""
+    from services.cv2_templates import TemplateError, preview_payload
+    try:
+        return preview_payload(body.payload)
+    except TemplateError as exc:
+        raise HTTPException(422, str(exc)) from exc

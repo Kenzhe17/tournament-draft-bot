@@ -459,11 +459,18 @@ class MMCog(commands.Cog):
     ) -> None:
         try:
             from config import NOTIFICATION_CHANNEL_ID, NOTIFICATION_ROLE_ID
-            notification_channel = self.bot.get_channel(NOTIFICATION_CHANNEL_ID)
+            from services.discord_cfg import channel_id as _dc
+            _gid = search.guild_id
+            _notify_ch = _dc(_gid, "discord.notification_channel_id",
+                             NOTIFICATION_CHANNEL_ID)
+            _notify_role = _dc(_gid, "discord.notification_role_id",
+                               NOTIFICATION_ROLE_ID or 0)
+            _notify_roles = [_notify_role] if _notify_role else []
+            notification_channel = self.bot.get_channel(_notify_ch)
             if notification_channel is None:
                 try:
                     notification_channel = await self.bot.fetch_channel(
-                        NOTIFICATION_CHANNEL_ID)
+                        _notify_ch)
                 except Exception as e:
                     logger.warning(
                         "MM notify: fetch notification channel failed: %s", e)
@@ -480,10 +487,8 @@ class MMCog(commands.Cog):
                     notification_channel, search_channel)
                 self._finish_notification(search, kind, 0)
                 return
-            role_mention = (
-                f"<@&{NOTIFICATION_ROLE_ID}>"
-                if NOTIFICATION_ROLE_ID else ""
-            )
+            _role_id = _notify_roles[0] if _notify_roles else 0
+            role_mention = f"<@&{_role_id}>" if _role_id else ""
 
             count = len(search.players)
             required = search.required_players

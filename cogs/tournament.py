@@ -152,7 +152,9 @@ async def _perform_tournament_delete(
 
     # Update organizer setup embed if it exists
     from storage.organizer_store import organizer_store as org_store
-    for ch_id in TOURNAMENT_CHANNELS:
+    from services.discord_cfg import channel_ids as _dc_ids
+    for ch_id in _dc_ids(guild.id, "discord.tournament_channels",
+                         TOURNAMENT_CHANNELS):
         orgs = org_store.get(guild.id, ch_id)
         if orgs and orgs.message_id:
             try:
@@ -402,7 +404,10 @@ class TournamentCog(commands.Cog):
 
         # Update organizer setup embed if it exists
         from storage.organizer_store import organizer_store as org_store
-        for channel_id in TOURNAMENT_CHANNELS:
+        from services.discord_cfg import channel_ids as _dc_ids2
+        for channel_id in _dc_ids2(interaction.guild_id,
+                                   "discord.tournament_channels",
+                                   TOURNAMENT_CHANNELS):
             orgs = org_store.get(interaction.guild_id, channel_id)
             if orgs and orgs.message_id:
                 try:
@@ -3164,12 +3169,19 @@ def get_rank_emoji(level: int) -> str:
 async def send_tournament_notification(tournament, guild, action: str) -> None:
     """Send tournament notification to notification channel."""
     try:
-        channel = guild.get_channel(NOTIFICATION_CHANNEL_ID)
+        from services.discord_cfg import channel_id as _dcid, role_ids as _drid
+        _gid = getattr(tournament, "guild_id", None) or (
+            guild.id if guild else 0)
+        _nch = _dcid(_gid, "discord.notification_channel_id",
+                     NOTIFICATION_CHANNEL_ID)
+        _nroles = [_dcid(_gid, "discord.notification_role_id", 0)]
+        channel = guild.get_channel(_nch)
         if not channel:
-            logger.warning(f"Notification channel {NOTIFICATION_CHANNEL_ID} not found")
+            logger.warning(f"Notification channel {_nch} not found")
             return
 
-        role = guild.get_role(NOTIFICATION_ROLE_ID)
+        _nrid = _nroles[0] if _nroles else 0
+        role = guild.get_role(_nrid)
         role_mention = role.mention if role else ""
 
         embed = discord.Embed(

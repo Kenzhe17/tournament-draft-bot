@@ -125,36 +125,33 @@ async def _h_vac_revoke(gid, params, actor):
 
 @register_action("economy.adjust")
 async def _h_economy_adjust(gid, params, actor):
+    """Атомарная корректировка: баланс + admin_finance_ops в одной
+    транзакции; op_id = action request id → защита от повторов."""
     from storage.user_balance_store import user_balance_store
     user_id = int(params["user_id"])
     amount = int(params["amount"])
     reason = str(params.get("reason") or "")
     if amount == 0:
         raise ValueError("amount must be non-zero")
-    if amount > 0:
-        new_balance = await user_balance_store.add_balance(
-            int(gid), user_id, amount)
-        applied = amount
-    else:
-        taken = await user_balance_store.deduct_balance(
-            int(gid), user_id, -amount)
-        applied = -taken
-        new_balance = await user_balance_store.get_balance(
-            int(gid), user_id)
-    # Аудит финансовой операции в admin_audit_log.
+    op_id = str(params.get("_action_id") or "") or None
+    res = await user_balance_store.admin_adjust(
+        int(gid), user_id, amount,
+        op_id or f"manual:{gid}:{user_id}:{amount}:{actor}",
+        actor_id=int(actor or 0), reason=reason)
     try:
         from storage import admin_config_store as store
         await store.insert_audit(
             guild_id=int(gid), actor_id=int(actor or 0),
             action="economy.adjust", object_type="user_balance",
             object_id=str(user_id),
-            new_value={"amount": applied, "requested": amount,
+            new_value={"status": res["status"],
+                       "applied": res["applied"],
+                       "requested": amount,
                        "reason": reason[:200],
-                       "new_balance": new_balance})
-    except Exception as exc:  # noqa: BLE001 — аудит не должен ронять операцию
+                       "new_balance": res["new_balance"]})
+    except Exception as exc:  # noqa: BLE001
         log.warning("economy.adjust audit write failed: %s", exc)
-    return {"applied": applied, "new_balance": new_balance,
-            "user_id": user_id}
+    return {"user_id": user_id, **res}
 
 
 # ------------------------------------------------------------------
@@ -203,7 +200,8 @@ async def execute_pending_actions(limit: int = 10) -> int:
                 )
                 continue
             gid = row.get("guild_id")
-            params = row.get("parameters") or {}
+            params = dict(row.get("parameters") or {})
+            params["_action_id"] = str(row.get("id") or "")
             actor = row.get("actor_id")
             result = await handler(gid, params, actor)
             await store.update_action_request(
@@ -230,3 +228,86 @@ async def actions_loop(interval: float = 15.0) -> None:
         except Exception:
             log.exception("admin actions loop error")
         await asyncio.sleep(interval)
+
+
+# ------------------------------------------------------------------
+# Players: корректировка ELO через player_stats_store (аудит old→new)
+# ------------------------------------------------------------------
+
+@register_action("player.adjust_elo")
+async def _h_player_elo(gid, params, actor):
+    from storage.player_stats_store import player_stats_store
+    user_id = int(params["user_id"])
+    new_elo = int(params["elo"])
+    reason = str(params.get("reason") or "")
+    stats = await player_stats_store.get(int(gid), user_id)
+    old_elo = getattr(stats, "elo", None) if stats else None
+    name = getattr(stats, "name", None) or str(user_id)
+    await player_stats_store.update_player(
+        int(gid), user_id, name, set_elo=new_elo)
+    try:
+        from storage import admin_config_store as store
+        await store.insert_audit(
+            guild_id=int(gid), actor_id=int(actor or 0),
+            action="player.adjust_elo", object_type="player_stats",
+            object_id=str(user_id),
+            old_value={"elo": old_elo},
+            new_value={"elo": new_elo, "reason": reason[:200]})
+    except Exception as exc:  # noqa: BLE001
+        log.warning("player.adjust_elo audit failed: %s", exc)
+    return {"user_id": user_id, "old_elo": old_elo, "new_elo": new_elo}
+
+
+# ------------------------------------------------------------------
+# Tournaments: регистрация open/close через json_store state-machine
+# ------------------------------------------------------------------
+
+@register_action("tournament.set_registration")
+async def _h_t_registration(gid, params, actor):
+    channel_id = int(params["channel_id"])
+    state = str(params["state"]).upper()  # OPEN | CLOSED
+    if state not in ("OPEN", "CLOSED"):
+        raise ValueError("state must be OPEN or CLOSED")
+    from storage.json_store import store as json_store
+    from models.tournament import RegistrationState, TournamentPhase
+    t = json_store.get(int(gid), channel_id)
+    if not t:
+        raise RuntimeError("no active tournament in channel")
+    # Регистрацию можно менять только до старта матчей.
+    if t.phase not in (TournamentPhase.SETUP,
+                       TournamentPhase.RULES_VOTING,
+                       TournamentPhase.DRAFT,
+                       TournamentPhase.TEAMS):
+        raise RuntimeError(
+            f"registration locked in phase {t.phase.value}")
+    t.registration = (RegistrationState.OPEN if state == "OPEN"
+                      else RegistrationState.CLOSED)
+    json_store.set(t)
+    return {"channel_id": channel_id, "registration": state,
+            "phase": t.phase.value}
+
+
+# ------------------------------------------------------------------
+# Design: публикация CV2-шаблона в канал через bot
+# ------------------------------------------------------------------
+
+@register_action("design.publish")
+async def _h_design_publish(gid, params, actor):
+    bot = _require_bot()
+    key = str(params["template_key"])
+    channel_id = int(params["channel_id"])
+    guild = bot.get_guild(int(gid))
+    if guild is None:
+        raise RuntimeError(f"guild {gid} not available")
+    from storage import admin_config_store as store
+    payload = await store.get_template(int(gid), key) or         await store.get_template(0, key)
+    if not payload:
+        raise RuntimeError(f"template {key} not found")
+    from services.cv2_templates import render_template
+    view = render_template(payload["payload"])
+    channel = guild.get_channel(channel_id)
+    if channel is None:
+        channel = await bot.fetch_channel(channel_id)
+    msg = await channel.send(view=view)
+    return {"published": True, "template": key,
+            "channel_id": channel_id, "message_id": msg.id}

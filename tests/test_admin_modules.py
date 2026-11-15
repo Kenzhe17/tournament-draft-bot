@@ -52,21 +52,25 @@ async def test_economy_adjust_credit(monkeypatch):
 
     calls = []
 
-    async def fake_add(gid, uid, amount):
-        calls.append(("add", gid, uid, amount))
-        return 600
+    async def fake_admin_adjust(gid, uid, amount, op_id, *,
+                                actor_id=0, reason=""):
+        calls.append(("admin_adjust", gid, uid, amount, op_id))
+        return {"status": "applied", "applied": amount,
+                "new_balance": 600}
 
     async def fake_audit(**kw):
         calls.append(("audit", kw["action"], kw["object_id"]))
 
-    monkeypatch.setattr(user_balance_store, "add_balance", fake_add)
+    monkeypatch.setattr(user_balance_store, "admin_adjust",
+                        fake_admin_adjust)
     from storage import admin_config_store as store
     monkeypatch.setattr(store, "insert_audit", fake_audit)
 
     res = await admin_actions._h_economy_adjust(
-        555, {"user_id": 42, "amount": 100, "reason": "test"}, 7)
+        555, {"user_id": 42, "amount": 100, "reason": "test",
+              "_action_id": "act-1"}, 7)
     assert res["applied"] == 100 and res["new_balance"] == 600
-    assert calls[0] == ("add", 555, 42, 100)
+    assert calls[0] == ("admin_adjust", 555, 42, 100, "act-1")
     assert calls[1][0] == "audit"
 
 
@@ -75,23 +79,21 @@ async def test_economy_adjust_debit_partial(monkeypatch):
     from services import admin_actions
     from storage.user_balance_store import user_balance_store
 
-    async def fake_deduct(gid, uid, amount):
-        return 50  # списано меньше запрошенного
-
-    async def fake_get(gid, uid):
-        return 50
+    async def fake_admin_adjust(gid, uid, amount, op_id, *,
+                                actor_id=0, reason=""):
+        return {"status": "applied", "applied": -50,
+                "new_balance": 50}
 
     async def fake_audit(**kw):
         pass
 
-    monkeypatch.setattr(user_balance_store, "deduct_balance", fake_deduct)
-    monkeypatch.setattr(user_balance_store, "get_balance", fake_get)
+    monkeypatch.setattr(user_balance_store, "admin_adjust",
+                        fake_admin_adjust)
     from storage import admin_config_store as store
     monkeypatch.setattr(store, "insert_audit", fake_audit)
 
     res = await admin_actions._h_economy_adjust(
         555, {"user_id": 42, "amount": -100}, 7)
-    # applied = -taken → -50 (фактически списано)
     assert res["applied"] == -50
     assert res["new_balance"] == 50
 
@@ -298,3 +300,129 @@ def test_template_put_requires_design_perm():
     finally:
         app.dependency_overrides.clear()
         monkeypatch.undo()
+
+
+# ------------------------------------------------------------ cv2 templates
+
+def test_cv2_validate_rejects_custom_id():
+    from services.cv2_templates import TemplateError, validate_payload
+    with pytest.raises(TemplateError, match="custom_id"):
+        validate_payload({"custom_id": "x", "blocks": []})
+
+
+def test_cv2_validate_rejects_bad_button():
+    from services.cv2_templates import TemplateError, validate_payload
+    with pytest.raises(TemplateError):
+        validate_payload({"blocks": [
+            {"type": "button_link", "label": "x", "url": "javascript:bad"}]})
+
+
+def test_cv2_render_and_preview():
+    from services.cv2_templates import preview_payload, render_template
+    payload = {
+        "title": "Test",
+        "blocks": [
+            {"type": "heading", "text": "H"},
+            {"type": "text", "text": "body"},
+            {"type": "separator", "large": True},
+            {"type": "fields", "fields": [{"name": "A", "value": "B"}]},
+            {"type": "button_link", "label": "Go", "url": "https://x"},
+        ],
+    }
+    view = render_template(payload)
+    assert view is not None
+    prev = preview_payload(payload)
+    assert prev["block_count"] == 5
+    assert any("Go" in l for l in prev["lines"])
+
+
+# ------------------------------------------------------------ discord_cfg
+
+def test_discord_cfg_fallback(monkeypatch):
+    from services import discord_cfg
+    # без инициализированного сервиса → default
+    assert discord_cfg.channel_id(1, "discord.notification_channel_id", 42) == 42
+    assert discord_cfg.channel_ids(1, "discord.tournament_channels", [7]) == [7]
+
+
+def test_discord_cfg_dynamic(monkeypatch):
+    from services import discord_cfg
+    from services import settings_service as mod
+    monkeypatch.setattr(
+        mod.settings_service, "peek",
+        lambda gid, key: {"discord.notification_channel_id": 999}.get(key))
+    assert discord_cfg.channel_id(1, "discord.notification_channel_id", 42) == 999
+
+
+# ------------------------------------------------------------ new handlers
+
+@pytest.mark.asyncio
+async def test_player_adjust_elo(monkeypatch):
+    from services import admin_actions
+    from storage.player_stats_store import player_stats_store
+    from storage import admin_config_store as store
+
+    class FakeStats:
+        elo = 1000
+        name = "Player"
+
+    calls = {}
+
+    async def fake_get(gid, uid):
+        return FakeStats()
+
+    async def fake_update(gid, uid, name, **kw):
+        calls.update(set_elo=kw.get("set_elo"), name=name)
+
+    async def fake_audit(**kw):
+        calls["audit"] = (kw["old_value"], kw["new_value"])
+
+    monkeypatch.setattr(player_stats_store, "get", fake_get)
+    monkeypatch.setattr(player_stats_store, "update_player", fake_update)
+    monkeypatch.setattr(store, "insert_audit", fake_audit)
+
+    res = await admin_actions._h_player_elo(
+        555, {"user_id": 9, "elo": 1200, "reason": "boost"}, 7)
+    assert res["old_elo"] == 1000 and res["new_elo"] == 1200
+    assert calls["set_elo"] == 1200
+    assert calls["audit"][0] == {"elo": 1000}
+
+
+@pytest.mark.asyncio
+async def test_tournament_set_registration_guards(monkeypatch):
+    from services import admin_actions
+    from models.tournament import TournamentPhase
+
+    class FakeT:
+        def __init__(self, phase):
+            self.phase = phase
+            self.registration = None
+
+    store_data = {"t": FakeT(TournamentPhase.SETUP)}
+
+    class FakeJsonStore:
+        def get(self, gid, cid):
+            return store_data.get("t")
+
+        def set(self, t):
+            pass
+
+    import storage.json_store as js
+    monkeypatch.setattr(js, "store", FakeJsonStore())
+
+    # SETUP → OPEN разрешено
+    r = await admin_actions._h_t_registration(
+        555, {"channel_id": 1, "state": "open"}, 7)
+    assert r["registration"] == "OPEN"
+
+    # COMPLETE → запрет
+    store_data["t"] = FakeT(TournamentPhase.COMPLETE)
+    with pytest.raises(RuntimeError, match="locked"):
+        await admin_actions._h_t_registration(
+            555, {"channel_id": 1, "state": "closed"}, 7)
+
+    # нет турнира → ошибка
+    store_data.clear()
+    with pytest.raises(RuntimeError, match="no active tournament"):
+        await admin_actions._h_t_registration(
+            555, {"channel_id": 1, "state": "open"}, 7)

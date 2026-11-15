@@ -369,24 +369,23 @@ def describe() -> list[dict[str, Any]]:
 
 _reg(key="discord.tournament_channels", type="json", default=[],
      module="discord", permission="discord.manage",
-     description="Каналы турниров (JSON-массив ID)",
-     consumers_pending=True)
+     description="Каналы турниров (JSON-массив ID) (runtime через discord_cfg)")
 _reg(key="discord.notification_channel_id", type="int", default=0,
      module="discord", min=0, permission="discord.manage",
-     description="Канал уведомлений",
-     consumers_pending=True)
+     description="Канал уведомлений (runtime через discord_cfg)")
 _reg(key="discord.log_channel_id", type="int", default=0,
      module="discord", min=0, permission="discord.manage",
-     description="Канал логирования",
-     consumers_pending=True)
+     description="Канал логирования (runtime через discord_cfg)")
 _reg(key="discord.rep_log_channel_id", type="int", default=0,
      module="discord", min=0, permission="discord.manage",
      description="Канал REP-лога (приоритет над bot_settings/env)")
 _reg(key="discord.organizer_role_ids", type="json", default=[],
      module="discord", permission="discord.manage",
-     description="Роли организаторов (JSON-массив ID)",
-     consumers_pending=True)
+     description="Роли организаторов (JSON-массив ID) (runtime через discord_cfg)")
 _reg(key="discord.welcome_channel_id", type="int", default=0,
      module="discord", min=0, permission="discord.manage",
-     description="Канал приветствий",
-     consumers_pending=True)
+     description="Канал приветствий (runtime через discord_cfg)")
+
+_reg(key="discord.notification_role_id", type="int", default=0,
+     module="discord", min=0, permission="discord.manage",
+     description="Роль для пинга в уведомлениях")
