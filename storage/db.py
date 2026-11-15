@@ -530,6 +530,27 @@ async def init_db() -> None:
             WHERE status IN ('reserved', 'charged', 'unknown')
         """)
 
+        # Расходуемый баланс REP (SHOP 2.0 dual-currency)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_balance (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                balance INTEGER NOT NULL DEFAULT 0,
+                earned_total INTEGER NOT NULL DEFAULT 0,
+                spent_total INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_balance_grants (
+                grant_key TEXT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                amount INTEGER NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+
         # Reset betting statistics (migration)
         migration_run = await conn.fetchval(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'db_migrations')"

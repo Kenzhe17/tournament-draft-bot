@@ -302,6 +302,17 @@ async def apply_cleanup_plan(
             rep_after = int(new_rep) if new_rep is not None else rep_after
             total_deducted += deduct
             applied += 1
+            # Синхронизируем расходуемый REP-баланс (SHOP 2.0)
+            try:
+                from storage.rep_balance_store import rep_balance_store
+                await rep_balance_store.sync_after_rep_change(
+                    conn, guild_id, user_id, rep_after, -deduct
+                )
+            except Exception:
+                logger.exception(
+                    "rep_cleanup: rep_balance sync failed %s:%s",
+                    guild_id, user_id,
+                )
         await conn.execute(
             """
             INSERT INTO rep_cleanup_items
@@ -400,15 +411,27 @@ async def restore_cleanup(
     )
     restored_rep = 0
     for it in items:
-        res = await conn.execute(
+        new_rep = await conn.fetchval(
             """
             UPDATE player_stats
             SET reputation = reputation + $3
             WHERE guild_id = $1 AND user_id = $2
+            RETURNING reputation
             """,
             int(it["guild_id"]), int(it["user_id"]), int(it["deducted"]),
         )
         restored_rep += int(it["deducted"])
+        try:
+            from storage.rep_balance_store import rep_balance_store
+            await rep_balance_store.sync_after_rep_change(
+                conn, int(it["guild_id"]), int(it["user_id"]),
+                int(new_rep or 0), int(it["deducted"]),
+            )
+        except Exception:
+            logger.exception(
+                "rep_cleanup restore: rep_balance sync failed %s:%s",
+                it["guild_id"], it["user_id"],
+            )
 
     await conn.execute(
         "UPDATE rep_cleanup_runs SET status = 'restored' WHERE op_id = $1",

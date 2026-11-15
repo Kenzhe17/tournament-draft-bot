@@ -110,9 +110,12 @@ class ShopPurchaseOpsStore:
         item_id: str,
         price: int,
         payload: dict[str, Any] | None = None,
+        rep_amount: int = 0,
     ) -> dict[str, Any]:
         """Создать операцию reserved. Идемпотентно по op_id."""
         payload = dict(payload or {})
+        if rep_amount:
+            payload["rep_amount"] = int(rep_amount)
         if self._use_db:
             try:
                 pool = await self._pool()
@@ -238,23 +241,29 @@ class ShopPurchaseOpsStore:
         guild_id: int,
         user_id: int,
         amount: int,
+        rep_amount: int = 0,
     ) -> str:
-        """Атомарно: списать баланс + перевести op reserved→charged.
+        """Атомарно: списать баланс(ы) + перевести op reserved→charged.
+
+        При rep_amount>0 монеты и REP списываются в ОДНОЙ транзакции;
+        недостаток любой валюты — ничего не списывается.
 
         Возвращает:
           "charged"    — деньги списаны, операция charged
-          "insufficient" — не хватило (op → failed)
+          "insufficient" — не хватило монет (op → failed)
+          "insufficient_rep" — не хватило REP (op → failed)
           "exists"     — op уже charged/done (повторная обработка)
           "missing"    — op не найден
           "error"      — ошибка БД
         """
-        if amount < 0:
+        if amount < 0 or rep_amount < 0:
             return "error"
         if self._use_db:
             try:
                 from storage.user_balance_store import (
                     user_balance_store,
                 )
+                from storage.rep_balance_store import rep_balance_store
                 pool = await self._pool()
                 async with pool.acquire() as conn:
                     async with conn.transaction():
@@ -281,6 +290,16 @@ class ShopPurchaseOpsStore:
                         balance = await user_balance_store._apply_decay(
                             conn, guild_id, user_id, bal["balance"]
                         )
+                        # REP: миграция/блокировка до проверок —
+                        # обе проверки до любых UPDATE.
+                        rep_ok = True
+                        if rep_amount:
+                            rep_balance = (
+                                await rep_balance_store._migrate_and_lock(
+                                    conn, guild_id, user_id
+                                )
+                            )
+                            rep_ok = rep_balance >= rep_amount
                         if balance < amount:
                             await conn.execute(
                                 """
@@ -293,11 +312,27 @@ class ShopPurchaseOpsStore:
                                 op_id,
                             )
                             return "insufficient"
+                        if not rep_ok:
+                            await conn.execute(
+                                """
+                                UPDATE shop_operations
+                                SET status='failed', updated_at=now(),
+                                    payload = payload ||
+                                        '{"reason":"insufficient_rep"}'::jsonb
+                                WHERE op_id=$1
+                                """,
+                                op_id,
+                            )
+                            return "insufficient_rep"
                         await conn.execute(
                             "UPDATE user_balance SET balance=$1 "
                             "WHERE guild_id=$2 AND user_id=$3",
                             balance - amount, guild_id, user_id,
                         )
+                        if rep_amount:
+                            await rep_balance_store.spend_in_tx(
+                                conn, guild_id, user_id, rep_amount
+                            )
                         await conn.execute(
                             """
                             UPDATE shop_operations
@@ -307,7 +342,10 @@ class ShopPurchaseOpsStore:
                             WHERE op_id=$1
                             """,
                             op_id,
-                            json.dumps({"charged_at": time.time()}),
+                            json.dumps({
+                                "charged_at": time.time(),
+                                "rep_amount": rep_amount,
+                            }),
                         )
                         return "charged"
             except Exception:
@@ -315,7 +353,14 @@ class ShopPurchaseOpsStore:
                 # Не переключаемся на JSON здесь — баланс в PG;
                 # вызывающий код трактует 'error' как отказ.
                 return "error"
-        # JSON-фолбэк: отдельные шаги (без PG-транзакции)
+        # JSON-фолбэк: REP-операции без PG не выполняются —
+        # финансовые операции с REP только в PostgreSQL.
+        if rep_amount:
+            logger.error(
+                "shop ops charge: PG unavailable, rep_amount=%s rejected",
+                rep_amount,
+            )
+            return "error"
         op = self._json_ops.get(op_id)
         if op is None:
             return "missing"
@@ -345,25 +390,60 @@ class ShopPurchaseOpsStore:
         guild_id: int,
         user_id: int,
         amount: int,
+        rep_amount: int | None = None,
     ) -> dict[str, int]:
-        """Идемпотентный возврат. Возвращает {credited, pending}.
+        """Идемпотентный возврат монет и REP. Возвращает словарь:
 
-        credited — фактически зачислено сейчас (может быть 0 при
-        повторном вызове — грант уже существует); pending — сумма,
-        не влезшая из-за MAX_BALANCE (догоняется позже).
+            credited      — монеты, зачисленные сейчас/зафиксированные
+            pending       — монеты, не влезшие из-за MAX_BALANCE
+            rep_credited  — REP, возвращённые (идемпотентно)
+            rep_pending   — REP, не возвращённые из-за сбоя БД
+
+        rep_amount берётся из payload операции, если не передан явно.
         """
-        if amount <= 0:
-            return {"credited": 0, "pending": 0}
-        from storage.user_balance_store import user_balance_store
-        try:
-            credited = await user_balance_store.add_balance_once(
-                guild_id, user_id, amount, f"shopref:{op_id}"
+        res: dict[str, int] = {
+            "credited": 0, "pending": 0,
+            "rep_credited": 0, "rep_pending": 0,
+        }
+        if rep_amount is None:
+            op = await self.get(op_id)
+            rep_amount = int(
+                ((op or {}).get("payload") or {}).get("rep_amount") or 0
             )
-        except Exception:
-            logger.exception("shop refund: add_balance_once failed")
-            return {"credited": 0, "pending": amount}
-        pending = max(0, amount - int(credited or 0))
-        return {"credited": int(credited or 0), "pending": pending}
+        rep_amount = int(rep_amount or 0)
+
+        if amount > 0:
+            from storage.user_balance_store import user_balance_store
+            try:
+                credited = await user_balance_store.add_balance_once(
+                    guild_id, user_id, amount, f"shopref:{op_id}"
+                )
+            except Exception:
+                logger.exception("shop refund: add_balance_once failed")
+                res["pending"] = amount
+            else:
+                res["credited"] = int(credited or 0)
+                res["pending"] = max(0, amount - res["credited"])
+
+        if rep_amount > 0:
+            from storage.rep_balance_store import rep_balance_store
+            try:
+                rep_credited = await rep_balance_store.add_rep_once(
+                    guild_id, user_id, rep_amount, f"shoprefrep:{op_id}"
+                )
+            except Exception:
+                logger.exception("shop refund: rep add_rep_once failed")
+                res["rep_pending"] = rep_amount
+            else:
+                res["rep_credited"] = int(rep_credited or 0)
+                # REP не имеет cap — pending только при полном сбое;
+                # recorded amount < rep_amount возможно лишь при
+                # повторном вызове после частичного успеха, что
+                # для атомарного гранта невозможно → pending=0.
+                res["rep_pending"] = max(
+                    0, rep_amount - res["rep_credited"]
+                )
+        return res
 
     async def settle_pending_refund(self, op: dict[str, Any]) -> int:
         """Досчитать refund_pending малыми идемпотентными грантами.
@@ -378,8 +458,30 @@ class ShopPurchaseOpsStore:
         """
         payload = op.get("payload") or {}
         pending = int(payload.get("refund_pending") or 0)
-        if pending <= 0:
-            return 0
+        rep_pending = int(payload.get("rep_pending") or 0)
+        rep_amount = int(payload.get("rep_amount") or 0)
+        # REP-досчёт: cap отсутствует, pending возможен только после
+        # сбоя БД — повторный идемпотентный грант разрешает его
+        # (вернёт recorded amount или выполнит начисление). Пробуем
+        # всегда при rep_amount>0: settle вызывается только для
+        # refund-контекста, а грант идемпотентен.
+        if rep_amount > 0:
+            from storage.rep_balance_store import rep_balance_store
+            try:
+                await rep_balance_store.add_rep_once(
+                    op["guild_id"], op["user_id"], rep_amount,
+                    f"shoprefrep:{op['op_id']}",
+                )
+                rep_pending = 0
+            except Exception:
+                logger.exception("settle: rep refund probe failed")
+        if pending <= 0 and rep_pending <= 0:
+            if pending <= 0:
+                await self.set_status(
+                    op["op_id"], op["status"],
+                    payload={"refund_pending": 0, "rep_pending": rep_pending},
+                )
+            return pending
         from storage.user_balance_store import user_balance_store
 
         # 1) Базовый грант: вернёт recorded amount (идемпотентно).
@@ -401,7 +503,7 @@ class ShopPurchaseOpsStore:
         if pending <= 0:
             await self.set_status(
                 op["op_id"], op["status"],
-                payload={"refund_pending": 0},
+                payload={"refund_pending": 0, "rep_pending": rep_pending},
             )
             return 0
 
@@ -428,6 +530,7 @@ class ShopPurchaseOpsStore:
                 "refund_pending": pending,
                 "refund_settled": settled_total,
                 "refund_attempts": attempts,
+                "rep_pending": rep_pending,
             },
         )
         return pending

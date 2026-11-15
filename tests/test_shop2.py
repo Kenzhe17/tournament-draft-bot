@@ -100,6 +100,11 @@ def env(monkeypatch, tmp_path):
     ):
         monkeypatch.setattr(user_balance_store, name, getattr(bal, name))
 
+    # Unit-тесты без PG: REP-стоимость обнуляем (JSON-фолбэк
+    # финансовых REP-операций запрещён — см. ops store).
+    monkeypatch.setattr(svc, "rep_price_for_item", lambda item: 0)
+    monkeypatch.setattr(svc, "rep_price_for_amount", lambda *a, **k: 0)
+
     # тестовый предмет
     item = ShopItem(
         id="tag_test", name="[TEST]", description="",

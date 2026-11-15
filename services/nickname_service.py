@@ -30,10 +30,15 @@ import discord
 from storage.nickname_ops_store import (
     STATUS_APPLIED,
     STATUS_REFUNDED,
+    STATUS_RESERVED,
     STATUS_UNKNOWN,
     nickname_ops_store,
 )
 from storage.user_balance_store import user_balance_store
+from storage.rep_balance_store import (
+    rep_balance_store, rep_price_for_amount,
+)
+from storage.shop_purchase_ops_store import purchase_ops_store
 
 logger = logging.getLogger(__name__)
 
@@ -138,12 +143,31 @@ def check_hierarchy(member: discord.Member, bot_member: discord.Member | None) -
 # ------------------------------------------------------------------ purchase
 
 
-async def _refund_once(guild_id: int, user_id: int, price: int, op_id: str) -> None:
-    """Идемпотентный возврат: DB-грант nickref:{op_id} или статус операции."""
+async def _refund_once(
+    guild_id: int, user_id: int, price: int, op_id: str,
+    shop_op_id: str | None = None,
+) -> None:
+    """Идемпотентный возврат монет и REP.
+
+    Если покупка шла через shop_operations (shop_op_id) — возврат
+    обеих валют одной операцией; иначе legacy-ключ nickref:{op_id}
+    (операции до внедрения REP не списывали REP).
+    """
     try:
-        await user_balance_store.add_balance_once(
-            guild_id, user_id, price, f"nickref:{op_id}"
-        )
+        if shop_op_id:
+            res = await purchase_ops_store.refund(
+                shop_op_id, guild_id, user_id, price
+            )
+            await purchase_ops_store.set_status(shop_op_id, "refunded")
+            if res.get("rep_pending", 0) > 0 or res.get("pending", 0) > 0:
+                logger.warning(
+                    "nickname refund pending op=%s res=%s",
+                    shop_op_id, res,
+                )
+        else:
+            await user_balance_store.add_balance_once(
+                guild_id, user_id, price, f"nickref:{op_id}"
+            )
     except Exception as exc:  # noqa: BLE001
         logger.error("nickname refund failed op=%s: %s", op_id, exc)
 
@@ -172,12 +196,21 @@ async def _resolve_op_by_nick(
 
     if applied:
         await nickname_ops_store.set_status(op_id, STATUS_APPLIED)
+        shop_op_id = op.get("shop_op_id")
+        if shop_op_id:
+            try:
+                await purchase_ops_store.set_status(shop_op_id, "done")
+            except Exception:
+                pass
         return STATUS_APPLIED
 
     # Ник не изменился (или участник недоступен) — подтверждённый
     # отказ: возвращаем монеты идемпотентно.
     await nickname_ops_store.set_status(op_id, STATUS_REFUNDED)
-    await _refund_once(guild_id, user_id, int(op["price"]), op_id)
+    await _refund_once(
+        guild_id, user_id, int(op["price"]), op_id,
+        shop_op_id=op.get("shop_op_id"),
+    )
     return STATUS_REFUNDED
 
 
@@ -236,14 +269,25 @@ async def purchase_nickname_change(
         )
         op_id = op["op_id"]
 
-        # 2. Атомарное резервирование: свежий баланс, списание под
-        #    транзакцией. ValueError = недостаточно монет.
-        try:
-            new_balance = await user_balance_store.subtract_balance(
-                interaction.guild_id or 0, user_id, price
-            )
-        except ValueError:
+        # 2. Атомарное резервирование: монеты + REP списываются
+        #    в одной транзакции shop_operations.
+        gid = interaction.guild_id or 0
+        rep_price = rep_price_for_amount(price)
+        shop_op_id = purchase_ops_store.new_op_id()
+        await purchase_ops_store.create(
+            shop_op_id, gid, user_id, "nickname", SERVICE_ITEM_ID,
+            price, payload={"nick_op_id": op_id}, rep_amount=rep_price,
+        )
+        await nickname_ops_store.set_status(
+            op_id, STATUS_RESERVED,
+            shop_op_id=shop_op_id, rep_amount=rep_price,
+        )
+        charge = await purchase_ops_store.charge(
+            shop_op_id, gid, user_id, price, rep_amount=rep_price
+        )
+        if charge == "insufficient":
             await nickname_ops_store.set_status(op_id, STATUS_REFUNDED)
+            await purchase_ops_store.set_status(shop_op_id, "failed")
             return "error", {
                 "message": (
                     f"Недостаточно монет. Нужно: {price}, "
@@ -251,13 +295,29 @@ async def purchase_nickname_change(
                 ),
                 "op_id": op_id,
             }
-        except Exception as exc:  # noqa: BLE001
+        if charge == "insufficient_rep":
             await nickname_ops_store.set_status(op_id, STATUS_REFUNDED)
-            logger.error("nickname charge failed op=%s: %s", op_id, exc)
+            await purchase_ops_store.set_status(shop_op_id, "failed")
+            rep_bal = await rep_balance_store.get_balance(gid, user_id)
+            return "error", {
+                "message": (
+                    f"Недостаточно REP. Нужно: {rep_price}, "
+                    f"доступно: {rep_bal}."
+                ),
+                "op_id": op_id,
+            }
+        if charge != "charged":
+            await nickname_ops_store.set_status(op_id, STATUS_REFUNDED)
+            await purchase_ops_store.set_status(shop_op_id, "failed")
+            logger.error(
+                "nickname charge failed op=%s charge=%s",
+                op_id, charge,
+            )
             return "error", {
                 "message": "Не удалось проверить баланс. Попробуйте позже.",
                 "op_id": op_id,
             }
+        new_balance = await _safe_balance(gid, user_id)
 
         await nickname_ops_store.mark_charged(op_id)
 
@@ -270,8 +330,10 @@ async def purchase_nickname_change(
             # Подтверждённый отказ Discord (права/иерархия).
             await nickname_ops_store.set_status(op_id, STATUS_REFUNDED)
             await _refund_once(
-                interaction.guild_id or 0, user_id, price, op_id
+                interaction.guild_id or 0, user_id, price, op_id,
+                shop_op_id=shop_op_id,
             )
+            await purchase_ops_store.set_status(shop_op_id, "refunded")
             return "error", {
                 "message": (
                     "Discord запретил смену ника: проверьте права бота "
@@ -285,8 +347,10 @@ async def purchase_nickname_change(
         except discord.HTTPException as exc:
             await nickname_ops_store.set_status(op_id, STATUS_REFUNDED)
             await _refund_once(
-                interaction.guild_id or 0, user_id, price, op_id
+                interaction.guild_id or 0, user_id, price, op_id,
+                shop_op_id=shop_op_id,
             )
+            await purchase_ops_store.set_status(shop_op_id, "refunded")
             return "error", {
                 "message": (
                     f"Discord отклонил новый ник ({exc.status}). "
@@ -304,7 +368,10 @@ async def purchase_nickname_change(
                 "nickname edit unknown outcome op=%s: %s", op_id, exc
             )
             await nickname_ops_store.mark_unknown(op_id)
-            final = await _resolve_op_by_nick(guild, {**op, "op_id": op_id})
+            final = await _resolve_op_by_nick(
+                guild,
+                {**op, "op_id": op_id, "shop_op_id": shop_op_id},
+            )
             if final == STATUS_APPLIED:
                 return "success", {
                     "message": "НИК ИЗМЕНЁН",
@@ -326,6 +393,7 @@ async def purchase_nickname_change(
 
         # 4. Финальное подтверждение.
         await nickname_ops_store.set_status(op_id, STATUS_APPLIED)
+        await purchase_ops_store.set_status(shop_op_id, "done")
         return "success", {
             "message": "НИК ИЗМЕНЁН",
             "balance": new_balance,

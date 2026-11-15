@@ -61,6 +61,28 @@ CREATE TABLE IF NOT EXISTS shop_operations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS player_stats (
+    guild_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    name TEXT DEFAULT '',
+    reputation INTEGER DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS rep_balance (
+    guild_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    earned_total INTEGER NOT NULL DEFAULT 0,
+    spent_total INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS rep_balance_grants (
+    grant_key TEXT PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    amount INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
@@ -79,6 +101,9 @@ async def pg_pool(pg_uri):
         await conn.execute("DELETE FROM user_balance")
         await conn.execute("DELETE FROM match_coin_grants")
         await conn.execute("DELETE FROM shop_operations")
+        await conn.execute("DELETE FROM player_stats")
+        await conn.execute("DELETE FROM rep_balance")
+        await conn.execute("DELETE FROM rep_balance_grants")
     prev_url = dbmod.DATABASE_URL
     dbmod.DATABASE_URL = pg_uri
     dbmod._pool = pool
@@ -141,6 +166,16 @@ async def _set_balance(pool, amount, g=G, u=U):
             ON CONFLICT (guild_id, user_id) DO UPDATE SET balance=$3
             """,
             g, u, amount,
+        )
+        # Достаточный spendable REP (миграция из reputation)
+        await conn.execute(
+            """
+            INSERT INTO player_stats (guild_id, user_id, reputation)
+            VALUES ($1,$2,10000)
+            ON CONFLICT (guild_id, user_id)
+            DO UPDATE SET reputation=10000
+            """,
+            g, u,
         )
 
 
@@ -383,7 +418,10 @@ async def test_refund_response_loss_no_double(env):
 
     # Ответ потерялся → сервис повторяет refund → recorded amount
     res = await purchase_ops_store.refund(op_id, G, U, 500)
-    assert res == {"credited": 500, "pending": 0}
+    assert res == {
+        "credited": 500, "pending": 0,
+        "rep_credited": 0, "rep_pending": 0,
+    }
     assert await _balance(env["pool"]) == 1000  # НЕ 1500
 
 

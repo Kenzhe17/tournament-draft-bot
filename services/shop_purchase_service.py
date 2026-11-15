@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 from models.shop_item import PlayerCosmetic, ShopItem
 from storage.shop_ops_store import shop_ops_store
+from storage.rep_balance_store import (
+    rep_balance_store,
+    rep_price_for_amount,
+    rep_price_for_item,
+)
 from storage.shop_purchase_ops_store import purchase_ops_store
 from storage.shop_store import inventory_store, shop_store
 
@@ -40,6 +45,7 @@ class PurchaseResult:
     granted: list[str] = field(default_factory=list)  # выданные item_id
     refunded: bool = False
     insufficient: bool = False
+    rep_price: int = 0  # REP-стоимость операции
 
 
 # Per-user locks: "{guild}:{user}" -> asyncio.Lock
@@ -174,8 +180,19 @@ async def _record_refund(
         payload={
             "refund_base": res.get("credited", 0),
             "refund_pending": res.get("pending", 0),
+            "rep_pending": res.get("rep_pending", 0),
         },
     )
+
+
+def _refund_incomplete(res: dict[str, int]) -> bool:
+    """Возврат не завершён: есть долг и ничего не зачислено."""
+    coin_stuck = res.get("pending", 0) > 0 and res.get("credited", 0) == 0
+    rep_stuck = (
+        res.get("rep_pending", 0) > 0
+        and res.get("rep_credited", 0) == 0
+    )
+    return coin_stuck or rep_stuck
 
 
 async def _revoke_grant(
@@ -262,6 +279,7 @@ async def purchase(
             components = [item]
 
         price = item.price
+        rep_price = rep_price_for_item(item)
         op_id = purchase_ops_store.new_op_id()
         await purchase_ops_store.create(
             op_id, guild_id, user_id, "purchase", item.id, price,
@@ -269,24 +287,37 @@ async def purchase(
                 "components": [c.id for c in components],
                 "bundle": bool(item.bundle),
             },
+            rep_amount=rep_price,
         )
 
         charge = await purchase_ops_store.charge(
-            op_id, guild_id, user_id, price
+            op_id, guild_id, user_id, price, rep_amount=rep_price
         )
         if charge == "insufficient":
             return PurchaseResult(
                 False,
                 f"Недостаточно монет. Нужно: {price}.",
-                item=item, insufficient=True,
+                item=item, insufficient=True, rep_price=rep_price,
+            )
+        if charge == "insufficient_rep":
+            rep_bal = await rep_balance_store.get_balance(
+                guild_id, user_id
+            )
+            return PurchaseResult(
+                False,
+                f"Недостаточно REP. Нужно: {rep_price}, "
+                f"доступно: {rep_bal}.",
+                item=item, insufficient=True, rep_price=rep_price,
             )
         if charge == "exists":
             return PurchaseResult(
-                False, "Эта покупка уже обработана.", item=item
+                False, "Эта покупка уже обработана.", item=item,
+                rep_price=rep_price,
             )
         if charge != "charged":
             return PurchaseResult(
-                False, "Ошибка базы данных при списании.", item=item
+                False, "Ошибка базы данных при списании.", item=item,
+                rep_price=rep_price,
             )
 
         # Выдача. При ошибке — компенсируем ТОЛЬКО выданное этой
@@ -307,10 +338,10 @@ async def purchase(
                 except Exception:
                     logger.exception("revoke grant failed: %s", comp_id)
             res = await _refund_once(guild_id, user_id, price, op_id)
-            if res.get("pending", 0) > 0 and res.get("credited", 0) == 0:
+            if _refund_incomplete(res):
                 await purchase_ops_store.set_status(
                     op_id, "unknown",
-                    payload={"refund_pending": price},
+                    payload={"refund_pending": price, "rep_pending": res.get("rep_pending", 0)},
                 )
             else:
                 await _record_refund(op_id, res)
@@ -321,8 +352,8 @@ async def purchase(
             )
             return PurchaseResult(
                 True,
-                f"Выдача не удалась ({exc}). Монеты возвращены.",
-                item=item, refunded=True,
+                f"Выдача не удалась ({exc}). Монеты и REP возвращены.",
+                item=item, refunded=True, rep_price=rep_price,
             )
 
         await purchase_ops_store.set_status(
@@ -336,7 +367,8 @@ async def purchase(
             op_id=op_id,
         )
         return PurchaseResult(
-            True, "Покупка успешна.", item=item, granted=granted
+            True, "Покупка успешна.", item=item, granted=granted,
+            rep_price=rep_price,
         )
 
 
@@ -467,24 +499,40 @@ async def deactivate_color_role(
 async def _begin_op(
     kind: str, guild_id: int, user_id: int, item_id: str,
     price: int, payload: dict | None = None,
+    rep_amount: int = 0,
 ) -> tuple[str, str]:
-    """Создать durable-операцию и атомарно списать.
+    """Создать durable-операцию и атомарно списать (монеты+REP).
 
     Возвращает (op_id, charge_result)."""
     op_id = purchase_ops_store.new_op_id()
     await purchase_ops_store.create(
         op_id, guild_id, user_id, kind, item_id, price,
-        payload=payload or {},
+        payload=payload or {}, rep_amount=rep_amount,
     )
     charge = await purchase_ops_store.charge(
-        op_id, guild_id, user_id, price
+        op_id, guild_id, user_id, price, rep_amount=rep_amount
     )
     return op_id, charge
 
 
-async def _fail_charge(charge: str, price: int):
+async def _fail_charge(charge: str, price: int, rep_amount: int = 0,
+                       guild_id: int = 0, user_id: int = 0):
     if charge == "insufficient":
         return False, f"Недостаточно монет. Нужно: {price}.", None
+    if charge == "insufficient_rep":
+        rep_bal = 0
+        if guild_id and user_id:
+            try:
+                rep_bal = await rep_balance_store.get_balance(
+                    guild_id, user_id
+                )
+            except Exception:
+                rep_bal = 0
+        return (
+            False,
+            f"Недостаточно REP. Нужно: {rep_amount}, доступно: {rep_bal}.",
+            None,
+        )
     if charge == "exists":
         return False, "Эта операция уже обработана.", None
     return False, "Ошибка базы данных.", None
@@ -494,9 +542,13 @@ async def _refund_op(
     op_id: str, guild_id: int, user_id: int, price: int
 ) -> dict[str, int]:
     res = await _refund_once(guild_id, user_id, price, op_id)
-    if res.get("pending", 0) > 0 and res.get("credited", 0) == 0:
+    if _refund_incomplete(res):
         await purchase_ops_store.set_status(
-            op_id, "unknown", payload={"refund_pending": price}
+            op_id, "unknown",
+            payload={
+                "refund_pending": price,
+                "rep_pending": res.get("rep_pending", 0),
+            },
         )
     else:
         await _record_refund(op_id, res)
@@ -512,12 +564,15 @@ async def purchase_pet(
     async with await _user_lock(guild_id, user_id):
         if not await pet_store.has_pet_slot(user_id):
             return False, "У вас уже есть питомец.", None
+        rep_price = rep_price_for_amount(price)
         op_id, charge = await _begin_op(
             "pet", guild_id, user_id, pet_type, price,
-            payload={"pet_type": pet_type},
+            payload={"pet_type": pet_type}, rep_amount=rep_price,
         )
         if charge != "charged":
-            return await _fail_charge(charge, price)
+            return await _fail_charge(
+                charge, price, rep_price, guild_id, user_id
+            )
         try:
             pet_def = pet_store._catalog.get_pet(pet_type)
             if pet_def is None:
@@ -530,7 +585,7 @@ async def purchase_pet(
             )
         except Exception as exc:
             await _refund_op(op_id, guild_id, user_id, price)
-            return False, f"Не удалось создать питомца ({exc}). Монеты возвращены.", None
+            return False, f"Не удалось создать питомца ({exc}). Монеты и REP возвращены.", None
         await purchase_ops_store.set_status(op_id, "done")
         shop_ops_store.record(
             guild_id=guild_id, user_id=user_id, kind="pet",
@@ -552,13 +607,25 @@ async def open_case_safe(
         case = case_store.get_case(case_id)
         if case is None or not case.is_active:
             return {"type": "error", "value": "Кейс не найден"}
+        rep_price = rep_price_for_amount(case.price)
         op_id, charge = await _begin_op(
             "case", guild_id, user_id, case_id, case.price,
-            payload={"case_id": case_id},
+            payload={"case_id": case_id}, rep_amount=rep_price,
         )
         if charge != "charged":
             if charge == "insufficient":
                 return {"type": "error", "value": "Недостаточно монет"}
+            if charge == "insufficient_rep":
+                rep_bal = await rep_balance_store.get_balance(
+                    guild_id, user_id
+                )
+                return {
+                    "type": "error",
+                    "value": (
+                        f"Недостаточно REP. Нужно: {rep_price}, "
+                        f"доступно: {rep_bal}."
+                    ),
+                }
             if charge == "exists":
                 return {"type": "error", "value": "Операция уже обработана"}
             return {"type": "error", "value": "Ошибка базы данных"}
@@ -593,11 +660,15 @@ async def open_egg_safe(
     async with await _user_lock(guild_id, user_id):
         if not await pet_store.has_pet_slot(user_id):
             return False, "У вас уже есть питомец — яйцо не нужно.", None
+        rep_price = rep_price_for_amount(price)
         op_id, charge = await _begin_op(
             "egg", guild_id, user_id, "mystery_egg", price,
+            rep_amount=rep_price,
         )
         if charge != "charged":
-            return await _fail_charge(charge, price)
+            return await _fail_charge(
+                charge, price, rep_price, guild_id, user_id
+            )
         try:
             drop = await pet_store.open_mystery_egg()
             pet_def = (
@@ -615,7 +686,7 @@ async def open_egg_safe(
                 pet = None
         except Exception as exc:
             await _refund_op(op_id, guild_id, user_id, price)
-            return False, f"Ошибка открытия ({exc}). Монеты возвращены.", None
+            return False, f"Ошибка открытия ({exc}). Монеты и REP возвращены.", None
         await purchase_ops_store.set_status(
             op_id, "done", payload={"egg_result": "won" if pet else "nothing"}
         )
@@ -663,10 +734,10 @@ async def _recover_purchase_op(op: dict, bot) -> str:
                 except Exception:
                     pass
             res = await _refund_once(gid, uid, op["price"], op["op_id"])
-            if res.get("pending", 0) > 0 and res.get("credited", 0) == 0:
+            if _refund_incomplete(res):
                 await purchase_ops_store.set_status(
                     op["op_id"], "unknown",
-                    payload={"refund_pending": op["price"]},
+                    payload={"refund_pending": op["price"], "rep_pending": res.get("rep_pending", 0)},
                 )
                 return "unknown"
             await _record_refund(op["op_id"], res)
@@ -697,10 +768,10 @@ async def _recover_pet_op(op: dict) -> str:
                 await purchase_ops_store.set_status(op["op_id"], "done")
                 return "done"
         res = await _refund_once(gid, uid, op["price"], op["op_id"])
-        if res.get("pending", 0) > 0 and res.get("credited", 0) == 0:
+        if _refund_incomplete(res):
             await purchase_ops_store.set_status(
                 op["op_id"], "unknown",
-                payload={"refund_pending": op["price"]},
+                payload={"refund_pending": op["price"], "rep_pending": res.get("rep_pending", 0)},
             )
             return "unknown"
         await _record_refund(op["op_id"], res)
@@ -717,7 +788,7 @@ async def _recover_case_op(op: dict) -> str:
     if res.get("pending", 0) > 0 and res.get("credited", 0) == 0:
         await purchase_ops_store.set_status(
             op["op_id"], "unknown",
-            payload={"refund_pending": op["price"]},
+            payload={"refund_pending": op["price"], "rep_pending": res.get("rep_pending", 0)},
         )
         return "unknown"
     await _record_refund(op["op_id"], res)

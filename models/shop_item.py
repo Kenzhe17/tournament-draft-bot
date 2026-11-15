@@ -40,6 +40,7 @@ class ShopItem:
     available_from: str | None = None  # ISO-дата начала сезонной продажи
     available_until: str | None = None  # ISO-дата конца сезонной продажи
     bundle: list[str] | None = None  # ID компонентов для набора
+    rep_price: int | None = None  # Фиксированная цена REP (None = по тарифу)
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализовать в словарь."""
@@ -60,6 +61,7 @@ class ShopItem:
             "available_from": self.available_from,
             "available_until": self.available_until,
             "bundle": self.bundle,
+            "rep_price": self.rep_price,
         }
 
     @classmethod
@@ -90,6 +92,7 @@ class ShopItem:
             available_from=data.get("available_from"),
             available_until=data.get("available_until"),
             bundle=data.get("bundle"),
+            rep_price=data.get("rep_price"),
         )
 
 

@@ -446,12 +446,26 @@ class ReputationCog(commands.Cog):
         invite_stats = await reputation_store.get_user_invite_stats(guild_id, user.id)
         given = await reputation_store.count_manual_given(guild_id, user.id)
 
+        # Расходуемый REP-баланс (SHOP 2.0) и история трат
+        rep_info = {"balance": 0, "earned_total": 0, "spent_total": 0}
+        spend_history: list = []
+        try:
+            from storage.rep_balance_store import rep_balance_store
+            rep_info = await rep_balance_store.get_info(guild_id, user.id)
+            spend_history = await rep_balance_store.get_spend_history(
+                guild_id, user.id, limit=5
+            )
+        except Exception:
+            pass
+
         tracked = sum(breakdown.values())
         legacy = max(0, total - tracked)
 
         lines = [
             f"**{user.display_name}**",
             f"Всего репутации: {total}",
+            f"Доступно REP: **{rep_info['balance']}** "
+            f"(потрачено: {rep_info['spent_total']})",
         ]
         if breakdown.get(SRC_INVITE):
             lines.append(f"Получено за приглашения: {breakdown[SRC_INVITE]}")
@@ -466,6 +480,21 @@ class ReputationCog(commands.Cog):
             lines.append(f"Репутация до обновления: {legacy}")
         lines.append(f"Подтверждённых приглашений: {invite_stats['rewarded']}")
         lines.append(f"Выдано репутации другим: {given}")
+        if spend_history:
+            lines.append("")
+            lines.append("**Расходы REP (магазин):**")
+            for sp in spend_history:
+                ts = sp.get("created_at") or 0
+                date_str = ""
+                if isinstance(ts, (int, float)) and ts > 0:
+                    date_str = f" <t:{int(ts)}:d>"
+                elif hasattr(ts, "timestamp"):
+                    date_str = f" <t:{int(ts.timestamp())}:d>"
+                status = "↩" if sp.get("status") == "refunded" else ""
+                lines.append(
+                    f"-{sp['rep']} REP · {sp.get('item_id')} "
+                    f"({sp.get('price')} монет){status}{date_str}"
+                )
 
         await interaction.response.send_message(
             view=profile_view(

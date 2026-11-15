@@ -481,11 +481,28 @@ class WardrobeView(discord.ui.View):
                 await self._go(interaction, view)
                 return
             price = price_for(item)
-            try:
-                await user_balance_store.subtract_balance(
-                    self.guild_id, self.user_id, price
-                )
-            except ValueError:
+            # Durable-операция: монеты + REP списываются атомарно,
+            # выдача идемпотентна, возврат при сбое — обе валюты.
+            from storage.rep_balance_store import (
+                rep_balance_store, rep_price_for_amount,
+            )
+            from storage.shop_purchase_ops_store import (
+                purchase_ops_store,
+            )
+            rep_price = rep_price_for_amount(price)
+            item_id_int = int(item["itemID"])
+            op_id = purchase_ops_store.new_op_id()
+            await purchase_ops_store.create(
+                op_id, self.guild_id, self.user_id, "wardrobe",
+                str(item_id_int), price,
+                payload={"ff_item": str(item_id_int)},
+                rep_amount=rep_price,
+            )
+            charge = await purchase_ops_store.charge(
+                op_id, self.guild_id, self.user_id, price,
+                rep_amount=rep_price,
+            )
+            if charge == "insufficient":
                 await interaction.response.send_message(
                     replace_emojis(
                         f"Недостаточно монет! Нужно **{_fmt_money(price)}** {get_emoji('money')}."
@@ -493,14 +510,30 @@ class WardrobeView(discord.ui.View):
                     ephemeral=True,
                 )
                 return
+            if charge == "insufficient_rep":
+                rep_bal = await rep_balance_store.get_balance(
+                    self.guild_id, self.user_id
+                )
+                await interaction.response.send_message(
+                    replace_emojis(
+                        f"Недостаточно REP! Нужно **{rep_price}**, "
+                        f"доступно **{rep_bal}**."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            if charge != "charged":
+                await interaction.response.send_message(
+                    "Не удалось проверить баланс. Попробуйте позже.",
+                    ephemeral=True,
+                )
+                return
             if not wardrobe_store.add(self.guild_id, self.user_id, item_id_int):
-                # Предмет уже был у игрока — вернуть монеты один раз.
-                try:
-                    await user_balance_store.add_balance(
-                        self.guild_id, self.user_id, price
-                    )
-                except Exception:
-                    pass
+                # Предмет уже был у игрока — идемпотентный возврат обеих валют.
+                await purchase_ops_store.refund(
+                    op_id, self.guild_id, self.user_id, price
+                )
+                await purchase_ops_store.set_status(op_id, "refunded")
                 view = WardrobeView(
                     self.guild_id,
                     self.user_id,
@@ -510,6 +543,7 @@ class WardrobeView(discord.ui.View):
                 )
                 await self._go(interaction, view)
                 return
+            await purchase_ops_store.set_status(op_id, "done")
             view = WardrobeView(
                 self.guild_id,
                 self.user_id,

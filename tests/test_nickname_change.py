@@ -118,6 +118,62 @@ def _interaction(member, guild=None, balance=None):
     )
 
 
+class _FakeShopOps:
+    """Минимальный durable-ops для unit-тестов (без PG).
+
+    Имитирует shop_operations: charge списывает монеты через
+    FakeBalance, rep_amount фиксируется но не списывается
+    (REP-покрытие — в PG-тестах test_shop_rep_pg.py).
+    """
+
+    def __init__(self, balance):
+        self.balance = balance
+        self.ops: dict[str, dict] = {}
+        self._n = 0
+
+    def new_op_id(self):
+        self._n += 1
+        return f"shopop{self._n}"
+
+    async def create(self, op_id, g, u, kind, item_id, price,
+                     payload=None, rep_amount=0):
+        self.ops[op_id] = {
+            "status": "reserved", "price": price,
+            "rep_amount": rep_amount,
+        }
+        return dict(self.ops[op_id])
+
+    async def charge(self, op_id, g, u, amount, rep_amount=0):
+        op = self.ops[op_id]
+        if op["status"] != "reserved":
+            return "exists"
+        try:
+            await self.balance.subtract_balance(g, u, amount)
+        except ValueError:
+            op["status"] = "failed"
+            return "insufficient"
+        op["status"] = "charged"
+        return "charged"
+
+    async def set_status(self, op_id, status, payload=None):
+        if op_id in self.ops:
+            self.ops[op_id]["status"] = status
+
+    async def refund(self, op_id, g, u, amount, rep_amount=None):
+        await self.balance.add_balance_once(
+            g, u, amount, f"shopref:{op_id}"
+        )
+        return {
+            "credited": amount, "pending": 0,
+            "rep_credited": 0, "rep_pending": 0,
+        }
+
+
+class _FakeRepBalance:
+    async def get_balance(self, guild_id, user_id):
+        return 99
+
+
 @pytest.fixture
 def env(monkeypatch, tmp_path):
     ops_file = tmp_path / "nickname_ops.json"
@@ -129,6 +185,8 @@ def env(monkeypatch, tmp_path):
 
     balance = FakeBalance()
     monkeypatch.setattr(ns, "user_balance_store", balance)
+    monkeypatch.setattr(ns, "purchase_ops_store", _FakeShopOps(balance))
+    monkeypatch.setattr(ns, "rep_balance_store", _FakeRepBalance())
 
     return SimpleNamespace(ops=ops, balance=balance)
 

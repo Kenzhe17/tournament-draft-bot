@@ -18,6 +18,11 @@ from models.shop_item import CosmeticRarity, ShopItem
 from services import shop_purchase_service as purchase_svc
 from storage.shop_ops_store import shop_ops_store
 from storage.shop_store import inventory_store, shop_store
+from storage.rep_balance_store import (
+    rep_balance_store,
+    rep_price_for_amount,
+    rep_price_for_item,
+)
 from storage.user_balance_store import user_balance_store
 from utils.design import colors
 from utils.design.layouts import DesignView, edit_card
@@ -131,11 +136,16 @@ def _is_admin_uid(user_id: int) -> bool:
 
 async def _profile_lines(guild_id: int, user_id: int) -> list[str]:
     balance = await user_balance_store.get_balance(guild_id, user_id)
+    rep_bal = 0
+    try:
+        rep_bal = await rep_balance_store.get_balance(guild_id, user_id)
+    except Exception:
+        rep_bal = 0
     inv = inventory_store.get_player_inventory(guild_id, user_id)
     equipped = sum(1 for c in inv if c.equipped)
     return [
         "**ВАШ ПРОФИЛЬ**",
-        f"Баланс: **{_money(balance)}** монет",
+        f"Баланс: **{_money(balance)}** монет · REP: **{rep_bal}**",
         f"Предметов: {len(inv)} · Экипировано: {equipped}",
     ]
 
@@ -321,7 +331,8 @@ class _ItemSelect(discord.ui.Select):
             kind = KIND_LABEL.get(_kind_of(it), it.category.upper())
             owned_mark = " ✓" if it.id in owned_ids else ""
             label = f"{it.name}{owned_mark}"[:100]
-            desc = f"{kind} · {_money(it.price)} монет"[:100]
+            desc = (f"{kind} · {_money(it.price)} монет + "
+                f"{rep_price_for_item(it)} REP")[:100]
             options.append(discord.SelectOption(
                 label=label, value=it.id, description=desc
             ))
@@ -569,9 +580,15 @@ async def _card_body(
     rarity = RARITY_LABEL.get(item.rarity, item.rarity.value)
     status = _status_of(guild_id, user_id, item)
     balance = await user_balance_store.get_balance(guild_id, user_id)
+    rep_price = rep_price_for_item(item)
+    rep_bal = 0
+    try:
+        rep_bal = await rep_balance_store.get_balance(guild_id, user_id)
+    except Exception:
+        rep_bal = 0
     lines = [
         f"**{kind} · {_esc(item.name.upper() if item.name.isascii() else item.name)}**",
-        f"Редкость: {rarity} · Стоимость: **{_money(item.price)}** монет",
+        f"Редкость: {rarity} · Стоимость: **{_money(item.price)}** монет + **{rep_price}** REP",
     ]
     if item.bundle:
         lines.append("**СОСТАВ НАБОРА**")
@@ -593,12 +610,18 @@ async def _card_body(
         status,
         "",
         "**ВАШ БАЛАНС**",
-        f"{_money(balance)} монет",
+        f"{_money(balance)} монет · REP: {rep_bal}",
     ]
     if item.description:
         lines += ["", _esc(item.description)]
     if confirm:
-        lines += ["", "**Подтвердите покупку.**"]
+        lines += [
+            "",
+            "**Подтвердите покупку.**",
+            f"Списание: {_money(item.price)} монет + {rep_price} REP",
+            f"После покупки: ~{_money(max(0, balance - item.price))} монет, "
+            f"REP ~{max(0, rep_bal - rep_price)}",
+        ]
     return "\n".join(lines)
 
 
@@ -675,7 +698,7 @@ async def _do_purchase(
         granted = ", ".join(result.granted) or item.id
         view.text(
             f"**{_esc(item.name)}** — приобретено.\n"
-            f"Списано: {_money(item.price)} монет.\n"
+            f"Списано: {_money(item.price)} монет + {result.rep_price} REP.\n"
             f"Выдано: {granted}"
         )
         row = discord.ui.ActionRow()
@@ -785,7 +808,7 @@ async def build_item_card_view(
     row = discord.ui.ActionRow()
     if confirm:
         row.add_item(_CardButton(
-            "buy", f"Подтвердить — {_money(item.price)}",
+            "buy", f"Подтвердить — {_money(item.price)} + {rep_price_for_item(item)} REP",
             discord.ButtonStyle.success, guild_id, user_id, item.id, back))
         row.add_item(_CardButton(
             "buy_cancel", "Отмена", discord.ButtonStyle.secondary,
@@ -796,7 +819,7 @@ async def build_item_card_view(
             guild_id, user_id, item.id, back))
     elif not owned:
         row.add_item(_CardButton(
-            "buy_ask", f"Купить — {_money(item.price)}",
+            "buy_ask", f"Купить — {_money(item.price)} + {rep_price_for_item(item)} REP",
             discord.ButtonStyle.success, guild_id, user_id, item.id, back))
     elif kind in ("icon", "tag", "frame"):
         cos = next(
@@ -978,14 +1001,16 @@ async def build_pets_view(guild_id: int, user_id: int) -> DesignView:
 
     options = [discord.SelectOption(
         label="Яйцо загадки", value="__egg__",
-        description=f"{_money(MYSTERY_EGG_DATA['price'])} монет · случайный питомец",
+        description=(f"{_money(MYSTERY_EGG_DATA['price'])} монет + "
+                f"{rep_price_for_amount(MYSTERY_EGG_DATA['price'])} REP · случайный питомец"),
     )]
     for pid, p in PETS_CATALOG.items():
         owned = has_pet  # один питомец — если есть, всех «нет в наличии слота»
         options.append(discord.SelectOption(
             label=p["name"][:100], value=pid,
             description=(
-                f"{p['rarity']} · {_money(p['price'])} монет"
+                f"{p['rarity']} · {_money(p['price'])} монет + "
+                f"{rep_price_for_amount(p['price'])} REP"
             )[:100],
         ))
     sel = discord.ui.Select(
@@ -1039,12 +1064,18 @@ async def _pet_card(guild_id: int, user_id: int, pet_id: str) -> DesignView:
         desc = a.get("desc_template", "").format(val=val)
         ab_lines.append(f"**{a.get('name')}** — {desc}")
 
+    rep_price = rep_price_for_amount(p["price"])
+    rep_bal = 0
+    try:
+        rep_bal = await rep_balance_store.get_balance(guild_id, user_id)
+    except Exception:
+        rep_bal = 0
     body = (
         f"**ПИТОМЕЦ · {p['name'].upper()}**\n"
-        f"Редкость: {p['rarity']} · Стоимость: **{_money(p['price'])}** монет\n\n"
+        f"Редкость: {p['rarity']} · Стоимость: **{_money(p['price'])}** монет + **{rep_price}** REP\n\n"
         f"{p.get('description', '')}\n\n"
         + ("\n".join(ab_lines) if ab_lines else "")
-        + f"\n\n**ВАШ БАЛАНС**\n{_money(balance)} монет\n"
+        + f"\n\n**ВАШ БАЛАНС**\n{_money(balance)} монет · REP: {rep_bal}\n"
         f"**СТАТУС**\n{'Слот занят — уже есть питомец' if has_pet else 'Доступен'}"
     )
     view = DesignView(title=None, accent=colors.CASE)
@@ -1061,7 +1092,7 @@ async def _pet_card(guild_id: int, user_id: int, pet_id: str) -> DesignView:
     row = discord.ui.ActionRow()
     if not has_pet:
         buy = discord.ui.Button(
-            label=f"Купить — {_money(p['price'])}",
+            label=f"Купить — {_money(p['price'])} + {rep_price} REP",
             style=discord.ButtonStyle.success,
         )
 
@@ -1105,12 +1136,19 @@ async def _egg_card(guild_id: int, user_id: int) -> DesignView:
     chance_txt = "\n".join(
         f"{k}: {v * 100:.1f}%" for k, v in chances.items()
     )
+    egg_price = MYSTERY_EGG_DATA["price"]
+    egg_rep = rep_price_for_amount(egg_price)
+    rep_bal = 0
+    try:
+        rep_bal = await rep_balance_store.get_balance(guild_id, user_id)
+    except Exception:
+        rep_bal = 0
     body = (
         "**ПИТОМЕЦ · ЗАГАДОЧНОЕ ЯЙЦО**\n"
-        f"Стоимость: **{_money(MYSTERY_EGG_DATA['price'])}** монет\n\n"
+        f"Стоимость: **{_money(egg_price)}** монет + **{egg_rep}** REP\n\n"
         f"{MYSTERY_EGG_DATA.get('description', '')}\n\n"
         f"**ШАНСЫ**\n{chance_txt}\n\n"
-        f"**ВАШ БАЛАНС**\n{_money(balance)} монет\n"
+        f"**ВАШ БАЛАНС**\n{_money(balance)} монет · REP: {rep_bal}\n"
         f"**СТАТУС**\n{'Слот занят' if has_pet else 'Доступно'}"
     )
     view = DesignView(title=None, accent=colors.CASE)
@@ -1126,7 +1164,7 @@ async def _egg_card(guild_id: int, user_id: int) -> DesignView:
     row = discord.ui.ActionRow()
     if not has_pet:
         buy = discord.ui.Button(
-            label=f"Открыть — {_money(MYSTERY_EGG_DATA['price'])}",
+            label=f"Открыть — {_money(egg_price)} + {egg_rep} REP",
             style=discord.ButtonStyle.success,
         )
 
@@ -1249,15 +1287,21 @@ async def _case_card(
     odds = _case_odds(case)
     balance = await user_balance_store.get_balance(guild_id, user_id)
     rewards = _case_rewards_preview(case)
+    case_rep = rep_price_for_amount(case.price)
+    rep_bal = 0
+    try:
+        rep_bal = await rep_balance_store.get_balance(guild_id, user_id)
+    except Exception:
+        rep_bal = 0
     body = (
         f"**КЕЙС · {case.name.upper()}**\n"
-        f"Стоимость: **{_money(case.price)}** монет\n\n"
+        f"Стоимость: **{_money(case.price)}** монет + **{case_rep}** REP\n\n"
         f"**ШАНСЫ**\n"
         f"Монеты: {odds['coins']:.0f}% · "
         f"Предмет: {odds['item']:.0f}% · "
         f"Ничего: {odds['nothing']:.0f}%\n\n"
         f"**ВОЗМОЖНЫЕ НАГРАДЫ**\n" + "\n".join(rewards[:10])
-        + f"\n\n**ВАШ БАЛАНС**\n{_money(balance)} монет"
+        + f"\n\n**ВАШ БАЛАНС**\n{_money(balance)} монет · REP: {rep_bal}"
     )
     if confirm:
         body += "\n\n**Подтвердите открытие кейса.**"
@@ -1267,7 +1311,7 @@ async def _case_card(
     row = discord.ui.ActionRow()
     if confirm:
         open_btn = discord.ui.Button(
-            label=f"Открыть — {_money(case.price)}",
+            label=f"Открыть — {_money(case.price)} + {case_rep} REP",
             style=discord.ButtonStyle.success,
         )
 
@@ -1301,7 +1345,7 @@ async def _case_card(
         row.add_item(cancel)
     else:
         ask = discord.ui.Button(
-            label=f"Открыть за {_money(case.price)}",
+            label=f"Открыть за {_money(case.price)} + {case_rep} REP",
             style=discord.ButtonStyle.primary,
         )
 
@@ -1486,7 +1530,8 @@ async def _admin_item_view(
     view.text(
         f"**{_esc(item.name)}** (`{item.id}`)\n"
         f"Категория: {item.category} · Тип: {item.item_type}\n"
-        f"Цена: {_money(item.price)} · Редкость: {item.rarity.value}\n"
+        f"Цена: {_money(item.price)} монет + "
+        f"{rep_price_for_item(item)} REP · Редкость: {item.rarity.value}\n"
         f"Статус: {'активен' if item.is_active else 'СКРЫТ'}\n"
         f"Сезон: {item.available_from or '—'} — {item.available_until or '—'}"
     )
@@ -1540,6 +1585,42 @@ async def _admin_item_view(
         await i.response.send_modal(_PriceModal())
     price_btn.callback = _price
     row.add_item(price_btn)
+
+    rep_btn = discord.ui.Button(label="REP-цена", style=discord.ButtonStyle.secondary)
+
+    class _RepModal(discord.ui.Modal, title="REP-цена товара"):
+        val = discord.ui.TextInput(
+            label="REP (пусто = по тарифу)", required=False, max_length=4
+        )
+
+        async def on_submit(self, interaction):
+            raw = self.val.value.strip()
+            if raw == "":
+                item.rep_price = None
+            else:
+                try:
+                    item.rep_price = int(raw)
+                    if item.rep_price < 0 or item.rep_price > 999:
+                        raise ValueError
+                except ValueError:
+                    await interaction.response.send_message(
+                        "REP: целое 0–999 или пусто.", ephemeral=True
+                    )
+                    return
+            shop_store.update_item(item)
+            shop_ops_store.record(
+                guild_id=guild_id, user_id=user_id, kind="admin",
+                item_id=item.id, price=0, status="done",
+                detail=f"rep_price={item.rep_price}",
+            )
+            await edit_card(interaction, await _admin_item_view(
+                guild_id, user_id, item
+            ))
+
+    async def _rep(i):
+        await i.response.send_modal(_RepModal())
+    rep_btn.callback = _rep
+    row.add_item(rep_btn)
 
     season_btn = discord.ui.Button(label="Сезон", style=discord.ButtonStyle.secondary)
 
