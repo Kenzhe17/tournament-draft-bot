@@ -1,0 +1,890 @@
+"""r!z3 CASH CUP: командная регистрация и динамический Double Elimination.
+
+Сервис работает отдельно от Tournament/BR/Ultimatum и от игровой экономики.
+Призовые выплаты выполняются вне бота; здесь фиксируется результат и аудит.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+import uuid
+from typing import Any
+from datetime import datetime, timezone
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from config import BOT_OWNER_ID, GUILD_ID, ORG_ROLE_ID
+from cogs.freefire import _has_server_tag
+from services.freefire_service import FreeFireError, freefire_service
+from services.cashcup_bracket import BracketError, create_bracket, ready_matches, record_result, record_final_game
+from services.cashcup_store import CashCupError, cashcup_store
+from services import vac_service
+from utils.ff_profile_formatter import safe_text
+from utils.design import compose
+
+logger = logging.getLogger(__name__)
+UID_RE = re.compile(r"^\d{5,15}$")
+DEVICE_CHOICES = [
+    app_commands.Choice(name="Телефон", value="mobile"),
+    app_commands.Choice(name="ПК / эмулятор", value="pc"),
+]
+REGION_CHOICES = [
+    app_commands.Choice(name="RU / CIS", value="ru"),
+    app_commands.Choice(name="SG", value="sg"),
+    app_commands.Choice(name="IND", value="ind"),
+    app_commands.Choice(name="BR", value="br"),
+    app_commands.Choice(name="BD", value="bd"),
+    app_commands.Choice(name="ID", value="id"),
+    app_commands.Choice(name="TH", value="th"),
+    app_commands.Choice(name="TW", value="tw"),
+    app_commands.Choice(name="US", value="us"),
+]
+
+
+def _is_org(user: discord.Member) -> bool:
+    return bool(user.id == BOT_OWNER_ID or user.guild_permissions.manage_guild or
+                (ORG_ROLE_ID and any(role.id == ORG_ROLE_ID for role in user.roles)))
+
+
+def _team(state: dict, name: str) -> dict:
+    team = next((t for t in state["teams"] if t["name"].casefold() == name.strip().casefold()), None)
+    if not team:
+        raise CashCupError("Команда не найдена")
+    return team
+
+
+def _my_team(state: dict, user_id: int) -> dict:
+    team = next((t for t in state["teams"] if t["captain"] == user_id), None)
+    if not team:
+        raise CashCupError("Вы не капитан зарегистрированной команды")
+    return team
+
+
+def _assert_registration(state: dict) -> None:
+    if state["status"] != "registration":
+        raise CashCupError("Регистрация уже закрыта")
+
+
+def _assert_running(state: dict) -> None:
+    if state["status"] != "running":
+        raise CashCupError("Турнир не идёт")
+    if state.get("paused"):
+        raise CashCupError("Турнир приостановлен организатором")
+
+
+def _unique_player(state: dict, user_id: int, ff_uid: str) -> None:
+    for team in state["teams"]:
+        for player in team["members"] + team["pending"]:
+            if player["discord_id"] == user_id:
+                raise CashCupError("Этот Discord-аккаунт уже зарегистрирован")
+            if player["ff_uid"] == ff_uid:
+                raise CashCupError("Этот Free Fire UID уже используется")
+
+
+def _player_by_id(team: dict, user_id: int) -> dict | None:
+    return next((p for p in team["members"] if p["discord_id"] == user_id), None)
+
+
+def _label(team: dict) -> str:
+    return safe_text(team["name"], limit=65)
+
+
+def _team_name(state: dict, team_id: str) -> str:
+    return next((_label(t) for t in state["teams"] if t["id"] == team_id), "Неизвестная команда")
+
+
+def _panel(state: dict) -> discord.Embed:
+    running = state["status"] == "running"
+    completed = state["status"] == "completed"
+    lines = [f"**Приз:** {safe_text(state['prize'], limit=90)}",
+             f"**Команд:** {len(state['teams'])} (без лимита)",
+             "**Формат:** Double Elimination, BO1; Grand Final BO3 без reset",
+             "**Состав:** 4 основных + 1 запасной; максимум 2 ПК."]
+    if state.get("payouts"):
+        lines.append(f"**Выплат отмечено:** {len(state['payouts'])}")
+    if state["status"] == "registration":
+        lines.append("**Регистрация открыта.** Каждый игрок сам вводит Free Fire UID и получает ник из API.")
+        lines.append("До старта необходимо подтверждение состава организатором.")
+    elif running:
+        bracket = state["bracket"]
+        active = ready_matches(bracket)
+        lines.append(f"**Активные матчи:** {len(active)}")
+        for match in active[:6]:
+            score = f" · {match['score'][0]}:{match['score'][1]}" if match["bracket"] == "GF" else ""
+            lines.append(f"`{match['id']}` {_team_name(state, match['a'])} — {_team_name(state, match['b'])} · BO{match['bo']}{score}")
+        if len(active) > 6:
+            lines.append(f"… ещё {len(active)-6} матчей (`/cashcup matches`)")
+    elif completed:
+        lines.append(f"**ЧЕМПИОН:** {_team_name(state, state['bracket']['champion'])}")
+    else:
+        lines.append("**Турнир отменён.**")
+    return discord.Embed(title="r!z3 CASH CUP", description="\n".join(lines),
+                         color=0x26262A)
+
+
+async def _member_check(bot: commands.Bot, guild: discord.Guild, user_id: int) -> str:
+    try:
+        member = await guild.fetch_member(user_id)
+        user = await bot.fetch_user(user_id)
+    except discord.HTTPException as exc:
+        raise CashCupError(f"<@{user_id}> не найден на сервере / нет доступа Discord") from exc
+    if not member or not _has_server_tag(user):
+        raise CashCupError(f"<@{user_id}> должен установить тег сервера r!z3")
+    if await vac_service.check_vac(guild.id, user_id):
+        raise CashCupError(f"<@{user_id}> имеет действующий VAC")
+    return member.joined_at.isoformat() if member.joined_at else ""
+
+
+async def _ff_profile(uid: str, region: str) -> dict:
+    uid = uid.strip()
+    if not UID_RE.fullmatch(uid):
+        raise CashCupError("Free Fire UID должен состоять из 5–15 цифр")
+    if not freefire_service.configured:
+        raise CashCupError("FREEFIRE_API_KEY не настроен")
+    if region not in {c.value for c in REGION_CHOICES}:
+        raise CashCupError("Неизвестный регион Free Fire")
+    try:
+        response = await freefire_service.get_info(region, uid)
+    except FreeFireError as exc:
+        raise CashCupError(f"Free Fire API: {exc}") from exc
+    basic = response.get("basicInfo") or {}
+    name = basic.get("nickname")
+    actual_uid = str(basic.get("accountId") or uid)
+    if not name or actual_uid != uid:
+        raise CashCupError("API не подтвердил UID и игровой ник; попробуйте позже")
+    return {"ff_uid": uid, "region": region, "nick": str(name)[:80]}
+
+
+async def _validate_teams(bot: commands.Bot, guild: discord.Guild, state: dict) -> None:
+    if len(state["teams"]) < 2:
+        raise CashCupError("Необходимо минимум две команды")
+    ids = set()
+    ff_ids = set()
+    for team in state["teams"]:
+        if len(team["members"]) not in (4, 5):
+            raise CashCupError(f"{_label(team)}: необходимо 4–5 подтверждённых игроков")
+        if len(team["lineup"]) != 4:
+            raise CashCupError(f"{_label(team)}: основной состав должен содержать 4 игроков")
+        if len(set(team["lineup"])) != 4:
+            raise CashCupError(f"{_label(team)}: повторяющийся игрок в основе")
+        if any(not p["verified"] for p in team["members"]):
+            raise CashCupError(f"{_label(team)}: организатор не подтвердил игровые аккаунты")
+        if sum(p["device"] == "pc" for p in team["members"]) > 2:
+            raise CashCupError(f"{_label(team)}: более двух ПК")
+        for p in team["members"]:
+            if p["discord_id"] in ids or p["ff_uid"] in ff_ids:
+                raise CashCupError("Один аккаунт участвует в нескольких командах")
+            ids.add(p["discord_id"])
+            ff_ids.add(p["ff_uid"])
+    semaphore = asyncio.Semaphore(5)
+    async def check(uid: int) -> None:
+        async with semaphore:
+            await _member_check(bot, guild, uid)
+    await asyncio.gather(*(check(uid) for uid in ids))
+
+
+class CreateTeamModal(discord.ui.Modal, title="Создать команду CASH CUP"):
+    name = discord.ui.TextInput(label="Название команды", max_length=40)
+    uid = discord.ui.TextInput(label="Ваш Free Fire UID", max_length=15)
+    device = discord.ui.TextInput(label="Устройство: mobile или pc", max_length=6)
+    region = discord.ui.TextInput(label="Регион (по умолчанию ru)", required=False, max_length=3)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        cog = interaction.client.get_cog("CashCupCog")
+        await cog.register_team(interaction, str(self.name.value), str(self.uid.value),
+                                str(self.device.value).strip().lower(),
+                                str(self.region.value).strip().lower() or "ru")
+
+
+class JoinTeamModal(discord.ui.Modal, title="Заявка в команду CASH CUP"):
+    name = discord.ui.TextInput(label="Название команды", max_length=40)
+    uid = discord.ui.TextInput(label="Ваш Free Fire UID", max_length=15)
+    device = discord.ui.TextInput(label="Устройство: mobile или pc", max_length=6)
+    region = discord.ui.TextInput(label="Регион (по умолчанию ru)", required=False, max_length=3)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        cog = interaction.client.get_cog("CashCupCog")
+        await cog.join_team(interaction, str(self.name.value), str(self.uid.value),
+                            str(self.device.value).strip().lower(),
+                            str(self.region.value).strip().lower() or "ru")
+
+
+class CashCupView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Создать команду", style=discord.ButtonStyle.success,
+                       custom_id="cashcup:create_team")
+    async def create(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CreateTeamModal())
+
+    @discord.ui.button(label="Вступить в команду", style=discord.ButtonStyle.primary,
+                       custom_id="cashcup:join_team")
+    async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(JoinTeamModal())
+
+    @discord.ui.button(label="Моя команда", style=discord.ButtonStyle.secondary,
+                       custom_id="cashcup:my_team")
+    async def roster(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog("CashCupCog")
+        await cog.show_roster(interaction)
+
+
+class CashCupCog(commands.Cog):
+    cashcup = app_commands.Group(name="cashcup", description="r!z3 CASH CUP · денежный турнир")
+
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    async def cog_load(self) -> None:
+        self.bot.add_view(compose(_panel({"status": "registration", "prize": "", "teams": []}), CashCupView()))
+
+    async def _refresh(self, guild_id: int, state: dict | None = None) -> None:
+        if state is None:
+            state = await cashcup_store.active(guild_id) or await cashcup_store.latest(guild_id)
+        if not state or not state["message_id"]:
+            return
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return
+        channel = guild.get_channel(state["channel_id"])
+        if not channel:
+            return
+        try:
+            msg = await channel.fetch_message(state["message_id"])
+            await msg.edit(view=compose(_panel(state), CashCupView() if state["status"] == "registration" else None),
+                           allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException:
+            logger.exception("CASH CUP panel refresh failed")
+
+    async def _reply(self, interaction: discord.Interaction, message: str) -> None:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True,
+                                            allowed_mentions=discord.AllowedMentions.none())
+        else:
+            await interaction.response.send_message(message, ephemeral=True,
+                                                    allowed_mentions=discord.AllowedMentions.none())
+
+    async def _guard(self, interaction: discord.Interaction, device: str = "mobile") -> str:
+        if not interaction.guild or not interaction.guild_id:
+            raise CashCupError("Команда доступна только на сервере r!z3")
+        if device not in ("pc", "mobile"):
+            raise CashCupError("Устройство: mobile или pc")
+        return await _member_check(self.bot, interaction.guild, interaction.user.id)
+
+    async def _post(self, interaction: discord.Interaction, action: str,
+                    change, details: dict | None = None) -> tuple[dict, Any]:
+        result = await cashcup_store.mutate(interaction.guild_id, interaction.user.id,
+                                            action, change, details)
+        await self._refresh(interaction.guild_id, result[0])
+        return result
+
+    @cashcup.command(name="create", description="Создать CASH CUP (организатор)")
+    async def create(self, interaction: discord.Interaction, prize: str = "Определяет организатор") -> None:
+        if not interaction.guild or not _is_org(interaction.user):
+            await self._reply(interaction, "Недостаточно прав")
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await cashcup_store.create(interaction.guild_id, interaction.channel_id,
+                                       interaction.user.id, prize[:90])
+            msg = await interaction.channel.send(view=compose(_panel(await cashcup_store.active(interaction.guild_id)), CashCupView()),
+                                                 allowed_mentions=discord.AllowedMentions.none())
+            await cashcup_store.set_message(interaction.guild_id, msg.id)
+            await self._reply(interaction, "Регистрация CASH CUP открыта. Создана карточка турнира.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    async def register_team(self, interaction: discord.Interaction, name: str,
+                            uid: str, device: str, region: str = "ru") -> None:
+        await interaction.response.defer(ephemeral=True)
+        try:
+            joined_at = await self._guard(interaction, device)
+            name = name.strip()
+            if not 2 <= len(name) <= 40:
+                raise CashCupError("Название команды: 2–40 символов")
+            ff = await _ff_profile(uid, region)
+            player = {"discord_id": interaction.user.id, "device": device,
+                      "verified": False, "joined_at": joined_at, **ff}
+            team_id = uuid.uuid4().hex[:12]
+            def change(state):
+                _assert_registration(state)
+                if any(t["name"].casefold() == name.casefold() for t in state["teams"]):
+                    raise CashCupError("Название команды занято")
+                _unique_player(state, interaction.user.id, ff["ff_uid"])
+                state["teams"].append({"id": team_id, "name": name,
+                                       "captain": interaction.user.id, "members": [player],
+                                       "pending": [], "lineup": [interaction.user.id]})
+            await self._post(interaction, "create_team", change, {"team_id": team_id})
+            await self._reply(interaction, f"Команда **{safe_text(name)}** создана. Капитан: {safe_text(ff['nick'])}.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="panel", description="Восстановить карточку CASH CUP (организатор)")
+    async def panel(self, interaction: discord.Interaction):
+        if not interaction.guild or not _is_org(interaction.user):
+            await self._reply(interaction, "Недостаточно прав")
+            return
+        state = await cashcup_store.active(interaction.guild_id)
+        if not state:
+            await self._reply(interaction, "Нет активного CASH CUP")
+            return
+        msg = await interaction.channel.send(
+            view=compose(_panel(state), CashCupView() if state["status"] == "registration" else None),
+            allowed_mentions=discord.AllowedMentions.none())
+        await cashcup_store.set_message(interaction.guild_id, msg.id)
+        await self._reply(interaction, "Карточка турнира опубликована повторно")
+
+    @cashcup.command(name="team", description="Создать команду (капитан)")
+    @app_commands.choices(device=DEVICE_CHOICES, region=REGION_CHOICES)
+    async def team(self, interaction: discord.Interaction, name: str, uid: str,
+                   device: app_commands.Choice[str],
+                   region: app_commands.Choice[str] | None = None):
+        await self.register_team(interaction, name, uid, device.value,
+                                 region.value if region else "ru")
+
+    async def join_team(self, interaction: discord.Interaction, name: str,
+                        uid: str, device: str, region: str = "ru") -> None:
+        await interaction.response.defer(ephemeral=True)
+        try:
+            joined_at = await self._guard(interaction, device)
+            ff = await _ff_profile(uid, region)
+            player = {"discord_id": interaction.user.id, "device": device,
+                      "verified": False, "joined_at": joined_at, **ff}
+            def change(state):
+                _assert_registration(state)
+                t = _team(state, name)
+                _unique_player(state, interaction.user.id, ff["ff_uid"])
+                t["pending"].append(player)
+                return t["captain"]
+            _, captain = await self._post(interaction, "join_request", change,
+                                          {"ff_uid": ff["ff_uid"]})
+            await self._reply(interaction, f"Заявка в команду отправлена. Игровой ник: **{safe_text(ff['nick'])}**. Капитан <@{captain}> должен принять её через `/cashcup approve`.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="join", description="Отправить заявку в команду")
+    @app_commands.choices(device=DEVICE_CHOICES, region=REGION_CHOICES)
+    async def join(self, interaction: discord.Interaction, name: str, uid: str,
+                   device: app_commands.Choice[str],
+                   region: app_commands.Choice[str] | None = None):
+        await self.join_team(interaction, name, uid, device.value,
+                             region.value if region else "ru")
+
+    @cashcup.command(name="approve", description="Капитан принимает заявку игрока")
+    async def approve(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        try:
+            await _member_check(self.bot, interaction.guild, user.id)
+            def change(state):
+                _assert_registration(state)
+                t = _my_team(state, interaction.user.id)
+                if len(t["members"]) >= 5:
+                    raise CashCupError("Команда заполнена (5/5)")
+                p = next((p for p in t["pending"] if p["discord_id"] == user.id), None)
+                if not p:
+                    raise CashCupError("У этого игрока нет заявки")
+                if p["device"] == "pc" and sum(x["device"] == "pc" for x in t["members"]) >= 2:
+                    raise CashCupError("В составе не может быть больше 2 ПК")
+                t["pending"].remove(p)
+                t["members"].append(p)
+                if len(t["lineup"]) < 4:
+                    t["lineup"].append(p["discord_id"])
+            await self._post(interaction, "approve_player", change, {"user": user.id})
+            await self._reply(interaction, f"<@{user.id}> принят в состав.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="leave", description="Отозвать свою заявку или выйти из команды до старта")
+    async def leave(self, interaction: discord.Interaction):
+        try:
+            def change(state):
+                _assert_registration(state)
+                for t in state["teams"]:
+                    if t["captain"] == interaction.user.id:
+                        raise CashCupError("Капитан использует /cashcup withdraw")
+                    for key in ("pending", "members"):
+                        p = next((p for p in t[key] if p["discord_id"] == interaction.user.id), None)
+                        if p:
+                            t[key].remove(p)
+                            if interaction.user.id in t["lineup"]:
+                                t["lineup"].remove(interaction.user.id)
+                            return t["id"]
+                raise CashCupError("Вы не зарегистрированы в CASH CUP")
+            await self._post(interaction, "leave_team", change)
+            await self._reply(interaction, "Вы покинули заявку/команду")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="kick", description="Капитан удаляет игрока из заявки до старта")
+    async def kick(self, interaction: discord.Interaction, user: discord.Member):
+        try:
+            def change(state):
+                _assert_registration(state)
+                t = _my_team(state, interaction.user.id)
+                if user.id == t["captain"]:
+                    raise CashCupError("Капитан не может исключить себя")
+                for key in ("pending", "members"):
+                    p = next((p for p in t[key] if p["discord_id"] == user.id), None)
+                    if p:
+                        t[key].remove(p)
+                        if user.id in t["lineup"]:
+                            t["lineup"].remove(user.id)
+                        return
+                raise CashCupError("Игрок не состоит в этой команде")
+            await self._post(interaction, "kick_player", change, {"user":user.id})
+            await self._reply(interaction, "Игрок удалён из команды")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="verify", description="Организатор подтверждает владельцев UID команды")
+    async def verify(self, interaction: discord.Interaction, team_name: str) -> None:
+        if not _is_org(interaction.user):
+            await self._reply(interaction, "Доступно только организатору")
+            return
+        try:
+            def change(state):
+                _assert_registration(state)
+                t = _team(state, team_name)
+                if len(t["members"]) < 4:
+                    raise CashCupError("Сначала соберите минимум 4 игроков")
+                for player in t["members"]:
+                    player["verified"] = True
+                return len(t["members"])
+            _, n = await self._post(interaction, "verify_roster", change,
+                                     {"team": team_name, "manual": True})
+            await self._reply(interaction, f"Подтверждено игроков: {n}. Используйте это только после проверки принадлежности аккаунтов.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    async def show_roster(self, interaction: discord.Interaction) -> None:
+        state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
+        if not state:
+            await self._reply(interaction, "CASH CUP не найден")
+            return
+        t = next((t for t in state["teams"] if any(p["discord_id"] == interaction.user.id for p in t["members"])), None)
+        if not t:
+            await self._reply(interaction, "Вы не состоите в команде")
+            return
+        rows = [f"**{_label(t)}** — {len(t['members'])}/5 игроков"]
+        for p in t["members"]:
+            badge = "✅" if p["verified"] else "⌛"
+            lineup = "[основа]" if p["discord_id"] in t["lineup"] else "[запас]"
+            rows.append(f"{badge} <@{p['discord_id']}> · {safe_text(p['nick'])} · `{p['ff_uid']}` · {p['device']} {lineup}")
+        if t["captain"] == interaction.user.id and t["pending"]:
+            rows.append("\n**Заявки:** " + ", ".join(f"<@{p['discord_id']}>" for p in t["pending"][:15]))
+        await self._reply(interaction, "\n".join(rows))
+
+    @cashcup.command(name="roster", description="Посмотреть свой состав и заявки")
+    async def roster(self, interaction: discord.Interaction) -> None:
+        await self.show_roster(interaction)
+
+    @cashcup.command(name="withdraw", description="Капитан снимает команду с регистрации")
+    async def withdraw(self, interaction: discord.Interaction):
+        try:
+            def change(state):
+                _assert_registration(state)
+                team = _my_team(state, interaction.user.id)
+                state["teams"].remove(team)
+            await self._post(interaction, "withdraw_team", change)
+            await self._reply(interaction, "Команда снята с регистрации")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="remove", description="Организатор удаляет команду до начала турнира")
+    async def remove(self, interaction: discord.Interaction, name: str):
+        if not _is_org(interaction.user):
+            await self._reply(interaction, "Недостаточно прав")
+            return
+        try:
+            def change(state):
+                _assert_registration(state)
+                state["teams"].remove(_team(state, name))
+            await self._post(interaction, "remove_team", change, {"name": name})
+            await self._reply(interaction, "Команда удалена")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="start", description="Проверить составы и запустить Double Elimination")
+    async def start(self, interaction: discord.Interaction):
+        if not interaction.guild or not _is_org(interaction.user):
+            await self._reply(interaction, "Недостаточно прав")
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            snapshot = await cashcup_store.active(interaction.guild_id)
+            if not snapshot or snapshot["status"] != "registration":
+                raise CashCupError("Регистрация закрыта")
+            await _validate_teams(self.bot, interaction.guild, snapshot)
+            signature = json.dumps(snapshot["teams"], sort_keys=True)
+            def change(state):
+                _assert_registration(state)
+                if json.dumps(state["teams"], sort_keys=True) != signature:
+                    raise CashCupError("Составы изменились при проверке. Повторите /cashcup start")
+                state["bracket"] = create_bracket([t["id"] for t in state["teams"]])
+                state["status"] = "running"
+                return len(state["teams"])
+            _, count = await self._post(interaction, "start", change,
+                                        {"teams": len(snapshot["teams"])})
+            await self._reply(interaction, f"CASH CUP запущен! Команд: {count}. Сетка Double Elimination сформирована.")
+        except (CashCupError, BracketError) as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="matches", description="Активные матчи Winners/Losers")
+    async def matches(self, interaction: discord.Interaction):
+        state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
+        if not state or not state["bracket"]:
+            await self._reply(interaction, "Сетка ещё не сформирована")
+            return
+        b = state["bracket"]
+        items = ready_matches(b)
+        if not items:
+            await self._reply(interaction, ("Нет активных матчей. Чемпион: " + _team_name(state, b["champion"]))
+                              if b["champion"] else "Нет активных матчей")
+            return
+        lines = [f"**CASH CUP · {len(items)} активных матчей**"]
+        for m in items[:24]:
+            lines.append(f"`{m['id']}` {_team_name(state,m['a'])} vs {_team_name(state,m['b'])} · BO{m['bo']}")
+        if len(items) > 24:
+            lines.append(f"… ещё {len(items)-24}; список выводится частично")
+        await self._reply(interaction, "\n".join(lines)[:1900])
+
+    @cashcup.command(name="checkin", description="Капитан подтверждает готовность своей команды к матчу")
+    async def checkin(self, interaction: discord.Interaction, match_id: str):
+        if not interaction.guild:
+            await self._reply(interaction, "Нужен сервер r!z3")
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            snapshot = await cashcup_store.active(interaction.guild_id)
+            if not snapshot or snapshot["status"] != "running":
+                raise CashCupError("Нет активного турнира")
+            if snapshot.get("paused"):
+                raise CashCupError("Турнир приостановлен организатором")
+            current = next((m for m in ready_matches(snapshot["bracket"])
+                            if m["id"] == match_id.upper()), None)
+            if not current:
+                raise CashCupError("Матч не найден")
+            t = _my_team(snapshot, interaction.user.id)
+            if t["id"] not in (current["a"],current["b"]):
+                raise CashCupError("Ваша команда не участвует в этом матче")
+            await asyncio.gather(*(_member_check(self.bot, interaction.guild, uid)
+                                   for uid in t["lineup"]))
+            def change(state):
+                m = next((m for m in ready_matches(state["bracket"])
+                          if m["id"] == match_id.upper()), None)
+                if not m or t["id"] not in (m["a"],m["b"]):
+                    raise CashCupError("Матч изменился. Повторите check-in")
+                fresh_team = _my_team(state, interaction.user.id)
+                if fresh_team["lineup"] != t["lineup"]:
+                    raise CashCupError("Состав изменился; повторите check-in")
+                if interaction.user.id in m["checkins"]:
+                    raise CashCupError("Готовность уже подтверждена")
+                m["checkins"].append(interaction.user.id)
+                return len(m["checkins"])
+            _, count = await self._post(interaction, "checkin", change,
+                                        {"match": match_id, "captain": interaction.user.id})
+            await self._reply(interaction, f"Готовность подтверждена ({count}/2 капитана).")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="result", description="Организатор подтверждает результат BO-серии")
+    async def result(self, interaction: discord.Interaction, match_id: str,
+                     score_a: int, score_b: int, evidence: str):
+        if not interaction.guild or not _is_org(interaction.user):
+            await self._reply(interaction, "Недостаточно прав")
+            return
+        if not evidence.startswith(("https://discord.com/channels/", "https://cdn.discordapp.com/", "https://media.discordapp.net/")):
+            await self._reply(interaction, "Нужна ссылка на доказательство результата в Discord")
+            return
+        try:
+            def change(state):
+                _assert_running(state)
+                previous = next((x for x in ready_matches(state["bracket"])
+                                 if x["id"] == match_id.upper()), None)
+                if previous and previous["bracket"] == "GF" and previous["games"]:
+                    raise CashCupError("Grand Final уже начат: используйте /cashcup game")
+                m = record_result(state["bracket"], match_id.upper(), score_a,
+                                  score_b, evidence=evidence)
+                if state["bracket"]["champion"]:
+                    state["status"] = "completed"
+                return m["winner"]
+            state, winner_id = await self._post(interaction, "result", change,
+                                                {"match": match_id, "score": [score_a, score_b],
+                                                 "evidence": evidence})
+            await self._reply(interaction, f"Результат сохранён. Победитель: **{_team_name(state,winner_id)}**." +
+                              (" CASH CUP завершён!" if state["status"] == "completed" else ""))
+        except (CashCupError, BracketError) as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="game", description="Записать победу в отдельной игре Grand Final BO3")
+    @app_commands.choices(winner=[app_commands.Choice(name="Команда A", value="a"),
+                                  app_commands.Choice(name="Команда B", value="b")])
+    async def game(self, interaction: discord.Interaction,
+                   winner: app_commands.Choice[str], evidence: str):
+        if not interaction.guild or not _is_org(interaction.user):
+            await self._reply(interaction, "Доступно только организатору")
+            return
+        if not evidence.startswith(("https://discord.com/channels/", "https://cdn.discordapp.com/", "https://media.discordapp.net/")):
+            await self._reply(interaction, "Нужна ссылка на доказательство игры")
+            return
+        try:
+            def change(state):
+                _assert_running(state)
+                m = record_final_game(state["bracket"], winner.value, evidence=evidence)
+                if state["bracket"]["champion"]:
+                    state["status"] = "completed"
+                return m["score"]
+            state, scores = await self._post(interaction, "final_game", change,
+                                              {"winner_side": winner.value, "evidence": evidence})
+            await self._reply(interaction, f"Grand Final: **{scores[0]}:{scores[1]}**. " +
+                              ("Победитель турнира определён!" if state["status"] == "completed"
+                               else "Серия продолжается до двух побед."))
+        except (CashCupError, BracketError) as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="room", description="Организатор задаёт ID и пароль комнаты матча")
+    async def room(self, interaction: discord.Interaction, match_id: str,
+                   room_id: str, password: str):
+        if not interaction.guild or not _is_org(interaction.user):
+            await self._reply(interaction, "Недостаточно прав")
+            return
+        try:
+            def change(state):
+                _assert_running(state)
+                m = next((m for m in ready_matches(state["bracket"])
+                          if m["id"] == match_id.upper()), None)
+                if not m:
+                    raise CashCupError("Матч не найден")
+                if len(m["checkins"]) != 2:
+                    raise CashCupError("Оба капитана должны выполнить /cashcup checkin")
+                m["room_id"] = room_id[:50]
+                m["room_password"] = password[:50]
+                return m["a"], m["b"]
+            state, teams = await self._post(interaction, "set_room", change,
+                                           {"match": match_id})
+            captains = [t["captain"] for t in state["teams"] if t["id"] in teams]
+            failures = []
+            for captain_id in captains:
+                try:
+                    recipient = await self.bot.fetch_user(captain_id)
+                    await recipient.send(f"CASH CUP · Матч `{match_id.upper()}`\n"
+                                         f"Комната: `{room_id[:50]}`\nПароль: `{password[:50]}`")
+                except discord.HTTPException:
+                    failures.append(str(captain_id))
+            await self._reply(interaction, "Комната записана; данные отправлены капитанам." +
+                              (" Не удалось отправить DM: " + ", ".join(failures) if failures else ""))
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="roominfo", description="Участник матча получает комнату приватно")
+    async def roominfo(self, interaction: discord.Interaction, match_id: str):
+        state = await cashcup_store.active(interaction.guild_id)
+        if not state or state["status"] != "running":
+            await self._reply(interaction, "Турнир не запущен")
+            return
+        m = next((x for x in ready_matches(state["bracket"])
+                  if x["id"] == match_id.upper()), None)
+        if not m or not m["room_id"]:
+            await self._reply(interaction, "Данные комнаты ещё не выданы")
+            return
+        teams = [t for t in state["teams"] if t["id"] in (m["a"], m["b"])]
+        if not _is_org(interaction.user) and not any(
+            interaction.user.id in t["lineup"] for t in teams
+        ):
+            await self._reply(interaction, "Вы не участник этого матча")
+            return
+        await self._reply(interaction, f"Матч `{m['id']}` · ID `{m['room_id']}` · пароль `{m['room_password']}`")
+
+    @cashcup.command(name="swap", description="Капитан заменяет игрока между матчами")
+    async def swap(self, interaction: discord.Interaction, out_player: discord.Member,
+                   in_player: discord.Member):
+        try:
+            await _member_check(self.bot, interaction.guild, in_player.id)
+            def change(state):
+                _assert_running(state)
+                t = _my_team(state, interaction.user.id)
+                b = state["bracket"]
+                if b["losses"][t["id"]] >= 2:
+                    raise CashCupError("Команда выбыла")
+                if any((m["room_id"] or t["captain"] in m["checkins"])
+                       for m in ready_matches(b) if t["id"] in (m["a"],m["b"])):
+                    raise CashCupError("Матч уже получил комнату; состав заблокирован")
+                if out_player.id not in t["lineup"]:
+                    raise CashCupError("Первый игрок не находится в основе")
+                if in_player.id in t["lineup"] or not _player_by_id(t, in_player.id):
+                    raise CashCupError("Второй игрок не является зарегистрированным запасным")
+                t["lineup"].remove(out_player.id)
+                t["lineup"].append(in_player.id)
+            await self._post(interaction, "substitute", change,
+                             {"out": out_player.id,"in": in_player.id})
+            await self._reply(interaction, "Замена зарегистрирована")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="growth", description="Сколько участников пришло после анонса CASH CUP")
+    async def growth(self, interaction: discord.Interaction):
+        state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
+        if not state:
+            await self._reply(interaction, "CASH CUP не найден")
+            return
+        start = datetime.fromisoformat(state["created_at"])
+        members = [p for t in state["teams"] for p in t["members"]]
+        newcomers = sum(bool(p.get("joined_at")) and datetime.fromisoformat(p["joined_at"]) >= start
+                        for p in members)
+        await self._reply(interaction, f"Зарегистрировано игроков: {len(members)}. "
+                          f"Вступили на сервер после анонса: {newcomers}. "
+                          "Это не доказывает, что они пришли именно из-за турнира.")
+
+    @cashcup.command(name="payout", description="Отметить реальную выплату призов (организатор)")
+    async def payout(self, interaction: discord.Interaction, recipient: discord.Member,
+                     amount: int, proof: str, tournament_id: str | None = None):
+        if not interaction.guild or not _is_org(interaction.user):
+            await self._reply(interaction, "Доступно только организатору")
+            return
+        if amount <= 0 or not proof.startswith(("https://discord.com/channels/", "https://cdn.discordapp.com/")):
+            await self._reply(interaction, "Нужна положительная сумма и ссылка на подтверждение")
+            return
+        try:
+            def change(state):
+                if state["status"] != "completed":
+                    raise CashCupError("Сначала завершите турнир")
+                if not any(p["discord_id"] == recipient.id for t in state["teams"] for p in t["members"]):
+                    raise CashCupError("Получатель не зарегистрирован в турнире")
+                if any(p["recipient"] == recipient.id for p in state["payouts"]):
+                    raise CashCupError("Выплата уже отмечена — проверьте журнал")
+                state["payouts"].append({"recipient": recipient.id, "amount_kzt": amount,
+                                         "proof": proof, "actor": interaction.user.id,
+                                         "at": datetime.now(timezone.utc).isoformat()})
+            state, _ = await cashcup_store.mutate(interaction.guild_id, interaction.user.id, "payout_recorded",
+                                       change, {"recipient":recipient.id, "amount_kzt":amount, "proof":proof},
+                                       include_finished=True, tournament_id=tournament_id)
+            await self._refresh(interaction.guild_id, state)
+            await self._reply(interaction, f"Отметка о выплате {amount} ₸ записана в журнал. Денежный перевод бот НЕ выполнял.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="forecast", description="Оценить минимальную нагрузку на игровые комнаты")
+    async def forecast(self, interaction: discord.Interaction, rooms: app_commands.Range[int, 1, 64] = 8,
+                       minutes_per_game: app_commands.Range[int, 5, 90] = 20):
+        state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
+        if not state:
+            await self._reply(interaction, "CASH CUP не найден")
+            return
+        n = len(state["teams"])
+        if n < 2:
+            await self._reply(interaction, "Недостаточно команд для прогноза")
+            return
+        import math
+        series = 2 * n - 2
+        # Физическая нижняя оценка, НЕ расписание и НЕ предсказание.
+        lower = math.ceil((series + 1) / rooms) * minutes_per_game
+        await self._reply(interaction, f"Команд: {n}; BO-серий: {series} "
+                          f"(из них Grand Final BO3); комнат: {rooms}.\n"
+                          f"Минимальная занятость при {minutes_per_game} мин на игру: "
+                          f"{lower//60} ч {lower%60} мин. Это НИЖНЯЯ оценка без ожиданий, "
+                          "зависимостей сетки, третьей игры финала и подтверждений. "
+                          "Реальный турнир может длиться заметно дольше.")
+
+    @cashcup.command(name="cancel", description="Отменить CASH CUP (организатор)")
+    async def cancel(self, interaction: discord.Interaction, reason: str):
+        if not interaction.guild or not _is_org(interaction.user):
+            await self._reply(interaction, "Недостаточно прав")
+            return
+        try:
+            def change(state):
+                state["status"] = "cancelled"
+            await self._post(interaction, "cancel", change, {"reason": reason[:300]})
+            await self._reply(interaction, "CASH CUP отменён; запись сохранена в аудите")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+
+    @cashcup.command(name="pause", description="Приостановить турнир (организатор)")
+    async def pause(self, interaction: discord.Interaction, reason: str = ""):
+        if not interaction.guild or not _is_org(interaction.user):
+            await self._reply(interaction, "Недостаточно прав")
+            return
+        try:
+            def change(state):
+                _assert_running(state)
+                state["paused"] = True
+                state["pause_reason"] = reason[:200]
+            await self._post(interaction, "pause", change, {"reason": reason[:200]})
+            await self._reply(interaction, "CASH CUP приостановлен: результаты, комнаты и замены заблокированы.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="resume", description="Возобновить турнир (организатор)")
+    async def resume(self, interaction: discord.Interaction):
+        if not interaction.guild or not _is_org(interaction.user):
+            await self._reply(interaction, "Недостаточно прав")
+            return
+        try:
+            def change(state):
+                _assert_running(state)
+                if not state.get("paused"):
+                    raise CashCupError("Турнир не приостановлен")
+                state["paused"] = False
+                state.pop("pause_reason", None)
+            await self._post(interaction, "resume", change)
+            await self._reply(interaction, "CASH CUP возобновлён.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @cashcup.command(name="history", description="История CASH CUP и список чемпионов")
+    async def history(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            await self._reply(interaction, "Нужен сервер r!z3")
+            return
+        past = await cashcup_store.list_past(interaction.guild_id, 10)
+        if not past:
+            await self._reply(interaction, "История CASH CUP пуста")
+            return
+        lines = ["**CASH CUP · история**"]
+        champions = []
+        for t in past:
+            when = str(t.get("created_at", ""))[:10]
+            status = {"registration": "регистрация", "running": "идёт",
+                      "completed": "завершён", "cancelled": "отменён"}.get(t["status"], t["status"])
+            teams_n = len(t.get("teams", []))
+            champ = ""
+            b = t.get("bracket")
+            if t["status"] == "completed" and b and b.get("champion"):
+                champ = f" · чемпион: **{_team_name(t, b['champion'])}**"
+                champions.append(f"{_team_name(t, b['champion'])} ({when})")
+            lines.append(f"`{t['tournament_id']}` {when} · {status} · команд: {teams_n}{champ}")
+        if champions:
+            lines.append("\n**Чемпионы:** " + "; ".join(champions[:10]))
+        await self._reply(interaction, "\n".join(lines)[:1900])
+
+    @cashcup.command(name="invite", description="Капитан приглашает игрока в свою команду (DM)")
+    async def invite(self, interaction: discord.Interaction, user: discord.Member):
+        try:
+            state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
+            if not state:
+                raise CashCupError("CASH CUP не найден")
+            _assert_registration(state)
+            t = _my_team(state, interaction.user.id)
+            if len(t["members"]) + len(t["pending"]) >= 5:
+                raise CashCupError("В команде уже 5 человек")
+            if any(p["discord_id"] == user.id for p in t["members"] + t["pending"]):
+                raise CashCupError("Игрок уже в команде или имеет заявку")
+            try:
+                member = await interaction.guild.fetch_member(user.id)
+            except discord.HTTPException as exc:
+                raise CashCupError("Игрок не найден на сервере") from exc
+            await member.send(
+                f"Вас пригласили в команду **{safe_text(t['name'])}** на r!z3 CASH CUP.\n"
+                f"Чтобы принять, выполните `/cashcup join` с названием команды, "
+                f"своим Free Fire UID и типом устройства (mobile/pc).")
+            await self._reply(interaction, f"Приглашение отправлено <@{user.id}> в ЛС.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+
+async def setup(bot: commands.Bot) -> None:
+    await bot.add_cog(CashCupCog(bot))

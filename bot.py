@@ -339,6 +339,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.moderation")
         await self.load_extension("cogs.mod")
         await self.load_extension("cogs.freefire")
+        await self.load_extension("cogs.cashcup")
         await self.load_extension("cogs.wardrobe")
         await self.load_extension("cogs.emoji")
         await self.load_extension("cogs.reputation")
