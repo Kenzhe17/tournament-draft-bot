@@ -150,6 +150,8 @@ class TournamentBot(commands.Bot):
         intents = discord.Intents.default()
         intents.members = True
         intents.message_content = True
+        if hasattr(intents, "auto_moderation_execution"):
+            intents.auto_moderation_execution = True
         super().__init__(
             command_prefix="!",
             intents=intents,
@@ -274,6 +276,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.team")
         await self.load_extension("cogs.bot_settings")
         await self.load_extension("cogs.moderation")
+        await self.load_extension("cogs.mod")
         await self.load_extension("cogs.freefire")
         await self.load_extension("cogs.wardrobe")
         await self.load_extension("cogs.emoji")

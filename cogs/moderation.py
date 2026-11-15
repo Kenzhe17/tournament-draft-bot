@@ -1,191 +1,67 @@
-"""GIF-based moderation cog for temporary mutes."""
+"""Compatibility bridge for the original r!z3 GIF moderation.
 
-import asyncio
+GIF triggers remain available to configured trusted staff, but no longer run
+asyncio.sleep-based role mutes. Both GIF mute and /mod timeout now use the
+same native Discord timeout + PostgreSQL case tracking and audit pipeline.
+"""
+from __future__ import annotations
+
 import logging
-from datetime import datetime, timedelta, timezone
+import os
+from datetime import timedelta
 
 import discord
-from utils.design import compose
 from discord.ext import commands
 
-import os
+from config import ADMIN_USER_IDS, WARN_GIF_URL, UNWARN_GIF_URL
+from services import moderation_service as ms
 
-from config import ADMIN_USER_IDS, MUTE_ROLE_ID, WARN_GIF_URL, UNWARN_GIF_URL, MOD_LOG_WEBHOOK_URL
-
-logger = logging.getLogger(__name__)
-
-# Timezone offset for GMT+5
-TIMEZONE_OFFSET = timezone(timedelta(hours=5))
-
-def format_timestamp(dt: datetime) -> str:
-    """Format datetime to GMT+5 timestamp string."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc).astimezone(TIMEZONE_OFFSET)
-    return dt.strftime('%d.%m.%Y %H:%M:%S')
-
-def format_date(dt: datetime) -> str:
-    """Format datetime to GMT+5 date string."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc).astimezone(TIMEZONE_OFFSET)
-    return dt.strftime('%d.%m.%Y %H:%M')
-
-
-# Authorized user IDs for GIF triggers
-GIF_TRIGGER_USER_IDS = {
-    int(x) for x in os.getenv("GIF_TRIGGER_USER_IDS", "").split(",")
-    if x.strip().isdigit()
+logger=logging.getLogger(__name__)
+AUTHORIZED_GIF_USERS = ADMIN_USER_IDS | {
+    int(x) for x in os.getenv('GIF_TRIGGER_USER_IDS','').split(',') if x.strip().isdigit()
 }
-AUTHORIZED_GIF_USERS = ADMIN_USER_IDS | GIF_TRIGGER_USER_IDS
+
+
+def _is_trigger(message,configured,alias):
+    links=[message.content]+[a.url for a in message.attachments]
+    return any((configured and configured in s) or alias in s for s in links)
 
 
 class ModerationCog(commands.Cog):
-    """Moderation cog for GIF-based temporary mutes."""
-
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
-
-    async def send_mod_log(self, embed: discord.Embed):
-        """Send log to webhook (no-op без MOD_LOG_WEBHOOK_URL)."""
-        if not MOD_LOG_WEBHOOK_URL:
-            return
-        try:
-            webhook = discord.Webhook.from_url(MOD_LOG_WEBHOOK_URL, client=self.bot)
-            await webhook.send( view=compose(embed), username="Модератор")
-        except Exception as e:
-            logger.error(f"Failed to send mod log: {e}", exc_info=True)
-
-    async def _scheduled_unmute(self, guild: discord.Guild, user: discord.Member, delay_seconds: int):
-        """Scheduled task to unmute user after delay."""
-        await asyncio.sleep(delay_seconds)
-        try:
-            mute_role = guild.get_role(MUTE_ROLE_ID)
-            if mute_role and mute_role in user.roles:
-                await user.remove_roles(mute_role, reason="Автоматическое снятие мьюта")
-                logger.info(f"Auto-unmuted {user.name} after {delay_seconds} seconds")
-        except Exception as e:
-            logger.error(f"Failed to auto-unmute {user.name}: {e}", exc_info=True)
+    def __init__(self,bot):self.bot=bot
 
     @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        """Listen for gif triggers."""
-        # Ignore messages from bots
-        if message.author.bot:
+    async def on_message(self,message:discord.Message):
+        if not message.guild or message.author.bot or not message.reference or not message.reference.message_id:
             return
-
-        # Check if message is a reply
-        if not message.reference or not message.reference.message_id:
-            return
-
-        # Check if user is authorized for GIF triggers
         if message.author.id not in AUTHORIZED_GIF_USERS:
             return
-
-        # Check for warn gif
-        is_warn_gif = WARN_GIF_URL in message.content or "h2di-the-dictator" in message.content
-        for attachment in message.attachments:
-            if WARN_GIF_URL in attachment.url or "h2di-the-dictator" in attachment.url:
-                is_warn_gif = True
-                break
-
-        # Check for unwarn gif
-        is_unwarn_gif = UNWARN_GIF_URL in message.content or "slice-execute-4" in message.content
-        for attachment in message.attachments:
-            if UNWARN_GIF_URL in attachment.url or "slice-execute-4" in attachment.url:
-                is_unwarn_gif = True
-                break
-
-        if not (is_warn_gif or is_unwarn_gif):
-            return
-
-        # Get the replied message
-        channel = message.channel
-        replied_message = await channel.fetch_message(message.reference.message_id)
-        target_user = replied_message.author
-
-        # Check if target has higher role than moderator
-        if target_user.top_role.position > message.author.top_role.position:
-            return
-
-        if is_warn_gif:
-            # Give 10 minute mute
-            mute_role = message.guild.get_role(MUTE_ROLE_ID)
-            if mute_role:
-                await target_user.add_roles(mute_role, reason="Гифка мьют")
-
-                # Use custom message from /молчать
-                mute_msg = f"По воле диктатора участник {target_user.mention} будет молчать 10 мин"
-
-                embed = discord.Embed(
-                    description=mute_msg,
-                    color=discord.Color(0xFFAA00)
-                )
-
-                msg = await channel.send( view=compose(embed))
-
-                # Delete after 10 seconds
-                await asyncio.sleep(10)
-                await msg.delete()
-
-                # Send detailed log to webhook
-                current_timestamp = format_timestamp(datetime.now())
-                expire_date = format_date(datetime.now() + timedelta(minutes=10))
-                log_embed = discord.Embed(
-                    description=(
-                        f"**Участник {target_user.mention} ({target_user.name}) был замьючен на всём сервере**\n\n"
-                        f"**Модератор:** {message.author.mention} ({message.author.name})\n"
-                        f"**Канал:** <#{channel.id}>\n"
-                        f"**Длительность:** 10 мин ({expire_date})\n\n"
-                        f"`ID участника: {target_user.id}` • `{current_timestamp}`"
-                    ),
-                    color=discord.Color.orange()
-                )
-                await self.send_mod_log(log_embed)
-
-                # Schedule unmute after 10 minutes as a background task
-                asyncio.create_task(self._scheduled_unmute(message.guild, target_user, 600))
-
-        elif is_unwarn_gif:
-            # Check if trying to remove mute from self
-            if target_user.id == message.author.id:
-                return
-
-            # Check if target has higher role than moderator
-            if target_user.top_role.position > message.author.top_role.position:
-                return
-
-            # Remove mute role
-            mute_role = message.guild.get_role(MUTE_ROLE_ID)
-            if mute_role and mute_role in target_user.roles:
-                await target_user.remove_roles(mute_role, reason="Гифка размьют")
-
-                # Use custom message from /говори
-                unmute_msg = f"Участнику {target_user.mention} было даровано право говорить по воле Диктатора"
-
-                embed = discord.Embed(
-                    description=unmute_msg,
-                    color=discord.Color(0xFFAA00)
-                )
-
-                msg = await channel.send( view=compose(embed))
-
-                # Delete after 10 seconds
-                await asyncio.sleep(10)
-                await msg.delete()
-
-                # Send detailed log to webhook
-                current_timestamp = format_timestamp(datetime.now())
-                log_embed = discord.Embed(
-                    description=(
-                        f"**Участник {target_user.mention} ({target_user.name}) был размьючен**\n\n"
-                        f"**Модератор:** {message.author.mention} ({message.author.name})\n"
-                        f"**Канал:** <#{channel.id}>\n\n"
-                        f"`ID участника: {target_user.id}` • `{current_timestamp}`"
-                    ),
-                    color=discord.Color.green()
-                )
-                await self.send_mod_log(log_embed)
+        is_mute=_is_trigger(message,WARN_GIF_URL,'h2di-the-dictator')
+        is_unmute=_is_trigger(message,UNWARN_GIF_URL,'slice-execute-4')
+        if not (is_mute or is_unmute):return
+        try:
+            replied=await message.channel.fetch_message(message.reference.message_id)
+            target=replied.author
+            if not isinstance(target,discord.Member):
+                target=await message.guild.fetch_member(target.id)
+            actor=message.author
+            if not isinstance(actor,discord.Member):
+                actor=await message.guild.fetch_member(actor.id)
+            if is_mute:
+                result=await ms.apply_timeout(actor,target,timedelta(minutes=10),
+                    'GIF-мьют (r!z3)',self.bot,trusted_gif=True,url=replied.jump_url)
+                msg=await message.channel.send(f'{target.mention} получил тайм-аут на 10 минут · {ms.ref(result)}',
+                    allowed_mentions=discord.AllowedMentions.none(),delete_after=10)
+            else:
+                removed=await ms.remove_timeout(actor,target,self.bot,'GIF-размьют (r!z3)',trusted_gif=True)
+                if removed:
+                    await message.channel.send(f'Тайм-аут {target.mention} снят',
+                        allowed_mentions=discord.AllowedMentions.none(),delete_after=10)
+        except (discord.HTTPException,ValueError,PermissionError,RuntimeError):
+            logger.exception('GIF moderation action failed')
+        except Exception:
+            logger.exception('Unexpected GIF moderation exception')
 
 
-async def setup(bot: commands.Bot):
-    """Setup the moderation cog."""
+async def setup(bot):
     await bot.add_cog(ModerationCog(bot))
