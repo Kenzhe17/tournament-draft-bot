@@ -17,7 +17,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import BOT_OWNER_ID, GUILD_ID, ORG_ROLE_ID
 from cogs.freefire import _has_server_tag
 from services.freefire_service import FreeFireError, freefire_service
 from copy import deepcopy
@@ -26,6 +25,7 @@ from services.cashcup_bracket import (BracketError, create_bracket, ready_matche
                                       record_result, record_final_game, disqualify)
 from services.cashcup_store import CashCupError, cashcup_store
 from services import vac_service
+from services import moderation_service
 from utils.ff_profile_formatter import safe_text
 from utils.design import compose
 
@@ -48,9 +48,10 @@ REGION_CHOICES = [
 ]
 
 
-def _is_org(user: discord.Member) -> bool:
-    return bool(user.id == BOT_OWNER_ID or user.guild_permissions.manage_guild or
-                (ORG_ROLE_ID and any(role.id == ORG_ROLE_ID for role in user.roles)))
+def _is_cashcup_admin(user: discord.Member) -> bool:
+    """CASH CUP: только ADMIN (владелец/Administrator/BOT_OWNER_ID/ADMIN_USER_IDS).
+    ORG, MANAGER, MODERATOR, HEAD MODERATOR прав не дают (ТЗ §7)."""
+    return moderation_service.is_admin(user)
 
 
 def _team(state: dict, name: str) -> dict:
@@ -317,7 +318,7 @@ class CashCupCog(commands.Cog):
     @cashcup.command(name="create", description="Создать CASH CUP (организатор)")
     async def create(self, interaction: discord.Interaction, prize: str = "Определяет организатор",
                      pool: app_commands.Range[int, 0, 100_000_000] | None = None) -> None:
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         await interaction.response.defer(ephemeral=True)
@@ -358,7 +359,7 @@ class CashCupCog(commands.Cog):
 
     @info.command(name="panel", description="Восстановить карточку CASH CUP (организатор)")
     async def panel(self, interaction: discord.Interaction):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         state = await cashcup_store.active(interaction.guild_id)
@@ -474,7 +475,7 @@ class CashCupCog(commands.Cog):
 
     @cashcup.command(name="verify", description="Организатор подтверждает владельцев UID команды")
     async def verify(self, interaction: discord.Interaction, team_name: str) -> None:
-        if not _is_org(interaction.user):
+        if not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Доступно только организатору")
             return
         try:
@@ -566,7 +567,7 @@ class CashCupCog(commands.Cog):
 
     @cashcup.command(name="remove", description="Организатор удаляет команду до начала турнира")
     async def remove(self, interaction: discord.Interaction, name: str):
-        if not _is_org(interaction.user):
+        if not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         try:
@@ -580,7 +581,7 @@ class CashCupCog(commands.Cog):
 
     @cashcup.command(name="start", description="Проверить составы и запустить Double Elimination")
     async def start(self, interaction: discord.Interaction):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         await interaction.response.defer(ephemeral=True)
@@ -664,7 +665,7 @@ class CashCupCog(commands.Cog):
     @cashcup.command(name="result", description="Организатор подтверждает результат BO-серии")
     async def result(self, interaction: discord.Interaction, match_id: str,
                      score_a: int, score_b: int, evidence: str):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         if not evidence.startswith(("https://discord.com/channels/", "https://cdn.discordapp.com/", "https://media.discordapp.net/")):
@@ -696,7 +697,7 @@ class CashCupCog(commands.Cog):
                                   app_commands.Choice(name="Команда B", value="b")])
     async def game(self, interaction: discord.Interaction,
                    winner: app_commands.Choice[str], evidence: str):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Доступно только организатору")
             return
         if not evidence.startswith(("https://discord.com/channels/", "https://cdn.discordapp.com/", "https://media.discordapp.net/")):
@@ -721,7 +722,7 @@ class CashCupCog(commands.Cog):
     @cashcup.command(name="room", description="Организатор задаёт ID и пароль комнаты матча")
     async def room(self, interaction: discord.Interaction, match_id: str,
                    room_id: str, password: str):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         try:
@@ -764,7 +765,7 @@ class CashCupCog(commands.Cog):
             await self._reply(interaction, "Данные комнаты ещё не выданы")
             return
         teams = [t for t in state["teams"] if t["id"] in (m["a"], m["b"])]
-        if not _is_org(interaction.user) and not any(
+        if not _is_cashcup_admin(interaction.user) and not any(
             interaction.user.id in t["lineup"] for t in teams
         ):
             await self._reply(interaction, "Вы не участник этого матча")
@@ -815,7 +816,7 @@ class CashCupCog(commands.Cog):
     async def payout(self, interaction: discord.Interaction, recipient: discord.Member,
                      amount: int, proof: str, tournament_id: str | None = None,
                      place: app_commands.Range[int, 1, 3] | None = None):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Доступно только организатору")
             return
         if amount <= 0 or not proof.startswith(("https://discord.com/channels/", "https://cdn.discordapp.com/")):
@@ -864,7 +865,7 @@ class CashCupCog(commands.Cog):
 
     @cashcup.command(name="cancel", description="Отменить CASH CUP (организатор)")
     async def cancel(self, interaction: discord.Interaction, reason: str):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         try:
@@ -878,7 +879,7 @@ class CashCupCog(commands.Cog):
 
     @cashcup.command(name="revert", description="Отменить последнее изменение результата (организатор)")
     async def revert(self, interaction: discord.Interaction):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         try:
@@ -900,7 +901,7 @@ class CashCupCog(commands.Cog):
                                   app_commands.Choice(name="Команда B", value="b")])
     async def forfeit(self, interaction: discord.Interaction, match_id: str,
                       winner: app_commands.Choice[str], reason: str):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         try:
@@ -926,7 +927,7 @@ class CashCupCog(commands.Cog):
 
     @cashcup.command(name="dq", description="Дисквалифицировать команду: авто-поражения по сетке (организатор)")
     async def dq(self, interaction: discord.Interaction, team_name: str, reason: str):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         try:
@@ -949,7 +950,7 @@ class CashCupCog(commands.Cog):
 
     @cashcup.command(name="pause", description="Приостановить турнир (организатор)")
     async def pause(self, interaction: discord.Interaction, reason: str = ""):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         try:
@@ -964,7 +965,7 @@ class CashCupCog(commands.Cog):
 
     @cashcup.command(name="resume", description="Возобновить турнир (организатор)")
     async def resume(self, interaction: discord.Interaction):
-        if not interaction.guild or not _is_org(interaction.user):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         try:
