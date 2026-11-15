@@ -84,9 +84,9 @@ async def send_welcome_message(
     if member.bot or not WELCOME_CHANNEL_ID:
         return False
 
-    from storage.json_store import store
-    settings = store.get_settings()
-    if not settings.get("welcome_enabled", True):
+    # Control Center (PG) → legacy settings.json fallback в peek.
+    from services.settings_service import settings_service
+    if not settings_service.peek(member.guild.id, "feature.welcome_enabled"):
         return False
 
     channel, channel_guild = await _find_channel(client, member)

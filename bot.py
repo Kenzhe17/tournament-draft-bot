@@ -243,6 +243,24 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.error("Failed to initialize database: %s", e)
 
+        # Control Center: движок динамической конфигурации.
+        # PostgreSQL — источник истины; LISTEN/NOTIFY + poll-fallback
+        # применяют изменения без рестарта. Без DATABASE_URL сервис
+        # остаётся в degraded-режиме (defaults + legacy settings.json).
+        try:
+            from services.settings_service import settings_service
+            await settings_service.init()
+            if settings_service.available:
+                await settings_service.start_sync()
+                logger.info("Control Center settings engine active")
+            else:
+                logger.warning(
+                    "Control Center settings engine unavailable "
+                    "(no DATABASE_URL) — running on defaults"
+                )
+        except Exception as exc:
+            logger.warning("settings service init failed: %s", exc)
+
         # Журнал аудита: привязка бота для публикации карточек
         # и восстановление pending-событий после рестарта/сбоя БД.
         try:
@@ -1103,6 +1121,11 @@ class TournamentBot(commands.Bot):
 
     async def close(self) -> None:
         """Graceful shutdown: остановить фоновые метрики."""
+        try:
+            from services.settings_service import settings_service
+            await settings_service.stop()
+        except Exception:
+            pass
         try:
             from utils import perf_metrics
 

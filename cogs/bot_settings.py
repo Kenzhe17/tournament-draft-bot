@@ -71,9 +71,29 @@ class BotSettingsCog(commands.Cog):
             )
             return
         
-        # Save settings
+        # Сохранить настройки: Control Center (PostgreSQL) —
+        # основной источник; settings.json зеркалируется для
+        # обратной совместимости на переходный период.
         store.set_settings(settings)
         logger.info(f"Settings saved: {settings}")
+
+        # Запись в движок динамической конфигурации (если БД доступна).
+        from services.settings_service import (
+            SettingsUnavailableError, settings_service,
+        )
+        try:
+            if welcome is not None:
+                await settings_service.set(
+                    None, "feature.welcome_enabled", welcome,
+                    actor_id=interaction.user.id,
+                )
+            if coin_drop is not None:
+                await settings_service.set(
+                    None, "feature.coin_drop_enabled", coin_drop,
+                    actor_id=interaction.user.id,
+                )
+        except (SettingsUnavailableError, KeyError, ValueError) as exc:
+            logger.warning("settings_service write failed: %s", exc)
         
         await interaction.response.send_message(
             "\n".join(response_messages),
