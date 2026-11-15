@@ -247,6 +247,45 @@ class ShopPurchaseOpsStore:
             op["updated_at"] = time.time()
             self._save_json()
 
+    async def merge_payload(
+        self, op_id: str, payload: dict[str, Any]
+    ) -> bool:
+        """Строгий merge payload для критических финансовых записей.
+
+        Возвращает True только при подтверждённой записи в PG.
+        При ошибке запроса перечитывает операцию: запись могла
+        закоммититься, а ответ потеряться — тогда возвращает True.
+        False — запись не подтверждена (вызывающий код обязан
+        считать исход неопределённым, НЕ выдавать награду и НЕ
+        возвращать деньги автоматически).
+        """
+        if not self._use_db:
+            return False
+        try:
+            pool = await self._pool()
+            async with pool.acquire() as conn:
+                await self._ensure_ddl(conn)
+                await conn.execute(
+                    """
+                    UPDATE shop_operations
+                    SET payload = payload || $2::jsonb, updated_at=now()
+                    WHERE op_id=$1
+                    """,
+                    op_id, json.dumps(payload),
+                )
+                return True
+        except Exception:
+            logger.exception("merge_payload failed op=%s", op_id)
+        # Неопределённый исход: проверить фактическое состояние.
+        try:
+            op = await self.get(op_id)
+        except Exception:
+            return False
+        if op is None:
+            return False
+        cur = op.get("payload") or {}
+        return all(cur.get(k) == v for k, v in payload.items())
+
     # --------------------------------------------------------------- charge
 
     async def charge(
@@ -564,38 +603,65 @@ class ShopPurchaseOpsStore:
         return pending + rep_pending
 
     async def with_refund_debt(
-        self, limit: int = 200, offset: int = 0
+        self, limit: int = 200, after: tuple | None = None
     ) -> list[dict[str, Any]]:
         """Операции с непогашенной задолженностью по возврату.
 
         Учитывает ОБЕ валюты: refund_pending (монеты, MAX_BALANCE)
-        и rep_pending (REP, сбой БД). Пагинация через offset —
-        вызывающий код обязан дочитать все страницы.
+        и rep_pending (REP, сбой БД).
+
+        Курсорная пагинация по (created_at, op_id): обработанные
+        операции исчезают из выборки, но курсор не сдвигается —
+        следующие страницы не пропускают записи.
+        `after` — (created_at_epoch, op_id) последней записи
+        предыдущей страницы.
         """
         if self._use_db:
             try:
                 pool = await self._pool()
                 async with pool.acquire() as conn:
                     await self._ensure_ddl(conn)
-                    rows = await conn.fetch(
-                        """
-                        SELECT * FROM shop_operations
-                        WHERE COALESCE((payload->>'refund_pending')::int, 0) > 0
-                           OR COALESCE((payload->>'rep_pending')::int, 0) > 0
-                        ORDER BY created_at
-                        LIMIT $1 OFFSET $2
-                        """,
-                        limit, offset,
-                    )
+                    if after is None:
+                        rows = await conn.fetch(
+                            """
+                            SELECT * FROM shop_operations
+                            WHERE COALESCE((payload->>'refund_pending')::int, 0) > 0
+                               OR COALESCE((payload->>'rep_pending')::int, 0) > 0
+                            ORDER BY created_at, op_id
+                            LIMIT $1
+                            """,
+                            limit,
+                        )
+                    else:
+                        rows = await conn.fetch(
+                            """
+                            SELECT * FROM shop_operations
+                            WHERE (COALESCE((payload->>'refund_pending')::int, 0) > 0
+                               OR COALESCE((payload->>'rep_pending')::int, 0) > 0)
+                              AND (created_at, op_id) > (to_timestamp($2::float8), $3::text)
+                            ORDER BY created_at, op_id
+                            LIMIT $1
+                            """,
+                            limit, float(after[0]), str(after[1]),
+                        )
                     return [self._row_to_op(r) for r in rows]
             except Exception:
                 logger.exception("shop ops debt query: PG failed")
                 return []
-        return [
-            dict(op) for op in self._json_ops.values()
+        # JSON-режим: курсор по (created_at, op_id)
+        debt = [
+            op for op in self._json_ops.values()
             if int((op.get("payload") or {}).get("refund_pending") or 0) > 0
             or int((op.get("payload") or {}).get("rep_pending") or 0) > 0
-        ][offset:offset + limit]
+        ]
+        debt.sort(key=lambda o: (o.get("created_at", 0), o.get("op_id", "")))
+        if after is not None:
+            debt = [
+                o for o in debt
+                if (o.get("created_at", 0), o.get("op_id", ""))
+                > (float(after[0]), str(after[1]))
+            ]
+        return [dict(o) for o in debt[:limit]]
 
     # -------------------------------------------------------------- queries
 

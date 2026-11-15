@@ -919,27 +919,10 @@ class TournamentBot(commands.Bot):
                 await asyncio.sleep(300)
                 if not self.is_ready():
                     continue
-                from storage.shop_purchase_ops_store import (
-                    purchase_ops_store,
+                from services.shop_purchase_service import (
+                    settle_refund_debts,
                 )
-                offset = 0
-                while True:
-                    page = await purchase_ops_store.with_refund_debt(
-                        limit=200, offset=offset
-                    )
-                    if not page:
-                        break
-                    for op in page:
-                        try:
-                            await purchase_ops_store.settle_pending_refund(op)
-                        except Exception:
-                            logger.exception(
-                                "sweeper settle failed op=%s",
-                                op.get("op_id"),
-                            )
-                    offset += len(page)
-                    if len(page) < 200:
-                        break
+                await settle_refund_debts()
             except Exception as e:
                 logger.error(f"Error in shop refund sweeper: {e}", exc_info=True)
 

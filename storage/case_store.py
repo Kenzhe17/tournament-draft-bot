@@ -313,7 +313,7 @@ class CaseStore:
             except Exception as e:
                 logger.error(f"Error applying mimic bonus to case: {e}")
 
-            await _persist_reward({"kind": "coins", "amount": coins_amount})
+            await _persist_reward({"kind": "coins", "amount": coins_amount, "gkey": grant_key or ""})
             await _grant_coins(coins_amount)
             result = {"type": "coins", "value": coins_amount, "rarity": "common", "pet_bonus": pet_bonus_info}
         elif drop_type.startswith("item_"):
@@ -336,7 +336,7 @@ class CaseStore:
                 # Fallback to coins if no items of this rarity
                 if not items:
                     fallback_coins = case.price // 2
-                    await _persist_reward({"kind": "coins", "amount": fallback_coins, "key_suffix": ":fb"})
+                    await _persist_reward({"kind": "coins", "amount": fallback_coins, "key_suffix": ":fb", "gkey": (grant_key or "") + ":fb"})
                     await _grant_coins(fallback_coins, ":fb")
                     result = {"type": "coins", "value": fallback_coins, "rarity": "common", "pet_bonus": pet_bonus_info}
                 else:
@@ -347,7 +347,7 @@ class CaseStore:
 
                     if has_item:
                         # Предмет уже есть - выдать полную стоимость
-                        await _persist_reward({"kind": "coins", "amount": item.price, "key_suffix": ":dup"})
+                        await _persist_reward({"kind": "coins", "amount": item.price, "key_suffix": ":dup", "gkey": (grant_key or "") + ":dup"})
                         await _grant_coins(item.price, ":dup")
                         result = {"type": "coins", "value": item.price, "rarity": "common", "pet_bonus": pet_bonus_info}
                     else:

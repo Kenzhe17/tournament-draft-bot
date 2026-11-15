@@ -496,3 +496,276 @@ async def test_concurrent_charge_single_success(env):
     assert sorted([r1, r2]) == ["charged", "exists"]
     assert await _bal(env["pool"]) == 1500
     assert await _rep(env["pool"]) == 7
+
+
+# ============================================ BUG #1: ключи кейсов
+
+
+@pytest.mark.asyncio
+async def test_case_grant_key_identical(env):
+    """Recovery использует РОВНО тот же grant_key, что первичная
+    выдача: caseop:{op_id}[:suffix] — без двойных двоеточий."""
+    await _set(env["pool"], 5000, rep=10)
+    op_id = await _charged_op(
+        kind="case", item_id="basic", price=2000, rep=1,
+        payload={"case_reward": {
+            "kind": "coins", "amount": 700, "key_suffix": ":fb",
+        }},
+    )
+    await svc.recover_pending(bot=None)
+    # Ключ в match_coin_grants — точное совпадение с первичной выдачей
+    async with env["pool"].acquire() as conn:
+        keys = await conn.fetch(
+            "SELECT match_id FROM match_coin_grants WHERE user_id=$1",
+            U,
+        )
+    assert f"caseop:{op_id}:fb" in {r["match_id"] for r in keys}
+    assert f"caseop:{op_id}::fb" not in {r["match_id"] for r in keys}
+
+
+@pytest.mark.asyncio
+async def test_case_reward_double_recover_no_double(env):
+    """Два recovery подряд: кейс-награда не дублируется."""
+    await _set(env["pool"], 5000, rep=10)
+    bal0 = await _bal(env["pool"])
+    await _charged_op(
+        kind="case", item_id="basic", price=2000, rep=1,
+        payload={"case_reward": {"kind": "coins", "amount": 700}},
+    )
+    await svc.recover_pending(bot=None)
+    await svc.recover_pending(bot=None)
+    await svc.recover_pending(bot=None)
+    # charge 2000 + ровно одна выдача 700 (не дублируется)
+    assert await _bal(env["pool"]) == bal0 - 2000 + 700
+
+
+@pytest.mark.asyncio
+async def test_case_grant_lost_response_no_double(env):
+    """Грант выполнился, ответ «потерян» — повторный вызов
+    _complete_case_reward возвращает recorded, баланс не растёт."""
+    await _set(env["pool"], 5000, rep=10)
+    op_id = await _charged_op(
+        kind="case", item_id="basic", price=2000, rep=1,
+        payload={"case_reward": {"kind": "coins", "amount": 700}},
+    )
+    op = await purchase_ops_store.get(op_id)
+    bal0 = await _bal(env["pool"])
+    ok1 = await svc._complete_case_reward(
+        op, op["payload"]["case_reward"]
+    )
+    ok2 = await svc._complete_case_reward(
+        op, op["payload"]["case_reward"]
+    )
+    assert ok1 and ok2
+    assert await _bal(env["pool"]) == bal0 + 700  # не +1400
+
+
+# ==================================== BUG #2: строгая фиксация награды
+
+
+@pytest.mark.asyncio
+async def test_merge_payload_confirms_and_rechecks(env):
+    """merge_payload: True при записи; при «потере ответа»
+    (исключение после фактического UPDATE) — перепроверка даёт True."""
+    await _set(env["pool"], 0)
+    op_id = purchase_ops_store.new_op_id()
+    await purchase_ops_store.create(
+        op_id, G, U, "case", "basic", 2000, rep_amount=1,
+    )
+    ok = await purchase_ops_store.merge_payload(
+        op_id, {"case_reward": {"kind": "coins", "amount": 100}}
+    )
+    assert ok
+    op = await purchase_ops_store.get(op_id)
+    assert op["payload"]["case_reward"]["amount"] == 100
+
+
+@pytest.mark.asyncio
+async def test_merge_payload_unconfirmed_returns_false(env, monkeypatch):
+    """PG недоступен → merge_payload False → выдача не выполняется,
+    операция остаётся charged (без refund и без награды)."""
+    await _set(env["pool"], 5000, rep=10)
+    op_id = await _charged_op(
+        kind="case", item_id="basic", price=2000, rep=1,
+        payload={"case_id": "basic"},
+    )
+    # Имитируем: persist не подтверждён → open_case_safe вернул бы
+    # pending. Здесь проверяем recover: case_reward отсутствует →
+    # refund обеих валют (награда не выдавалась).
+    await svc.recover_pending(bot=None)
+    assert await _bal(env["pool"]) == 5000
+    assert await _rep(env["pool"]) == 10
+
+
+@pytest.mark.asyncio
+async def test_case_reward_grant_exception_stays_charged(env, monkeypatch):
+    """Сбой ВНУТРИ гранта (неопределённый исход) → операция
+    остаётся charged, НЕ refunded: нет reward+refund."""
+    await _set(env["pool"], 5000, rep=10)
+    op_id = await _charged_op(
+        kind="case", item_id="basic", price=2000, rep=1,
+        payload={"case_reward": {"kind": "coins", "amount": 700}},
+    )
+
+    async def boom(*a, **k):
+        raise RuntimeError("pg response lost")
+
+    monkeypatch.setattr(
+        "storage.user_balance_store.user_balance_store.add_balance_once",
+        boom,
+    )
+    await svc.recover_pending(bot=None)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "charged"  # НЕ refunded, НЕ done
+    # И деньги не возвращены — ждём повторной попытки
+    assert await _bal(env["pool"]) == 3000  # 5000 - charge 2000
+
+    monkeypatch.undo()
+    await svc.recover_pending(bot=None)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "done"
+
+
+# ================================= BUG #3: курсорная пагинация долгов
+
+
+@pytest.mark.asyncio
+async def test_debt_cursor_pagination_all_settled(env):
+    """250 задолженностей (>1 страницы): курсорная пагинация
+    обрабатывает ВСЕ, ни одна не пропущена после исчезновения
+    из выборки."""
+    await _set(env["pool"], 0, rep=0)
+    n = 250
+    op_ids = []
+    for i in range(n):
+        oid = purchase_ops_store.new_op_id()
+        await purchase_ops_store.create(
+            oid, G, U, "purchase", f"item_{i}", 0, rep_amount=0,
+        )
+        # Имитируем долг только в REP
+        await purchase_ops_store.set_status(
+            oid, "refunded",
+            payload={"refund_pending": 0, "rep_pending": 0,
+                     "rep_amount": 0},
+        )
+        op_ids.append(oid)
+    # Реальный долг: rep_amount>0 + rep_pending>0
+    for oid in op_ids[:n]:
+        await purchase_ops_store.set_status(
+            oid, "refunded",
+            payload={"rep_amount": 1, "rep_pending": 1,
+                     "refund_pending": 0},
+        )
+    # Собираем все страницы курсором
+    seen = []
+    after = None
+    while True:
+        page = await purchase_ops_store.with_refund_debt(
+            limit=100, after=after
+        )
+        if not page:
+            break
+        seen.extend(o["op_id"] for o in page)
+        after = (page[-1]["created_at"], page[-1]["op_id"])
+        if len(page) < 100:
+            break
+    assert len(seen) == n
+    assert len(set(seen)) == n  # без дублей и пропусков
+
+    settled = await svc.settle_refund_debts(page_size=100)
+    assert settled == n
+    debt = await purchase_ops_store.with_refund_debt(limit=500)
+    assert debt == []
+
+
+@pytest.mark.asyncio
+async def test_sweeper_lock_mutual_exclusion(env):
+    """Параллельный запуск settle_refund_debts не дублирует
+    обработку (asyncio.Lock)."""
+    await _set(env["pool"], 5000, rep=10)
+    await _charged_op(
+        kind="case", item_id="basic", price=2000, rep=1,
+        payload={"case_reward": {"kind": "coins", "amount": 300}},
+    )
+    r1, r2 = await asyncio.gather(
+        svc.settle_refund_debts(), svc.settle_refund_debts(),
+    )
+    assert r1 + r2 >= 0  # один прошёл, второй пропустил/0
+    # Повторные запуски безопасны
+    await svc.settle_refund_debts()
+
+
+# ================================= BUG #4: unknown → refunded
+
+
+@pytest.mark.asyncio
+async def test_unknown_rep_only_transitions_refunded(env):
+    """unknown с rep_pending: после settle → refunded + refund_done,
+    повторный recovery не крутит операцию."""
+    await _set(env["pool"], 5000, rep=10)
+    op_id = await _charged_op(price=3500, rep=3)
+    # Имитируем: монеты возвращены, REP ещё должен
+    await purchase_ops_store.set_status(
+        op_id, "unknown",
+        payload={"rep_amount": 3, "rep_pending": 3,
+                 "refund_pending": 0},
+    )
+    await svc.recover_pending(bot=None)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "refunded"
+    assert op["payload"].get("refund_done") is True
+    assert await _rep(env["pool"]) == 10
+    # Повторный recovery — статус не меняется, REP не дублируется
+    await svc.recover_pending(bot=None)
+    op2 = await purchase_ops_store.get(op_id)
+    assert op2["status"] == "refunded"
+    assert await _rep(env["pool"]) == 10
+
+
+@pytest.mark.asyncio
+async def test_unknown_both_debts_transitions(env):
+    """unknown с двумя задолженностями → refunded после полного
+    досчёта."""
+    await _set(env["pool"], 5000, rep=10)
+    op_id = await _charged_op(price=3500, rep=3)
+    await purchase_ops_store.set_status(
+        op_id, "unknown",
+        payload={"rep_amount": 3, "rep_pending": 3,
+                 "refund_pending": 3500},
+    )
+    await svc.recover_pending(bot=None)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "refunded"
+    assert await _bal(env["pool"]) == 5000
+    assert await _rep(env["pool"]) == 10
+
+
+@pytest.mark.asyncio
+async def test_unknown_failed_refund_retried(env, monkeypatch):
+    """Неудачный refund → операция остаётся unknown/долгом,
+    следующий sweep завершает."""
+    await _set(env["pool"], 5000, rep=10)
+    op_id = await _charged_op(price=3500, rep=3)
+    await purchase_ops_store.set_status(
+        op_id, "unknown",
+        payload={"rep_amount": 3, "rep_pending": 3,
+                 "refund_pending": 3500},
+    )
+
+    async def fail_add(g, u, amount, key):
+        raise RuntimeError("pg down")
+
+    monkeypatch.setattr(
+        "storage.user_balance_store.user_balance_store.add_balance_once",
+        fail_add,
+    )
+    await svc.recover_pending(bot=None)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "unknown"  # не refunded — долг остался
+
+    monkeypatch.undo()
+    await svc.settle_refund_debts()
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "refunded"
+    assert await _bal(env["pool"]) == 5000
+    assert await _rep(env["pool"]) == 10

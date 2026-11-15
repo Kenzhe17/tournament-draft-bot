@@ -622,6 +622,18 @@ async def purchase_pet(
         return True, "Питомец приобретён.", pet
 
 
+class RewardPersistUncertain(Exception):
+    """Не удалось подтвердить запись case_reward в PostgreSQL.
+
+    Награда не выдаётся, возврат не выполняется — операция
+    остаётся charged и разрешается recover_pending по факту
+    наличия case_reward в payload."""
+
+    def __init__(self, op_id: str):
+        super().__init__(f"case_reward persist unconfirmed op={op_id}")
+        self.op_id = op_id
+
+
 async def open_case_safe(
     guild_id: int, user_id: int, case_id: str, guild: discord.Guild | None
 ) -> dict:
@@ -658,11 +670,19 @@ async def open_case_safe(
                 return {"type": "error", "value": "Операция уже обработана"}
             return {"type": "error", "value": "Ошибка базы данных"}
         async def _persist_reward(desc: dict) -> None:
-            """Записать выбранную награду кейса в op ДО выдачи."""
-            await purchase_ops_store.set_status(
-                op_id, "charged",
-                payload={"case_reward": desc},
+            """Строго записать награду кейса в op ДО выдачи.
+
+            merge_payload подтверждает запись в PG (с перепроверкой
+            при потерянном ответе). При невозможности подтверждения
+            бросает RewardPersistUncertain — награда НЕ выдаётся,
+            операция остаётся charged: recovery разрешит её по
+            факту наличия case_reward (довыдача ИЛИ refund,
+            но не оба сразу)."""
+            ok = await purchase_ops_store.merge_payload(
+                op_id, {"case_reward": desc}
             )
+            if not ok:
+                raise RewardPersistUncertain(op_id)
 
         try:
             result = await case_store.open_case(
@@ -670,6 +690,16 @@ async def open_case_safe(
                 grant_key=f"caseop:{op_id}",
                 on_pending_reward=_persist_reward,
             )
+        except RewardPersistUncertain:
+            # Неопределённый исход записи награды: НЕ возвращаем
+            # деньги и НЕ выдаём — recovery разрешит по case_reward.
+            return {
+                "type": "pending",
+                "value": (
+                    "Операция открытия кейса сохраняется — "
+                    "результат будет доставлен автоматически."
+                ),
+            }
         except Exception as exc:
             res = await _refund_op(op_id, guild_id, user_id, case.price)
             return {
@@ -831,12 +861,21 @@ async def _recover_pet_op(op: dict) -> str:
         return "refunded"
 
 
+def case_grant_key(op_id: str, suffix: str = "") -> str:
+    """Единая генерация идемпотентного ключа гранта кейса.
+
+    Первичная выдача (case_store.open_case, grant_key=f"caseop:{op_id}")
+    и recovery (_complete_case_reward) обязаны использовать
+    ОДИНАКОВЫЙ ключ: caseop:{op_id}[:suffix]."""
+    return f"caseop:{op_id}{suffix}"
+
+
 async def _complete_case_reward(op: dict, desc: dict) -> bool:
     """Идемпотентно довести сохранённую награду кейса до конца.
 
-    Возвращает True при успехе. Гранты используют те же ключи,
-    что и исходная выдача (caseop:{op_id}[:suffix]) — повторный
-    вызов после потерянного ответа не дублирует начисление.
+    Возвращает True при успехе. Гранты используют тот же ключ,
+    что и исходная выдача — повторный вызов после потерянного
+    ответа не дублирует начисление.
     """
     from storage.user_balance_store import user_balance_store
 
@@ -848,9 +887,13 @@ async def _complete_case_reward(op: dict, desc: dict) -> bool:
         amount = int(desc.get("amount") or 0)
         if amount <= 0:
             return True
-        suffix = ":" + str(desc.get("key_suffix") or "")
+        # Полный ключ из desc (новые операции) либо сборка из
+        # key_suffix (операции, сохранённые до введения gkey).
+        grant_key = desc.get("gkey") or case_grant_key(
+            op["op_id"], str(desc.get("key_suffix") or "")
+        )
         await user_balance_store.add_balance_once(
-            gid, uid, amount, f"caseop:{op['op_id']}{suffix}"
+            gid, uid, amount, grant_key
         )
         return True
     if kind == "item":
@@ -885,15 +928,19 @@ async def _recover_case_op(op: dict) -> str:
         try:
             ok = await _complete_case_reward(op, reward)
         except Exception:
+            # Неопределённый исход гранта (ответ PG мог потеряться
+            # после COMMIT) — НЕ возвращаем деньги: остаёмся
+            # charged, recovery повторит идемпотентную выдачу.
             logger.exception("case reward completion failed op=%s", op["op_id"])
-            ok = False
+            return "charged"
         if ok:
             await purchase_ops_store.set_status(
                 op["op_id"], "done",
                 payload={"result": "recovered_reward"},
             )
             return "done"
-        # Не смогли выдать сохранённую награду — вернуть деньги.
+        # kind не поддержан/награда невозможна — выдачи не было,
+        # безопасный refund обеих валют.
     res = await _refund_once(gid, uid, op["price"], op["op_id"])
     if _refund_incomplete(res):
         await purchase_ops_store.set_status(
@@ -903,6 +950,56 @@ async def _recover_case_op(op: dict) -> str:
         return "unknown"
     await _record_refund(op["op_id"], res)
     return "refunded"
+
+
+# ------------------------------------------------------------- sweeper
+
+_sweep_lock = asyncio.Lock()
+
+
+async def settle_refund_debts(page_size: int = 200) -> int:
+    """Обработать ВСЕ операции с refund-задолженностью (монеты+REP).
+
+    Курсорная пагинация: обработанные операции исчезают из выборки,
+    курсор по (created_at, op_id) не даёт пропустить записи.
+    Когда settle подтверждает нулевую задолженность, операция
+    'unknown' переводится в 'refunded' + refund_done — завершённые
+    возвраты больше не крутятся в recovery.
+
+    Защищена asyncio.Lock — параллельный запуск sweep'ей
+    (recover_pending + periodic loop) исключён.
+    Возвращает число обработанных операций.
+    """
+    if _sweep_lock.locked():
+        return 0
+    async with _sweep_lock:
+        settled = 0
+        after = None
+        while True:
+            page = await purchase_ops_store.with_refund_debt(
+                limit=page_size, after=after
+            )
+            if not page:
+                break
+            for op in page:
+                try:
+                    remaining = await purchase_ops_store.settle_pending_refund(op)
+                    if remaining <= 0 and op.get("status") == "unknown":
+                        await purchase_ops_store.set_status(
+                            op["op_id"], "refunded",
+                            payload={"refund_done": True},
+                        )
+                    settled += 1
+                except Exception:
+                    logger.exception(
+                        "pending refund settle failed op=%s",
+                        op.get("op_id"),
+                    )
+            last = page[-1]
+            after = (last.get("created_at", 0), last.get("op_id", ""))
+            if len(page) < page_size:
+                break
+        return settled
 
 
 async def recover_pending(bot=None) -> int:
@@ -924,8 +1021,14 @@ async def recover_pending(bot=None) -> int:
                 resolved += 1
                 continue
             if status == "unknown":
-                pending = await purchase_ops_store.settle_pending_refund(op)
-                if pending <= 0:
+                # settle вернёт 0 когда обе задолженности погашены;
+                # тогда unknown → refunded (см. settle_refund_debts).
+                remaining = await purchase_ops_store.settle_pending_refund(op)
+                if remaining <= 0:
+                    await purchase_ops_store.set_status(
+                        op["op_id"], "refunded",
+                        payload={"refund_done": True},
+                    )
                     resolved += 1
                 continue
             if status == "charged":
@@ -940,27 +1043,8 @@ async def recover_pending(bot=None) -> int:
         except Exception:
             logger.exception("shop ops recovery failed op=%s", op.get("op_id"))
     # Досчитать pending-возвраты у ВСЕХ операций с задолженностью
-    # (монеты И REP), постранично — без ограничения в 500 записей.
     try:
-        offset = 0
-        page_size = 200
-        while True:
-            page = await purchase_ops_store.with_refund_debt(
-                limit=page_size, offset=offset
-            )
-            if not page:
-                break
-            for op in page:
-                try:
-                    await purchase_ops_store.settle_pending_refund(op)
-                except Exception:
-                    logger.exception(
-                        "pending refund settle failed op=%s",
-                        op.get("op_id"),
-                    )
-            offset += len(page)
-            if len(page) < page_size:
-                break
+        await settle_refund_debts()
     except Exception:
         logger.exception("pending refund sweep failed")
     return resolved
