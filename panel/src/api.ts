@@ -202,3 +202,11 @@ export const adminApi = {
   putTemplate: (key: string, payload: Record<string, unknown>) =>
     put<{ key: string; version: number }>(`/api/admin/templates/${encodeURIComponent(key)}`, { payload }),
 };
+
+export const adminApi2 = {
+  modCases: (target?: number) =>
+    get<{ items: Record<string, unknown>[] }>(
+      `/api/admin/moderation/cases${target ? `?target_id=${target}` : ""}`),
+  modReports: () =>
+    get<{ items: Record<string, unknown>[] }>("/api/admin/moderation/reports"),
+};

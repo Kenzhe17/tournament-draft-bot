@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { adminApi, api, type VacRow } from "../api";
+import { adminApi, adminApi2, api, type VacRow } from "../api";
 
 export default function Moderation() {
   const [active, setActive] = useState<VacRow[]>([]);
   const [history, setHistory] = useState<VacRow[]>([]);
+  const [cases, setCases] = useState<Record<string, unknown>[]>([]);
+  const [reports, setReports] = useState<Record<string, unknown>[]>([]);
   const [uid, setUid] = useState("");
   const [form, setForm] = useState({ user_id: "", duration: "7d", reason: "" });
   const [err, setErr] = useState("");
@@ -13,6 +15,8 @@ export default function Moderation() {
   const load = () => {
     adminApi.vacActive().then(r => setActive(r.items)).catch(e => setErr(String(e)));
     adminApi.vacHistory().then(r => setHistory(r.items)).catch(() => {});
+    adminApi2.modCases().then(r => setCases(r.items)).catch(() => {});
+    adminApi2.modReports().then(r => setReports(r.items)).catch(() => {});
   };
   useEffect(load, []);
 
@@ -109,6 +113,44 @@ export default function Moderation() {
               </tr>
             ))}
             {history.length === 0 && <tr><td colSpan={5} className="muted">Нет записей</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Кейсы модерации ({cases.length})</h3>
+        <table>
+          <thead><tr><th>ID</th><th>Target</th><th>Тип</th><th>Причина</th><th>Статус</th><th>Создан</th></tr></thead>
+          <tbody>
+            {cases.map((c, i) => (
+              <tr key={i}>
+                <td className="mono">{String(c.id)}</td>
+                <td className="mono">{String(c.target_id)}</td>
+                <td>{String(c.kind)}</td>
+                <td className="muted">{String(c.reason ?? "").slice(0, 60)}</td>
+                <td><span className={`badge ${c.status === "active" ? "warn" : "muted"}`}>{String(c.status)}</span></td>
+                <td className="muted">{String(c.created_at ?? "").slice(0, 19)}</td>
+              </tr>
+            ))}
+            {cases.length === 0 && <tr><td colSpan={6} className="muted">Нет кейсов</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Жалобы ({reports.length})</h3>
+        <table>
+          <thead><tr><th>ID</th><th>Reporter</th><th>Target</th><th>Причина</th><th>Статус</th></tr></thead>
+          <tbody>
+            {reports.map((r, i) => (
+              <tr key={i}>
+                <td className="mono">{String(r.id)}</td>
+                <td className="mono">{String(r.reporter_id)}</td>
+                <td className="mono">{String(r.target_id)}</td>
+                <td className="muted">{String(r.reason ?? "").slice(0, 60)}</td>
+                <td><span className={`badge ${r.status === "open" ? "warn" : "muted"}`}>{String(r.status)}</span></td>
+              </tr>
+            ))}
+            {reports.length === 0 && <tr><td colSpan={5} className="muted">Нет жалоб</td></tr>}
           </tbody>
         </table>
       </div>

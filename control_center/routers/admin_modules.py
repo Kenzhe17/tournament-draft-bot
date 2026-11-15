@@ -177,3 +177,31 @@ async def put_template(
     row = await store.set_template(
         gid or 0, key, body.payload, actor_id=user.id)
     return {"key": key, "version": row["version"], "status": "saved"}
+
+
+# ---------------- moderation cases / reports (read) ----------------
+
+@router.get("/moderation/cases")
+async def moderation_cases(
+    target_id: int | None = None,
+    limit: int = Query(default=50, le=200),
+    user: PanelUser = Depends(require_perm(rbac.PERM_PANEL_VIEW)),
+) -> dict[str, Any]:
+    gid = _gid(user, None)
+    from storage.moderation_store import moderation_store
+    await moderation_store.ensure()
+    rows = await moderation_store.cases(
+        gid, target_id=target_id, limit=limit)
+    return {"items": rows}
+
+
+@router.get("/moderation/reports")
+async def moderation_reports(
+    limit: int = Query(default=50, le=200),
+    user: PanelUser = Depends(require_perm(rbac.PERM_PANEL_VIEW)),
+) -> dict[str, Any]:
+    gid = _gid(user, None)
+    from storage.moderation_store import moderation_store
+    await moderation_store.ensure()
+    rows = await moderation_store.reports(gid, limit=limit)
+    return {"items": rows}
