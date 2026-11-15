@@ -30,9 +30,9 @@ export default function Audit() {
                 <td className="muted">{String(r.created_at).slice(0, 19)}</td>
                 <td className="mono">{r.action}</td>
                 <td className="mono">{r.actor_id}</td>
-                <td className="muted">{r.entity_type ?? ""} {r.entity_id ?? ""}</td>
+                <td className="muted">{r.object_type ?? ""} {r.object_id ?? ""}</td>
                 <td className="mono muted" style={{ fontSize: 11, maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {JSON.stringify(r.details)}
+                  {JSON.stringify(r.new_value ?? r.old_value ?? "")} {r.result && r.result !== "success" ? `(${r.result})` : ""}
                 </td>
               </tr>
             ))}

@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from control_center import config
 from control_center.auth import router as auth_router
 from control_center.routers import (
-    games_api, ops_api, players_api, settings_api, shop_api, system_api,
+    admin_modules, games_api, ops_api, players_api, settings_api, shop_api, system_api,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(games_api.router)
     app.include_router(ops_api.router)
     app.include_router(players_api.router)
+    app.include_router(admin_modules.router)
 
     @app.get("/")
     async def root() -> dict:

@@ -574,3 +574,59 @@ async def user_permissions(guild_id: int, user_id: int) -> set[str]:
             guild_id, user_id,
         )
     return {r["permission"] for r in rows}
+
+
+# ---------- CV2 templates ----------
+
+async def get_template(guild_id: int, key: str) -> dict[str, Any] | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT guild_id, key, payload, version, updated_by, updated_at"
+            " FROM admin_templates WHERE guild_id = $1 AND key = $2",
+            guild_id, key)
+    return dict(row) if row else None
+
+
+async def list_templates(guild_id: int | None = None) -> list[dict[str, Any]]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if guild_id is None:
+            rows = await conn.fetch(
+                "SELECT guild_id, key, payload, version, updated_by,"
+                " updated_at FROM admin_templates ORDER BY guild_id, key")
+        else:
+            rows = await conn.fetch(
+                "SELECT guild_id, key, payload, version, updated_by,"
+                " updated_at FROM admin_templates WHERE guild_id = $1"
+                " ORDER BY key", guild_id)
+    return [dict(r) for r in rows]
+
+
+async def set_template(
+    guild_id: int, key: str, payload: Any, *, actor_id: int = 0
+) -> dict[str, Any]:
+    """Upsert шаблона с инкрементом версии + audit-запись."""
+    pool = await get_pool()
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            """
+            INSERT INTO admin_templates (guild_id, key, payload, version, updated_by)
+            VALUES ($1, $2, $3::jsonb, 1, $4)
+            ON CONFLICT (guild_id, key) DO UPDATE
+            SET payload = EXCLUDED.payload,
+                version = admin_templates.version + 1,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = now()
+            RETURNING guild_id, key, payload, version, updated_by, updated_at
+            """,
+            guild_id, key, _j(payload), actor_id)
+        await conn.execute(
+            """
+            INSERT INTO admin_audit_log
+                (guild_id, actor_id, action, object_type, object_id,
+                 new_value)
+            VALUES ($1, $2, 'template.set', 'template', $3, $4::jsonb)
+            """,
+            guild_id, actor_id, key, _j({"version": row["version"]}))
+    return dict(row)

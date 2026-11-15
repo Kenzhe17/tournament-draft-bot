@@ -65,9 +65,10 @@ export interface SettingDetail extends SettingDef {
   updated_at: string | null; updated_by: number | null;
 }
 export interface AuditRow {
-  id: string; guild_id: number; actor_id: number; action: string;
-  entity_type: string | null; entity_id: string | null;
-  details: unknown; created_at: string;
+  id: number; guild_id: number; actor_id: number; action: string;
+  object_type: string | null; object_id: string | null;
+  old_value: unknown; new_value: unknown; result: string;
+  created_at: string;
 }
 export interface ShopItem {
   id: string; name: string; description: string; price: number;
@@ -144,3 +145,60 @@ export const api = {
 
 export const loginUrl = "/auth/login";
 export const logoutUrl = "/auth/logout";
+
+// ---------- admin modules ----------
+export interface BotSnapshot {
+  available: boolean;
+  reason?: string;
+  last_seen?: string;
+  tournaments?: Record<string, TournamentSnap[]>;
+  matchmaking?: Record<string, MMQueueSnap[]>;
+  vac_active_count?: Record<string, number>;
+  guilds?: Record<string, GuildResources>;
+}
+export interface TournamentSnap {
+  id: string; channel_id: number; size: string; phase: string;
+  registration: string; formation_mode: string; organizer_id: number;
+  is_test: boolean; created_at: string;
+  players: Record<string, number>;
+}
+export interface MMQueueSnap {
+  channel_id: number; format: string; state: string; players: number;
+  player_names: string[]; required: number | null; timer_started: boolean;
+  tournament_channel_id: number; match_num: number;
+}
+export interface GuildResources {
+  name: string;
+  channels: { id: string; name: string; type: string }[];
+  roles: { id: string; name: string }[];
+}
+export interface VacRow {
+  user_id: number; guild_id: number; reason?: string;
+  expires_at?: string; issued_at?: string; level?: number;
+  revoked_at?: string; revoked_by?: number; duration?: string;
+  [k: string]: unknown;
+}
+export interface EconomyPlayer {
+  user_id: number; guild_id: number; balance: number | null;
+  recent_grants: { match_id: string; amount: number; granted_at: string }[];
+}
+export interface GrantRow {
+  match_id: string; user_id: number; amount: number; granted_at: string;
+}
+export interface TemplateRow {
+  guild_id: number; key: string; payload: Record<string, unknown>;
+  version: number; updated_by: number; updated_at: string;
+}
+
+export const adminApi = {
+  snapshot: () => get<BotSnapshot>("/api/admin/snapshot"),
+  economyPlayer: (uid: number) => get<EconomyPlayer>(`/api/admin/economy/player/${uid}`),
+  economyGrants: () => get<{ items: GrantRow[] }>("/api/admin/economy/grants?limit=100"),
+  vacActive: () => get<{ items: VacRow[] }>("/api/admin/moderation/vac/active"),
+  vacHistory: (uid?: number) =>
+    get<{ items: VacRow[] }>(`/api/admin/moderation/vac/history${uid ? `?user_id=${uid}` : ""}`),
+  templates: () => get<{ items: TemplateRow[] }>("/api/admin/templates"),
+  template: (key: string) => get<TemplateRow>(`/api/admin/templates/${encodeURIComponent(key)}`),
+  putTemplate: (key: string, payload: Record<string, unknown>) =>
+    put<{ key: string; version: number }>(`/api/admin/templates/${encodeURIComponent(key)}`, { payload }),
+};

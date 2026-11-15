@@ -283,7 +283,13 @@ class TournamentBot(commands.Bot):
                 # admin_action_requests, бот исполняет зарегистрированные
                 # handlers и пишет статус обратно.
                 from services import admin_actions
+                admin_actions.bind_bot(self)
                 self.loop.create_task(admin_actions.actions_loop())
+
+                # Периодический снимок состояния для панели
+                # (турниры, очереди MM, каналы/роли Discord).
+                from services import admin_snapshots
+                self.loop.create_task(admin_snapshots.snapshot_loop(self))
             else:
                 logger.warning(
                     "Control Center settings engine unavailable "

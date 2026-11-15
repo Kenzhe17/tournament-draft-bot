@@ -7,6 +7,11 @@ import Games from "./pages/Games";
 import Players from "./pages/Players";
 import Audit from "./pages/Audit";
 import StatusPage from "./pages/Status";
+import Tournaments from "./pages/Tournaments";
+import Moderation from "./pages/Moderation";
+import Economy from "./pages/Economy";
+import DiscordSettings from "./pages/DiscordSettings";
+import Design from "./pages/Design";
 
 const NAV: { id: string; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
@@ -15,6 +20,7 @@ const NAV: { id: string; label: string }[] = [
   { id: "feature-flags", label: "Feature Flags" },
   { id: "shop", label: "Shop" },
   { id: "games", label: "Games" },
+  { id: "economy", label: "Economy" },
   { id: "audit", label: "Audit Log" },
   { id: "tournaments", label: "Tournaments" },
   { id: "matchmaking", label: "Matchmaking" },
@@ -25,12 +31,7 @@ const NAV: { id: string; label: string }[] = [
 ];
 
 const SUPPORTED: Record<string, string> = {
-  tournaments: "Runtime-настройки турниров (лимиты, составы) — в разделе «Настройки». Управление активными турнирами — через Discord-команды.",
-  matchmaking: "Параметры MM (веса балансировки, таймауты) — в разделе «Настройки». Живые очереди — в Discord.",
-  moderation: "VAC/модерация: vac.max_days, vac.decay_hours — в «Настройках». Управление кейсами — Discord.",
   ocr: "OCR-модуль не входит в данную ветку (нет cog'а в коде) — code-managed, панелью не управляется.",
-  discord: "Discord-интеграция (OAuth, роли) — code-managed. Настройки сервера меняются в Discord.",
-  design: "Дизайн/стилизация CV2 — code-managed (шаблоны сообщений в коде бота).",
 };
 
 export default function App() {
@@ -83,6 +84,12 @@ export default function App() {
         {section === "shop" && <Shop />}
         {section === "games" && <Games />}
         {section === "audit" && <Audit />}
+        {section === "tournaments" && <Tournaments />}
+        {section === "matchmaking" && <Settings module="matchmaking" />}
+        {section === "moderation" && <Moderation />}
+        {section === "economy" && <Economy />}
+        {section === "discord" && <DiscordSettings />}
+        {section === "design" && <Design />}
         {SUPPORTED[section] && <StatusPage title={NAV.find(n => n.id === section)!.label}
           description={SUPPORTED[section]} />}
       </main>

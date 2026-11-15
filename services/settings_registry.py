@@ -360,3 +360,33 @@ def describe() -> list[dict[str, Any]]:
         }
         for d in all_defs()
     ]
+
+# ------------------------------------------------------------------
+# Discord Settings — ID каналов/ролей. Потребители читают через
+# settings_service.peek в точках использования; снимок реальных
+# каналов/ролей публикует бот (admin_snapshots → /api/admin/snapshot).
+# ------------------------------------------------------------------
+
+_reg(key="discord.tournament_channels", type="json", default=[],
+     module="discord", permission="discord.manage",
+     description="Каналы турниров (JSON-массив ID)",
+     consumers_pending=True)
+_reg(key="discord.notification_channel_id", type="int", default=0,
+     module="discord", min=0, permission="discord.manage",
+     description="Канал уведомлений",
+     consumers_pending=True)
+_reg(key="discord.log_channel_id", type="int", default=0,
+     module="discord", min=0, permission="discord.manage",
+     description="Канал логирования",
+     consumers_pending=True)
+_reg(key="discord.rep_log_channel_id", type="int", default=0,
+     module="discord", min=0, permission="discord.manage",
+     description="Канал REP-лога (приоритет над bot_settings/env)")
+_reg(key="discord.organizer_role_ids", type="json", default=[],
+     module="discord", permission="discord.manage",
+     description="Роли организаторов (JSON-массив ID)",
+     consumers_pending=True)
+_reg(key="discord.welcome_channel_id", type="int", default=0,
+     module="discord", min=0, permission="discord.manage",
+     description="Канал приветствий",
+     consumers_pending=True)

@@ -296,7 +296,7 @@ def test_actions_unregistered_rejected(client):
     user = make_user(ALL_ADMIN | {"actions.execute"})
     c = auth_as(client, user)
     r = c.post("/api/actions",
-               json={"action": "tournament.cancel",
+               json={"action": "nonexistent.fake_action",
                      "parameters": {}, "idempotency_key": "k1"},
                headers={"X-CC-Request": "1"})
     assert r.status_code == 400
