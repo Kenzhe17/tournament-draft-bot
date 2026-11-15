@@ -118,6 +118,15 @@ CREATE TABLE IF NOT EXISTS admin_templates (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (guild_id, key)
 );
+
+-- Heartbeat компонентов системы (бот, панель, фоновые задачи).
+-- Dashboard читает last_seen/version_info для реального статуса.
+CREATE TABLE IF NOT EXISTS admin_service_status (
+    service TEXT PRIMARY KEY,
+    version_info JSONB NOT NULL DEFAULT '{}'::jsonb,
+    extra JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_seen TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
@@ -520,6 +529,38 @@ async def list_permissions(guild_id: int) -> list[dict[str, Any]]:
             "SELECT * FROM admin_role_permissions WHERE guild_id = $1"
             " ORDER BY user_id, permission",
             guild_id,
+        )
+    return [dict(r) for r in rows]
+
+
+async def report_service_status(
+    service: str,
+    *,
+    version_info: dict[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Upsert heartbeat сервиса (бот/панель) для Dashboard."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO admin_service_status (service, version_info, extra, last_seen)
+            VALUES ($1, $2::jsonb, $3::jsonb, now())
+            ON CONFLICT (service) DO UPDATE
+            SET version_info = EXCLUDED.version_info,
+                extra = EXCLUDED.extra,
+                last_seen = now()
+            """,
+            service, _j(version_info or {}), _j(extra or {}),
+        )
+
+
+async def list_service_status() -> list[dict[str, Any]]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT service, version_info, extra, last_seen"
+            " FROM admin_service_status ORDER BY service"
         )
     return [dict(r) for r in rows]
 

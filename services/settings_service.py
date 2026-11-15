@@ -69,6 +69,7 @@ class SettingsService:
             await store.init_schema()
             await self.refresh_all()
             self.available = True
+            await self._report_heartbeat()
         except Exception as exc:  # noqa: BLE001 — degraded-режим by design
             logger.error("settings service init failed: %s", exc)
             self.available = False
@@ -338,6 +339,7 @@ class SettingsService:
             try:
                 await asyncio.sleep(self._poll_interval)
                 await self._poll_diff()
+                await self._report_heartbeat()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — poll не должен падать
@@ -365,6 +367,23 @@ class SettingsService:
         for k, entry in list(self._cache.items()):
             if k not in remote and entry[0] is not _MISSING:
                 del self._cache[k]
+
+    async def _report_heartbeat(self) -> None:
+        """Heartbeat бота для Dashboard (admin_service_status)."""
+        try:
+            import os
+            await store.report_service_status(
+                "discord-bot",
+                version_info={
+                    "commit": os.getenv("RAILWAY_GIT_COMMIT_SHA")
+                    or os.getenv("GIT_COMMIT_SHA") or "",
+                    "env": os.getenv("RAILWAY_ENVIRONMENT_NAME")
+                    or os.getenv("APP_ENV") or "",
+                },
+                extra={"settings_cached": len(self._cache)},
+            )
+        except Exception as exc:  # noqa: BLE001 — heartbeat не критичен
+            logger.debug("heartbeat report failed: %s", exc)
 
     async def _safe_refresh(self, guild_id: int, key: str) -> None:
         try:

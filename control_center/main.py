@@ -1,0 +1,55 @@
+"""FastAPI-приложение Control Center.
+
+Запуск: uvicorn control_center.main:app --host 0.0.0.0 --port 8080
+
+Отдельный Railway-сервис; использует ту же DATABASE_URL,
+что и бот. Discord OAuth2 настраивается через env
+(control_center/config.py).
+"""
+
+from __future__ import annotations
+
+import logging
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from control_center import config
+from control_center.auth import router as auth_router
+from control_center.routers import ops_api, settings_api, system_api
+
+logger = logging.getLogger(__name__)
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="r!z3 Control Center API",
+        version="0.1.0",
+        docs_url="/api/docs",
+        openapi_url="/api/openapi.json",
+    )
+
+    # Панель и API могут быть на разных origin (Vite dev / Railway).
+    # SameSite=Lax + CSRF-dependency остаются основной защитой;
+    # CORS открываем только для credentialed-запросов с явных origin.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[config.PUBLIC_BASE_URL],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-CC-Request"],
+    )
+
+    app.include_router(auth_router)
+    app.include_router(system_api.router)
+    app.include_router(settings_api.router)
+    app.include_router(ops_api.router)
+
+    @app.get("/")
+    async def root() -> dict:
+        return {"service": config.SERVICE_NAME, "docs": "/api/docs"}
+
+    return app
+
+
+app = create_app()
