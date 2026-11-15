@@ -190,7 +190,7 @@ class CaseStore:
         self._cases[case.id] = case
         self.save()
 
-    async def open_case(self, guild_id: int, user_id: int, case_id: str, guild) -> dict[str, Any]:
+    async def open_case(self, guild_id: int, user_id: int, case_id: str, guild, precharged: bool = False) -> dict[str, Any]:
         """Открыть кейс.
 
         Args:
@@ -198,6 +198,9 @@ class CaseStore:
             user_id: ID пользователя
             case_id: ID кейса
             guild: Discord guild object
+            precharged: True — списание уже выполнено durable-операцией
+                shop_operations (списание и статус charged атомарны);
+                проверка баланса и subtract_balance пропускаются.
 
         Returns:
             Словарь с результатом: {"type": "item"/"coins"/"nothing", "value": ..., "rarity": ...}
@@ -206,13 +209,14 @@ class CaseStore:
         if not case:
             return {"type": "error", "value": "Кейс не найден"}
 
-        # Проверить баланс
-        balance = await user_balance_store.get_balance(guild_id, user_id)
-        if balance < case.price:
-            return {"type": "error", "value": "Недостаточно монет"}
+        if not precharged:
+            # Проверить баланс
+            balance = await user_balance_store.get_balance(guild_id, user_id)
+            if balance < case.price:
+                return {"type": "error", "value": "Недостаточно монет"}
 
-        # Снять стоимость
-        await user_balance_store.subtract_balance(guild_id, user_id, case.price)
+            # Снять стоимость
+            await user_balance_store.subtract_balance(guild_id, user_id, case.price)
 
         # Выбрать результат по drop rates
         roll = random.random()

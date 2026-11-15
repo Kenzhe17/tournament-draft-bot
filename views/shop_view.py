@@ -985,8 +985,10 @@ class BuyCaseButton(discord.ui.Button):
             )
             return
 
-        # Открыть кейс
-        result = await case_store.open_case(interaction.guild_id, interaction.user.id, self.case_id, interaction.guild)
+        # Открыть кейс через durable-операцию (списание атомарно
+        # с shop_operations, восстановление после рестарта).
+        from services.shop_purchase_service import open_case_safe
+        result = await open_case_safe(interaction.guild_id, interaction.user.id, self.case_id, interaction.guild)
 
         # open_case всегда возвращает dict — error-результат
         # нельзя считать успешным открытием.

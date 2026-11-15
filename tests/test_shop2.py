@@ -61,24 +61,29 @@ def env(monkeypatch, tmp_path):
 
     import storage.shop_ops_store as ops_mod
     import storage.shop_items as items_mod
+    import storage.shop_purchase_ops_store as pops_mod
     import views.inventory2_view as inv2
     import views.shop2_view as shop2
 
     monkeypatch.setattr(shop_store_mod, "SHOP_FILE", shop_file)
     monkeypatch.setattr(shop_store_mod, "INVENTORY_FILE", inv_file)
     monkeypatch.setattr(ops_mod, "OPS_FILE", ops_file)
+    monkeypatch.setattr(pops_mod, "OPS_JSON", tmp_path / "shop_purchase_ops.json")
 
     store = ShopStore()
     inv = InventoryStore()
     ops = ops_mod.ShopOpsStore()
+    pops = pops_mod.ShopPurchaseOpsStore()
+    pops._use_db = False  # unit-тесты без PG — JSON-фолбэк
 
     # Патчим ВСЕ модули, импортировавшие синглтоны по имени
     for mod, names in (
         (shop_store_mod, {"shop_store": store, "inventory_store": inv}),
         (svc, {"shop_store": store, "inventory_store": inv,
-               "shop_ops_store": ops}),
+               "shop_ops_store": ops, "purchase_ops_store": pops}),
         (items_mod, {"shop_store": store}),
         (ops_mod, {"shop_ops_store": ops}),
+        (pops_mod, {"purchase_ops_store": pops}),
         (shop2, {"shop_store": store, "inventory_store": inv,
                  "shop_ops_store": ops}),
         (inv2, {"shop_store": store, "inventory_store": inv,

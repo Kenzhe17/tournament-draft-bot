@@ -2404,6 +2404,16 @@ class TournamentCog(commands.Cog):
             await interaction.response.send_message(replace_emojis("• Предмет не найден"), ephemeral=True)
             return
 
+        # Discord-роли нельзя передавать как предметы: роль —
+        # отдельная сущность аккаунта, инвентарная запись без
+        # переноса роли привела бы к рассинхронизации.
+        if item.item_type == "role":
+            await interaction.response.send_message(
+                replace_emojis("• Роли нельзя передавать как предметы"),
+                ephemeral=True
+            )
+            return
+
         # Check if sender has the item
         sender_inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
         has_item = any(cosmetic.item_id == item_id for cosmetic in sender_inventory)

@@ -52,6 +52,7 @@ def _color_role_items() -> list[ShopItem]:
             category="color_roles",
             item_type="role",
             role_id=int(role_id),
+            is_sellable=False,
         ))
     return items
 

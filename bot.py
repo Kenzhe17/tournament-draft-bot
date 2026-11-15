@@ -1016,6 +1016,18 @@ class TournamentBot(commands.Bot):
         except Exception as e:
             logger.error(f"nickname ops recovery failed: {e}")
 
+        # Восстановление незавершённых покупок магазина (SHOP 2.0)
+        try:
+            from services.shop_purchase_service import recover_pending
+            resolved_shop = await recover_pending(self)
+            if resolved_shop:
+                logger.info(
+                    "shop ops recovery: %d операций разрешено",
+                    resolved_shop,
+                )
+        except Exception as e:
+            logger.error(f"shop ops recovery failed: {e}")
+
         # Довести отложенные публикации карточек комнат турниров
         try:
             from services.room_publisher import retry_pending_rooms
