@@ -268,8 +268,8 @@ async def _h_t_registration(gid, params, actor):
     state = str(params["state"]).upper()  # OPEN | CLOSED
     if state not in ("OPEN", "CLOSED"):
         raise ValueError("state must be OPEN or CLOSED")
-    from storage.json_store import store as json_store
     from models.tournament import RegistrationState, TournamentPhase
+    from storage.json_store import store as json_store
     t = json_store.get(int(gid), channel_id)
     if not t:
         raise RuntimeError("no active tournament in channel")

@@ -3184,16 +3184,37 @@ async def send_tournament_notification(tournament, guild, action: str) -> None:
         role = guild.get_role(_nrid)
         role_mention = role.mention if role else ""
 
-        embed = discord.Embed(
-            title="Турнир Создан",
-            description=(
-                f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
-                f"**Регистрация** <#{tournament.channel_id}>"
-            ),
-            color=discord.Color.blue()
-        )
+        # Control Center template override: tournament.announcement
+        # (guild → global). Fallback — стандартный embed.
+        custom_view = None
+        try:
+            from storage import admin_config_store as _cfg_store
+            from services.cv2_templates import render_template
+            _gid = getattr(tournament, "guild_id", None) or guild.id
+            tpl = await _cfg_store.get_template(
+                _gid, "tournament.announcement") or \
+                await _cfg_store.get_template(0, "tournament.announcement")
+            if tpl:
+                custom_view = render_template(tpl["payload"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                f"tournament.announcement template failed: {exc}")
+            custom_view = None
 
-        await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
+        if custom_view is not None:
+            await channel.send(view=custom_view,
+                               allowed_mentions=discord.AllowedMentions(
+                                   roles=True))
+        else:
+            embed = discord.Embed(
+                title="Турнир Создан",
+                description=(
+                    f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
+                    f"**Регистрация** <#{tournament.channel_id}>"
+                ),
+                color=discord.Color.blue()
+            )
+            await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
         logger.info(f"Tournament notification sent: {action} in guild {guild.id}")
     except Exception as e:
         logger.error(f"Failed to send tournament notification: {e}")

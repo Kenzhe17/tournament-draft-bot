@@ -46,10 +46,12 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     }),
     "moderator": frozenset({
         PERM_PANEL_VIEW, PERM_SETTINGS_VIEW, PERM_AUDIT_VIEW,
+        PERM_ACTIONS_EXECUTE,
         "moderation.manage", "vac.manage", "players.manage",
     }),
     "organizer": frozenset({
         PERM_PANEL_VIEW, PERM_SETTINGS_VIEW,
+        PERM_ACTIONS_EXECUTE,
         "tournament.manage", "matchmaking.manage",
     }),
     "viewer": frozenset({

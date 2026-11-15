@@ -426,3 +426,31 @@ async def test_tournament_set_registration_guards(monkeypatch):
     with pytest.raises(RuntimeError, match="no active tournament"):
         await admin_actions._h_t_registration(
             555, {"channel_id": 1, "state": "open"}, 7)
+
+
+@pytest.mark.asyncio
+async def test_executor_injects_action_id(monkeypatch):
+    """Executor добавляет _action_id в params — нужен для финансовой
+    идемпотентности (op_id)."""
+    from services import admin_actions
+    from storage import admin_config_store as store
+
+    seen = {}
+
+    @admin_actions.register_action("test.capture_params")
+    async def _cap(gid, params, actor):
+        seen.update(params)
+        return {"ok": True}
+
+    async def fake_list(limit=50):
+        return [{"id": "uuid-123", "action": "test.capture_params",
+                 "guild_id": 1, "parameters": {"x": 1}, "actor_id": 2}]
+
+    async def fake_update(*a, **kw):
+        pass
+
+    monkeypatch.setattr(store, "list_pending_actions", fake_list)
+    monkeypatch.setattr(store, "update_action_request", fake_update)
+    await admin_actions.execute_pending_actions()
+    assert seen.get("_action_id") == "uuid-123"
+    assert seen.get("x") == 1

@@ -53,6 +53,22 @@ except Exception:  # noqa: BLE001 — бот может быть недосту�
     ALLOWED_ACTIONS_V1 = set()
 
 
+def _action_perm(action: str) -> str | None:
+    """Модульное разрешение для действия (None — только actions.execute)."""
+    prefix = action.split(".", 1)[0]
+    return {
+        "economy": "economy.finance",
+        "vac": "vac.manage",
+        "moderation": "moderation.manage",
+        "tournament": "tournament.manage",
+        "player": "players.manage",
+        "design": "design.manage",
+        "shop": "shop.manage",
+        "games": "games.manage",
+        "settings": "settings.manage",
+    }.get(prefix)
+
+
 def _allowed_actions() -> set[str]:
     """Whitelist = bot-side handlers ∪ тестовый override ALLOWED_ACTIONS_V1."""
     try:
@@ -81,6 +97,11 @@ async def create_action(
         raise HTTPException(
             400, f"unknown or unregistered action: {body.action}"
         )
+    # Действие требует и actions.execute, и модульное разрешение —
+    # иначе moderator с actions.execute мог бы двигать экономику.
+    needed = _action_perm(body.action)
+    if needed and not user.can(needed):
+        raise HTTPException(403, f"missing permission: {needed}")
     gid = body.guild_id or user.guild_id or 0
     row = await store.create_action_request(
         guild_id=gid,

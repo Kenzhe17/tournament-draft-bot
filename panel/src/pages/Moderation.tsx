@@ -127,7 +127,15 @@ export default function Moderation() {
                 <td className="mono">{String(c.target_id)}</td>
                 <td>{String(c.kind)}</td>
                 <td className="muted">{String(c.reason ?? "").slice(0, 60)}</td>
-                <td><span className={`badge ${c.status === "active" ? "warn" : "muted"}`}>{String(c.status)}</span></td>
+                <td className="row">
+                  <span className={`badge ${c.status === "active" ? "warn" : "muted"}`}>{String(c.status)}</span>
+                  {c.status === "active" && <>
+                    <button className="btn secondary" style={{ fontSize: 10, padding: "2px 6px" }}
+                      onClick={() => act("moderation.case_status", { case_id: c.id, status: "completed", details: { note: "resolved via panel" } }, `case ${c.id} complete`)}>Завершить</button>
+                    <button className="btn danger" style={{ fontSize: 10, padding: "2px 6px" }}
+                      onClick={() => act("moderation.case_status", { case_id: c.id, status: "revoked", details: { note: "revoked via panel" } }, `case ${c.id} revoke`)}>Отменить</button>
+                  </>}
+                </td>
                 <td className="muted">{String(c.created_at ?? "").slice(0, 19)}</td>
               </tr>
             ))}
@@ -147,7 +155,17 @@ export default function Moderation() {
                 <td className="mono">{String(r.reporter_id)}</td>
                 <td className="mono">{String(r.target_id)}</td>
                 <td className="muted">{String(r.reason ?? "").slice(0, 60)}</td>
-                <td><span className={`badge ${r.status === "open" ? "warn" : "muted"}`}>{String(r.status)}</span></td>
+                <td className="row">
+                  <span className={`badge ${r.status === "open" ? "warn" : "muted"}`}>{String(r.status)}</span>
+                  {r.status === "open" && <button className="btn secondary" style={{ fontSize: 10, padding: "2px 6px" }}
+                    onClick={() => act("moderation.report_action", { report_id: r.id, action: "claim", note: "" }, `claim report ${r.id}`)}>Взять</button>}
+                  {["open", "claimed", "escalated"].includes(String(r.status)) && <>
+                    <button className="btn secondary" style={{ fontSize: 10, padding: "2px 6px" }}
+                      onClick={() => act("moderation.report_action", { report_id: r.id, action: "resolve", note: "resolved via panel" }, `resolve report ${r.id}`)}>Решить</button>
+                    <button className="btn danger" style={{ fontSize: 10, padding: "2px 6px" }}
+                      onClick={() => act("moderation.report_action", { report_id: r.id, action: "dismiss", note: "dismissed via panel" }, `dismiss report ${r.id}`)}>Отклонить</button>
+                  </>}
+                </td>
               </tr>
             ))}
             {reports.length === 0 && <tr><td colSpan={5} className="muted">Нет жалоб</td></tr>}
