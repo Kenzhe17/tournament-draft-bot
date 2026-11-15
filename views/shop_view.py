@@ -849,7 +849,7 @@ class BuyButton(discord.ui.Button):
             return
         if result.refunded:
             await interaction.response.send_message(
-                replace_emojis("Покупка не удалась — монеты и REP возвращены."),
+                replace_emojis(result.message or "Покупка не удалась — возврат обрабатывается."),
                 ephemeral=True
             )
             return
@@ -1193,7 +1193,7 @@ class ItemSelect(discord.ui.Select):
             return
         if result.refunded:
             await interaction.response.send_message(
-                replace_emojis("Покупка не удалась — монеты и REP возвращены."),
+                replace_emojis(result.message or "Покупка не удалась — возврат обрабатывается."),
                 ephemeral=True
             )
             return
@@ -1273,7 +1273,7 @@ class ShopBuyButton(discord.ui.Button):
             return
         if result.refunded:
             await interaction.response.send_message(
-                replace_emojis("Покупка не удалась — монеты и REP возвращены."),
+                replace_emojis(result.message or "Покупка не удалась — возврат обрабатывается."),
                 ephemeral=True
             )
             return
@@ -1878,7 +1878,7 @@ class RoleBuyButton(discord.ui.Button):
             return
         if result.refunded:
             await interaction.followup.send(
-                replace_emojis("Покупка не удалась — монеты и REP возвращены.")
+                replace_emojis(result.message or "Покупка не удалась — возврат обрабатывается.")
             )
             return
 

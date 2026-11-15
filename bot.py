@@ -210,6 +210,11 @@ class TournamentBot(commands.Bot):
             self.loop.create_task(self.birthday_loop())
         except Exception as e:
             logger.error(f"Failed to create birthday loop task: {e}", exc_info=True)
+        # SHOP 2.0: периодический досчёт непогашенных возвратов
+        try:
+            self.loop.create_task(self.shop_refund_sweeper_loop())
+        except Exception as e:
+            logger.error(f"Failed to create shop sweeper task: {e}", exc_info=True)
         
         # Initialize shop items
         try:
@@ -900,6 +905,43 @@ class TournamentBot(commands.Bot):
                         logger.error(f"Error in pet hunger check for guild {guild.id}: {e}", exc_info=True)
             except Exception as e:
                 logger.error(f"Error in pet hunger check loop: {e}", exc_info=True)
+
+    async def shop_refund_sweeper_loop(self) -> None:
+        """SHOP 2.0: досчёт refund_pending/rep_pending каждые 5 минут.
+
+        Покрывает случай, когда возврат уперся в MAX_BALANCE или
+        временную недоступность PostgreSQL между рестартами.
+        """
+        import asyncio
+
+        while not self.is_closed():
+            try:
+                await asyncio.sleep(300)
+                if not self.is_ready():
+                    continue
+                from storage.shop_purchase_ops_store import (
+                    purchase_ops_store,
+                )
+                offset = 0
+                while True:
+                    page = await purchase_ops_store.with_refund_debt(
+                        limit=200, offset=offset
+                    )
+                    if not page:
+                        break
+                    for op in page:
+                        try:
+                            await purchase_ops_store.settle_pending_refund(op)
+                        except Exception:
+                            logger.exception(
+                                "sweeper settle failed op=%s",
+                                op.get("op_id"),
+                            )
+                    offset += len(page)
+                    if len(page) < 200:
+                        break
+            except Exception as e:
+                logger.error(f"Error in shop refund sweeper: {e}", exc_info=True)
 
     async def birthday_loop(self) -> None:
         """Поздравлять с днём рождения в 00:00 по времени Астаны (UTC+5)."""

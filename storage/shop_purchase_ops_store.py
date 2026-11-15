@@ -112,7 +112,12 @@ class ShopPurchaseOpsStore:
         payload: dict[str, Any] | None = None,
         rep_amount: int = 0,
     ) -> dict[str, Any]:
-        """Создать операцию reserved. Идемпотентно по op_id."""
+        """Создать операцию reserved. Идемпотентно по op_id.
+
+        Операции с REP (rep_amount>0) НИКОГДА не уходят в JSON —
+        при недоступности PG бросается RuntimeError: лучше отказать
+        в покупке, чем потерять финансовую операцию из вида recovery.
+        """
         payload = dict(payload or {})
         if rep_amount:
             payload["rep_amount"] = int(rep_amount)
@@ -140,8 +145,18 @@ class ShopPurchaseOpsStore:
                         )
                     return self._row_to_op(row)
             except Exception:
+                if rep_amount:
+                    logger.error(
+                        "shop ops create: PG failed for REP op — "
+                        "JSON fallback refused"
+                    )
+                    raise RuntimeError(
+                        "PostgreSQL unavailable for REP operation"
+                    )
                 logger.exception("shop ops create: PG failed, json fallback")
-                self._use_db = False
+        if rep_amount:
+            # _use_db=False (legacy degrade) — REP всё равно только PG.
+            raise RuntimeError("PostgreSQL required for REP operation")
         op = {
             "op_id": op_id, "guild_id": guild_id, "user_id": user_id,
             "kind": kind, "item_id": item_id, "price": price,
@@ -187,7 +202,6 @@ class ShopPurchaseOpsStore:
                     return self._row_to_op(row) if row else None
             except Exception:
                 logger.exception("shop ops get: PG failed")
-                return None
         op = self._json_ops.get(op_id)
         return dict(op) if op else None
 
@@ -350,9 +364,10 @@ class ShopPurchaseOpsStore:
                         return "charged"
             except Exception:
                 logger.exception("shop ops charge: PG failed")
-                # Не переключаемся на JSON здесь — баланс в PG;
-                # вызывающий код трактует 'error' как отказ.
-                return "error"
+                # Не переключаемся на JSON глобально — PG-операции
+                # должны оставаться видимыми recovery. JSON-путь
+                # ниже сработает только для операций, реально
+                # созданных в JSON-режиме (coin-only).
         # JSON-фолбэк: REP-операции без PG не выполняются —
         # финансовые операции с REP только в PostgreSQL.
         if rep_amount:
@@ -468,20 +483,33 @@ class ShopPurchaseOpsStore:
         if rep_amount > 0:
             from storage.rep_balance_store import rep_balance_store
             try:
-                await rep_balance_store.add_rep_once(
+                rep_credited = await rep_balance_store.add_rep_once(
                     op["guild_id"], op["user_id"], rep_amount,
                     f"shoprefrep:{op['op_id']}",
                 )
-                rep_pending = 0
+                # Грант атомарен: recorded amount == rep_amount
+                # означает, что REP возвращены (сейчас или ранее —
+                # ответ мог быть потерян). Иначе сбой не считается
+                # погашенным.
+                rep_pending = (
+                    0 if int(rep_credited or 0) >= rep_amount
+                    else rep_amount - int(rep_credited or 0)
+                )
             except Exception:
                 logger.exception("settle: rep refund probe failed")
         if pending <= 0 and rep_pending <= 0:
-            if pending <= 0:
-                await self.set_status(
-                    op["op_id"], op["status"],
-                    payload={"refund_pending": 0, "rep_pending": rep_pending},
-                )
-            return pending
+            await self.set_status(
+                op["op_id"], op["status"],
+                payload={"refund_pending": 0, "rep_pending": 0},
+            )
+            return 0
+        if pending <= 0:
+            # Монеты возвращены, REP ещё нет — фиксируем и выходим.
+            await self.set_status(
+                op["op_id"], op["status"],
+                payload={"refund_pending": 0, "rep_pending": rep_pending},
+            )
+            return rep_pending
         from storage.user_balance_store import user_balance_store
 
         # 1) Базовый грант: вернёт recorded amount (идемпотентно).
@@ -493,7 +521,7 @@ class ShopPurchaseOpsStore:
             ) or 0)
         except Exception:
             logger.exception("settle: base refund probe failed")
-            return pending
+            return pending + rep_pending
         # Сколько базовый грант не покрыл (cap MAX_BALANCE и т.п.)
         uncovered = max(0, op["price"] - base_credited)
         # Уже досчитано через shoprefp-ключи (refund_settled —
@@ -505,7 +533,7 @@ class ShopPurchaseOpsStore:
                 op["op_id"], op["status"],
                 payload={"refund_pending": 0, "rep_pending": rep_pending},
             )
-            return 0
+            return rep_pending
 
         attempts = int(payload.get("refund_attempts") or 0)
         settled_total = settled
@@ -533,7 +561,41 @@ class ShopPurchaseOpsStore:
                 "rep_pending": rep_pending,
             },
         )
-        return pending
+        return pending + rep_pending
+
+    async def with_refund_debt(
+        self, limit: int = 200, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """Операции с непогашенной задолженностью по возврату.
+
+        Учитывает ОБЕ валюты: refund_pending (монеты, MAX_BALANCE)
+        и rep_pending (REP, сбой БД). Пагинация через offset —
+        вызывающий код обязан дочитать все страницы.
+        """
+        if self._use_db:
+            try:
+                pool = await self._pool()
+                async with pool.acquire() as conn:
+                    await self._ensure_ddl(conn)
+                    rows = await conn.fetch(
+                        """
+                        SELECT * FROM shop_operations
+                        WHERE COALESCE((payload->>'refund_pending')::int, 0) > 0
+                           OR COALESCE((payload->>'rep_pending')::int, 0) > 0
+                        ORDER BY created_at
+                        LIMIT $1 OFFSET $2
+                        """,
+                        limit, offset,
+                    )
+                    return [self._row_to_op(r) for r in rows]
+            except Exception:
+                logger.exception("shop ops debt query: PG failed")
+                return []
+        return [
+            dict(op) for op in self._json_ops.values()
+            if int((op.get("payload") or {}).get("refund_pending") or 0) > 0
+            or int((op.get("payload") or {}).get("rep_pending") or 0) > 0
+        ][offset:offset + limit]
 
     # -------------------------------------------------------------- queries
 
@@ -552,7 +614,6 @@ class ShopPurchaseOpsStore:
                     return [self._row_to_op(r) for r in rows]
             except Exception:
                 logger.exception("shop ops pending: PG failed")
-                self._use_db = False
         return [
             dict(op) for op in self._json_ops.values()
             if op.get("status") in PENDING_STATUSES

@@ -378,7 +378,7 @@ async def test_forbidden_refunds(env):
     )
 
     assert result == "error"
-    assert "Монеты возвращены" in payload["message"]
+    assert "полностью возвращены" in payload["message"]
     assert env.balance.bal[(G, U)] == 2500
     op = env.ops.get(payload["op_id"])
     assert op["status"] == STATUS_REFUNDED

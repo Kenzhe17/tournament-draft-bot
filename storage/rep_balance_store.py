@@ -56,12 +56,15 @@ def rep_price_for_coins(coins: int) -> int:
     """REP-стоимость покупки по цене в монетах.
 
     Тарифы:
+      0 монет (бесплатно) → 0 REP
       1–999 монет    → 1 REP
       1000–2999      → 2 REP
       3000–5999      → 3 REP
       6000–14999     → 5 REP
       15000+         → 8 REP
     """
+    if coins <= 0:
+        return 0
     if coins < 1000:
         return 1
     if coins < 3000:
@@ -74,11 +77,19 @@ def rep_price_for_coins(coins: int) -> int:
 
 
 def rep_price_for_item(item) -> int:
-    """REP-стоимость ShopItem: фиксированная rep_price или тариф."""
+    """REP-стоимость ShopItem: фиксированная rep_price или тариф.
+
+    Бесплатный товар (price<=0) всегда стоит 0 REP. Для платного
+    товара rep_price=0 недопустим — обязательная двойная оплата
+    не может быть обойдена через админский override.
+    """
+    price = int(getattr(item, "price", 0) or 0)
+    if price <= 0:
+        return 0
     override = getattr(item, "rep_price", None)
     if override is not None:
-        return max(0, int(override))
-    return rep_price_for_coins(int(getattr(item, "price", 0) or 0))
+        return max(1, int(override))
+    return rep_price_for_coins(price)
 
 
 def rep_price_for_amount(coins: int, rep_price: int | None = None) -> int:
@@ -86,7 +97,10 @@ def rep_price_for_amount(coins: int, rep_price: int | None = None) -> int:
     гардероб, услуги): тариф от суммы или явный override."""
     if rep_price is not None:
         return max(0, int(rep_price))
-    return rep_price_for_coins(int(coins or 0))
+    coins = int(coins or 0)
+    if coins <= 0:
+        return 0
+    return rep_price_for_coins(coins)
 
 
 # ------------------------------------------------------------------- store

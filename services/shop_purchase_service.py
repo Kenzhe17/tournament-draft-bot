@@ -174,13 +174,19 @@ async def _refund_once(
 async def _record_refund(
     op_id: str, res: dict[str, int]
 ) -> None:
-    """Зафиксировать результат возврата в durable-операции."""
+    """Зафиксировать результат возврата в durable-операции.
+
+    refund_done=True — маркер для recovery: операция перешла в
+    refund-ветку, повторная выдача запрещена даже если set_status
+    частично не дошёл (payload мёржится атомарно с статусом).
+    """
     await purchase_ops_store.set_status(
         op_id, "refunded",
         payload={
             "refund_base": res.get("credited", 0),
             "refund_pending": res.get("pending", 0),
             "rep_pending": res.get("rep_pending", 0),
+            "refund_done": True,
         },
     )
 
@@ -193,6 +199,26 @@ def _refund_incomplete(res: dict[str, int]) -> bool:
         and res.get("rep_credited", 0) == 0
     )
     return coin_stuck or rep_stuck
+
+
+def _refund_pending(res: dict[str, int]) -> bool:
+    """Возврат начат, но осталась непогашенная задолженность."""
+    return (
+        int(res.get("pending") or 0) > 0
+        or int(res.get("rep_pending") or 0) > 0
+    )
+
+
+def _refund_message(res: dict[str, int], prefix: str) -> str:
+    """Сообщение о возврате в одном из трёх состояний."""
+    head = f"{prefix} " if prefix else ""
+    if _refund_pending(res):
+        return (
+            f"{head}Возврат части средств ожидает "
+            "автоматического восстановления — повторно оплачивать "
+            "не нужно."
+        )
+    return f"{head}Монеты и REP полностью возвращены."
 
 
 async def _revoke_grant(
@@ -352,7 +378,7 @@ async def purchase(
             )
             return PurchaseResult(
                 True,
-                f"Выдача не удалась ({exc}). Монеты и REP возвращены.",
+                _refund_message(res, f"Выдача не удалась ({exc})."),
                 item=item, refunded=True, rep_price=rep_price,
             )
 
@@ -584,8 +610,10 @@ async def purchase_pet(
                 pet_name=pet_type.replace("_", " ").title(),
             )
         except Exception as exc:
-            await _refund_op(op_id, guild_id, user_id, price)
-            return False, f"Не удалось создать питомца ({exc}). Монеты и REP возвращены.", None
+            res = await _refund_op(op_id, guild_id, user_id, price)
+            return False, _refund_message(
+                res, f"Не удалось создать питомца ({exc})."
+            ), None
         await purchase_ops_store.set_status(op_id, "done")
         shop_ops_store.record(
             guild_id=guild_id, user_id=user_id, kind="pet",
@@ -629,15 +657,31 @@ async def open_case_safe(
             if charge == "exists":
                 return {"type": "error", "value": "Операция уже обработана"}
             return {"type": "error", "value": "Ошибка базы данных"}
+        async def _persist_reward(desc: dict) -> None:
+            """Записать выбранную награду кейса в op ДО выдачи."""
+            await purchase_ops_store.set_status(
+                op_id, "charged",
+                payload={"case_reward": desc},
+            )
+
         try:
             result = await case_store.open_case(
-                guild_id, user_id, case_id, guild, precharged=True
+                guild_id, user_id, case_id, guild, precharged=True,
+                grant_key=f"caseop:{op_id}",
+                on_pending_reward=_persist_reward,
             )
         except Exception as exc:
-            await _refund_op(op_id, guild_id, user_id, case.price)
-            return {"type": "error", "value": f"Ошибка: {exc}"}
+            res = await _refund_op(op_id, guild_id, user_id, case.price)
+            return {
+                "type": "error",
+                "value": f"Ошибка: {exc}. " + _refund_message(res, ""),
+            }
         if isinstance(result, dict) and result.get("type") == "error":
-            await _refund_op(op_id, guild_id, user_id, case.price)
+            res = await _refund_op(op_id, guild_id, user_id, case.price)
+            result["value"] = (
+                f"{result.get('value', 'Ошибка')}. "
+                + _refund_message(res, "")
+            )
             return result
         await purchase_ops_store.set_status(
             op_id, "done",
@@ -685,8 +729,10 @@ async def open_egg_safe(
             else:
                 pet = None
         except Exception as exc:
-            await _refund_op(op_id, guild_id, user_id, price)
-            return False, f"Ошибка открытия ({exc}). Монеты и REP возвращены.", None
+            res = await _refund_op(op_id, guild_id, user_id, price)
+            return False, _refund_message(
+                res, f"Ошибка открытия ({exc})."
+            ), None
         await purchase_ops_store.set_status(
             op_id, "done", payload={"egg_result": "won" if pet else "nothing"}
         )
@@ -707,6 +753,10 @@ async def _recover_purchase_op(op: dict, bot) -> str:
     """Восстановить одну charged-операцию покупки. → статус."""
     gid, uid = op["guild_id"], op["user_id"]
     payload = op.get("payload") or {}
+    # Операция уже ушла в refund-ветку — никогда не выдавать повторно.
+    if payload.get("refund_done"):
+        await purchase_ops_store.settle_pending_refund(op)
+        return "refunded"
     components = payload.get("components") or [op["item_id"]]
     guild = bot.get_guild(gid) if bot is not None else None
 
@@ -754,6 +804,10 @@ async def _recover_purchase_op(op: dict, bot) -> str:
 async def _recover_pet_op(op: dict) -> str:
     """Восстановить pet/egg операцию."""
     gid, uid = op["guild_id"], op["user_id"]
+    payload = op.get("payload") or {}
+    if payload.get("refund_done"):
+        await purchase_ops_store.settle_pending_refund(op)
+        return "refunded"
     from storage.pet_store import pet_store
     async with await _user_lock(gid, uid):
         pet = await pet_store.get_user_pet(gid, uid)
@@ -763,7 +817,6 @@ async def _recover_pet_op(op: dict) -> str:
         # Питомца нет: для egg «nothing» — легитимный исход;
         # для pet — выдача не завершилась → вернуть деньги.
         if op["kind"] == "egg":
-            payload = op.get("payload") or {}
             if payload.get("egg_result") == "nothing":
                 await purchase_ops_store.set_status(op["op_id"], "done")
                 return "done"
@@ -778,14 +831,71 @@ async def _recover_pet_op(op: dict) -> str:
         return "refunded"
 
 
-async def _recover_case_op(op: dict) -> str:
-    """Восстановить case-операцию: вернуть деньги.
+async def _complete_case_reward(op: dict, desc: dict) -> bool:
+    """Идемпотентно довести сохранённую награду кейса до конца.
 
-    Результат ролла невоспроизводим; безопасный выбор — refund
-    (пользователь не теряет монеты)."""
+    Возвращает True при успехе. Гранты используют те же ключи,
+    что и исходная выдача (caseop:{op_id}[:suffix]) — повторный
+    вызов после потерянного ответа не дублирует начисление.
+    """
+    from storage.user_balance_store import user_balance_store
+
     gid, uid = op["guild_id"], op["user_id"]
+    kind = desc.get("kind")
+    if kind == "nothing":
+        return True
+    if kind == "coins":
+        amount = int(desc.get("amount") or 0)
+        if amount <= 0:
+            return True
+        suffix = ":" + str(desc.get("key_suffix") or "")
+        await user_balance_store.add_balance_once(
+            gid, uid, amount, f"caseop:{op['op_id']}{suffix}"
+        )
+        return True
+    if kind == "item":
+        item_id = desc.get("item_id")
+        if not item_id:
+            return False
+        if item_id in owned_item_ids(gid, uid):
+            return True
+        item = shop_store.get_item(item_id)
+        if item is None:
+            return False
+        from models.shop_item import PlayerCosmetic
+        return inventory_store.add_cosmetic(PlayerCosmetic(
+            guild_id=gid, user_id=uid, item_id=item_id, equipped=False,
+        ))
+    return False
+
+
+async def _recover_case_op(op: dict) -> str:
+    """Восстановить case-операцию.
+
+    Если награда была зафиксирована в payload (case_reward записан
+    ДО выдачи) — доводим её до конца идемпотентно. Иначе награда
+    не выдавалась — безопасный refund обеих валют."""
+    gid, uid = op["guild_id"], op["user_id"]
+    payload = op.get("payload") or {}
+    if payload.get("refund_done"):
+        await purchase_ops_store.settle_pending_refund(op)
+        return "refunded"
+    reward = payload.get("case_reward")
+    if isinstance(reward, dict) and reward.get("kind"):
+        try:
+            ok = await _complete_case_reward(op, reward)
+        except Exception:
+            logger.exception("case reward completion failed op=%s", op["op_id"])
+            ok = False
+        if ok:
+            await purchase_ops_store.set_status(
+                op["op_id"], "done",
+                payload={"result": "recovered_reward"},
+            )
+            return "done"
+        # Не смогли выдать сохранённую награду — вернуть деньги.
     res = await _refund_once(gid, uid, op["price"], op["op_id"])
-    if res.get("pending", 0) > 0 and res.get("credited", 0) == 0:
+    if _refund_incomplete(res):
         await purchase_ops_store.set_status(
             op["op_id"], "unknown",
             payload={"refund_pending": op["price"], "rep_pending": res.get("rep_pending", 0)},
@@ -829,13 +939,28 @@ async def recover_pending(bot=None) -> int:
                 resolved += 1
         except Exception:
             logger.exception("shop ops recovery failed op=%s", op.get("op_id"))
-    # Досчитать pending-возвраты у завершённых операций
+    # Досчитать pending-возвраты у ВСЕХ операций с задолженностью
+    # (монеты И REP), постранично — без ограничения в 500 записей.
     try:
-        recent = await purchase_ops_store.recent(limit=500)
-        for op in recent:
-            payload = op.get("payload") or {}
-            if payload.get("refund_pending", 0) > 0:
-                await purchase_ops_store.settle_pending_refund(op)
+        offset = 0
+        page_size = 200
+        while True:
+            page = await purchase_ops_store.with_refund_debt(
+                limit=page_size, offset=offset
+            )
+            if not page:
+                break
+            for op in page:
+                try:
+                    await purchase_ops_store.settle_pending_refund(op)
+                except Exception:
+                    logger.exception(
+                        "pending refund settle failed op=%s",
+                        op.get("op_id"),
+                    )
+            offset += len(page)
+            if len(page) < page_size:
+                break
     except Exception:
         logger.exception("pending refund sweep failed")
     return resolved

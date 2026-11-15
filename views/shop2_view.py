@@ -1602,9 +1602,18 @@ async def _admin_item_view(
                     item.rep_price = int(raw)
                     if item.rep_price < 0 or item.rep_price > 999:
                         raise ValueError
-                except ValueError:
+                    if item.price > 0 and item.rep_price == 0:
+                        raise ValueError("paid_free_rep")
+                except ValueError as ve:
+                    if str(ve) == "paid_free_rep":
+                        msg = (
+                            "Платный товар не может иметь REP-цену 0 — "
+                            "двойная оплата обязательна."
+                        )
+                    else:
+                        msg = "REP: целое 1–999 или пусто (=тариф)."
                     await interaction.response.send_message(
-                        "REP: целое 0–999 или пусто.", ephemeral=True
+                        msg, ephemeral=True
                     )
                     return
             shop_store.update_item(item)
