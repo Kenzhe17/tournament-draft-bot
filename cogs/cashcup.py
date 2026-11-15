@@ -73,11 +73,30 @@ def _assert_registration(state: dict) -> None:
         raise CashCupError("Регистрация уже закрыта")
 
 
+def _started_markers(bracket: dict) -> set:
+    """Матчи, у которых уже есть check-in/комната/игры — «начавшиеся»."""
+    return {m["id"] for m in ready_matches(bracket)
+            if m.get("checkins") or m.get("room_id") or m.get("games")}
+
+
 def _push_snapshot(state: dict) -> None:
-    """Снимок сетки перед изменением результата — для /cashcup revert."""
+    """Снимок сетки перед изменением результата — для /cashcup revert.
+    Вместе с сеткой сохраняем набор «начавшихся» матчей: если после снимка
+    dependent-матч получил check-in/комнату, авто-откат блокируется."""
     if state.get("bracket"):
-        state.setdefault("undo", []).append(deepcopy(state["bracket"]))
+        state.setdefault("undo", []).append({
+            "bracket": deepcopy(state["bracket"]),
+            "started": _started_markers(state["bracket"]),
+        })
         del state["undo"][:-5]
+
+
+def _revert_blocked(state: dict) -> set:
+    """Матчи, «начавшиеся» после последнего снимка — блокируют авто-откат."""
+    if not state.get("undo") or not state.get("bracket"):
+        return set()
+    return (_started_markers(state["bracket"])
+            - state["undo"][-1]["started"])
 
 
 def _assert_running(state: dict) -> None:
@@ -114,6 +133,10 @@ def _panel(state: dict) -> discord.Embed:
     lines = [f"**Приз:** {safe_text(state['prize'], limit=90)}"]
     if state.get("pool"):
         lines.append(f"**Призовой фонд:** {state['pool']:,} ₸".replace(",", " "))
+    if state.get("prizes"):
+        pr = state["prizes"]
+        pl = pr.get("places", {})
+        lines.append(f"**Призы:** 1 — {pl.get('1',0)}, 2 — {pl.get('2',0)}, 3 — {pl.get('3',0)} {pr.get('currency','')}")
     lines += [f"**Команд:** {len(state['teams'])} (без лимита)",
              "**Формат:** Double Elimination, BO1; Grand Final BO3 без reset",
              "**Состав:** 4 основных + 1 запасной; максимум 2 ПК."]
@@ -736,20 +759,42 @@ class CashCupCog(commands.Cog):
                     raise CashCupError("Оба капитана должны выполнить /cashcup checkin")
                 m["room_id"] = room_id[:50]
                 m["room_password"] = password[:50]
+                m["room_set_by"] = interaction.user.id
+                m["room_set_at"] = datetime.now(timezone.utc).isoformat()
                 return m["a"], m["b"]
             state, teams = await self._post(interaction, "set_room", change,
                                            {"match": match_id})
             captains = [t["captain"] for t in state["teams"] if t["id"] in teams]
             failures = []
+            delivered = []
             for captain_id in captains:
                 try:
                     recipient = await self.bot.fetch_user(captain_id)
                     await recipient.send(f"CASH CUP · Матч `{match_id.upper()}`\n"
                                          f"Комната: `{room_id[:50]}`\nПароль: `{password[:50]}`")
+                    delivered.append(captain_id)
                 except discord.HTTPException:
                     failures.append(str(captain_id))
-            await self._reply(interaction, "Комната записана; данные отправлены капитанам." +
-                              (" Не удалось отправить DM: " + ", ".join(failures) if failures else ""))
+            # Аудит доставки: кто получил DM и когда. При неудаче участники
+            # всё равно могут запросить комнату через /cashcup roominfo.
+            def audit(st):
+                mm = next((x for x in st["bracket"]["matches"]
+                           if x["id"] == match_id.upper()), None)
+                if mm:
+                    mm["room_delivered"] = delivered
+                    mm["room_delivered_at"] = datetime.now(timezone.utc).isoformat()
+            try:
+                await cashcup_store.mutate(interaction.guild_id, interaction.user.id,
+                                           "room_delivery", audit,
+                                           {"match": match_id, "delivered": delivered})
+            except Exception:
+                logger.exception("CASH CUP room delivery audit failed")
+            await self._reply(interaction,
+                              "Комната записана. Участники матча и ADMIN могут "
+                              "получить данные через /cashcup roominfo "
+                              "(работает и при закрытых ЛС)." +
+                              (" DM доставлены не всем капитанам: " + ", ".join(failures)
+                               if failures else " DM отправлены капитанам."))
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
@@ -852,16 +897,28 @@ class CashCupCog(commands.Cog):
         if n < 2:
             await self._reply(interaction, "Недостаточно команд для прогноза")
             return
+        from services.cashcup_bracket import schedule_steps
+        try:
+            steps = schedule_steps([t["id"] for t in state["teams"]])
+        except BracketError as exc:
+            await self._reply(interaction, f"Не удалось построить симуляцию: {exc}")
+            return
         import math
-        series = 2 * n - 2
-        # Физическая нижняя оценка, НЕ расписание и НЕ предсказание.
-        lower = math.ceil((series + 1) / rooms) * minutes_per_game
-        await self._reply(interaction, f"Команд: {n}; BO-серий: {series} "
-                          f"(из них Grand Final BO3); комнат: {rooms}.\n"
-                          f"Минимальная занятость при {minutes_per_game} мин на игру: "
-                          f"{lower//60} ч {lower%60} мин. Это НИЖНЯЯ оценка без ожиданий, "
-                          "зависимостей сетки, третьей игры финала и подтверждений. "
-                          "Реальный турнир может длиться заметно дольше.")
+        total_games = sum(steps)
+        # Время каждого шага — параллельные матчи, ограниченные числом комнат.
+        step_minutes = [math.ceil(cnt / rooms) * minutes_per_game for cnt in steps]
+        total = sum(step_minutes)
+        load = [round(cnt / rooms, 2) for cnt in steps]
+        gf_extra = ""
+        if state.get("bracket") and any(m["bracket"] == "GF" for m in state["bracket"]["matches"]):
+            gf_extra = ("\nGrand Final BO3 может добавить до 2 лишних игр "
+                        f"(~{2 * minutes_per_game} мин) сверх оценки.")
+        await self._reply(
+            f"Команд: {n}; шагов сетки: {len(steps)}; матчей: {total_games}; комнат: {rooms}.\n"
+            f"Оценка занятости: **{total//60} ч {total%60} мин** "
+            f"(без check-in, пауз и задержек подтверждений — это НЕ гарантия).\n"
+            f"Загрузка по шагам (матчей/комнат): {load}\n"
+            f"Пиковая параллельность: {max(steps)} матчей одновременно.{gf_extra}")
 
     @cashcup.command(name="cancel", description="Отменить CASH CUP (организатор)")
     async def cancel(self, interaction: discord.Interaction, reason: str):
@@ -884,13 +941,21 @@ class CashCupCog(commands.Cog):
             return
         try:
             def change(state):
-                if state["status"] == "completed":
-                    raise CashCupError("Турнир уже завершён — откат недоступен")
                 if not state.get("undo"):
                     raise CashCupError("Нет сохранённого состояния для отката")
-                state["bracket"] = state["undo"].pop()
-                if state["bracket"].get("champion"):
-                    state["status"] = "completed"
+                if state["status"] not in ("running", "completed"):
+                    raise CashCupError("Откат доступен только во время или после турнира")
+                new_started = _revert_blocked(state)
+                if new_started:
+                    raise CashCupError(
+                        "Зависимые матчи уже начались (check-in/комната/игры). "
+                        "Автоматический откат заблокирован — требуется ручное "
+                        "разрешение организатором через /cashcup dq|forfeit|resolve")
+                state["bracket"] = state["undo"].pop()["bracket"]
+                state.setdefault("reverts", []).append(
+                    {"at": datetime.now(timezone.utc).isoformat()})
+                state["status"] = ("completed" if state["bracket"].get("champion")
+                                   else "running")
             await self._post(interaction, "revert_result", change)
             await self._reply(interaction, "Последнее изменение результата отменено. Сетка восстановлена из снимка.")
         except CashCupError as exc:
@@ -1029,6 +1094,187 @@ class CashCupCog(commands.Cog):
             await self._reply(interaction, f"Приглашение отправлено <@{user.id}> в ЛС.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
+
+
+    @info.command(name="dispute", description="Открыть спор по матчу (капитан участника или ADMIN)")
+    async def dispute(self, interaction: discord.Interaction, match_id: str, reason: str):
+        if not interaction.guild:
+            await self._reply(interaction, "Нужен сервер r!z3")
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            state = await cashcup_store.active(interaction.guild_id)
+            if not state or state["status"] != "running":
+                raise CashCupError("Нет активного турнира")
+            b = state["bracket"]
+            m = next((x for x in ready_matches(b) if x["id"] == match_id.upper()), None)
+            if not m:
+                raise CashCupError("Матч не найден или уже завершён")
+            if m["bracket"] == "GF":
+                raise CashCupError("По Grand Final спор не открывается — используйте /cashcup game или /cashcup dq")
+            is_admin = _is_cashcup_admin(interaction.user)
+            team_ids = {t["id"] for t in state["teams"]
+                        if t["captain"] == interaction.user.id}
+            if not is_admin and not (team_ids & {m["a"], m["b"]}):
+                raise CashCupError("Спор может открыть капитан команды-участницы или ADMIN")
+            def change(st):
+                mm = next((x for x in ready_matches(st["bracket"])
+                           if x["id"] == m["id"]), None)
+                if not mm or mm["status"] != "ready":
+                    raise CashCupError("Матч изменился. Повторите")
+                mm["status"] = "disputed"
+                mm["dispute"] = {"reason": reason[:300], "by": interaction.user.id,
+                                 "at": datetime.now(timezone.utc).isoformat(),
+                                 "evidence": []}
+            await self._post(interaction, "dispute_open", change,
+                             {"match": m["id"], "reason": reason[:200]})
+            await self._reply(interaction,
+                              f"Спор по матчу `{m['id']}` открыт. Продвижение результата заблокировано. "
+                              "Участники могут передать доказательства через /cashcup info evidence.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @info.command(name="evidence", description="Передать доказательство по спорному матчу")
+    async def evidence(self, interaction: discord.Interaction, match_id: str, url: str):
+        if not interaction.guild:
+            await self._reply(interaction, "Нужен сервер r!z3")
+            return
+        if not url.startswith(("https://discord.com/channels/", "https://cdn.discordapp.com/",
+                               "https://media.discordapp.net/")):
+            await self._reply(interaction, "Нужна ссылка на доказательство в Discord")
+            return
+        try:
+            state = await cashcup_store.active(interaction.guild_id)
+            if not state:
+                raise CashCupError("Нет активного турнира")
+            b = state["bracket"]
+            m = next((x for x in b["matches"] if x["id"] == match_id.upper()), None)
+            if not m or m.get("status") != "disputed" or not m.get("dispute"):
+                raise CashCupError("Спор по этому матчу не открыт")
+            team_ids = {t["id"] for t in state["teams"]
+                        if any(p["discord_id"] == interaction.user.id for p in t["members"])}
+            if not (_is_cashcup_admin(interaction.user) or team_ids & {m["a"], m["b"]}):
+                raise CashCupError("Доказательства принимаются только от участников матча и ADMIN")
+            def change(st):
+                mm = next((x for x in st["bracket"]["matches"] if x["id"] == m["id"]), None)
+                if not mm or mm.get("status") != "disputed":
+                    raise CashCupError("Спор уже разрешён")
+                mm["dispute"]["evidence"].append(
+                    {"by": interaction.user.id, "url": url[:300],
+                     "at": datetime.now(timezone.utc).isoformat()})
+                if len(mm["dispute"]["evidence"]) > 10:
+                    raise CashCupError("Лимит доказательств исчерпан")
+            await self._post(interaction, "dispute_evidence", change,
+                             {"match": m["id"]})
+            await self._reply(interaction, "Доказательство добавлено в спор.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @info.command(name="resolve", description="Разрешить спор: победитель матча (ADMIN)")
+    @app_commands.choices(winner=[app_commands.Choice(name="Команда A", value="a"),
+                                  app_commands.Choice(name="Команда B", value="b")])
+    async def resolve(self, interaction: discord.Interaction, match_id: str,
+                      winner: app_commands.Choice[str], evidence: str):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
+            await self._reply(interaction, "Только ADMIN")
+            return
+        if not evidence.startswith(("https://discord.com/channels/", "https://cdn.discordapp.com/",
+                                    "https://media.discordapp.net/")):
+            await self._reply(interaction, "Нужна ссылка на подтверждение решения")
+            return
+        try:
+            def change(state):
+                _assert_running(state)
+                m = next((x for x in state["bracket"]["matches"]
+                          if x["id"] == match_id.upper()), None)
+                if not m or m.get("status") != "disputed":
+                    raise CashCupError("Спор по этому матчу не открыт")
+                m["status"] = "ready"
+                _push_snapshot(state)
+                score = (1, 0) if winner.value == "a" else (0, 1)
+                record_result(state["bracket"], m["id"], *score,
+                              evidence=f"dispute:{evidence[:150]}")
+                if state["bracket"]["champion"]:
+                    state["status"] = "completed"
+                return m["id"]
+            await self._post(interaction, "dispute_resolve", change,
+                             {"match": match_id, "winner": winner.value})
+            await self._reply(interaction, "Спор разрешён, результат записан.")
+        except (CashCupError, BracketError) as exc:
+            await self._reply(interaction, str(exc))
+
+
+def _apply_prizes(state: dict, p1: int, p2: int, p3: int, currency: str) -> dict:
+    """Структурированный призовой фонд: 1/2/3 место. Сумма должна
+    соответствовать pool, если он задан. Реальные выплаты — вне бота."""
+    if min(p1, p2, p3) < 0:
+        raise CashCupError("Суммы призовых мест не могут быть отрицательными")
+    total = p1 + p2 + p3
+    pool = state.get("pool") or 0
+    if pool and total != pool:
+        raise CashCupError(
+            f"Сумма призовых мест ({total}) должна равняться призовому фонду ({pool})")
+    state["prizes"] = {"places": {"1": p1, "2": p2, "3": p3},
+                       "currency": currency[:10] or "KZT",
+                       "total": total}
+    return state["prizes"]
+
+
+    @info.command(name="prizes", description="Призовые места 1/2/3 (ADMIN)")
+    async def prizes(self, interaction: discord.Interaction,
+                     first: int, second: int, third: int,
+                     currency: str = "KZT"):
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
+            await self._reply(interaction, "Только ADMIN")
+            return
+        try:
+            def change(state):
+                if state["status"] == "registration" and state.get("teams"):
+                    pass
+                return _apply_prizes(state, first, second, third, currency)
+            _, prizes_data = await self._post(interaction, "set_prizes", change,
+                                              {"p1": first, "p2": second, "p3": third})
+            await self._reply(interaction,
+                              f"Призовые места сохранены: 1 — {prizes_data['places']['1']}, "
+                              f"2 — {prizes_data['places']['2']}, 3 — {prizes_data['places']['3']} "
+                              f"{prizes_data['currency']}. Выплаты фиксируются через /cashcup payout.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    @info.command(name="match", description="Детальная карточка матча")
+    async def match_card(self, interaction: discord.Interaction, match_id: str):
+        state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
+        if not state or not state.get("bracket"):
+            await self._reply(interaction, "Сетка ещё не сформирована")
+            return
+        m = next((x for x in state["bracket"]["matches"]
+                  if x["id"] == match_id.upper()), None)
+        if not m:
+            await self._reply(interaction, "Матч не найден")
+            return
+        ta = next((t for t in state["teams"] if t["id"] == m["a"]), None)
+        tb = next((t for t in state["teams"] if t["id"] == m["b"]), None)
+        def roster(t):
+            if not t:
+                return "—"
+            cap = f"капитан <@{t['captain']}>"
+            lineup = ", ".join(safe_text(p["nick"], limit=20) for p in t["members"]
+                               if p["discord_id"] in t["lineup"])
+            return f"{_label(t)} ({cap})\n  {lineup}"
+        lines = [
+            f"**{m['id']}** · {'Winners' if m['bracket']=='W' else 'Losers' if m['bracket']=='L' else 'GRAND FINAL'} · BO{m['bo']}",
+            f"**A:** {roster(ta)}",
+            f"**B:** {roster(tb)}",
+            f"Check-in: {len(m.get('checkins', []))}/2 · "
+            f"Комната: {'готова' if m.get('room_id') else 'ожидается'} · "
+            f"Статус: {m['status']}",
+        ]
+        if m["bracket"] == "GF" or m.get("games"):
+            lines.append(f"Счёт: **{m['score'][0]}:{m['score'][1]}**")
+        if m.get("dispute"):
+            lines.append(f"**СПОР:** {safe_text(m['dispute'].get('reason',''), limit=150)} "
+                         f"· доказательств: {len(m['dispute'].get('evidence', []))}")
+        await self._reply(interaction, "\n".join(lines)[:1900])
 
 
 async def setup(bot: commands.Bot) -> None:

@@ -196,6 +196,30 @@ def _auto_forfeit(b: dict[str, Any]) -> None:
         return _auto_forfeit(b)
 
 
+def schedule_steps(team_ids: list[str], *, seed: int | None = None,
+                   max_steps: int | None = None) -> list[int]:
+    """Симуляция полной сетки: возвращает число матчей на каждом шаге.
+
+    Каждый шаг = раунд готовых матчей, идущих параллельно (ограничение —
+    только комнаты). Детерминированно: все готовые матчи завершаются за шаг.
+    Используется для прогноза расписания, не для результатов.
+    """
+    b = create_bracket(team_ids, seed=seed)
+    steps: list[int] = []
+    limit = max_steps or (8 * len(team_ids) + 16)
+    while b["champion"] is None:
+        ready = ready_matches(b)
+        if not ready:
+            raise BracketError("Симуляция зависла: нет активных матчей")
+        steps.append(len(ready))
+        if len(steps) > limit:
+            raise BracketError("Симуляция превысила лимит шагов")
+        for m in list(ready):
+            score = (2, 0) if m["bo"] == 3 else (1, 0)
+            record_result(b, m["id"], *score, evidence="schedule-sim")
+    return steps
+
+
 def disqualify(b: dict[str, Any], team_id: str, *, evidence: str = "") -> str:
     """Дисквалификация: команда проигрывает все оставшиеся матчи."""
     if team_id not in b["losses"]:

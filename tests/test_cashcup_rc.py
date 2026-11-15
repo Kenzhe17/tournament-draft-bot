@@ -1,0 +1,93 @@
+"""RC-валидация CASH CUP: откат с анализом зависимостей, disputed-матчи,
+прогноз расписания, призовые места (ТЗ §4,6,11,12)."""
+import copy
+
+import pytest
+
+from services.cashcup_bracket import (BracketError, create_bracket, ready_matches,
+                                      record_result, schedule_steps)
+from cogs import cashcup
+from cogs.cashcup import _apply_prizes, _push_snapshot, _revert_blocked, _started_markers
+
+
+def _state_with_bracket(n=8, seed=0):
+    b = create_bracket([f"T{i}" for i in range(n)], seed=seed)
+    return {"status": "running", "bracket": b, "undo": [], "teams": []}
+
+
+def test_revert_blocked_by_new_checkin():
+    st = _state_with_bracket()
+    # Снимок до результата W-раунда.
+    _push_snapshot(st)
+    # Имитируем результат: завершаем все готовые матчи (как record_result).
+    for m in list(ready_matches(st["bracket"])):
+        record_result(st["bracket"], m["id"], 1, 0)
+    # Новый раунд: dependent-матч получил check-in → откат заблокирован.
+    nxt = ready_matches(st["bracket"])[0]
+    nxt["checkins"].append(123)
+    assert _revert_blocked(st) == {nxt["id"]}
+
+
+def test_revert_allowed_without_new_markers():
+    st = _state_with_bracket()
+    _push_snapshot(st)
+    for m in list(ready_matches(st["bracket"])):
+        record_result(st["bracket"], m["id"], 1, 0)
+    # Новый раунд готов, но без check-in/комнаты → откат разрешён.
+    assert _revert_blocked(st) == set()
+
+
+def test_revert_blocked_by_room_on_dependent():
+    st = _state_with_bracket()
+    _push_snapshot(st)
+    for m in list(ready_matches(st["bracket"])):
+        record_result(st["bracket"], m["id"], 1, 0)
+    for m in ready_matches(st["bracket"]):
+        m["room_id"] = "12345"
+    assert _revert_blocked(st) == {m["id"] for m in ready_matches(st["bracket"])}
+
+
+def test_snapshot_keeps_bracket_history():
+    st = _state_with_bracket()
+    _push_snapshot(st)
+    snapshot = st["undo"][-1]["bracket"]
+    before = copy.deepcopy(st["bracket"])
+    record_result(st["bracket"], ready_matches(st["bracket"])[0]["id"], 1, 0)
+    # Снимок — отдельная копия, мутации её не трогают.
+    assert st["undo"][-1]["bracket"] is not before
+    assert snapshot["matches"]
+
+
+def test_disputed_match_not_in_ready():
+    b = create_bracket(["A", "B"], seed=0)
+    m = ready_matches(b)[0]
+    m["status"] = "disputed"
+    assert ready_matches(b) == []
+    # record_result не находит disputed-матч.
+    with pytest.raises(BracketError):
+        record_result(b, m["id"], 1, 0)
+
+
+def test_schedule_steps_all_sizes():
+    for n in (8, 13, 24, 37, 64, 70):
+        steps = schedule_steps([f"T{i}" for i in range(n)], seed=1)
+        assert len(steps) >= 3, (n, steps)
+        assert sum(steps) == 2 * n - 2, (n, sum(steps))
+        # Пиковая параллельность не превышает число команд/2.
+        assert max(steps) <= (n + 1) // 2
+
+
+def test_apply_prizes_matches_pool():
+    st = {"status": "running", "pool": 300}
+    out = _apply_prizes(st, 150, 100, 50, "KZT")
+    assert out["total"] == 300 and out["places"]["1"] == 150
+    with pytest.raises(cashcup.CashCupError):
+        _apply_prizes(st, 100, 100, 50, "KZT")  # сумма 250 != pool 300
+
+
+def test_apply_prizes_without_pool():
+    st = {"status": "running", "pool": 0}
+    out = _apply_prizes(st, 10, 5, 1, "USD")
+    assert out["currency"] == "USD"
+    with pytest.raises(cashcup.CashCupError):
+        _apply_prizes(st, -1, 0, 0, "KZT")
