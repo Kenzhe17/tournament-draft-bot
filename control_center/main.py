@@ -10,9 +10,11 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from control_center import config
 from control_center.auth import router as auth_router
@@ -51,9 +53,20 @@ def create_app() -> FastAPI:
     app.include_router(players_api.router)
     app.include_router(admin_modules.router)
 
-    @app.get("/")
-    async def root() -> dict:
-        return {"service": config.SERVICE_NAME, "docs": "/api/docs"}
+    # React-сборка панели (panel/dist). Если каталог отсутствует
+    # (dev-окружение без frontend build), API продолжает работать —
+    # статика просто не монтируется.
+    _panel_dist = Path(__file__).resolve().parent.parent / "panel" / "dist"
+    if _panel_dist.is_dir():
+        app.mount(
+            "/",
+            StaticFiles(directory=str(_panel_dist), html=True),
+            name="panel",
+        )
+    else:
+        @app.get("/")
+        async def root() -> dict:
+            return {"service": config.SERVICE_NAME, "docs": "/api/docs"}
 
     return app
 
