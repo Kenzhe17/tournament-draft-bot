@@ -92,19 +92,19 @@ for _key, _desc in [
 # Применяется к новым расчётам; завершённые матчи не пересчитываются.
 # ------------------------------------------------------------------
 
-_reg(key="elo.skill_rating_scale", type="float", default=2.0,
+_reg(key="elo.skill_rating_scale", consumers_pending=True, type="float", default=2.0,
      module="elo", min=0.1, max=100.0,
      description="Масштаб разницы Skill Rating для вероятности победы")
-_reg(key="elo.min_match_elo", type="int", default=20,
+_reg(key="elo.min_match_elo", consumers_pending=True, type="int", default=20,
      module="elo", min=0, max=1000,
      description="Минимальное изменение ELO за матч")
-_reg(key="elo.max_match_elo", type="int", default=30,
+_reg(key="elo.max_match_elo", consumers_pending=True, type="int", default=30,
      module="elo", min=0, max=1000,
      description="Максимальное изменение ELO за матч")
-_reg(key="elo.kill_weight", type="float", default=1.0,
+_reg(key="elo.kill_weight", consumers_pending=True, type="float", default=1.0,
      module="elo", min=0.0, max=100.0,
      description="Вес убийств в Performance Score")
-_reg(key="elo.death_weight", type="float", default=0.75,
+_reg(key="elo.death_weight", consumers_pending=True, type="float", default=0.75,
      module="elo", min=0.0, max=100.0,
      description="Вес смертей в Performance Score")
 for _name, _label in [
@@ -115,14 +115,15 @@ for _name, _label in [
     _default = {"best": 5, "above_average": 3, "average": 0,
                 "below_average": -3, "worst": -5}[_name]
     _reg(key=f"elo.performance_{_name}", type="int", default=_default,
+         consumers_pending=True,
          module="elo", min=-100, max=100,
          description=f"Поправка ELO за индивидуальный вклад ({_label})")
-_reg(key="elo.rank_protection_enabled", type="bool", default=True,
+_reg(key="elo.rank_protection_enabled", consumers_pending=True, type="bool", default=True,
      module="elo", description="Защита игроков вне TOP-N ELO-лидерборда")
-_reg(key="elo.rank_protection_top_limit", type="int", default=10,
+_reg(key="elo.rank_protection_top_limit", consumers_pending=True, type="int", default=10,
      module="elo", min=0, max=1000,
      description="Размер защищаемого TOP-N")
-_reg(key="elo.rank_protection_bonus", type="int", default=3,
+_reg(key="elo.rank_protection_bonus", consumers_pending=True, type="int", default=3,
      module="elo", min=-100, max=100,
      description="Бонус ELO для игроков вне TOP-N")
 
@@ -179,10 +180,10 @@ _reg(key="matchmaking.balance_epsilon", type="float", default=0.001,
      applies_to="new_only")
 _reg(key="matchmaking.ready_timeout_seconds", type="int", default=90,
      module="matchmaking", min=10, max=3600,
-     description="Таймаут Ready Check «Найден матч» (сек)")
+     description="Таймаут Ready Check «Найден матч» (сек)", consumers_pending=True)
 _reg(key="matchmaking.match_start_retry_cooldown", type="float",
      default=120.0, module="matchmaking", min=0.0, max=86400.0,
-     description="Cooldown повторной попытки запуска матча (сек)")
+     description="Cooldown повторной попытки запуска матча (сек)", consumers_pending=True)
 
 # ------------------------------------------------------------------
 # Economy — лимиты и суммы. Денежные операции игроков панелью
@@ -194,10 +195,10 @@ _reg(key="economy.max_balance", type="int", default=100000,
      description="Максимальный баланс в монетах")
 _reg(key="economy.min_bet", type="int", default=10,
      module="economy", min=0, max=10**9, permission="economy.manage",
-     description="Минимальная ставка")
+     description="Минимальная ставка", consumers_pending=True)
 _reg(key="economy.max_bet", type="int", default=1000,
      module="economy", min=1, max=10**12, permission="economy.manage",
-     description="Максимальная ставка (обычные игры)")
+     description="Максимальная ставка (обычные игры)", consumers_pending=True)
 
 # ------------------------------------------------------------------
 # Reputation 2.0 — суммы и проверки (env REP_* → runtime).
@@ -242,15 +243,15 @@ _reg(key="reputation.one_manual_rep_per_pair", type="bool",
 _reg(key="tournament.max_captains", type="int", default=4,
      module="tournament", min=1, max=100, permission="tournament.manage",
      description="Максимум капитанов в турнире",
-     applies_to="new_only")
+     applies_to="new_only", consumers_pending=True)
 _reg(key="tournament.max_players_per_circle", type="int", default=4,
      module="tournament", min=1, max=100, permission="tournament.manage",
      description="Максимум игроков в круге",
-     applies_to="new_only")
+     applies_to="new_only", consumers_pending=True)
 _reg(key="tournament.circles", type="json", default=[2, 3, 4],
      module="tournament", permission="tournament.manage",
      description="Допустимые размеры кругов (JSON-массив)",
-     applies_to="new_only")
+     applies_to="new_only", consumers_pending=True)
 
 # ------------------------------------------------------------------
 # VAC — блокировки участия в турнирах.

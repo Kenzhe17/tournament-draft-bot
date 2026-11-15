@@ -38,6 +38,15 @@ _hits: dict[str, list[float]] = {}
 # Mirrors config.MAX_BALANCE — winnings are clamped, never destroyed
 # silently: the clamped remainder is reported back as `overflow`.
 _MAX_BALANCE = 100_000
+
+
+def _max_balance() -> int:
+    """Dynamic cap from Control Center (economy.max_balance)."""
+    try:
+        from services.settings_service import settings_service
+        return int(settings_service.peek(None, "economy.max_balance"))
+    except Exception:  # noqa: BLE001 — fallback на константу без PG
+        return _MAX_BALANCE
 _MAX_STAKE = 1_000_000
 _MAX_STAKES = 6
 
@@ -349,7 +358,7 @@ async def settle(request: web.Request) -> web.Response:
                     before = int(before_row["balance"])
                     # Winnings are clamped at MAX_BALANCE; the clamped remainder
                     # is ledgered as payout_overflow — reported, never destroyed.
-                    after = min(before + payout["amount"], _MAX_BALANCE)
+                    after = min(before + payout["amount"], _max_balance())
                     await conn.execute(
                         "UPDATE user_balance SET balance = $3 WHERE guild_id = $1 AND user_id = $2",
                         guild_id, payout["user_id"], after,
@@ -497,7 +506,7 @@ async def claim_pending(request: web.Request) -> web.Response:
                         guild_id, user_id,
                     )
                     before = int(before_row["balance"])
-                    credited = min(amount, max(0, _MAX_BALANCE - before))
+                    credited = min(amount, max(0, _max_balance() - before))
                     if credited <= 0:
                         claimed.append({"user_id": str(user_id), "credited": 0, "remaining": amount})
                         continue
