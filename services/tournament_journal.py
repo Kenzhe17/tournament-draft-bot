@@ -1028,16 +1028,28 @@ async def _flush_tournament(tournament_id: str) -> None:
                 sig_key=int(entry["id"]),
             )
             if mid and mid != int(entry.get("audit_message_id") or 0):
-                await journal_store.update_ids(
-                    int(entry["id"]),
-                    audit_channel_id=int(thread.id),
-                    audit_message_id=mid,
-                    sync_status="synced")
+                try:
+                    await journal_store.update_ids(
+                        int(entry["id"]),
+                        audit_channel_id=int(thread.id),
+                        audit_message_id=mid,
+                        sync_status="synced")
+                except Exception as exc:
+                    # Не прерываем остальные карточки — запись
+                    # матча останется pending и будет повторена.
+                    logger.warning(
+                        "journal: match ids update failed %s: %s",
+                        mk, exc)
             elif mid:
                 await journal_store.set_sync(
                     int(entry["id"]), "synced")
 
     # --- Финализация записей ---
+    # Честный статус: 'synced' только когда опубликовано ВСЁ —
+    # карточка, ветка и сводка. Иначе 'partial': list_pending
+    # подхватит запись после рестарта (thread_id IS NULL или
+    # sync_status <> 'synced').
+    incomplete = thread is None or not summary_mid
     await journal_store.update_ids(
         int(main["id"]),
         audit_channel_id=int(channel.id),
@@ -1046,7 +1058,7 @@ async def _flush_tournament(tournament_id: str) -> None:
         result_message_id=result_mid or None,
         summary_message_id=summary_mid or None,
         status=("cancelled" if cancelled else None),
-        sync_status="synced",
+        sync_status="partial" if incomplete else "synced",
     )
     _URL_CACHE.pop(tid, None)
 

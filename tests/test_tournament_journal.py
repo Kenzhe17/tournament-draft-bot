@@ -31,6 +31,7 @@ class _FakeMessage:
         self.id = mid
         self.view = view
         self.edits = []
+        self._channels = None  # реестр каналов/веток бота
 
     async def edit(self, view=None, **kw):
         self.edits.append(view)
@@ -38,7 +39,13 @@ class _FakeMessage:
         return self
 
     async def create_thread(self, name=None, **kw):
-        return _FakeThread(9000 + self.id, name=name)
+        # Как в Discord: ветка регистрируется и доступна
+        # через get_channel/fetch_channel в последующих flush.
+        th = _FakeThread(9000 + self.id, name=name)
+        th._channels = self._channels
+        if self._channels is not None:
+            self._channels[th.id] = th
+        return th
 
 
 class _FakeThread:
@@ -48,18 +55,21 @@ class _FakeThread:
         self.archived = False
         self.sent = []
         self._next = tid * 100
+        self._channels = None
 
     async def send(self, view=None, **kw):
         self._next += 1
         msg = _FakeMessage(self._next, view)
+        msg._channels = self._channels
         self.sent.append(msg)
         return msg
 
     async def fetch_message(self, mid: int):
+        import discord as _d
         for m in self.sent:
             if m.id == mid:
                 return m
-        raise RuntimeError("not found")
+        raise _d.NotFound(_FakeResponse(), "not found")
 
     async def edit(self, **kw):
         for k, v in kw.items():
@@ -398,6 +408,9 @@ def journal_env(monkeypatch):
     js = _FakeJournalStore()
     audit_ch = _FakeChannel(1571226820593061980)
     bot = _FakeBot({1571226820593061980: audit_ch})
+    # Ветки, созданные через message.create_thread, регистрируются
+    # в bot._channels — как в настоящем Discord.
+    audit_ch._channels = bot._channels
     monkeypatch.setattr(jn, "journal_store", js)
     monkeypatch.setattr(jn, "_bot", lambda: bot)
     monkeypatch.setattr(jn, "_audit_channel_id",
@@ -873,3 +886,148 @@ async def test_render_final_card_passes_journal_url(monkeypatch):
         msg, t, guild, journal_url="https://x/1")
     assert ok is True
     assert captured["url"] == "https://x/1"
+
+
+# ---------------------------------------------------------------------------
+# Regression: честный sync_status и journal_no
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_partial_sync_when_thread_missing(journal_env, monkeypatch):
+    """Ветка не создана → main НЕ 'synced', запись остаётся
+    для recovery (list_pending подхватит по thread_id IS NULL)."""
+    js, audit_ch, bot = journal_env
+    t = _tournament()
+
+    async def _load(tid):
+        return t
+    monkeypatch.setattr(jn, "_load_tournament", _load)
+    monkeypatch.setattr(
+        jn.audit_store, "list_events",
+        lambda **kw: _ret_events([]))
+    # Ветка не создаётся (нет прав/Discord сбой).
+    monkeypatch.setattr(jn, "_ensure_thread",
+                        lambda *a, **kw: _ret_none())
+
+    await jn._flush_guarded("1_1000")
+    main = js.mains["1_1000"]
+    assert main["audit_message_id"]            # карточка есть
+    assert main["thread_id"] is None
+    assert main["sync_status"] == "partial"    # НЕ synced
+    # Карточки матчей не создавались без ветки.
+    assert not js.matches
+
+
+async def _ret_none():
+    return None
+
+
+@pytest.mark.asyncio
+async def test_partial_sync_when_summary_fails(journal_env, monkeypatch):
+    """Ветка есть, но сводка не опубликована → 'partial',
+    матчевые карточки при этом синхронизированы."""
+    js, audit_ch, bot = journal_env
+    t = _tournament()
+
+    async def _load(tid):
+        return t
+    monkeypatch.setattr(jn, "_load_tournament", _load)
+    monkeypatch.setattr(
+        jn.audit_store, "list_events",
+        lambda **kw: _ret_events([]))
+
+    # Ветка, у которой первый send (сводка) падает.
+    class _FlakyThread(_FakeThread):
+        def __init__(self, tid):
+            super().__init__(tid)
+            self._fail_next = True
+
+        async def send(self, view=None, **kw):
+            if self._fail_next:
+                self._fail_next = False
+                raise RuntimeError("discord 500")
+            return await super().send(view=view, **kw)
+
+    flaky = _FlakyThread(4242)
+
+    async def _thread(bot_, msg, name):
+        return flaky
+    monkeypatch.setattr(jn, "_ensure_thread", _thread)
+
+    await jn._flush_guarded("1_1000")
+    main = js.mains["1_1000"]
+    assert main["thread_id"] == 4242
+    assert main["sync_status"] == "partial"
+    assert main["summary_message_id"] is None
+    # Матчевые карточки — synced (send после первого успешен).
+    assert js.matches
+    assert all(m["sync_status"] == "synced"
+               for m in js.matches.values())
+
+    # Повторный flush: сводка доезжает → 'synced'.
+    await jn._flush_guarded("1_1000")
+    assert js.mains["1_1000"]["sync_status"] == "synced"
+    assert js.mains["1_1000"]["summary_message_id"]
+
+
+@pytest.mark.asyncio
+async def test_journal_no_uses_max_not_count(monkeypatch):
+    """journal_no = MAX+1 (защита от конфликта после удаления
+    промежуточных записей), внутри advisory-lock транзакции."""
+    from storage import tournament_journal_store as jstore
+    import storage.db as db_mod
+
+    sqls: list[str] = []
+
+    class _Tx:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    class _Conn:
+        def transaction(self):
+            return _Tx()
+
+        async def execute(self, sql, *a):
+            sqls.append(sql)
+
+        async def fetchrow(self, sql, *a):
+            sqls.append(sql)
+            if "INSERT INTO tournament_journal" in sql:
+                return {"id": 1, "journal_no": 7,
+                        "tournament_id": "1_9", "kind": "tournament"}
+            return None  # SELECT — записи нет
+
+        async def fetchval(self, sql, *a):
+            sqls.append(sql)
+            assert "MAX(journal_no)" in sql
+            assert "count(" not in sql.lower()
+            return 7
+
+    class _Acquire:
+        async def __aenter__(self):
+            return _Conn()
+
+        async def __aexit__(self, *a):
+            return False
+
+    class _Pool:
+        def acquire(self):
+            return _Acquire()
+
+    monkeypatch.setattr(db_mod, "get_pool",
+                        lambda: _ret_pool(_Pool()))
+    # Сбросить флаг таблицы, чтобы ensure_table прошёл.
+    monkeypatch.setattr(jstore, "_table_ready", False)
+
+    entry = await jstore.upsert_main(
+        guild_id=1, channel_id=2, tournament_id="1_9")
+    assert entry["journal_no"] == 7
+    assert any("pg_advisory_xact_lock" in s for s in sqls)
+
+
+async def _ret_pool(pool):
+    return pool

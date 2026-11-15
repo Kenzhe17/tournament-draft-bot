@@ -139,6 +139,8 @@ async def list_pending(limit: int = 100) -> list[dict[str, Any]]:
             "WHERE sync_status <> 'synced' "
             "   OR audit_message_id IS NULL "
             "   OR (kind = 'tournament' AND thread_id IS NULL) "
+            "   OR (kind = 'tournament' AND thread_id IS NOT NULL "
+            "       AND summary_message_id IS NULL) "
             "ORDER BY updated_at ASC LIMIT $1",
             limit,
         )
@@ -196,8 +198,13 @@ async def upsert_main(
                 "hashtext('tournament_journal:' || $1::text))",
                 str(guild_id),
             )
+            # MAX+1, а не COUNT+1: после удаления промежуточных
+            # записей count может дать уже занятый номер.
+            # Advisory lock выше сериализует параллельные
+            # транзакции, уникальный индекс — последний рубеж.
             no = await conn.fetchval(
-                "SELECT count(*) + 1 FROM tournament_journal "
+                "SELECT COALESCE(MAX(journal_no), 0) + 1 "
+                "FROM tournament_journal "
                 "WHERE guild_id = $1 AND kind = 'tournament'",
                 guild_id,
             )
