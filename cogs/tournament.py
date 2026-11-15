@@ -250,6 +250,15 @@ class TournamentCog(commands.Cog):
         formation: Literal["draft", "balanced-sr", "random"] = "draft",
     ) -> None:
         """Создать турнир с указанным размером."""
+        try:
+            from services.settings_service import settings_service
+            if not settings_service.peek(
+                    interaction.guild_id, "feature.tournaments_enabled"):
+                await interaction.response.send_message(
+                    "Этот раздел временно отключён.", ephemeral=True)
+                return
+        except Exception:
+            pass
         # Проверить если канал заблокирован поиском (только если есть активные игроки)
         from cogs.mm import LOCKED_CHANNELS
         if interaction.channel_id in LOCKED_CHANNELS:

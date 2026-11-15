@@ -512,6 +512,15 @@ class CoinFlipCog(commands.Cog):
         bet: int,
     ):
         """Запустить игру Монетка."""
+        try:
+            from services.settings_service import settings_service
+            if not settings_service.peek(
+                    interaction.guild_id, "feature.minigames_enabled"):
+                await interaction.response.send_message(
+                    "Этот раздел временно отключён.", ephemeral=True)
+                return
+        except Exception:
+            pass
         await create_coin_flip_game(interaction, bet)
 
 

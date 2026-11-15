@@ -240,6 +240,17 @@ class TournamentBot(commands.Bot):
                     logger.info(f"Synced {synced} games from config to database")
                 except Exception as e:
                     logger.error(f"Failed to sync games from config: {e}")
+
+                # Магазин: PostgreSQL — авторитетный каталог.
+                # Идемпотентная миграция JSON→PG при первом запуске,
+                # далее каталог управляется через Control Center.
+                try:
+                    from storage import shop_catalog
+                    from storage.shop_store import shop_store
+                    mode = await shop_catalog.sync_to_store(shop_store)
+                    logger.info("Shop catalog synced from %s", mode)
+                except Exception as e:
+                    logger.error("Failed to sync shop catalog: %s", e)
             except Exception as e:
                 logger.error("Failed to initialize database: %s", e)
 
@@ -253,6 +264,26 @@ class TournamentBot(commands.Bot):
             if settings_service.available:
                 await settings_service.start_sync()
                 logger.info("Control Center settings engine active")
+
+                # Каталог магазина: перечитывать PG по notify
+                # (панель пишет shop_items + pg_notify).
+                async def _resync_shop(gid, key):
+                    try:
+                        from storage import shop_catalog
+                        from storage.shop_store import shop_store
+                        await shop_catalog.sync_to_store(shop_store)
+                    except Exception as exc:
+                        logger.warning("shop catalog resync failed: %s", exc)
+
+                settings_service.register_change_handler(
+                    "shop.catalog", _resync_shop
+                )
+
+                # Очередь админ-действий Control Center: панель пишет
+                # admin_action_requests, бот исполняет зарегистрированные
+                # handlers и пишет статус обратно.
+                from services import admin_actions
+                self.loop.create_task(admin_actions.actions_loop())
             else:
                 logger.warning(
                     "Control Center settings engine unavailable "

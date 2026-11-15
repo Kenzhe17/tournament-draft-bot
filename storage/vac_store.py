@@ -35,6 +35,15 @@ MAX_VAC_LEVEL = len(VAC_LADDER)
 VIOLATION_DECAY = timedelta(hours=24)
 
 
+
+def _decay_seconds() -> float:
+    """Динамический период затухания нарушений (vac.decay_hours)."""
+    try:
+        from services.settings_service import settings_service
+        return float(settings_service.peek(None, "vac.decay_hours")) * 3600.0
+    except Exception:
+        return VIOLATION_DECAY.total_seconds()
+
 def effective_level(
     level: int,
     last_violation_at: datetime | None,
@@ -51,7 +60,7 @@ def effective_level(
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
     periods = int((now - last_violation_at).total_seconds()
-                  // VIOLATION_DECAY.total_seconds())
+                  // _decay_seconds())
     return max(0, min(level - periods, MAX_VAC_LEVEL))
 
 

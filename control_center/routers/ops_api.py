@@ -46,7 +46,12 @@ async def list_audit(
 
 # ---------------- action requests ----------------
 
-ALLOWED_ACTIONS_V1: set[str] = set()
+def _allowed_actions() -> set[str]:
+    try:
+        from services.admin_actions import allowed_actions
+        return allowed_actions()
+    except Exception:
+        return set()
 # Действия, исполняемые ботом через зарегистрированные handlers.
 # Расширяется по мере миграции модулей (Этап 5).
 
@@ -64,11 +69,11 @@ async def create_action(
     user: PanelUser = Depends(require_perm(rbac.PERM_ACTIONS_EXECUTE)),
     _csrf: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
-    if body.action not in ALLOWED_ACTIONS_V1:
+    if body.action not in _allowed_actions():
         raise HTTPException(
             400, f"unknown or unregistered action: {body.action}"
         )
-    gid = body.guild_id or user.guild_id
+    gid = body.guild_id or user.guild_id or 0
     row = await store.create_action_request(
         guild_id=gid,
         action=body.action,

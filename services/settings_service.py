@@ -60,6 +60,10 @@ class SettingsService:
         self._poll_task: asyncio.Task | None = None
         self._stopped = False
         self.available = False
+        # Потребители изменений: [(key_prefix, async handler(gid, key))].
+        # Для не-settings ключей (напр. "shop.catalog") — модули
+        # подписываются на свои события синхронизации.
+        self._change_handlers: list[tuple[str, Any]] = []
 
     # ---------------- lifecycle ----------------
 
@@ -357,16 +361,20 @@ class SettingsService:
             )
         # Удалённые ключи: в PG строк не удаляем, поэтому
         # remote ⊇ кэш; обновляем только отличающиеся версии.
+        changed: list[tuple[int, str]] = []
         for k, (value, version) in remote.items():
             cur = self._cache.get(k)
             if cur is None or cur[1] != version:
                 self._cache[k] = (value, version)
+                changed.append(k)
         # Ключи, исчезнувшие из БД (теоретически), чистим —
         # но не negative-cache записи (_MISSING), чтобы не
         # превращать каждый get в запрос к БД.
         for k, entry in list(self._cache.items()):
             if k not in remote and entry[0] is not _MISSING:
                 del self._cache[k]
+        for gid, key in changed:
+            await self._dispatch_change(gid, key)
 
     async def _report_heartbeat(self) -> None:
         """Heartbeat бота для Dashboard (admin_service_status)."""
@@ -385,12 +393,33 @@ class SettingsService:
         except Exception as exc:  # noqa: BLE001 — heartbeat не критичен
             logger.debug("heartbeat report failed: %s", exc)
 
+    def register_change_handler(self, key_prefix: str, handler) -> None:
+        """Подписать async handler(guild_id, key) на изменения.
+
+        Вызывается после применения NOTIFY/poll-обновления кэша.
+        Для ключей вне реестра (напр. "shop.catalog") handler
+        отвечает за собственную синхронизацию.
+        """
+        self._change_handlers.append((key_prefix, handler))
+
+    async def _dispatch_change(self, guild_id: int, key: str) -> None:
+        for prefix, handler in self._change_handlers:
+            if key == prefix or key.startswith(prefix):
+                try:
+                    await handler(guild_id, key)
+                except Exception as exc:  # noqa: BLE001 — handler не роняет sync
+                    logger.warning(
+                        "change handler %s for %s failed: %s",
+                        prefix, key, exc,
+                    )
+
     async def _safe_refresh(self, guild_id: int, key: str) -> None:
         try:
             await self.refresh_key(guild_id, key)
         except Exception as exc:  # noqa: BLE001 — refresh не должен падать
             logger.warning("settings refresh %s:%s failed: %s",
                            guild_id, key, exc)
+        await self._dispatch_change(guild_id, key)
 
     # ---------------- internals ----------------
 

@@ -127,6 +127,31 @@ _reg(key="elo.rank_protection_bonus", type="int", default=3,
      description="Бонус ELO для игроков вне TOP-N")
 
 # ------------------------------------------------------------------
+# Rating (CLASSIC ELO) — utils/rating_calculator.py.
+# Базовые ±ELO и веса K/D — применяются к новым расчётам матчей.
+# Инвариант: поражение не даёт положительный базовый результат.
+# ------------------------------------------------------------------
+
+_reg(key="rating.base_win_change", type="int", default=10,
+     module="rating", min=-10000, max=10000, permission="rating.manage",
+     description="Базовое изменение ELO за победу (CLASSIC)")
+_reg(key="rating.base_loss_change", type="int", default=-10,
+     module="rating", min=-10000, max=0, permission="rating.manage",
+     description="Базовое изменение ELO за поражение (должно быть <= 0)")
+_reg(key="rating.kill_weight", type="int", default=2,
+     module="rating", min=-1000, max=1000, permission="rating.manage",
+     description="Вес убийств в K/D-бонусе ELO")
+_reg(key="rating.death_weight", type="int", default=1,
+     module="rating", min=-1000, max=1000, permission="rating.manage",
+     description="Вес смертей в K/D-бонусе ELO")
+_reg(key="rating.weak_elo_threshold", type="int", default=1000,
+     module="rating", min=0, max=100000, permission="rating.manage",
+     description="ELO порог «слабого» игрока (множитель 1.5)")
+_reg(key="rating.catch_up_enabled", type="bool", default=True,
+     module="rating", permission="rating.manage",
+     description="Catch-up бонус для игроков ниже среднего ELO")
+
+# ------------------------------------------------------------------
 # Matchmaking — веса балансировки и таймауты.
 # Применяется только к новым матчам (applies_to=new_only): состав
 # уже начатого матча не меняется.
@@ -234,6 +259,9 @@ _reg(key="tournament.circles", type="json", default=[2, 3, 4],
 _reg(key="vac.max_days", type="int", default=365,
      module="vac", min=1, max=36500, permission="moderation.manage",
      description="Максимальный срок VAC-блокировки (дни)")
+_reg(key="vac.decay_hours", type="int", default=24,
+     module="vac", min=1, max=8760, permission="moderation.manage",
+     description="Снижение уровня VAC за каждые N часов без нарушений")
 
 
 # ------------------------------------------------------------------

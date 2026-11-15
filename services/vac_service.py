@@ -39,7 +39,12 @@ def parse_duration(text: str) -> timedelta | None:
     hours = int(m.group(2) or 0)
     minutes = int(m.group(3) or 0)
     delta = timedelta(days=days, hours=hours, minutes=minutes)
-    if delta <= timedelta(0) or delta > timedelta(days=MAX_VAC_DAYS):
+    try:
+        from services.settings_service import settings_service
+        max_days = int(settings_service.peek(None, "vac.max_days"))
+    except Exception:
+        max_days = MAX_VAC_DAYS
+    if delta <= timedelta(0) or delta > timedelta(days=max_days):
         return None
     return delta
 

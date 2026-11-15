@@ -36,6 +36,7 @@ class ShopItem:
     role_id: int | None = None  # Discord role ID (для ролей)
     required_level: int = 0  # Требуемый уровень для покупки
     is_sellable: bool = True  # Можно ли продать предмет
+    is_active: bool = True  # Виден/доступен в магазине (скрытие ≠ удаление)
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализовать в словарь."""
@@ -52,6 +53,7 @@ class ShopItem:
             "role_id": self.role_id,
             "required_level": self.required_level,
             "is_sellable": self.is_sellable,
+            "is_active": self.is_active,
         }
 
     @classmethod
@@ -78,6 +80,7 @@ class ShopItem:
             role_id=data.get("role_id"),
             required_level=data.get("required_level", 0),
             is_sellable=data.get("is_sellable", True),
+            is_active=data.get("is_active", True),
         )
 
 

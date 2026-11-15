@@ -6,11 +6,13 @@ from models.shop_item import ShopItem, CosmeticType, CosmeticRarity
 from storage.shop_store import shop_store
 
 
-def initialize_shop_items() -> None:
-    """Инициализировать товары в магазине."""
+def default_shop_items() -> list[ShopItem]:
+    """Статический каталог товаров по умолчанию.
 
-    # Очистить существующие товары перед инициализацией
-    shop_store.clear_all()
+    Используется для идемпотентного сидинга: отсутствующие id
+    добавляются, существующие (в т.ч. изменённые через Control
+    Center) не перезаписываются.
+    """
 
     # Цвета удалены (Discord не поддерживает цветной текст в embed'ах)
 
@@ -436,10 +438,20 @@ def initialize_shop_items() -> None:
         ),
     ]
 
-    # Добавить все товары в магазин
-    for item in icons + tags + services:
-        shop_store.add_item(item)
+    return icons + tags + services
 
 
-# Инициализировать товары при импорте
+def initialize_shop_items() -> None:
+    """Идемпотентный сидинг каталога (JSON-режим без DATABASE_URL).
+
+    НЕ удаляет существующие товары: панельные правки и товары,
+    созданные через Control Center, сохраняются. При наличии
+    PostgreSQL авторитетным источником является shop_catalog.sync_to_store().
+    """
+    for item in default_shop_items():
+        if shop_store.get_item(item.id) is None:
+            shop_store.add_item(item)
+
+
+# Инициализировать товары при импорте (безопасно: только добавление)
 initialize_shop_items()

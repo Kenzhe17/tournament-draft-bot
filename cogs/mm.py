@@ -360,6 +360,15 @@ class MMCog(commands.Cog):
 
     async def _create_search(self, interaction: discord.Interaction, format: MMFormat) -> None:
         """Создать новый поиск."""
+        try:
+            from services.settings_service import settings_service
+            if not settings_service.peek(
+                    interaction.guild_id, "feature.matchmaking_enabled"):
+                await interaction.response.send_message(
+                    "Этот раздел временно отключён.", ephemeral=True)
+                return
+        except Exception:
+            pass
         existing = mm_search_store.get(interaction.guild_id, interaction.channel_id)
         if existing:
             await interaction.response.send_message(
