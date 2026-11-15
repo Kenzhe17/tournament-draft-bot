@@ -918,7 +918,8 @@ class AdminConfirmView(View):
                 "winning_team_index": winning_team_index,
                 "team1_index": self.team_a_index,
                 "team2_index": self.team_b_index,
-                "temp_kd_data": temp_stats
+                "temp_kd_data": temp_stats,
+                "finalize_match_id": match_id,
             }, interaction)
 
             logging.info("Match result processed, storing tournament")
@@ -1129,14 +1130,22 @@ class AdminConfirmView(View):
                     logging.error(f"Error confirming final winner: {e}", exc_info=True)
                     raise
 
+                # COMPLETE фиксируем ДО начисления наград: рестарт
+                # между distribute_earnings и финальным store.set
+                # не должен позволить повторное подтверждение и
+                # двойные выплаты (guard earnings_awarded ниже).
+                store.set(tournament)
+
                 # Award coins for tournament participation based on placement
                 earnings_map: dict = {}
-                try:
-                    earnings_map = await tournament.distribute_earnings(self.guild_id)
-                    logging.info(f"Distributed tournament earnings: {earnings_map}")
-                except Exception as e:
-                    import logging
-                    logging.error(f"Error awarding coins: {e}", exc_info=True)
+                if not getattr(tournament, "earnings_awarded", False):
+                    try:
+                        earnings_map = await tournament.distribute_earnings(self.guild_id)
+                        tournament.earnings_awarded = True
+                        logging.info(f"Distributed tournament earnings: {earnings_map}")
+                    except Exception as e:
+                        import logging
+                        logging.error(f"Error awarding coins: {e}", exc_info=True)
 
             # Clear temp stats
             if match_id in tournament.temp_match_stats:

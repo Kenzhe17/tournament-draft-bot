@@ -395,6 +395,14 @@ def elo_env(monkeypatch):
     import storage.player_stats_store as pss
     import storage.user_balance_store as ubs
     import storage.json_store as js
+    import storage.finalize_store as fs
+
+    # Без реальной БД: маркер финализации отсутствует — матч ещё
+    # не обрабатывался (как в боевом PG до первой записи).
+    async def _no_finalize(guild_id, match_id):
+        return None
+
+    monkeypatch.setattr(fs, "get_status", _no_finalize)
 
     stats_map = {}
     for i in range(1, 9):

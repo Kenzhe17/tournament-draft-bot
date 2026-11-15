@@ -169,6 +169,24 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     team2_index = match_info.get('team2_index')
 
     match_id = f"{tournament.id}_{match_type}_{match_index}"
+    finalize_mid = match_info.get("finalize_match_id")
+
+    # DB-authoritative маркер финализации: set_many пишет
+    # match_finalizations('stats_done') в той же транзакции, что и
+    # статистика. Если процесс упал между коммитом и store.set,
+    # после рестарта processed_elo_matches пуст — без этой проверки
+    # ELO/статистика начислились бы повторно. 'done' — финализация
+    # полностью завершена. Ошибки БД пробрасываются: «нет записи»
+    # и «БД недоступна» нельзя смешивать.
+    if finalize_mid:
+        from storage import finalize_store
+        fstatus = await finalize_store.get_status(guild_id, finalize_mid)
+        if fstatus in ("stats_done", "done"):
+            logger.warning(
+                "Finalize %s уже применён (status=%s) — ELO пропущен",
+                finalize_mid, fstatus,
+            )
+            return False
 
     # Idempotency: один подтверждённый матч начисляет ELO только один раз
     if match_id in tournament.processed_elo_matches:

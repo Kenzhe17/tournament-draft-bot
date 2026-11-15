@@ -267,6 +267,11 @@ class Tournament:
     # Match IDs whose ELO was already awarded (idempotency guard)
     processed_elo_matches: set[str] = field(default_factory=set)
 
+    # Турнирные награды (distribute_earnings) уже начислены —
+    # защита от двойной выплаты при повторном подтверждении финала
+    # после рестарта между начислением и сохранением состояния.
+    earnings_awarded: bool = False
+
     # OCR-сессии результатов матчей (скриншот → ручное сопоставление игроков)
     # key: "{match_type}_{match_index}"
     ocr_sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -1726,6 +1731,7 @@ class Tournament:
             "mm_search_channel_id": self.mm_search_channel_id,
             "mm_preset_channel_id": self.mm_preset_channel_id,
             "processed_elo_matches": list(self.processed_elo_matches),
+            "earnings_awarded": self.earnings_awarded,
             "match_channels": self.match_channels,
             "match_cards": self.match_cards,
             "ocr_sessions": self.ocr_sessions,
@@ -1793,6 +1799,7 @@ class Tournament:
             mm_search_channel_id=data.get("mm_search_channel_id", 0),
             mm_preset_channel_id=data.get("mm_preset_channel_id", 0),
             processed_elo_matches=set(data.get("processed_elo_matches", [])),
+            earnings_awarded=bool(data.get("earnings_awarded", False)),
             match_channels=data.get("match_channels", {}),
             match_cards=data.get("match_cards", {}),
             ocr_sessions=data.get("ocr_sessions", {}),

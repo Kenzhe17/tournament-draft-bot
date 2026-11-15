@@ -355,7 +355,8 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
             "winning_team_index": self.team_index,
             "team1_index": team_a_index,
             "team2_index": team_b_index,
-            "temp_kd_data": temp_stats
+            "temp_kd_data": temp_stats,
+            "finalize_match_id": match_id,
         }, None)
 
         # Save match to history for all players
@@ -1005,7 +1006,8 @@ class ConfirmWinnerButton(discord.ui.Button):
             "winning_team_index": self.team_index,
             "team1_index": team_a_index,
             "team2_index": team_b_index,
-            "temp_kd_data": temp_stats
+            "temp_kd_data": temp_stats,
+            "finalize_match_id": match_id,
         }, interaction)
         logging.info("Stats processed successfully")
 
