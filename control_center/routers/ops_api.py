@@ -46,12 +46,20 @@ async def list_audit(
 
 # ---------------- action requests ----------------
 
+try:
+    from services.admin_actions import allowed_actions as _bot_actions
+    ALLOWED_ACTIONS_V1: set[str] = _bot_actions()
+except Exception:  # noqa: BLE001 — бот может быть недоступен в тестах
+    ALLOWED_ACTIONS_V1 = set()
+
+
 def _allowed_actions() -> set[str]:
+    """Whitelist = bot-side handlers ∪ тестовый override ALLOWED_ACTIONS_V1."""
     try:
         from services.admin_actions import allowed_actions
-        return allowed_actions()
-    except Exception:
-        return set()
+        return allowed_actions() | ALLOWED_ACTIONS_V1
+    except Exception:  # noqa: BLE001
+        return set(ALLOWED_ACTIONS_V1)
 # Действия, исполняемые ботом через зарегистрированные handlers.
 # Расширяется по мере миграции модулей (Этап 5).
 

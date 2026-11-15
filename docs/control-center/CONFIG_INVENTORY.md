@@ -221,3 +221,32 @@ OCR-обработка скриншотов результатов — в `cogs/
 - **Секреты и Discord resource IDs каналов первого уровня** —
   code-managed до отдельного решения (проверка существования ресурса
   требует Discord API — реализовать в backend панели).
+
+## 7. Статус блокирующих дефектов (post-Stage 5)
+
+1. **Shop catalog wipe** — ИСПРАВЛЕНО: `shop_catalog.sync_to_store`
+   (PG авторитетен; JSON→PG миграция однократно; defaults только при
+   пустом PG), `is_active` у ShopItem, CRUD API + hide/show.
+2. **Games sync overwrite** — ИСПРАВЛЕНО: `minigame_init` и
+   `games_config.sync` — insert-only; `games_api` PUT обновляет PG;
+   бот читает `minigames` из PG (`minigame_store._use_db`).
+3. **Dual JSON/PG shop storage** — ИСПРАВЛЕНО: PG — единственный
+   источник каталога; JSON-store больше не перезаписывает каталог.
+   Инвентарь/покупки — в PG (`user_inventory`), не затронуты.
+4. **Runtime settings в legacy JSON** — ИСПРАВЛЕНО: все runtime-
+   настройки в `admin_config_values` (PG); `settings.json` остаётся
+   fallback только при отсутствии DATABASE_URL.
+5. **Hardcoded module values** — ЧАСТИЧНО: rating.* (классический ELO),
+   matchmaking balance weights/tolerance/epsilon, reputation.* (все
+   суммы/сроки), vac.max_days/decay_hours читаются через
+   `settings_service.peek`. Остались code-managed: ladder VAC,
+   EloConfig (ultimatum, не используется в classic-формуле),
+   пороги OCR (модуль отсутствует в ветке), Discord resource IDs.
+6. **is_admin/is_org для панели** — ИСПРАВЛЕНО: отдельная panel-RBAC
+   (owner/admin/moderator/organizer/viewer + `economy.finance`),
+   Discord-проверки не переиспользованы.
+7. **Турниры в JSON** — ОБОСНОВАНО: активные турниры остаются в
+   JSON-store (атомарность матчей); панель управляет только
+   runtime-параметрами (лимиты/составы через `tournament.*`),
+   состояние читает через bot-service heartbeats. Мутации состояния —
+   только Discord-команды (осознанное ограничение v1).
