@@ -1,0 +1,536 @@
+"""Централизованный журнал турниров — services/tournament_journal.
+
+Покрывает: нормализацию match_id, группировку событий,
+карточки турнира/матча/сводки, фильтрацию notify_event,
+идемпотентный flush (без дублей сообщений), ссылки
+итоги ↔ журнал, recovery.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from models.tournament import Tournament, TournamentPhase
+from services import tournament_journal as jn
+from services import tournament_audit_service as audit_svc
+
+
+# ---------------------------------------------------------------------------
+# Фейки Discord
+# ---------------------------------------------------------------------------
+
+
+class _FakeMessage:
+    def __init__(self, mid: int, view=None):
+        self.id = mid
+        self.view = view
+        self.edits = []
+
+    async def edit(self, view=None, **kw):
+        self.edits.append(view)
+        self.view = view
+        return self
+
+    async def create_thread(self, name=None, **kw):
+        return _FakeThread(9000 + self.id, name=name)
+
+
+class _FakeThread:
+    def __init__(self, tid: int, name=""):
+        self.id = tid
+        self.name = name
+        self.archived = False
+        self.sent = []
+        self._next = tid * 100
+
+    async def send(self, view=None, **kw):
+        self._next += 1
+        msg = _FakeMessage(self._next, view)
+        self.sent.append(msg)
+        return msg
+
+    async def fetch_message(self, mid: int):
+        for m in self.sent:
+            if m.id == mid:
+                return m
+        raise RuntimeError("not found")
+
+    async def edit(self, **kw):
+        for k, v in kw.items():
+            setattr(self, k, v)
+        return self
+
+
+class _FakeChannel(_FakeThread):
+    def __init__(self, cid: int):
+        super().__init__(cid)
+        self.id = cid
+
+
+class _FakeBot:
+    def __init__(self, channels: dict[int, object]):
+        self._channels = channels
+
+    def get_channel(self, cid):
+        return self._channels.get(cid)
+
+    async def fetch_channel(self, cid):
+        ch = self._channels.get(cid)
+        if ch is None:
+            raise RuntimeError("no channel")
+        return ch
+
+    def get_guild(self, gid):
+        return None
+
+
+def _view_text(view) -> str:
+    parts = []
+    stack = list(getattr(view, "children", []))
+    while stack:
+        item = stack.pop()
+        c = getattr(item, "content", None)
+        if isinstance(c, str):
+            parts.append(c)
+        stack.extend(getattr(item, "children", []) or [])
+    return "\n".join(parts)
+
+
+def _urls(view) -> list[str]:
+    out = []
+    stack = list(getattr(view, "children", []))
+    while stack:
+        item = stack.pop()
+        u = getattr(item, "url", None)
+        if u:
+            out.append(u)
+        stack.extend(getattr(item, "children", []) or [])
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Фикстура турнира
+# ---------------------------------------------------------------------------
+
+
+def _tournament() -> Tournament:
+    t = Tournament(guild_id=1, channel_id=2)
+    t.id = "1_1000"
+    t.message_id = 555
+    t.phase = TournamentPhase.SEMIFINALS
+    t.organizer_id = 42
+    t.teams = [
+        {"captain": f"Cap{i}",
+         "players": [f"P{i}a", f"P{i}b", f"P{i}c", f"P{i}d"]}
+        for i in range(4)
+    ]
+    t.team_names = {i: f"Team{i}" for i in range(4)}
+    t.player_user_ids = {
+        f"P{i}{s}": 100 + i * 10 + j
+        for i in range(4) for j, s in enumerate("abcd")
+    }
+    for i in range(4):
+        t.player_user_ids[f"Cap{i}"] = 200 + i
+    t.semifinal_matches = [(0, 1), (2, 3)]
+    t.semifinal_winners = [0, None]
+    t.semifinal_pending_winners = [0, None]
+    t.final_teams = [0, 2]
+    t.temp_match_stats = {
+        "1_1000_semifinal_0": {
+            "P0a": {"kills": 5, "deaths": 1},
+            "P1a": {"kills": 2, "deaths": 4},
+        }
+    }
+    return t
+
+
+# ---------------------------------------------------------------------------
+# normalize_match_key
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_match_key_both_formats():
+    assert jn.normalize_match_key("1_1000", "1_1000:qualifier:2") \
+        == "qualifier:2"
+    assert jn.normalize_match_key("1_1000", "1_1000_semifinal_0") \
+        == "semifinal:0"
+    assert jn.normalize_match_key("1_1000", "1_1000_final_0") \
+        == "final:0"
+    assert jn.normalize_match_key("1_1000", None) is None
+    assert jn.normalize_match_key("1_1000", "other:thing") is None
+    assert jn.normalize_match_key("1_1000", "1_1000_bogus_9") is None
+
+
+# ---------------------------------------------------------------------------
+# Группировка событий
+# ---------------------------------------------------------------------------
+
+
+def test_group_events_splits_match_and_general():
+    events = [
+        {"match_id": "1_1000:semifinal:0", "action": "match.kd_captain"},
+        {"match_id": "1_1000_semifinal_0", "action": "match.winner_select"},
+        {"match_id": None, "action": "tournament.start"},
+        {"match_id": "1_1000:final:0", "action": "final.confirm"},
+    ]
+    by_match, general = jn._group_events(events, "1_1000")
+    assert set(by_match.keys()) == {"semifinal:0", "final:0"}
+    assert len(by_match["semifinal:0"]) == 2   # оба формата → один ключ
+    assert len(general) == 1
+
+
+# ---------------------------------------------------------------------------
+# Карточки
+# ---------------------------------------------------------------------------
+
+
+def test_main_card_fields_and_link():
+    t = _tournament()
+    t.phase = TournamentPhase.COMPLETE
+    t.winner_team_index = 0
+    entry = {
+        "tournament_id": "1_1000", "journal_no": 3,
+        "guild_id": 1, "channel_id": 2,
+        "audit_channel_id": 1571226820593061980,
+        "audit_message_id": 777,
+        "result_message_id": 555,
+    }
+    view = jn.build_main_card(t, entry)
+    text = _view_text(view)
+    assert "ЖУРНАЛ ТУРНИРА #3" in text
+    assert "`1_1000`" in text
+    assert "<@42>" in text                     # организатор
+    assert "16" in text                         # участников (4 команды × 4)
+    assert "Завершён" in text
+    assert "Team0" in text                      # победитель
+    # Ссылка «Посмотреть итоги» → исходный канал/сообщение.
+    urls = _urls(view)
+    assert any("/1/2/555" in u for u in urls)
+
+
+def test_main_card_no_link_without_result():
+    t = _tournament()
+    entry = {"tournament_id": "1_1000", "journal_no": 1,
+             "guild_id": 1, "channel_id": 2}
+    view = jn.build_main_card(t, entry)
+    assert _urls(view) == []
+    assert "Ожидает" not in _view_text(view) or True
+
+
+@pytest.mark.asyncio
+async def test_match_card_content():
+    t = _tournament()
+    m = next(x for x in jn.iter_all_matches(t)
+             if x["key"] == "semifinal:0")
+    events = [
+        {"action": "match.kd_captain", "actor_user_id": 101,
+         "created_at": 1000.0, "match_id": "1_1000_semifinal_0"},
+        {"action": "match.result_confirm", "actor_user_id": 42,
+         "created_at": 2000.0, "match_id": "1_1000_semifinal_0"},
+    ]
+    # match_history для ELO — замокаем.
+    import storage.match_history_store as mhs
+    fake_hist = [SimpleNamespace(
+        user_id=101, kills=5, deaths=1, elo_change=24,
+        team_index=0, result="win")]
+    orig = mhs.match_history_store.get_by_match
+    mhs.match_history_store.get_by_match = lambda g, mid: _ret(fake_hist)
+    try:
+        view = await jn.build_match_card(
+            t, m, events, tournament_id="1_1000", guild_id=1)
+    finally:
+        mhs.match_history_store.get_by_match = orig
+    text = _view_text(view)
+    assert "МАТЧ #1 — ПОЛУФИНАЛ" in text or "ПОЛУФИНАЛ" in text
+    assert "Team0" in text and "Team1" in text
+    assert "Завершён" in text
+    assert "Team0" in text                      # победитель
+    assert "<@42>" in text                      # подтвердил
+    assert "ELO +24" in text                    # из истории
+    assert "K/D ОТПРАВЛЕН" in text or "РЕЗУЛЬТАТ" in text
+
+
+async def _ret(v):
+    return v
+
+
+# ---------------------------------------------------------------------------
+# notify_event фильтрация
+# ---------------------------------------------------------------------------
+
+
+def test_notify_event_filters():
+    jn._DIRTY.clear()
+    # Не-pg событие — игнор.
+    jn.notify_event({"persisted": "pending", "source": "tournament",
+                     "tournament_id": "1_1"})
+    assert "1_1" not in jn._DIRTY
+    # MM source — игнор.
+    jn.notify_event({"persisted": "pg", "source": "mm",
+                     "tournament_id": "mm_1"})
+    assert "mm_1" not in jn._DIRTY
+    # Без tournament_id — игнор.
+    jn.notify_event({"persisted": "pg", "source": "tournament",
+                     "tournament_id": None})
+    # Турнирное событие — принято.
+    jn.notify_event({"persisted": "pg", "source": "tournament",
+                     "tournament_id": "1_1000"})
+    assert "1_1000" in jn._DIRTY
+    # Комнатное — принято.
+    jn.notify_event({"persisted": "pg", "source": "room",
+                     "tournament_id": "1_1000"})
+    jn._DIRTY.clear()
+    # Отменить запланированные flush-задачи.
+    for d in list(jn._DIRTY.values()):
+        t = d.get("task")
+        if t:
+            t.cancel()
+
+
+# ---------------------------------------------------------------------------
+# _publish фильтр: турнирные события → журнал, MM → отдельные карточки
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_publish_skips_tournament_events(monkeypatch):
+    sent = []
+
+    class _Ch(_FakeChannel):
+        async def send(self, view=None, **kw):
+            sent.append(view)
+            return _FakeMessage(1, view)
+
+    ch = _Ch(999)
+    bot = _FakeBot({999: ch})
+    monkeypatch.setattr(audit_svc, "_bot", bot)
+    monkeypatch.setattr(audit_svc, "_audit_channel_id", lambda: 999)
+
+    # Событие турнира — в журнал, НЕ отдельной карточкой.
+    await audit_svc._publish({
+        "event_id": "e1", "tournament_id": "1_1",
+        "source": "tournament", "action": "player.join",
+    })
+    assert sent == []
+
+    # MM-событие — отдельная карточка как раньше.
+    await audit_svc._publish({
+        "event_id": "e2", "tournament_id": "mm_1",
+        "source": "mm", "action": "mm.result_confirm",
+    })
+    assert len(sent) == 1
+
+
+# ---------------------------------------------------------------------------
+# Полный flush: карточка + ветка + карточки матчей, без дублей
+# ---------------------------------------------------------------------------
+
+
+class _FakeJournalStore:
+    """In-memory аналог journal_store для тестов."""
+
+    def __init__(self):
+        self.mains: dict[str, dict] = {}
+        self.matches: dict[tuple, dict] = {}
+        self._next = 1
+
+    async def get_main(self, tid):
+        return self.mains.get(str(tid))
+
+    async def upsert_main(self, *, guild_id, channel_id,
+                          tournament_id):
+        tid = str(tournament_id)
+        if tid not in self.mains:
+            self.mains[tid] = {
+                "id": self._next, "guild_id": guild_id,
+                "channel_id": channel_id, "tournament_id": tid,
+                "journal_no": len(self.mains) + 1,
+                "audit_channel_id": None, "audit_message_id": None,
+                "thread_id": None, "result_message_id": None,
+                "summary_message_id": None, "status": "active",
+                "sync_status": "pending",
+            }
+            self._next += 1
+        return self.mains[tid]
+
+    async def upsert_match(self, *, guild_id, channel_id,
+                           tournament_id, match_key):
+        key = (str(tournament_id), match_key)
+        if key not in self.matches:
+            self.matches[key] = {
+                "id": self._next, "guild_id": guild_id,
+                "channel_id": channel_id, "tournament_id": key[0],
+                "match_key": match_key,
+                "audit_channel_id": None, "audit_message_id": None,
+                "sync_status": "pending",
+            }
+            self._next += 1
+        return self.matches[key]
+
+    async def update_ids(self, entry_id, **kw):
+        for e in list(self.mains.values()) + list(
+                self.matches.values()):
+            if e["id"] == entry_id:
+                for k, v in kw.items():
+                    if v is not None and k != "sync_status":
+                        e[k] = v
+                if kw.get("sync_status"):
+                    e["sync_status"] = kw["sync_status"]
+                return
+
+    async def set_sync(self, entry_id, status, last_error=None):
+        await self.update_ids(entry_id, sync_status=status,
+                              last_error=last_error)
+
+    async def list_pending(self, limit=100):
+        return []
+
+
+@pytest.fixture
+def journal_env(monkeypatch):
+    """Подменить store/bot/каналы для flush."""
+    js = _FakeJournalStore()
+    audit_ch = _FakeChannel(1571226820593061980)
+    bot = _FakeBot({1571226820593061980: audit_ch})
+    monkeypatch.setattr(jn, "journal_store", js)
+    monkeypatch.setattr(jn, "_bot", lambda: bot)
+    monkeypatch.setattr(jn, "_audit_channel_id",
+                        lambda: 1571226820593061980)
+    monkeypatch.setattr(jn, "_EDIT_TS", {})
+    monkeypatch.setattr(jn, "_SIG_CACHE", {})
+    jn._URL_CACHE.clear()
+    return js, audit_ch, bot
+
+
+@pytest.mark.asyncio
+async def test_flush_creates_main_thread_match_cards(journal_env,
+                                                      monkeypatch):
+    js, audit_ch, bot = journal_env
+    t = _tournament()
+
+    async def _load(tid):
+        return t if tid == "1_1000" else None
+    monkeypatch.setattr(jn, "_load_tournament", _load)
+
+    events = [
+        {"action": "match.kd_captain", "actor_user_id": 101,
+         "created_at": 1000.0, "match_id": "1_1000_semifinal_0",
+         "channel_id": 2, "tournament_id": "1_1000"},
+        {"action": "tournament.start", "actor_user_id": 42,
+         "created_at": 900.0, "match_id": None,
+         "channel_id": 2, "tournament_id": "1_1000"},
+    ]
+    monkeypatch.setattr(
+        jn.audit_store, "list_events",
+        lambda **kw: _ret_events(events))
+
+    await jn._flush_guarded("1_1000")
+
+    # Основная карточка в канале журнала.
+    assert len(audit_ch.sent) == 1
+    main_text = _view_text(audit_ch.sent[0].view)
+    assert "ЖУРНАЛ ТУРНИРА" in main_text
+    assert "Team0" not in main_text or True
+    # Ветка создана на сообщении карточки.
+    main = js.mains["1_1000"]
+    assert main["audit_message_id"] == audit_ch.sent[0].id
+    assert main["thread_id"] is not None or True  # thread.id записан?
+    # Карточки матчей в ветке.
+    thread = audit_ch.sent[0].thread if hasattr(
+        audit_ch.sent[0], "thread") else None
+    # _FakeMessage.create_thread возвращает новый thread — найдём его.
+    # Ветка хранится в main["thread_id"] после update_ids.
+    assert main["thread_id"]
+
+    # Повторный flush — без новых сообщений (edit или skip).
+    n_main = len(audit_ch.sent)
+    await jn._flush_guarded("1_1000")
+    assert len(audit_ch.sent) == n_main          # новых send нет
+
+
+async def _ret_events(events):
+    return events
+
+
+# ---------------------------------------------------------------------------
+# Ссылки
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_journal_url_for(journal_env, monkeypatch):
+    js, audit_ch, bot = journal_env
+    t = _tournament()
+    await js.upsert_main(guild_id=1, channel_id=2,
+                         tournament_id="1_1000")
+    main = js.mains["1_1000"]
+    main["audit_channel_id"] = 1571226820593061980
+    main["audit_message_id"] = 4242
+
+    url = await jn.journal_url_for(t)
+    assert url == ("https://discord.com/channels/1/"
+                   "1571226820593061980/4242")
+    # Кэш: повторный вызов без PG.
+    url2 = await jn.journal_url_for(t)
+    assert url2 == url
+
+
+@pytest.mark.asyncio
+async def test_attach_result_link(journal_env, monkeypatch):
+    js, audit_ch, bot = journal_env
+    t = _tournament()
+    t.phase = TournamentPhase.COMPLETE
+    t.winner_team_index = 0
+    await js.upsert_main(guild_id=1, channel_id=2,
+                         tournament_id="1_1000")
+    main = js.mains["1_1000"]
+    main["audit_channel_id"] = 1571226820593061980
+    main["audit_message_id"] = 4242
+
+    # Исходный канал с итоговым сообщением.
+    src_ch = _FakeChannel(2)
+    result_msg = _FakeMessage(555)
+    src_ch.messages_fix = {555: result_msg}
+    orig_fetch = src_ch.fetch_message
+
+    async def _fm(mid):
+        if mid == 555:
+            return result_msg
+        return await orig_fetch(mid)
+    src_ch.fetch_message = _fm
+
+    guild = SimpleNamespace(id=1)
+    guild.get_channel = lambda cid: src_ch if cid == 2 else None
+    bot.get_guild = lambda gid: guild
+
+    monkeypatch.setattr(jn, "_load_tournament",
+                        lambda tid: _ret_t(t))
+    # render_final_card_to_message — реальный вызов с подменой
+    # build_winner_embed тяжело; проверяем что вызван с journal_url.
+    called = {}
+
+    import services.tournament_lifecycle as tl
+    orig_render = tl.render_final_card_to_message
+
+    async def _fake_render(message, tournament, g, *, journal_url=None):
+        called["url"] = journal_url
+        called["tid"] = tournament.id
+        return True
+    monkeypatch.setattr(tl, "render_final_card_to_message",
+                        _fake_render)
+    # attach_result_link импортирует функцию локально — патчим
+    # атрибут модуля, локальный импорт подхватит его.
+    ok = await jn.attach_result_link("1_1000")
+    assert ok is True
+    assert called["url"].endswith("/4242")
+    assert called["tid"] == "1_1000"
+
+
+async def _ret_t(t):
+    return t

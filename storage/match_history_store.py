@@ -169,6 +169,71 @@ class MatchHistoryStore:
         matches = await self.get(guild_id, user_id)
         return matches[:limit]
 
+    async def get_by_match(self, guild_id: int, match_id: str) -> List[MatchHistory]:
+        """Все записи одного матча (для журнала: ELO/счёт по игрокам).
+
+        match_id — формат ``{tournament_id}_{match_type}_{index}``.
+        """
+        if self._use_db:
+            from storage.db import get_pool
+            import json
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                try:
+                    rows = await conn.fetch(
+                        """
+                        SELECT guild_id, user_id, match_id, tournament_id, date,
+                               match_type, match_index, team_index, team_name,
+                               teammates, opponent_team_index, opponent_team_name,
+                               opponents, kills, deaths, result, elo_change,
+                               bet_amount, bet_win, bet_team,
+                               duration_seconds
+                        FROM match_history
+                        WHERE guild_id = $1 AND match_id = $2
+                        ORDER BY user_id
+                        """,
+                        guild_id, match_id
+                    )
+                    return [
+                        MatchHistory(
+                            guild_id=row["guild_id"],
+                            user_id=row["user_id"],
+                            match_id=row["match_id"],
+                            tournament_id=row["tournament_id"],
+                            date=row["date"],
+                            match_type=row["match_type"],
+                            match_index=row["match_index"],
+                            team_index=row["team_index"],
+                            team_name=row["team_name"],
+                            teammates=json.loads(row["teammates"]) if isinstance(row["teammates"], str) else row["teammates"],
+                            opponent_team_index=row["opponent_team_index"],
+                            opponent_team_name=row["opponent_team_name"],
+                            opponents=json.loads(row["opponents"]) if isinstance(row["opponents"], str) else row["opponents"],
+                            kills=row["kills"],
+                            deaths=row["deaths"],
+                            result=row["result"],
+                            elo_change=row["elo_change"],
+                            bet_amount=row.get("bet_amount", 0),
+                            bet_win=row.get("bet_win", 0),
+                            bet_team=row.get("bet_team", ""),
+                            duration_seconds=row.get("duration_seconds", 0) or 0
+                        )
+                        for row in rows
+                    ]
+                except Exception as e:
+                    if "does not exist" in str(e):
+                        await self._create_table(conn)
+                        return []
+                    raise
+        else:
+            out: List[MatchHistory] = []
+            for h in self._history.values():
+                out.extend(
+                    m for m in h.matches
+                    if m.match_id == match_id
+                    and m.guild_id == guild_id)
+            return out
+
     async def add(self, match: MatchHistory) -> None:
         """Добавить запись о матче в историю."""
         if self._use_db:

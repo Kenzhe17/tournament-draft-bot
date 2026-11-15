@@ -193,7 +193,7 @@ async def add_event(
 async def list_events(
     *,
     guild_id: int,
-    channel_id: int,
+    channel_id: int | None = None,
     tournament_id: str | None = None,
     source: str | None = None,
     match_id: str | None = None,
@@ -201,11 +201,18 @@ async def list_events(
     limit: int = 10,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """Последние события (id DESC), с фильтрами."""
+    """Последние события (id DESC), с фильтрами.
+
+    ``channel_id=None`` — без фильтра по каналу (нужно журналу
+    для архивных турниров, где исходный канал неизвестен).
+    """
     from storage.db import get_pool
 
-    clauses = ["guild_id = $1", "channel_id = $2"]
-    params: list[Any] = [guild_id, channel_id]
+    clauses = ["guild_id = $1"]
+    params: list[Any] = [guild_id]
+    if channel_id is not None:
+        params.append(channel_id)
+        clauses.append(f"channel_id = ${len(params)}")
     if tournament_id is not None:
         params.append(tournament_id)
         clauses.append(f"tournament_id = ${len(params)}")
