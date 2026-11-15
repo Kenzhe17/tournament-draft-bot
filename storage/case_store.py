@@ -69,41 +69,33 @@ class CaseStore:
             self.save()
 
     def _update_drop_rates_if_needed(self) -> None:
-        """Обновить drop_rates если они старого формата."""
+        """Миграция старых кейсов: только ДОБАВЛЯЕМ недостающие ключи.
+
+        Ранее метод перезаписывал drop_rates всякий раз, когда
+        `nothing` отличался от 0.50 — это молча уничтожало
+        админские настройки вероятностей. Теперь кастомные
+        коэффициенты сохраняются; корректируем только кейсы,
+        у которых вообще нет распознаваемых ключей.
+        """
         updated = False
-        
-        for case_id, case in self._cases.items():
-            # Проверить если nothing не 0.50, обновить
-            current_nothing = case.drop_rates.get("nothing", 0.0)
-            if abs(current_nothing - 0.50) > 0.01:  # Если не 50%
-                # Пересчитать drop_rates
-                item_key = None
-                nothing_key = "nothing"
-                coin_keys = []
-                
-                for key in case.drop_rates.keys():
-                    if key.startswith("item_"):
-                        item_key = key
-                    elif key.startswith("coins_"):
-                        coin_keys.append(key)
-                
-                # Новые значения: Item 10%, Nothing 50%, Coins 40%
-                new_drop_rates = {}
-                if item_key:
-                    new_drop_rates[item_key] = 0.10
-                new_drop_rates[nothing_key] = 0.50
-                
-                # Распределить монеты по 5 уровням: 12% + 10% + 8% + 6% + 4% = 40%
-                if coin_keys:
-                    coin_keys.sort()
-                    coin_rates = [0.12, 0.10, 0.08, 0.06, 0.04]
-                    for i, coin_key in enumerate(coin_keys):
-                        if i < len(coin_rates):
-                            new_drop_rates[coin_key] = coin_rates[i]
-                
-                case.drop_rates = new_drop_rates
-                updated = True
-        
+        for case in self._cases.values():
+            keys = set(case.drop_rates.keys())
+            has_structure = any(
+                k.startswith(("item_", "coins_", "nothing")) for k in keys
+            )
+            if has_structure:
+                continue
+            # Пустой/нераспознанный формат — применяем стандарт
+            case.drop_rates = {
+                "item_basic": 0.10,
+                "coins_100": 0.12,
+                "coins_200": 0.10,
+                "coins_300": 0.08,
+                "coins_400": 0.06,
+                "coins_500": 0.04,
+                "nothing": 0.50,
+            }
+            updated = True
         if updated:
             self.save()
 

@@ -854,7 +854,7 @@ class BuyButton(discord.ui.Button):
                 )
                 return
 
-        # Проверить есть ли уже
+        # Проверить есть ли уже (повторно — прямо перед списанием)
         inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
         for cosmetic in inventory:
             if cosmetic.item_id == self.item_id:
@@ -865,7 +865,14 @@ class BuyButton(discord.ui.Button):
                 return
 
         # Списать монеты
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, self.price)
+        try:
+            await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, self.price)
+        except ValueError:
+            await interaction.response.send_message(
+                f"Недостаточно монет. Нужно: {self.price} {get_emoji('money')}",
+                ephemeral=True
+            )
+            return
 
         # Добавить в инвентарь
         if item.item_type == "role":
@@ -898,7 +905,17 @@ class BuyButton(discord.ui.Button):
                 item_id=self.item_id,
                 equipped=False
             )
-            inventory_store.add_cosmetic(cosmetic)
+            added = inventory_store.add_cosmetic(cosmetic)
+            if not added:
+                # Товар уже был (гонка) — вернуть монеты.
+                await user_balance_store.add_balance(
+                    interaction.guild_id, interaction.user.id, self.price
+                )
+                await interaction.response.send_message(
+                    replace_emojis("• Товар уже есть в инвентаре. Монеты возвращены."),
+                    ephemeral=True
+                )
+                return
 
             # Определить тип для отображения
             rare_map = {
@@ -970,6 +987,15 @@ class BuyCaseButton(discord.ui.Button):
 
         # Открыть кейс
         result = await case_store.open_case(interaction.guild_id, interaction.user.id, self.case_id, interaction.guild)
+
+        # open_case всегда возвращает dict — error-результат
+        # нельзя считать успешным открытием.
+        if isinstance(result, dict) and result.get("type") == "error":
+            await interaction.response.send_message(
+                f"• Не удалось открыть кейс: {result.get('value', 'ошибка')}",
+                ephemeral=True
+            )
+            return
 
         if result:
             # Определить case_rare эмодзи для заголовка

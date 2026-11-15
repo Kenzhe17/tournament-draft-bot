@@ -467,6 +467,19 @@ class WardrobeView(discord.ui.View):
         async def on_buy(interaction: discord.Interaction) -> None:
             if not item:
                 return
+            # Повторная проверка владения внутри callback — защита
+            # от двойного нажатия/повторной отправки.
+            item_id_int = int(item["itemID"])
+            if wardrobe_store.is_owned(self.guild_id, self.user_id, item_id_int):
+                view = WardrobeView(
+                    self.guild_id,
+                    self.user_id,
+                    mode="detail",
+                    item_id=self.item_id,
+                    back=self.back,
+                )
+                await self._go(interaction, view)
+                return
             price = price_for(item)
             try:
                 await user_balance_store.subtract_balance(
@@ -480,7 +493,23 @@ class WardrobeView(discord.ui.View):
                     ephemeral=True,
                 )
                 return
-            wardrobe_store.add(self.guild_id, self.user_id, int(item["itemID"]))
+            if not wardrobe_store.add(self.guild_id, self.user_id, item_id_int):
+                # Предмет уже был у игрока — вернуть монеты один раз.
+                try:
+                    await user_balance_store.add_balance(
+                        self.guild_id, self.user_id, price
+                    )
+                except Exception:
+                    pass
+                view = WardrobeView(
+                    self.guild_id,
+                    self.user_id,
+                    mode="detail",
+                    item_id=self.item_id,
+                    back=self.back,
+                )
+                await self._go(interaction, view)
+                return
             view = WardrobeView(
                 self.guild_id,
                 self.user_id,
@@ -548,8 +577,7 @@ class WardrobeCog(commands.Cog):
     async def cog_load(self) -> None:
         bind_commands(player_group, self, ["wardrobe"])
 
-    # Слэш-команда скрыта: декоратор закомментирован, код сохранён.
-    # @player_group.command(name="wardrobe", description="Гардероб — коллекция вещей Free Fire")
+    @player_group.command(name="wardrobe", description="Гардероб — коллекция вещей Free Fire")
     async def wardrobe(self, interaction: discord.Interaction) -> None:
         """Открыть свой гардероб."""
         view = WardrobeView(interaction.guild_id, interaction.user.id, mode="main")

@@ -933,180 +933,20 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="shop", description="Магазин")
     async def shop(self, interaction: discord.Interaction) -> None:
-        """Показать магазин."""
-        from storage.user_balance_store import user_balance_store
-        from storage.shop_store import inventory_store
-        from storage.player_stats_store import player_stats_store
-        from views.shop_view import ShopMainView
-        from models.player_stats import PlayerStats
-
-        # Получить баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-
-        # Получить инвентарь
-        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-        inventory_count = len(cosmetics)
-        max_inventory = 20
-
-        # Получить ранг
-        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-        rank = "Без ранга"
-        if stats:
-            from cogs.tournament import get_rank_emoji
-            rank = get_rank_emoji(stats.level)
-
-        # Создать embed в новом формате
-        embed = discord.Embed(
-            title=replace_emojis("МАГАЗИН СЕРВЕРА | Главное меню"),
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
-        embed.description = (
-            f"Добро пожаловать в игровой магазин \n"
-            f"Выберите нужный раздел в выпадающем меню ниже, чтобы посмотреть доступные товары."
-        )
-
-        # Профиль пользователя
-        embed.add_field(
-            name=replace_emojis("• Ваш профиль:"),
-            value=f" Баланс: {balance:,} {get_emoji('money')}\n"
-                  f" Ранг: {rank}\n"
-                  f" Инвентарь: {inventory_count}/{max_inventory}",
-            inline=False
-        )
-
-        embed.add_field(
-            name=replace_emojis("Для навигации используйте компоненты ниже"),
-            value="",
-            inline=False
-        )
-
-        # Создать View с выпадающим меню категорий
-        view = ShopMainView()
-
-        try:
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-        except (discord.NotFound, discord.DiscordServerError):
-            pass
+        """Показать магазин (SHOP 2.0, CV2)."""
+        from views.shop2_view import open_shop
+        await open_shop(interaction)
 
     @app_commands.command(name="inventory", description="Ваш инвентарь")
     async def inventory(self, interaction: discord.Interaction) -> None:
-        """Показать инвентарь косметики."""
-        from storage.shop_store import inventory_store, shop_store
-        from views.shop_view import InventoryEquipSelect, InventoryUnequipSelect
-
-        # Получить инвентарь
-        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-
-        if not cosmetics:
-            await interaction.response.send_message(
-                replace_emojis("• Ваш инвентарь пуст. Используйте `/shop` для покупки косметики."),
-                ephemeral=True
-            )
-            return
-
-        # Icon map для значков
-        icon_map = {
-            "icon_letter": "icon_letter",
-            "icon_paw": "icon_paw",
-            "icon_bluestacks": "icon_bluestacks",
-            "icon_teacup": "icon_teacup",
-            "icon_ribbon": "icon_ribbon",
-            "icon_18plus": "icon_18plus",
-            "icon_heart": "icon_heart",
-            "icon_v_badge": "icon_v_badge",
-            "icon_cards": "icon_cards",
-            "icon_cat_ears": "icon_cat_ears",
-            "icon_wing": "icon_wing",
-            "icon_fuck_you": "icon_fuck_you",
-            "icon_zzz": "icon_zzz",
-        }
-
-        # Rare emoji map
-        rare_map = {
-            "basic": "rare_basic",
-            "premium": "rare_premium",
-            "elite": "rare_elite",
-            "special": "rare_special",
-        }
-
-        # Сгруппировать по типам
-        equipped_tags = []
-        equipped_icons = []
-        unequipped_tags = []
-        unequipped_icons = []
-        equipped_items = []
-        unequipped_items = []
-
-        for cosmetic in cosmetics:
-            item = shop_store.get_item(cosmetic.item_id)
-            if not item:
-                continue
-
-            rare_emoji = rare_map.get(item.rarity.value, "")
-            if cosmetic.equipped:
-                equipped_items.append((cosmetic.item_id, item.name))
-                if item.cosmetic_type.value == "tag":
-                    equipped_tags.append(f" Тег: **{item.value}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-                elif item.cosmetic_type.value == "icon":
-                    icon_emoji = icon_map.get(item.value, "")
-                    equipped_icons.append(f" Значок: {replace_emojis(icon_emoji)} **{item.name}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-            else:
-                unequipped_items.append((cosmetic.item_id, item.name))
-                if item.cosmetic_type.value == "tag":
-                    unequipped_tags.append(f" Тег: **{item.value}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-                elif item.cosmetic_type.value == "icon":
-                    icon_emoji = icon_map.get(item.value, "")
-                    unequipped_icons.append(f" Значок: {replace_emojis(icon_emoji)} **{item.name}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-
-        # Build description
-        description_parts = ["Управление вашей экипировкой и предметами:\n"]
-
-        # Экипировано
-        description_parts.append(f"**Экипировано:**")
-        if equipped_tags:
-            description_parts.extend(equipped_tags)
-        if equipped_icons:
-            description_parts.extend(equipped_icons)
-        if not equipped_tags and not equipped_icons:
-            description_parts.append(f" Ничего не экипировано")
-        description_parts.append("")
-
-        # В инвентаре
-        description_parts.append(f"**В инвентаре:**")
-        if unequipped_tags:
-            description_parts.extend(unequipped_tags)
-        if unequipped_icons:
-            description_parts.extend(unequipped_icons)
-        if not unequipped_tags and not unequipped_icons:
-            description_parts.append(f" Инвентарь пуст")
-        description_parts.append("")
-
-        # Управление
-        description_parts.append(f"**Управление:**")
-        description_parts.append(f" Используйте выпадающие меню ниже для экипировки/снятия.")
-        description_parts.append("")
-        description_parts.append(f"Максимум 1 тег и 1 значок одновременно")
-
-        # Создать embed
-        embed = discord.Embed(
-            title=f"ИНВЕНТАРЬ ПОЛЬЗОВАТЕЛЯ",
-            description="\n".join(description_parts),
-            color=discord.Color.from_rgb(69, 69, 69)
+        """Показать инвентарь (SHOP 2.0, CV2)."""
+        from views.inventory2_view import build_inventory_view
+        await interaction.response.send_message(
+            view=await build_inventory_view(
+                interaction.guild_id, interaction.user.id
+            ),
+            ephemeral=True,
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-        # Создать View с select menu
-        view = discord.ui.View()
-
-        # Добавить select menu для экипировки и снятия
-        if unequipped_items:
-            view.add_item(InventoryEquipSelect(unequipped_items))
-
-        if equipped_items:
-            view.add_item(InventoryUnequipSelect(equipped_items))
-
-        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
     # @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
     # async def rps(self, interaction: discord.Interaction) -> None:
