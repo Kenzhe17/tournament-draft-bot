@@ -47,9 +47,11 @@ logger = logging.getLogger(__name__)
 _JOURNAL_SOURCES = {"tournament", "room", "organizer"}
 _DEBOUNCE_SEC = 3.0
 _MIN_EDIT_INTERVAL = 2.0
+_VERIFY_TTL = 3600.0  # реже проверять существование неизменённых карточек
 _FLUSH_LOCKS: dict[str, asyncio.Lock] = {}
 _DIRTY: dict[str, dict[str, Any]] = {}
 _EDIT_TS: dict[int, float] = {}
+_VERIFY_TS: dict[int, float] = {}
 _SIG_CACHE: dict[int, str] = {}
 _URL_CACHE: dict[str, tuple[str | None, float]] = {}
 _URL_CACHE_TTL = 300.0
@@ -777,15 +779,31 @@ async def _send_or_edit(
     контент не вызывает edit; удалённое сообщение пересоздаётся.
     """
     sig = _view_signature(view)
-    if message_id and _SIG_CACHE.get(sig_key) == sig:
-        return message_id
     now = time.monotonic()
+    if message_id and _SIG_CACHE.get(sig_key) == sig:
+        # Контент не менялся — edit не нужен. Но раз в
+        # _VERIFY_TTL проверяем, что сообщение не удалено
+        # в Discord (иначе карточка потеряется навсегда).
+        if now - _VERIFY_TS.get(message_id, 0.0) < _VERIFY_TTL:
+            return message_id
+        try:
+            await channel.fetch_message(message_id)
+            _VERIFY_TS[message_id] = now
+            return message_id
+        except discord.NotFound:
+            _SIG_CACHE.pop(sig_key, None)
+            message_id = 0  # удалено — пересоздаём ниже
+        except Exception:
+            return message_id  # Discord недоступен — не трогаем
     if message_id:
         last = _EDIT_TS.get(message_id, 0.0)
-        if now - last < _MIN_EDIT_INTERVAL:
-            # Слишком рано — пропускаем edit, следующий flush
-            # донесёт (сигнатура изменится или flush повторится).
-            return message_id
+        wait = _MIN_EDIT_INTERVAL - (now - last)
+        if wait > 0:
+            # Недавний edit — выжидаем интервал и всё равно
+            # применяем: пропуск потерял бы обновление, если
+            # новых событий не будет (flush — фоновая задача).
+            await asyncio.sleep(wait + 0.05)
+            now = time.monotonic()
     try:
         if message_id:
             try:
@@ -795,6 +813,7 @@ async def _send_or_edit(
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
                 _EDIT_TS[message_id] = now
+                _VERIFY_TS[message_id] = now
                 _SIG_CACHE[sig_key] = sig
                 return message_id
             except discord.NotFound:
@@ -804,6 +823,7 @@ async def _send_or_edit(
             allowed_mentions=discord.AllowedMentions.none(),
         )
         _EDIT_TS[int(msg.id)] = now
+        _VERIFY_TS[int(msg.id)] = now
         _SIG_CACHE[sig_key] = sig
         return int(msg.id)
     except Exception as exc:  # noqa: BLE001
@@ -814,7 +834,12 @@ async def _send_or_edit(
 async def _ensure_thread(
     bot: discord.Client, message: discord.Message, name: str
 ) -> discord.Thread | None:
-    """Создать или вернуть существующую ветку журнала."""
+    """Создать ветку журнала или найти уже существующую.
+
+    Fallback: если create_thread падает (ветка уже есть, но
+    thread_id потерян/устарел), ищем активную ветку гильдии
+    по имени ``Журнал {tid}``.
+    """
     try:
         thread = await message.create_thread(
             name=name[:100],
@@ -822,8 +847,30 @@ async def _ensure_thread(
         )
         return thread
     except discord.HTTPException as exc:
-        logger.warning("journal: create_thread failed: %s", exc)
-        return None
+        logger.info("journal: create_thread %s: %s — ищем "
+                    "существующую", name, exc)
+    # Ветка могла существовать до потери thread_id —
+    # сначала активные, затем заархивированные Discord'ом.
+    try:
+        guild = message.guild
+        if guild is not None:
+            candidates = list(await guild.fetch_threads())
+            try:
+                async for th in guild.archived_threads(limit=100):
+                    candidates.append(th)
+            except Exception:
+                pass
+            for th in candidates:
+                if getattr(th, "name", None) == name[:100]:
+                    if getattr(th, "archived", False):
+                        try:
+                            await th.edit(archived=False)
+                        except Exception:
+                            pass
+                    return th
+    except Exception as exc:
+        logger.warning("journal: thread lookup failed: %s", exc)
+    return None
 
 
 async def _get_thread(bot: discord.Client, thread_id: int):
@@ -833,7 +880,7 @@ async def _get_thread(bot: discord.Client, thread_id: int):
             ch = await bot.fetch_channel(thread_id)
         except Exception:
             return None
-    if isinstance(ch, discord.Thread) and ch.archived:
+    if getattr(ch, "archived", False):
         try:
             await ch.edit(archived=False)
         except Exception as exc:

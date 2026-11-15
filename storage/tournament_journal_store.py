@@ -51,6 +51,11 @@ _INDEXES = (
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_journal_match "
     "ON tournament_journal (tournament_id, match_key) "
     "WHERE kind = 'match'",
+    # Уникальный номер журнала внутри гильдии — защита от
+    # гонки при одновременном создании двух турниров.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_journal_no "
+    "ON tournament_journal (guild_id, journal_no) "
+    "WHERE kind = 'tournament' AND journal_no IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_journal_sync "
     "ON tournament_journal (sync_status) "
     "WHERE sync_status <> 'synced'",
@@ -180,23 +185,34 @@ async def upsert_main(
         )
         if row:
             return _row_to_dict(row)
-        no = await conn.fetchval(
-            "SELECT count(*) + 1 FROM tournament_journal "
-            "WHERE guild_id = $1 AND kind = 'tournament'",
-            guild_id,
-        )
-        row = await conn.fetchrow(
-            """
-            INSERT INTO tournament_journal
-                (guild_id, channel_id, tournament_id, journal_no,
-                 kind, sync_status)
-            VALUES ($1,$2,$3,$4,'tournament','pending')
-            ON CONFLICT (tournament_id) WHERE kind = 'tournament'
-            DO UPDATE SET updated_at = now()
-            RETURNING *
-            """,
-            guild_id, channel_id, str(tournament_id), no,
-        )
+        # Гонка journal_no: два flush разных турниров одного
+        # гильдии могут одновременно прочитать count+1.
+        # Advisory xact-lock по guild_id сериализует присвоение
+        # номера; уникальный индекс idx_journal_no — последний
+        # рубеж (при конфликте — retry снаружи через flush).
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock("
+                "hashtext('tournament_journal:' || $1::text))",
+                str(guild_id),
+            )
+            no = await conn.fetchval(
+                "SELECT count(*) + 1 FROM tournament_journal "
+                "WHERE guild_id = $1 AND kind = 'tournament'",
+                guild_id,
+            )
+            row = await conn.fetchrow(
+                """
+                INSERT INTO tournament_journal
+                    (guild_id, channel_id, tournament_id, journal_no,
+                     kind, sync_status)
+                VALUES ($1,$2,$3,$4,'tournament','pending')
+                ON CONFLICT (tournament_id) WHERE kind = 'tournament'
+                DO UPDATE SET updated_at = now()
+                RETURNING *
+                """,
+                guild_id, channel_id, str(tournament_id), no,
+            )
         return _row_to_dict(row)
 
 

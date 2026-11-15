@@ -317,7 +317,14 @@ async def mark_discord_posted(
 
 
 async def unpublished_events(limit: int = 50) -> list[dict[str, Any]]:
-    """События, для которых ещё не отправлена карточка в канал."""
+    """События, для которых ещё не отправлена карточка в канал.
+
+    События турнира/комнаты/организатора с tournament_id
+    исключены: они публикуются группированно карточками журнала
+    (services/tournament_journal), отдельный discord_message_id
+    им не нужен — иначе republish_unpublished крутил бы их
+    по кругу при каждом рестарте.
+    """
     from storage.db import get_pool
 
     pool = await get_pool()
@@ -328,6 +335,10 @@ async def unpublished_events(limit: int = 50) -> list[dict[str, Any]]:
             SELECT * FROM tournament_audit_log
             WHERE discord_message_id IS NULL
               AND status IN ('success', 'pending')
+              AND NOT (
+                  tournament_id IS NOT NULL
+                  AND source IN ('tournament', 'room', 'organizer')
+              )
             ORDER BY id ASC LIMIT $1
             """,
             limit,
