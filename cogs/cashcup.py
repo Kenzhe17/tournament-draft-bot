@@ -145,6 +145,12 @@ def _panel(state: dict) -> discord.Embed:
     if state["status"] == "registration":
         lines.append("**Регистрация открыта.** Каждый игрок сам вводит Free Fire UID и получает ник из API.")
         lines.append("До старта необходимо подтверждение состава организатором.")
+        teams = state.get("teams", [])
+        if teams:
+            lines.append(f"**Команды ({len(teams)}):** " + ", ".join(
+                f"{_label(t)} ({len(t['members'])}/5)" for t in teams[:12]))
+            if len(teams) > 12:
+                lines.append(f"… ещё {len(teams)-12} — кнопка «Команды»")
     elif running:
         if state.get("paused"):
             lines.append(f"**Турнир приостановлен:** {safe_text(state.get('pause_reason') or 'без указания причины', limit=120)}")
@@ -274,6 +280,12 @@ class CashCupView(discord.ui.View):
         cog = interaction.client.get_cog("CashCupCog")
         await cog.show_roster(interaction)
 
+    @discord.ui.button(label="Команды", style=discord.ButtonStyle.secondary,
+                       custom_id="cashcup:teams")
+    async def teams(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog("CashCupCog")
+        await cog.show_teams(interaction)
+
     @discord.ui.button(label="Матчи", style=discord.ButtonStyle.secondary,
                        custom_id="cashcup:matches")
     async def matches(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -287,6 +299,79 @@ class CashCupView(discord.ui.View):
         await cog.show_bracket(interaction)
 
 
+def _match_card_text(state: dict, m: dict) -> str:
+    ta = next((t for t in state["teams"] if t["id"] == m["a"]), None)
+    tb = next((t for t in state["teams"] if t["id"] == m["b"]), None)
+    def roster(t):
+        if not t:
+            return "—"
+        lineup = ", ".join(safe_text(p["nick"], limit=20) for p in t["members"]
+                           if p["discord_id"] in t["lineup"])
+        return f"{_label(t)} (капитан <@{t['captain']}>)\n  {lineup}"
+    stage = {"W": "Winners", "L": "Losers", "GF": "GRAND FINAL"}.get(m["bracket"], m["bracket"])
+    lines = [
+        f"**{m['id']}** · {stage} · BO{m['bo']} · статус: {m['status']}",
+        f"**A:** {roster(ta)}",
+        f"**B:** {roster(tb)}",
+        f"Check-in: {len(m.get('checkins', []))}/2 · "
+        f"Комната: {'готова' if m.get('room_id') else 'ожидается'}",
+    ]
+    if m["bracket"] == "GF" or m.get("games") or m.get("score", [0, 0]) != [0, 0]:
+        lines.append(f"Счёт: **{m['score'][0]}:{m['score'][1]}**")
+    if m.get("dispute"):
+        lines.append(f"**СПОР:** {safe_text(m['dispute'].get('reason', ''), limit=150)} "
+                     f"· доказательств: {len(m['dispute'].get('evidence', []))}")
+    return "\n".join(lines)[:1900]
+
+
+def _board_embed(state: dict) -> discord.Embed:
+    b = state.get("bracket") or {}
+    active = ready_matches(b) if b else []
+    lines = ["**Текущий раунд — выберите матч**"]
+    for m in active[:15]:
+        score = f" · {m['score'][0]}:{m['score'][1]}" if m["bracket"] == "GF" else ""
+        flag = " ⚠️ СПОР" if m["status"] == "disputed" else ""
+        lines.append(f"`{m['id']}` {_team_name(state, m['a'])} vs {_team_name(state, m['b'])}"
+                     f" · BO{m['bo']}{score}{flag}")
+    if not active:
+        lines.append("Активных матчей нет" +
+                     (f". Чемпион: **{_team_name(state, b['champion'])}**"
+                      if b.get("champion") else "."))
+    if len(active) > 15:
+        lines.append(f"… ещё {len(active)-15} — `/cashcup info matches`")
+    return discord.Embed(title="r!z3 CASH CUP · матчи", description="\n".join(lines),
+                         color=0x26262A)
+
+
+class BoardSelectView(discord.ui.View):
+    """Persistent Select активных матчей → ephemeral карточка матча."""
+    def __init__(self, matches=None):
+        super().__init__(timeout=None)
+        options = [discord.SelectOption(
+            label=m["id"], value=m["id"],
+            description=(f"{_short_desc(m)}")[:100]) for m in (matches or [])[:25]]
+        if not options:
+            options = [discord.SelectOption(label="Матчов нет", value="none")]
+        self._sel = discord.ui.Select(
+            placeholder="Открыть матч…", custom_id="cashcup:board_select",
+            options=options, disabled=not matches)
+        self._sel.callback = self._pick
+        self.add_item(self._sel)
+
+    async def _pick(self, interaction: discord.Interaction) -> None:
+        mid = self._sel.values[0]
+        if mid == "none":
+            await interaction.response.send_message("Активных матчей нет.", ephemeral=True)
+            return
+        cog = interaction.client.get_cog("CashCupCog")
+        await cog.show_match_card(interaction, mid)
+
+
+def _short_desc(m: dict) -> str:
+    st = {"ready": "ожидание", "disputed": "СПОР"}.get(m["status"], m["status"])
+    return f"BO{m['bo']} · {st}"
+
+
 class CashCupCog(commands.Cog):
     cashcup = app_commands.Group(name="cashcup", description="r!z3 CASH CUP · денежный турнир")
     info = app_commands.Group(name="info", description="CASH CUP · матчи, сетка, история и утилиты")
@@ -297,6 +382,7 @@ class CashCupCog(commands.Cog):
 
     async def cog_load(self) -> None:
         self.bot.add_view(compose(_panel({"status": "registration", "prize": "", "teams": []}), CashCupView(True)))
+        self.bot.add_view(BoardSelectView())
 
     async def _refresh(self, guild_id: int, state: dict | None = None) -> None:
         if state is None:
@@ -315,6 +401,43 @@ class CashCupCog(commands.Cog):
                            allowed_mentions=discord.AllowedMentions.none())
         except discord.HTTPException:
             logger.exception("CASH CUP panel refresh failed")
+        await self._sync_board(state, channel)
+
+    async def _sync_board(self, state: dict, channel) -> None:
+        """Публичная карточка текущего раунда: одно сообщение, обновляется на месте."""
+        if state.get("status") != "running" or not state.get("bracket"):
+            return
+        try:
+            active = ready_matches(state["bracket"])
+            view = BoardSelectView(active)
+            board_id = state.get("board_message_id")
+            if board_id:
+                try:
+                    msg = await channel.fetch_message(board_id)
+                    await msg.edit(embed=_board_embed(state), view=view,
+                                   allowed_mentions=discord.AllowedMentions.none())
+                    return
+                except discord.HTTPException:
+                    pass  # сообщение удалено — создадим заново
+            msg = await channel.send(embed=_board_embed(state), view=view,
+                                     allowed_mentions=discord.AllowedMentions.none())
+            def change(st):
+                st["board_message_id"] = msg.id
+            await cashcup_store.mutate(state["guild_id"], 0, "board_sync", change)
+        except Exception:
+            logger.exception("CASH CUP board sync failed")
+
+    async def show_match_card(self, interaction: discord.Interaction, match_id: str) -> None:
+        state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
+        if not state or not state.get("bracket"):
+            await self._reply(interaction, "Сетка ещё не сформирована")
+            return
+        m = next((x for x in state["bracket"]["matches"]
+                  if x["id"] == match_id.upper()), None)
+        if not m:
+            await self._reply(interaction, "Матч не найден")
+            return
+        await self._reply(interaction, _match_card_text(state, m))
 
     async def _reply(self, interaction: discord.Interaction, message: str) -> None:
         if interaction.response.is_done():
@@ -533,6 +656,21 @@ class CashCupCog(commands.Cog):
         if t["captain"] == interaction.user.id and t["pending"]:
             rows.append("\n**Заявки:** " + ", ".join(f"<@{p['discord_id']}>" for p in t["pending"][:15]))
         await self._reply(interaction, "\n".join(rows))
+
+    async def show_teams(self, interaction: discord.Interaction) -> None:
+        state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
+        if not state or not state.get("teams"):
+            await self._reply(interaction, "Команд пока нет")
+            return
+        lines = [f"**CASH CUP · команды ({len(state['teams'])})**"]
+        for t in state["teams"][:25]:
+            verified = sum(1 for p in t["members"] if p.get("verified"))
+            pcs = sum(1 for p in t["members"] if p.get("device") == "pc")
+            lines.append(f"**{_label(t)}** — капитан <@{t['captain']}> · "
+                         f"{len(t['members'])}/5 · ПК: {pcs} · verified: {verified}/5")
+        if len(state["teams"]) > 25:
+            lines.append(f"… ещё {len(state['teams'])-25}")
+        await self._reply(interaction, "\n".join(lines)[:1900])
 
     async def show_active_matches(self, interaction: discord.Interaction) -> None:
         state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
@@ -1243,38 +1381,7 @@ def _apply_prizes(state: dict, p1: int, p2: int, p3: int, currency: str) -> dict
 
     @info.command(name="match", description="Детальная карточка матча")
     async def match_card(self, interaction: discord.Interaction, match_id: str):
-        state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
-        if not state or not state.get("bracket"):
-            await self._reply(interaction, "Сетка ещё не сформирована")
-            return
-        m = next((x for x in state["bracket"]["matches"]
-                  if x["id"] == match_id.upper()), None)
-        if not m:
-            await self._reply(interaction, "Матч не найден")
-            return
-        ta = next((t for t in state["teams"] if t["id"] == m["a"]), None)
-        tb = next((t for t in state["teams"] if t["id"] == m["b"]), None)
-        def roster(t):
-            if not t:
-                return "—"
-            cap = f"капитан <@{t['captain']}>"
-            lineup = ", ".join(safe_text(p["nick"], limit=20) for p in t["members"]
-                               if p["discord_id"] in t["lineup"])
-            return f"{_label(t)} ({cap})\n  {lineup}"
-        lines = [
-            f"**{m['id']}** · {'Winners' if m['bracket']=='W' else 'Losers' if m['bracket']=='L' else 'GRAND FINAL'} · BO{m['bo']}",
-            f"**A:** {roster(ta)}",
-            f"**B:** {roster(tb)}",
-            f"Check-in: {len(m.get('checkins', []))}/2 · "
-            f"Комната: {'готова' if m.get('room_id') else 'ожидается'} · "
-            f"Статус: {m['status']}",
-        ]
-        if m["bracket"] == "GF" or m.get("games"):
-            lines.append(f"Счёт: **{m['score'][0]}:{m['score'][1]}**")
-        if m.get("dispute"):
-            lines.append(f"**СПОР:** {safe_text(m['dispute'].get('reason',''), limit=150)} "
-                         f"· доказательств: {len(m['dispute'].get('evidence', []))}")
-        await self._reply(interaction, "\n".join(lines)[:1900])
+        await self.show_match_card(interaction, match_id)
 
 
 async def setup(bot: commands.Bot) -> None:

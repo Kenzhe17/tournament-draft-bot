@@ -91,3 +91,38 @@ def test_apply_prizes_without_pool():
     assert out["currency"] == "USD"
     with pytest.raises(cashcup.CashCupError):
         _apply_prizes(st, -1, 0, 0, "KZT")
+
+
+def _fake_state():
+    b = create_bracket(["TA", "TB", "TC", "TD"], seed=0)
+    teams = [{"id": "TA", "name": "Alpha", "captain": 1,
+              "members": [{"discord_id": 1, "nick": "N1", "ff_uid": "1",
+                           "device": "mobile", "verified": True},
+                          {"discord_id": 2, "nick": "N2", "ff_uid": "2",
+                           "device": "pc", "verified": True}],
+              "pending": [], "lineup": [1, 2]},
+             {"id": "TB", "name": "Beta", "captain": 3,
+              "members": [{"discord_id": 3, "nick": "N3", "ff_uid": "3",
+                           "device": "mobile", "verified": True}],
+              "pending": [], "lineup": [3]}]
+    return {"status": "running", "bracket": b, "teams": teams, "undo": []}
+
+
+def test_match_card_text():
+    st = _fake_state()
+    m = ready_matches(st["bracket"])[0]
+    text = cashcup._match_card_text(st, m)
+    assert m["id"] in text and "BO1" in text and "Check-in" in text
+
+
+def test_board_embed_lists_active():
+    st = _fake_state()
+    emb = cashcup._board_embed(st)
+    desc = emb.description or ""
+    assert "W1-" in desc or "L1-" in desc or "`" in desc
+
+
+def test_board_view_persistent_custom_id():
+    v = cashcup.BoardSelectView([])
+    ids = [getattr(i, "custom_id", "") for i in v.children]
+    assert "cashcup:board_select" in ids
