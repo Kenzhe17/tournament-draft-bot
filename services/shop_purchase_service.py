@@ -879,7 +879,10 @@ async def _recover_sell_op(op: dict, bot=None) -> str:
     payload = op.get("payload") or {}
     price = int(op.get("price") or 0)
 
-    if payload.get("credited") is None:
+    # credited должен быть подтверждён ПОЛНОЙ суммой: частичная
+    # выплата (MAX_BALANCE) — не «кредитовано», иначе предмет
+    # удалился бы без полной оплаты.
+    if payload.get("credited") != price:
         from storage.user_balance_store import user_balance_store
         try:
             credited = await user_balance_store.add_balance_once(
@@ -936,15 +939,24 @@ async def _recover_sell_op(op: dict, bot=None) -> str:
             logger.exception(
                 "sell recovery: role cleanup failed op=%s", op_id)
 
-    # Удалить предмет, если он ещё в инвентаре.
+    # Удалить предмет, если он ещё в инвентаре — и ПОДТВЕРДИТЬ
+    # фактическое отсутствие перед done: без подтверждения op
+    # остаётся charged и будет повторён следующим sweep'ом.
     item_id = op.get("item_id")
     if item_id:
         try:
             cosmetics = inventory_store.get_player_inventory(gid, uid)
             if any(c.item_id == item_id for c in cosmetics):
                 inventory_store.remove_cosmetic(gid, uid, item_id)
-        except Exception:
+            cosmetics = inventory_store.get_player_inventory(gid, uid)
+            if any(c.item_id == item_id for c in cosmetics):
+                logger.error(
+                    "sell recovery: item %s still in inventory "
+                    "op=%s — stays charged", item_id, op_id)
+                return "charged"
+        except Exception:  # noqa: BLE001
             logger.exception("sell recovery: remove item failed %s", op_id)
+            return "charged"
 
     await purchase_ops_store.set_status(op_id, "done")
     return "done"
@@ -1131,15 +1143,37 @@ async def recover_pending(bot=None) -> int:
     for op in ops:
         try:
             status = op["status"]
+            kind = op["kind"]
             if status == "reserved":
-                # charge() атомарен — reserved значит «денег не списано»
-                await purchase_ops_store.set_status(
-                    op["op_id"], "failed",
-                    payload={"reason": "interrupted_before_charge"},
-                )
+                if kind == "sell":
+                    # У sell «зарезервировано» ≠ «ничего не произошло»:
+                    # кредит мог закоммититься, а set_status(charged)
+                    # потеряться. failed закрыл бы операцию с
+                    # потерянным предметом и оставшимися монетами.
+                    # _recover_sell_op идемпотентно определяет факт.
+                    await _recover_sell_op(op, bot)
+                else:
+                    # charge() атомарен — reserved значит «денег
+                    # не списано» для purchase/case/pet/egg/wardrobe.
+                    await purchase_ops_store.set_status(
+                        op["op_id"], "failed",
+                        payload={"reason": "interrupted_before_charge"},
+                    )
                 resolved += 1
                 continue
             if status == "unknown":
+                if kind == "sell":
+                    # У sell нет refund-задолженностей: стандартный
+                    # settle→refunded закрыл бы op при предмете
+                    # в инвентаре и частичном кредите. Идём в
+                    # выделенный recovery — он различает
+                    # confirmed/not_credited/partial/unknown.
+                    await _recover_sell_op(op, bot)
+                    resolved += 1
+                    continue
+                if kind == "nickname":
+                    # Свой контур восстановления — не трогаем.
+                    continue
                 # settle вернёт 0 когда обе задолженности погашены;
                 # тогда unknown → refunded (см. settle_refund_debts).
                 remaining = await purchase_ops_store.settle_pending_refund(op)

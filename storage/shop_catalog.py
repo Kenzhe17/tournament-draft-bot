@@ -462,32 +462,20 @@ async def _maybe_migrate_json(rows: list[dict[str, Any]]) -> str | None:
 
     Безопасный порядок:
     1. Маркер json_migration_done уже стоит → JSON не трогаем.
-    2. В PG есть ручные правки (source panel/discord_admin) →
-       JSON считается устаревшим, импорт пропускаем, id логируем.
-    3. Бэкап JSON → импорт всех валидных записей
-       (ON CONFLICT DO NOTHING — существующее не затирается,
-       в т.ч. скрытые товары и пользовательские цены).
-    4. Только после полного импорта — маркер. Аварийное
-       прерывание оставляет маркер снятым → миграция
-       докатывается при следующем старте.
+    2. Читаем и валидируем ВЕСЬ JSON (включая скрытые товары).
+    3. Предварительный diff: id, отсутствующие в PG → кандидаты
+       на импорт; id, присутствующие в обоих → конфликт-журнал
+       при расхождении ключевых полей (перезаписи НЕТ —
+       ON CONFLICT DO NOTHING сохраняет ручные правки).
+    4. Бэкап JSON → импорт ТОЛЬКО отсутствующих id.
+    5. Маркер ставится только после полного импорта — аварийное
+       прерывание оставляет его снятым, миграция докатывается
+       при следующем старте без дублей.
     """
     pool = await get_pool()
     async with pool.acquire() as conn:
         if await _meta_get(conn, _META_KEY_MIGRATION) is not None:
             return None
-        human = [
-            r["id"] for r in rows
-            if (r.get("source") or "") in _HUMAN_SOURCES
-        ]
-        if human:
-            logger.warning(
-                "shop catalog: JSON migration skipped — PG уже "
-                "содержит ручные правки (%d строк, sources=%s)",
-                len(human), sorted({r.get("source") for r in rows}),
-            )
-            await _meta_set(conn, _META_KEY_MIGRATION,
-                            f"skipped:human_edits:{int(time.time())}")
-            return "json_skipped"
 
     json_items, bad = await _read_json_catalog()
     if not json_items:
@@ -499,18 +487,65 @@ async def _maybe_migrate_json(rows: list[dict[str, Any]]) -> str | None:
 
     backup = _backup_json_catalog()
     if backup is None:
-        # Нет подтверждённой резервной копии — импорт запрещён.
+        # Нет подтверждённой резервной копии — импорт запрещён,
+        # маркер НЕ ставим: повторим при следующем старте.
         logger.error(
             "shop catalog: JSON migration aborted — backup failed"
         )
         return "json_backup_failed"
 
-    n = await seed_defaults(json_items, source="json")
+    # Diff: что будет импортировано, что пропущено, где конфликты.
+    pg_by_id = {r["id"]: r for r in rows}
+    json_by_id = {it["id"]: it for it in json_items}
+    to_import = [it for iid, it in json_by_id.items()
+                 if iid not in pg_by_id]
+    conflicts = []
+    for iid, jit in json_by_id.items():
+        prow = pg_by_id.get(iid)
+        if prow is None:
+            continue
+        for field in ("price", "name", "is_active", "category"):
+            jv = jit.get(field)
+            pv = prow.get(field)
+            if jv is not None and pv is not None and jv != pv:
+                conflicts.append({
+                    "item_id": iid, "field": field,
+                    "pg": pv, "json": jv,
+                    "resolution": "kept_pg",
+                })
+    human = [
+        r["id"] for r in rows
+        if (r.get("source") or "") in _HUMAN_SOURCES
+    ]
+    if human:
+        logger.warning(
+            "shop catalog: JSON migration alongside manual edits "
+            "(%d panel rows) — importing only missing ids",
+            len(human),
+        )
+    for c in conflicts[:50]:
+        logger.warning("shop catalog JSON/PG conflict: %s", c)
     logger.info(
-        "shop catalog: JSON→PG imported %d items (%d skipped as "
-        "existing, %d invalid dropped), backup=%s",
-        n, len(json_items) - n, bad, backup,
+        "shop catalog JSON diff: pg=%d json=%d import=%d "
+        "conflicts=%d invalid=%d backup=%s",
+        len(pg_by_id), len(json_by_id), len(to_import),
+        len(conflicts), bad, backup,
     )
+
+    if not to_import:
+        async with pool.acquire() as conn:
+            await _meta_set(conn, _META_KEY_MIGRATION,
+                            f"no_missing:{int(time.time())}")
+        return "json_noop"
+
+    n = await seed_defaults(to_import, source="json")
+    logger.info(
+        "shop catalog: JSON→PG imported %d items (%d already "
+        "present, %d invalid dropped)",
+        n, len(to_import) - n, bad,
+    )
+    # Маркер — только после подтверждённого импорта всех
+    # отсутствующих id. Сбой выше → исключение → маркер не стоит.
     async with pool.acquire() as conn:
         await _meta_set(
             conn, _META_KEY_MIGRATION,

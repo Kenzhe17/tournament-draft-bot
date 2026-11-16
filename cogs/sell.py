@@ -1,3 +1,4 @@
+import logging
 import math
 from typing import TYPE_CHECKING, Optional
 
@@ -12,6 +13,8 @@ from utils.design import compose
 
 if TYPE_CHECKING:
     from bot import TournamentBot
+
+logger = logging.getLogger(__name__)
 
 
 # ==========================================
@@ -222,25 +225,32 @@ class SellCog(commands.Cog):
 
             # Если по этому предмету уже есть незавершённая
             # продажа — не создаём вторую, сообщаем пользователю.
+            # Ошибка проверки → продажу НЕ продолжаем: без
+            # гарантии отсутствия дубля op_id создание новой
+            # операции может конфликтовать с recovery.
             try:
                 pending_ops = await purchase_ops_store.pending()
-                if any(
-                    o.get("kind") == "sell"
-                    and o.get("item_id") == item.id
-                    and o.get("user_id") == interaction.user.id
-                    and o.get("guild_id") == guild_id
-                    for o in pending_ops
-                ):
-                    await interaction.followup.send(
-                        " Предыдущая продажа этого предмета ещё "
-                        "обрабатывается — дождитесь завершения.",
-                        ephemeral=True,
-                    )
-                    return
             except Exception:  # noqa: BLE001
-                # Не смогли проверить — продолжаем, op_id всё
-                # равно уникален и recovery идемпотентен.
-                pass
+                logger.exception("sell: pending ops check failed")
+                await interaction.followup.send(
+                    " Не удалось проверить статус продаж — "
+                    "попробуйте позже.",
+                    ephemeral=True,
+                )
+                return
+            if any(
+                o.get("kind") == "sell"
+                and o.get("item_id") == item.id
+                and o.get("user_id") == interaction.user.id
+                and o.get("guild_id") == guild_id
+                for o in pending_ops
+            ):
+                await interaction.followup.send(
+                    " Предыдущая продажа этого предмета ещё "
+                    "обрабатывается — дождитесь завершения.",
+                    ephemeral=True,
+                )
+                return
 
             sale_op_id = purchase_ops_store.new_op_id()
             await purchase_ops_store.create(
@@ -344,16 +354,25 @@ class SellCog(commands.Cog):
                 payload={"credited": credited},
             )
 
-            # 5. Удаляем предмет. При сбое удаления начисленные
-            #    монеты не откатываем — recovery доведёт
-            #    удаление и завершит операцию.
+            # 5. Удаляем предмет и ПОДТВЕРЖДАЕМ отсутствие.
+            #    done ставится только после фактической проверки:
+            #    иначе op остаётся charged и recovery доведёт
+            #    удаление (монеты уже зачислены идемпотентно).
+            removed_confirmed = False
             try:
                 await remove_user_item(
                     guild_id, interaction.user.id, item.id
                 )
+                remaining = inventory_store.get_player_inventory(
+                    guild_id, interaction.user.id
+                )
+                removed_confirmed = not any(
+                    c.item_id == item.id for c in remaining
+                )
             except Exception:  # noqa: BLE001
                 pass
-            await purchase_ops_store.set_status(sale_op_id, "done")
+            if removed_confirmed:
+                await purchase_ops_store.set_status(sale_op_id, "done")
             shop_ops_store.record(
                 guild_id=guild_id, user_id=interaction.user.id,
                 kind="sell", item_id=item.id, price=sell_price,

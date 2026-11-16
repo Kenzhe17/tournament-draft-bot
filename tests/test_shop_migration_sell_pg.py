@@ -195,24 +195,28 @@ async def test_json_migration_idempotent_and_marker(env):
 
 
 @pytest.mark.asyncio
-async def test_json_skipped_when_panel_edits_exist(env):
-    """В PG есть ручные правки → JSON не воскрешает товары."""
+async def test_json_diff_imports_missing_keeps_panel_edits(env):
+    """Ручные правки в PG не блокируют восстановление: импортируются
+    ТОЛЬКО отсутствующие в PG id, существующие строки (включая
+    panel-отредактированные) не перезаписываются."""
     _write_json(env["shop_file"], {
-        "resurrect_me": _item_dict("resurrect_me"),
+        "resurrect_me": _item_dict("resurrect_me", price=555),
+        "panel_item": _item_dict("panel_item", price=1),  # конфликт цены
     })
-    # Имитируем уже отредактированный каталог.
     await shop_catalog.upsert_item(
         _item_dict("panel_item", price=999), source="panel")
     shop = ShopStore()
     status = await shop_catalog.sync_to_store(shop)
-    # json_skipped — не миграция, каталог из PG.
-    assert status == "pg"
+    assert status == "json_migrated"
     rows = await shop_catalog.load_all()
-    ids = {r["id"] for r in rows}
-    assert "resurrect_me" not in ids
-    assert "panel_item" in ids
-    # Дефолты всё равно досеиваются.
-    assert "icon_heart" in ids
+    by_id = {r["id"]: r for r in rows}
+    # Отсутствующий id восстановлен.
+    assert "resurrect_me" in by_id
+    assert by_id["resurrect_me"]["price"] == 555
+    # Ручная правка НЕ перезаписана JSON.
+    assert by_id["panel_item"]["price"] == 999
+    # Дефолты досеиваются.
+    assert "icon_heart" in by_id
 
 
 @pytest.mark.asyncio
@@ -317,11 +321,11 @@ async def test_metadata_migration_ambiguous_sources_skipped(
 
 # ------------------------------------------------------------- sell
 
-async def _mk_sell_op(env, price=1000, payload=None):
+async def _mk_sell_op(env, price=1000, payload=None, item_id="tag_x"):
     op_id = purchase_ops_store.new_op_id()
     await purchase_ops_store.create(
-        op_id, G, U, "sell", "tag_x", price,
-        payload=payload or {"cosmetic": {"item_id": "tag_x"}},
+        op_id, G, U, "sell", item_id, price,
+        payload=payload or {"cosmetic": {"item_id": item_id}},
     )
     return op_id
 
@@ -434,3 +438,133 @@ async def test_sell_recovery_shortfall_marks_unknown(env):
     # Предмет на месте — ничего не потеряно.
     cosmetics = inv.get_player_inventory(G, U)
     assert any(c.item_id == "tag_z" for c in cosmetics)
+
+
+# ------------------------------------------- sell state machine crashes
+
+async def _reset_balance(env, amount=0):
+    async with env["pool"].acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO user_balance (guild_id, user_id, balance)
+            VALUES ($1,$2,$3)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET balance=$3
+            """, G, U, amount)
+
+
+def _add_item(env, item_id):
+    from models.shop_item import PlayerCosmetic
+    env["inv"].add_cosmetic(PlayerCosmetic(
+        guild_id=G, user_id=U, item_id=item_id))
+
+
+def _has_item(env, item_id):
+    return any(
+        c.item_id == item_id
+        for c in env["inv"].get_player_inventory(G, U))
+
+
+@pytest.mark.asyncio
+async def test_sell_reserved_with_committed_grant(env):
+    """Крэш ПОСЛЕ credit, ДО set_status(charged): op остаётся
+    reserved, но грант sellop:{op_id} закоммичен. Recovery НЕ
+    должен пометить failed — предмет изымается, двойного
+    начисления нет."""
+    _add_item(env, "tag_c1")
+    await _reset_balance(env)
+    op_id = await _mk_sell_op(env, price=700, item_id="tag_c1")
+    # Имитируем закоммиченный кредит с потерянным ответом:
+    credited = await user_balance_store.add_balance_once(
+        G, U, 700, f"sellop:{op_id}")
+    assert credited == 700
+    # op всё ещё reserved (set_status потерян)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "reserved"
+
+    # Полный recover_pending — reserved sell НЕ уходит в failed.
+    await svc.recover_pending(bot=None)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "done"
+    assert not _has_item(env, "tag_c1")
+    bal = await user_balance_store.get_balance(G, U)
+    assert bal == 700  # ровно один кредит
+
+
+@pytest.mark.asyncio
+async def test_sell_reserved_no_credit_completes_sale(env):
+    """Крэш сразу после create: recovery завершает продажу
+    (кредит + удаление) — пользователь.intent сохраняется."""
+    _add_item(env, "tag_c2")
+    await _reset_balance(env)
+    op_id = await _mk_sell_op(env, price=300, item_id="tag_c2")
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "reserved"
+    await svc.recover_pending(bot=None)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "done"
+    assert not _has_item(env, "tag_c2")
+    assert await user_balance_store.get_balance(G, U) == 300
+
+
+@pytest.mark.asyncio
+async def test_sell_unknown_shortfall_stays_unknown(env):
+    """unknown sell-op с частичным кредитом НЕ переводится
+    в refunded общим обработчиком — предмет сохранён."""
+    from config import MAX_BALANCE
+    _add_item(env, "tag_c3")
+    await _reset_balance(env, MAX_BALANCE)
+    op_id = await _mk_sell_op(env, price=900, item_id="tag_c3")
+    await purchase_ops_store.set_status(op_id, "charged")
+    await purchase_ops_store.set_status(
+        op_id, "unknown",
+        payload={"shortfall": 900, "credited": 0},
+    )
+    await svc.recover_pending(bot=None)
+    op = await purchase_ops_store.get(op_id)
+    # Не refunded и не done — ждёт ручного разбора.
+    assert op["status"] == "unknown"
+    assert _has_item(env, "tag_c3")
+
+
+@pytest.mark.asyncio
+async def test_sell_concurrent_recovery_single_credit(env):
+    """Два параллельных recovery одной операции → один грант,
+    один результат."""
+    _add_item(env, "tag_c4")
+    await _reset_balance(env)
+    op_id = await _mk_sell_op(env, price=800, item_id="tag_c4")
+    op = await purchase_ops_store.get(op_id)
+    await svc._recover_sell_op(op)
+    op = await purchase_ops_store.get(op_id)
+    # Имитируем повторный запуск по «старому» снапшоту op.
+    await svc._recover_sell_op(op)
+    bal = await user_balance_store.get_balance(G, U)
+    assert bal == 800
+    async with env["pool"].acquire() as conn:
+        n = await conn.fetchval(
+            "SELECT COUNT(*) FROM match_coin_grants "
+            "WHERE match_id=$1", f"sellop:{op_id}")
+    assert n == 1
+
+
+@pytest.mark.asyncio
+async def test_sell_lost_set_status_response(env):
+    """Потерянный ответ PG после COMMIT set_status(charged):
+    op читается как reserved, но credited уже в payload
+    нельзя — грант является источником истины."""
+    _add_item(env, "tag_c5")
+    await _reset_balance(env)
+    op_id = await _mk_sell_op(env, price=400, item_id="tag_c5")
+    # credit закоммичен, marker set_status «потерян» (не вызван)
+    await user_balance_store.add_balance_once(
+        G, U, 400, f"sellop:{op_id}")
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "reserved"
+    assert op["payload"].get("credited") is None
+    await svc._recover_sell_op(op)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "done"
+    assert not _has_item(env, "tag_c5")
+    # Повторный recovery — ноль изменений.
+    await svc._recover_sell_op(op)
+    assert await user_balance_store.get_balance(G, U) == 400
