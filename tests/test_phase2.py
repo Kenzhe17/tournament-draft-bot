@@ -60,7 +60,7 @@ def _make_bot(monkeypatch, counter):
     bot = object.__new__(bot_module.TournamentBot)
     bot._registered_view_keys = set()
     bot._register_view = lambda view: None
-    bot.build_view_for_tournament = lambda t: SimpleNamespace(children=[])
+    bot.build_view_for_tournament = lambda t, **kw: SimpleNamespace(children=[])
 
     async def _embed(t, guild):
         counter["builds"] += 1

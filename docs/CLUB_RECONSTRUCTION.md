@@ -1,4 +1,34 @@
-# r!z3 club reconstruction — implementation checkpoint
+# r!z3 reconstruction — current integration checkpoint
+
+Base: `feat/classic-riz3-cv2` at `e6c9bac55b5958dedf8e4cebf71c8ea14334b8cc` (verified 2026-11-16).
+Status: **local integration; not deployed, no PR because GitHub writes return 403**.
+
+## Current integration
+
+The current base already contains Control Center, moderation, tournament journal and SHOP 2.0. They were brought in by merging the user-designated working branch, resolving three conflicts in MM, tournament help and room-message tests. Their implementations, payment/recovery paths and persistent state were preserved. The historical section below describes the earlier checkpoint only.
+
+Hub economy now displays available REP as well as coins; REP read failures are shown as unavailable rather than as zero. Shop and inventory open the base's SHOP 2.0 handlers. Support buttons open private report/appeal forms and invoke the existing registered moderation command handlers with their checks, validation, throttles, ownership and audit behavior. Native `/report` and `/appeal` remain available.
+
+`MATCHMAKING_ENABLED=false` is the retirement gate and overrides `MM_ENABLED` and Control Center settings. To explicitly roll back to queues all applicable gates must be enabled. Retirement keeps result recovery for existing matches, but starts no new queue timers, notifications, pool initialization or matches.
+
+Shop role assignment now checks Discord permissions, configured organizer/manager/mute role IDs, dynamic moderation roles, managed/@everyone roles and explicit channel overwrites. Roles that unlock otherwise hidden channels or grant moderation permissions cannot be assigned through the shop. This intentionally also rejects paid private-channel access roles until a separate reviewed policy exists. Revalidation occurs when assigning a purchased role, activating a color, and restoring a removed role after an interrupted sale. A database failure reading staff configuration denies a new assignment. Existing roles are not removed. Ineligible restore operations remain unresolved for manual review rather than being falsely marked restored. Third-party bot ACLs and role-name authorization outside the reviewed project are not covered.
+
+## Validation and actual services
+
+- Focused integration suite: 140 passed, including support ownership/dispatch, REP degraded mode, shop role policy and recovery guards.
+- Full suite before the final two focused regression additions: 874 passed, 6 skipped; 136 environment errors, all `PermissionError: [Errno 1] Operation not permitted` in PostgreSQL fixtures. No test assertion failures in that run. These errors are not passing financial integration tests.
+- Control Center panel: `npm ci` and `npm run build` succeeded (TypeScript + Vite).
+- New/updated standalone modules passed Ruff; Python compileall and git diff --check passed.
+- Railway production/core already runs `e6c9bac`, deployment `cfc804cd-34e7-4447-a008-5ece0554bafe`, SUCCESS. This integration has not been deployed.
+- GitHub branch creation returned 403 Resource not accessible by integration. No remote branch or PR was created by this work.
+
+## Remaining gates
+
+Authorized live Discord inspection, PostgreSQL/volume backup and restore check, PostgreSQL concurrency/recovery tests, real Discord/mobile/staging scenarios, complete effective-per-member permission audit, notification role preferences, scheduling/calendar, unified organizer flow and application of the channel plan remain incomplete. Production security changes still require the separate approval specified by the user after a concrete migration is validated.
+
+## Prior checkpoint (historical, base 2f142c1)
+
+
 
 Base: `feat/classic-riz3-cv2` at `2f142c1b36839430850a6c0b109f57c8dc3ed99b`.
 Status: **draft, not deployed; full reconstruction is not complete**.
@@ -66,7 +96,7 @@ Full enforcement of this target matrix across BR/Ultimatum, shop roles, moderati
 1. Obtain authorized live Discord access and inspect effective permissions, integration ownership, pinned messages, Onboarding/Server Guide/AutoMod, active matches, queue state, and bot hierarchy. The supplied export is a point-in-time snapshot, not live access.
 2. Back up PostgreSQL, `/app/data`, current Discord categories/ACLs/role hierarchy and resolved configuration. Validate restoration separately. Do not commit secrets or the full private server export to the public repository.
 3. Run PG economy/MM/Ultimatum integration tests and validate concurrent actions, restarts and real Discord components in staging. Do not point a second gateway instance at the production bot token.
-4. Finish journal binding and independently integrate/verify Control Center, moderation and Shop 2.0. Do not merge their financial paths based solely on offline tests.
+4. Verify the now-integrated journal binding, Control Center, moderation and Shop 2.0 against staging and real PostgreSQL. Do not merge their financial paths based solely on offline tests.
 5. Review role/permission/channel plan and get the separately required approval for production security changes. Merge/release only after those gates; current branch remains a draft.
 6. Deploy a new build, confirm deployed SHA and healthy startup, check global/guild command sync and old match finalization. Publish Hub via `/server hub_publish` in the selected existing start channel; a later call edits the saved panel.
 7. Run `/server room_cards_secure` and inspect its counts. Update information panels via `/info update`. Check for untracked old credential cards. Existing knowledge of a previously public password cannot be revoked by editing a message; active room credentials need rotation by the organizer.

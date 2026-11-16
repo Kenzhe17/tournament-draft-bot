@@ -4,6 +4,19 @@ from typing import List, Tuple
 from models.player_stats import PlayerStats
 
 
+def _setting(key: str, default):
+    """Dynamic config (Control Center) → fallback на константу.
+
+    Синхронный peek: кэш уже прогрет init() бота; до init или
+    без БД возвращается default — поведение идентично прежнему.
+    """
+    try:
+        from services.settings_service import settings_service
+        return settings_service.peek(None, key)
+    except Exception:
+        return default
+
+
 def calculate_team_position(
     players: List[Tuple[str, int, int, int]],  # (player_name, kills, deaths, current_elo)
 ) -> List[Tuple[str, int]]:
@@ -50,11 +63,13 @@ def get_base_elo_change(
     Returns:
         Base ELO change
     """
-    # Define base ELO changes (same for all positions)
+    # Base ELO changes — динамическая конфигурация (rating.*).
+    # Поражение всегда даёт отрицательный базовый результат:
+    # registry ограничивает rating.base_loss_change <= 0.
     if team_won:
-        return 10  # Win: +10
+        return int(_setting("rating.base_win_change", 10))
     else:
-        return -10  # Loss: -10
+        return int(_setting("rating.base_loss_change", -10))
 
 
 def calculate_kd_bonus(kills: int, deaths: int) -> int:
@@ -70,7 +85,9 @@ def calculate_kd_bonus(kills: int, deaths: int) -> int:
     Returns:
         K/D bonus ELO change
     """
-    return (kills * 2) - deaths
+    kw = int(_setting("rating.kill_weight", 2))
+    dw = int(_setting("rating.death_weight", 1))
+    return (kills * kw) - (deaths * dw)
 
 
 def calculate_total_elo_change(

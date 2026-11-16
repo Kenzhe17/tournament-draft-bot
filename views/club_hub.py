@@ -23,6 +23,10 @@ class HubButton(discord.ui.Button):
                 or (self.owner_id and self.owner_id != interaction.user.id)):
             await interaction.response.send_message('Этот раздел недоступен.', ephemeral=True)
             return
+        if self.key in ('report', 'appeal'):
+            from views.club_support import SupportModal
+            await interaction.response.send_modal(SupportModal(self.key, interaction.user.id, interaction.guild.id))
+            return
         if self.key in ('shop', 'inventory'):
             command = interaction.client.tree.get_command(self.key)
             if command is None or not await command._check_can_run(interaction):
@@ -96,7 +100,13 @@ async def build_page(interaction, key):
     elif key == 'economy':
         from storage.user_balance_store import user_balance_store
         balance = await user_balance_store.get_balance(gid, uid)
-        view.text(f'Монеты: **{balance:,}**\n/daily — ежедневная награда')
+        from storage.rep_balance_store import rep_balance_store
+        try:
+            rep = str(await rep_balance_store.get_balance(gid, uid))
+        except Exception:
+            logger.warning('Hub REP balance unavailable', exc_info=True)
+            rep = 'временно недоступен'
+        view.text(f'Монеты: **{balance:,}**\nДоступный REP: **{rep}**\nМагазин использует монеты и REP.\n/daily — ежедневная награда')
         view.row(HubButton('shop', 'Магазин', owner_id=uid), HubButton('inventory', 'Инвентарь', owner_id=uid))
     elif key == 'ratings':
         from utils.design import compose
@@ -113,4 +123,5 @@ async def build_page(interaction, key):
         view.text('**Данные комнаты**\nКнопка в карточке комнаты доступна участникам матча и ответственным организаторам.')
         view.text('**Поддержка**\nПо вопросам матча обращайтесь к его организатору. По нарушениям — к модераторам сервера.')
         view.text('/help — полная справка\n/booyah — зал славы')
+        view.row(HubButton('report', 'Подать жалобу', owner_id=uid), HubButton('appeal', 'Обжаловать наказание', owner_id=uid))
     return navigation(view, uid)

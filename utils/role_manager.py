@@ -26,6 +26,10 @@ async def apply_role(guild: discord.Guild, user_id: int, role_id: int) -> bool:
         if not role:
             return False
 
+        from services.shop_role_policy import can_sell_role
+        if not await can_sell_role(guild, role):
+            return False
+
         # Check bot permissions
         bot_member = guild.me
         if not bot_member.guild_permissions.manage_roles:

@@ -42,6 +42,15 @@ logger = logging.getLogger(__name__)
 # /rep
 # ---------------------------------------------------------------------------
 
+
+def _setting_int(key: str, default: int) -> int:
+    """Dynamic config (Control Center) -> env default."""
+    try:
+        from services.settings_service import settings_service
+        return int(settings_service.peek(None, key))
+    except Exception:
+        return default
+
 async def give_manual_rep(
     guild_id: int,
     giver_id: int,
@@ -55,8 +64,8 @@ async def give_manual_rep(
         guild_id=guild_id,
         giver_id=giver_id,
         target_id=target_id,
-        amount=REP_MANUAL_AMOUNT,
-        cooldown=timedelta(hours=REP_MANUAL_COOLDOWN_HOURS),
+        amount=_setting_int("reputation.manual_amount", REP_MANUAL_AMOUNT),
+        cooldown=timedelta(hours=_setting_int("reputation.manual_cooldown_hours", REP_MANUAL_COOLDOWN_HOURS)),
         target_name=target_name,
     )
 
@@ -301,7 +310,7 @@ async def process_due_invites(
             guild_id=guild_id,
             user_id=inviter_id,
             source=SRC_INVITE,
-            amount=REP_INVITE_AMOUNT,
+            amount=_setting_int("reputation.invite_amount", REP_INVITE_AMOUNT),
             event_key=f"invite:{guild_id}:{invitee_id}",
             actor_user_id=inviter_id,
             subject_user_id=invitee_id,
@@ -312,7 +321,7 @@ async def process_due_invites(
             rewarded += 1
             logger.info(
                 "Invite REP +%d to %s for inviting %s (guild %s)",
-                REP_INVITE_AMOUNT, inviter_id, invitee_id, guild_id,
+                _setting_int("reputation.invite_amount", REP_INVITE_AMOUNT), inviter_id, invitee_id, guild_id,
             )
         else:
             await store.update_invite(
@@ -338,7 +347,7 @@ async def record_boost_start(
         guild_id=member.guild.id,
         booster_id=member.id,
         boost_started_at=started,
-        verify_until=_now() + timedelta(days=REP_BOOST_VERIFICATION_DAYS),
+        verify_until=_now() + timedelta(days=_setting_int("reputation.boost_verification_days", REP_BOOST_VERIFICATION_DAYS)),
     )
 
 
@@ -400,7 +409,7 @@ async def process_due_boosts(
             guild_id=guild_id,
             user_id=booster_id,
             source=SRC_BOOST,
-            amount=REP_BOOST_AMOUNT,
+            amount=_setting_int("reputation.boost_amount", REP_BOOST_AMOUNT),
             event_key=f"boost:{guild_id}:{booster_id}",
             actor_user_id=booster_id,
             subject_user_id=booster_id,
@@ -411,7 +420,7 @@ async def process_due_boosts(
             rewarded += 1
             logger.info(
                 "Boost REP +%d to %s (guild %s)",
-                REP_BOOST_AMOUNT, booster_id, guild_id,
+                _setting_int("reputation.boost_amount", REP_BOOST_AMOUNT), booster_id, guild_id,
             )
         else:
             await store.mark_boost_rewarded(guild_id, booster_id)
@@ -461,7 +470,7 @@ async def award_server_tag(
         guild_id=member.guild.id,
         user_id=member.id,
         source=SRC_SERVER_TAG,
-        amount=REP_SERVER_TAG_AMOUNT,
+        amount=_setting_int("reputation.server_tag_amount", REP_SERVER_TAG_AMOUNT),
         event_key=f"server_tag:{member.guild.id}:{member.id}",
         actor_user_id=member.id,
         subject_user_id=member.id,
@@ -508,4 +517,4 @@ def _now() -> datetime:
 
 
 def _verify_delta() -> timedelta:
-    return timedelta(hours=REP_INVITE_VERIFICATION_HOURS)
+    return timedelta(hours=_setting_int("reputation.invite_verification_hours", REP_INVITE_VERIFICATION_HOURS))

@@ -183,3 +183,76 @@ async def test_secure_cards_edits_known_message_without_new_publication(monkeypa
     message.edit.assert_awaited_once()
     assert message.edit.call_args.kwargs['embeds'] == []
     assert 'АРХИВ' in text(message.edit.call_args.kwargs['view'])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('reason', ['admin', 'org', 'managed', 'private_channel', 'channel_moderation', 'everyone', 'safe'])
+async def test_shop_role_cannot_grant_staff_access(monkeypatch, reason):
+    from services.shop_role_policy import can_sell_role
+    monkeypatch.setattr(config, 'DATABASE_URL', '')
+    monkeypatch.setattr(config, 'ORG_ROLE_ID', 7 if reason == 'org' else 0)
+    monkeypatch.setattr(config, 'ORG_ROLE_MAP', {})
+    role = NS(id=1 if reason == 'everyone' else 7,
+              managed=reason == 'managed', permissions=NS(administrator=reason == 'admin'))
+    channel = NS(overwrites_for=lambda _: NS(view_channel=True if reason == 'private_channel' else None,
+                                             manage_messages=True if reason == 'channel_moderation' else None),
+                 permissions_for=lambda _: NS(view_channel=False))
+    g = NS(id=1, channels=[channel], default_role=NS(id=1))
+    assert await can_sell_role(g, role) is (reason == 'safe')
+
+
+@pytest.mark.asyncio
+async def test_shop_role_rejects_dynamic_moderator_role_and_unknown_db(monkeypatch):
+    from services.shop_role_policy import can_sell_role
+    from storage.moderation_store import moderation_store
+    monkeypatch.setattr(config, 'DATABASE_URL', 'configured')
+    monkeypatch.setattr(config, 'ORG_ROLE_ID', 0)
+    monkeypatch.setattr(config, 'ORG_ROLE_MAP', {})
+    role = NS(id=7, managed=False, permissions=NS())
+    g = NS(id=1, channels=[], default_role=NS(id=1))
+    monkeypatch.setattr(moderation_store, 'settings', AsyncMock(return_value={'moderator_role_id':7}))
+    assert not await can_sell_role(g, role)
+    monkeypatch.setattr(moderation_store, 'settings', AsyncMock(side_effect=RuntimeError('DB down')))
+    assert not await can_sell_role(g, role)
+
+
+@pytest.mark.asyncio
+async def test_support_modal_rechecks_owner_and_uses_existing_handler():
+    from views.club_support import SupportModal
+    ix = interaction()
+    callback = AsyncMock()
+    command = NS(_check_can_run=AsyncMock(return_value=True), callback=callback, binding=object())
+    ix.client = NS(tree=NS(get_command=lambda _:command))
+    modal = SupportModal('appeal',42,1)
+    modal.target._value='MOD-000123'
+    modal.reason._value='Пересмотрите это наказание'
+    await modal.on_submit(ix)
+    assert callback.call_args.args[2:] == (123,'Пересмотрите это наказание')
+    ix.user.id=99
+    await modal.on_submit(ix)
+    assert callback.await_count==1
+    ix.response.send_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_hub_balance_displays_rep_and_survives_rep_outage(monkeypatch):
+    from storage.rep_balance_store import rep_balance_store
+    from storage.user_balance_store import user_balance_store
+    monkeypatch.setattr(user_balance_store,'get_balance',AsyncMock(return_value=100))
+    monkeypatch.setattr(rep_balance_store,'get_balance',AsyncMock(return_value=7))
+    assert 'Доступный REP: **7**' in text(await build_page(interaction(),'economy'))
+    monkeypatch.setattr(rep_balance_store,'get_balance',AsyncMock(side_effect=RuntimeError('down')))
+    page=await build_page(interaction(),'economy')
+    assert 'временно недоступен' in text(page) and '100' in text(page)
+
+
+@pytest.mark.asyncio
+async def test_recovery_does_not_restore_newly_privileged_role(monkeypatch):
+    from services import shop_purchase_service as purchase
+    from services import shop_role_policy
+    role=NS(id=7)
+    target=NS(roles=[],add_roles=AsyncMock())
+    g=NS(get_role=lambda _:role,fetch_member=AsyncMock(return_value=target))
+    monkeypatch.setattr(shop_role_policy,'can_sell_role',AsyncMock(return_value=False))
+    assert not await purchase._restore_sell_role(g,42,7)
+    target.add_roles.assert_not_called()
