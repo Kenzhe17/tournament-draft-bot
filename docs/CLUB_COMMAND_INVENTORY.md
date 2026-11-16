@@ -1,8 +1,8 @@
 # Current static command inventory
 
-Base e6c9bac + club integration. Python declarations only; not a live Discord command list. `/mm` is removed before sync in retired mode.
+Base e6c9bac + reconstruction. Python declarations only; not a live Discord command list. Retired MM is removed before sync. Configuration groups default to administrator visibility; runtime checks remain mandatory.
 
-| Extension | Group/decorator | Name | Handler | Line |
+| Extension | Decorator/group | Command | Handler | Line |
 |---|---|---|---|---:|
 | `cogs.tournament` | `tournament_group` | `create` | `tournament_create` | 249 |
 | `cogs.tournament` | `tournament_group` | `delete` | `tournament_delete` | 443 |
@@ -65,22 +65,22 @@ Base e6c9bac + club integration. Python declarations only; not a live Discord co
 | `cogs.isolate` | `admin_group` | `isolate` | `isolate` | 38 |
 | `cogs.server_audit` | `admin_group` | `server_audit` | `server_audit` | 38 |
 | `cogs.br` | `br_group` | `create` | `br_create` | 55 |
-| `cogs.br` | `br_group` | `delete` | `br_delete` | 199 |
-| `cogs.br` | `br_group` | `test_fill` | `br_test` | 259 |
-| `cogs.br` | `br_group` | `test_teams` | `br_test_team` | 376 |
-| `cogs.br` | `br_group` | `test_stats` | `br_stats_test` | 448 |
+| `cogs.br` | `br_group` | `delete` | `br_delete` | 202 |
+| `cogs.br` | `br_group` | `test_fill` | `br_test` | 262 |
+| `cogs.br` | `br_group` | `test_teams` | `br_test_team` | 379 |
+| `cogs.br` | `br_group` | `test_stats` | `br_stats_test` | 451 |
 | `cogs.mm` | `mm_group` | `squad` | `mm_squad` | 187 |
 | `cogs.mm` | `mm_group` | `freechannel` | `mm_freechannel` | 197 |
 | `cogs.mm` | `mm_group` | `delete` | `mm_delete` | 282 |
 | `cogs.mm` | `mm_group` | `test` | `mm_test` | 310 |
 | `cogs.ultimatum` | `ultimatum_group` | `создать` | `ult_create` | 210 |
-| `cogs.ultimatum` | `ultimatum_group` | `удалить` | `ult_delete` | 259 |
-| `cogs.ultimatum` | `ultimatum_group` | `сетка` | `ult_bracket` | 278 |
-| `cogs.ultimatum` | `ultimatum_group` | `статус` | `ult_status` | 297 |
-| `cogs.ultimatum` | `ultimatum_group` | `история` | `ult_history` | 339 |
-| `cogs.ultimatum` | `ultimatum_group` | `исправить` | `ult_fix` | 370 |
-| `cogs.ultimatum` | `ultimatum_group` | `test_fill` | `test_fill` | 391 |
-| `cogs.ultimatum` | `ultimatum_group` | `test_sim` | `test_sim` | 471 |
+| `cogs.ultimatum` | `ultimatum_group` | `удалить` | `ult_delete` | 262 |
+| `cogs.ultimatum` | `ultimatum_group` | `сетка` | `ult_bracket` | 281 |
+| `cogs.ultimatum` | `ultimatum_group` | `статус` | `ult_status` | 300 |
+| `cogs.ultimatum` | `ultimatum_group` | `история` | `ult_history` | 342 |
+| `cogs.ultimatum` | `ultimatum_group` | `исправить` | `ult_fix` | 373 |
+| `cogs.ultimatum` | `ultimatum_group` | `test_fill` | `test_fill` | 394 |
+| `cogs.ultimatum` | `ultimatum_group` | `test_sim` | `test_sim` | 474 |
 | `cogs.elo` | `player_group` | `ulti` | `show_elo` | 35 |
 | `cogs.elo` | `player_group` | `ulti_history` | `show_history` | 72 |
 | `cogs.team` | `team` | `create` | `create` | 26 |
@@ -125,13 +125,16 @@ Base e6c9bac + club integration. Python declarations only; not a live Discord co
 | `cogs.reputation` | `tag_group` | `claim` | `tag_claim` | 648 |
 | `cogs.reputation` | `app_commands` | `invites` | `invites` | 707 |
 | `cogs.reputation` | `reputation_group` | `invites_debug` | `invites_debug` | 736 |
-| `cogs.info` | `info_group` | `publish` | `publish` | 155 |
-| `cogs.info` | `info_group` | `update` | `update` | 193 |
-| `cogs.info` | `info_group` | `status` | `status` | 232 |
-| `cogs.info` | `info_group` | `validate` | `validate` | 271 |
-| `cogs.club_hub` | `app_commands` | `hub` | `hub` | 31 |
-| `cogs.club_hub` | `server_group` | `hub_publish` | `publish` | 41 |
-| `cogs.club_hub` | `server_group` | `room_cards_secure` | `secure_rooms` | 79 |
+| `cogs.info` | `info_group` | `publish` | `publish` | 166 |
+| `cogs.info` | `info_group` | `update` | `update` | 208 |
+| `cogs.info` | `info_group` | `status` | `status` | 247 |
+| `cogs.info` | `info_group` | `validate` | `validate` | 286 |
+| `cogs.club_hub` | `app_commands` | `hub` | `hub` | 32 |
+| `cogs.club_hub` | `server_group` | `hub_publish` | `publish` | 42 |
+| `cogs.club_hub` | `server_group` | `notifications_publish` | `publish_notifications` | 48 |
+| `cogs.club_hub` | `server_group` | `room_cards_secure` | `secure_rooms` | 92 |
+| `cogs.server_reconstruction` | `server_group` | `reconstruction` | `reconstruction` | 32 |
+| `cogs.server_reconstruction` | `server_group` | `notification_roles` | `notification_roles` | 73 |
 | `cogs.vac` | `app_commands` | `vac` | `vac_cmd` | 229 |
 | `cogs.vac` | `app_commands` | `unvac` | `unvac_cmd` | 328 |
 | `cogs.vac` | `app_commands` | `vacs` | `vacs_cmd` | 372 |
@@ -141,4 +144,4 @@ Base e6c9bac + club integration. Python declarations only; not a live Discord co
 | `cogs.banner_admin` | `banner_group` | `leaderboard` | `banner_leaderboard` | 121 |
 | `cogs.banner_admin` | `banner_group` | `auto` | `banner_auto` | 153 |
 
-136 declarations, 33 loaded extensions.
+139 declarations, 34 loaded extensions.

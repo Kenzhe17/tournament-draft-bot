@@ -192,6 +192,9 @@ class BRCog(commands.Cog):
         message = await interaction.channel.send( view=compose(embed, view))
         tournament.message_id = message.id
         br_store.set(tournament)
+        from services.tournament_notifications import announce_safe
+        await announce_safe(interaction.guild, 'br', str(tournament.id), tournament.channel_id,
+                            message.id, is_test=bool(getattr(tournament, 'is_test', False)))
 
         logger.info("BR турнир создан в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
 

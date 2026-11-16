@@ -155,7 +155,7 @@ async def test_hub_publish_is_idempotent_and_pending_blocks_duplicates(tmp_path,
     import cogs.club_hub as ch
     monkeypatch.setattr(ch,'HUB_STATE',tmp_path/'hub.json')
     message=NS(id=5,jump_url='https://discord.com/channels/1/2/5',edit=AsyncMock())
-    channel=NS(id=2,send=AsyncMock(return_value=message),fetch_message=AsyncMock(return_value=message))
+    channel=NS(id=2,guild=NS(id=1),send=AsyncMock(return_value=message),fetch_message=AsyncMock(return_value=message))
     bot=NS(get_channel=lambda _:channel)
     cog=ch.ClubHubCog(bot)
     ix=interaction();ix.channel=channel;ix.channel_id=2;ix.followup=NS(send=AsyncMock())

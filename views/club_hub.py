@@ -36,7 +36,16 @@ class HubButton(discord.ui.Button):
             return
         await interaction.response.defer(ephemeral=True, thinking=self.public)
         try:
-            page = await build_page(interaction, self.key)
+            notice = None
+            if self.key.startswith('notify_'):
+                from services.notification_preferences import toggle
+                enabled = await toggle(interaction.guild, interaction.user.id, self.key.removeprefix('notify_'))
+                notice = 'Подписка включена.' if enabled else 'Подписка отключена.'
+                page = await build_page(interaction, 'notifications')
+            else:
+                page = await build_page(interaction, self.key)
+            if notice:
+                page.text(notice)
             # Public Hub never becomes somebody's personal profile.
             await interaction.edit_original_response(view=page, allowed_mentions=discord.AllowedMentions.none())
         except Exception:
@@ -58,6 +67,13 @@ class HubView(DesignView):
     def __init__(self):
         super().__init__(timeout=None, title='Discord Server r!z3')
         self.row(*(HubButton(key, label, public=True) for key, label in PAGES))
+
+
+class NotificationPanelView(DesignView):
+    def __init__(self):
+        super().__init__(timeout=None, title='Уведомления')
+        self.text('Выбери турниры, о которых хочешь получать уведомления.')
+        self.row(HubButton('notifications', 'Настроить подписки', public=True))
 
 
 async def build_page(interaction, key):
@@ -83,6 +99,70 @@ async def build_page(interaction, key):
         if unavailable:
             view.text('Список Ultimatum временно недоступен. Проверьте канал турнира.')
         view.text('Регистрация и расписание — в карточке выбранного турнира.')
+        view.row(HubButton('my_events', 'Мой турнир', owner_id=uid), HubButton('schedule', 'Расписание', owner_id=uid), HubButton('organizer', 'Организатору', owner_id=uid))
+    elif key == 'my_events':
+        from services.club_hub import my_events
+        events, unavailable = await my_events(interaction.guild, interaction.user)
+        view.text('**Мой турнир**')
+        if not events:
+            view.text('Вы не зарегистрированы в доступных активных турнирах.')
+        for event, detail in events[:10]:
+            url = f'https://discord.com/channels/{gid}/{event.channel_id}'
+            if event.message_id:
+                url += f'/{event.message_id}'
+            safe_detail = discord.utils.escape_mentions(discord.utils.escape_markdown(detail))
+            view.text(f'**{event.format}** · {event.state}\n{safe_detail}\n[Открыть турнир]({url})')
+        if unavailable:
+            view.text('Часть данных временно недоступна; проверьте карточку своего турнира.')
+    elif key == 'schedule':
+        view.text('**Расписание**')
+        try:
+            events = await interaction.guild.fetch_scheduled_events()
+        except discord.HTTPException:
+            events = None
+        if events is None:
+            view.text('Расписание временно недоступно.')
+        else:
+            visible = [event for event in events
+                       if event.status in (discord.EventStatus.scheduled, discord.EventStatus.active)
+                       and (not event.channel_id or (interaction.guild.get_channel(event.channel_id)
+                            and interaction.guild.get_channel(event.channel_id).permissions_for(interaction.user).view_channel))]
+            visible.sort(key=lambda e: e.start_time)
+            if not visible:
+                view.text('Ближайшие события пока не опубликованы.')
+            for event in visible[:10]:
+                title = discord.utils.escape_mentions(discord.utils.escape_markdown(event.name))
+                timestamp = int(event.start_time.timestamp())
+                view.text(f'**{title}**\n<t:{timestamp}:F> · <t:{timestamp}:R>\n[Открыть событие](https://discord.com/events/{gid}/{event.id})')
+    elif key == 'notifications':
+        from services.notification_preferences import FORMATS
+        from storage.server_layout_store import server_layout_store
+        view.text('**Уведомления**')
+        # Fetch current membership when viewing, too: toggles must reflect Discord state.
+        member = await interaction.guild.fetch_member(uid)
+        member_roles = {r.id for r in member.roles}
+        for format_key, label in FORMATS.items():
+            rid = server_layout_store.binding(gid, f'notify_{format_key}')
+            state = 'Включены' if rid in member_roles else 'Отключены'
+            if not rid:
+                state = 'Не настроены'
+            view.text(f'{label}: **{state}**')
+            if rid:
+                view.row(HubButton(f'notify_{format_key}', 'Отключить' if rid in member_roles else 'Подписаться', owner_id=uid))
+    elif key == 'organizer':
+        from services.club_hub import managed_events
+        events, unavailable = await managed_events(interaction.guild, interaction.user)
+        view.text('**Ваши турниры**')
+        if not events:
+            view.text('Нет доступных турниров с назначенными вам правами управления.')
+        for event in events[:10]:
+            url = f'https://discord.com/channels/{gid}/{event.channel_id}'
+            if event.message_id:
+                url += f'/{event.message_id}'
+            view.text(f'**{event.format}** · {event.state}\n[Открыть панель турнира]({url})')
+        view.text('Создание, регистрация, команды, комнаты и результаты управляются в существующей карточке турнира. Доступ к действиям проверяется повторно.')
+        if unavailable:
+            view.text('Часть турниров временно недоступна.')
     elif key == 'profile':
         from views.profile_view import build_profile_layout
         view = await build_profile_layout(interaction.guild, interaction.user)
@@ -122,5 +202,5 @@ async def build_page(interaction, key):
         view.text('**Данные комнаты**\nПароль указан в карточке. Кнопка «ID» доступна участникам матча и ответственным организаторам.')
         view.text('**Поддержка**\nПо вопросам матча обращайтесь к его организатору. По нарушениям — к модераторам сервера.')
         view.text('/help — полная справка\n/booyah — зал славы')
-        view.row(HubButton('report', 'Подать жалобу', owner_id=uid), HubButton('appeal', 'Обжаловать наказание', owner_id=uid))
+        view.row(HubButton('report', 'Подать жалобу', owner_id=uid), HubButton('appeal', 'Обжаловать наказание', owner_id=uid), HubButton('notifications', 'Уведомления', owner_id=uid))
     return navigation(view, uid)

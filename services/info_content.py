@@ -63,7 +63,7 @@ def content_version(section: InfoSection) -> str:
         raw = _md_path(section).read_bytes()
     except OSError:
         return "missing"
-    return hashlib.sha1(raw).hexdigest()[:10]
+    return hashlib.sha1(b"text-layout-v2:" + raw).hexdigest()[:10]
 
 
 def parse_blocks(section: InfoSection) -> list[tuple[str, str]]:

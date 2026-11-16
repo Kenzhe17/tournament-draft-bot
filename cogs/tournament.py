@@ -244,13 +244,13 @@ class TournamentCog(commands.Cog):
     tournament_group = app_commands.Group(name="tournament", description="Управление турнирами")
 
     @tournament_group.command(name="create", description="Создать новый турнир")
-    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока", formation="Режим: draft (драфт капитанами), balanced-sr (балансировка по SR) или random (случайно)")
+    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока", formation="Режим: draft (драфт капитанами), balanced-sr (балансировка по SR)")
     @is_org()
     async def tournament_create(
         self,
         interaction: discord.Interaction,
         size: str,
-        formation: Literal["draft", "balanced-sr", "random"] = "draft",
+        formation: Literal["draft", "balanced-sr"] = "draft",
     ) -> None:
         """Создать турнир с указанным размером."""
         try:
@@ -3018,57 +3018,10 @@ def get_rank_emoji(level: int) -> str:
 
 
 async def send_tournament_notification(tournament, guild, action: str) -> None:
-    """Send tournament notification to notification channel."""
-    try:
-        from services.discord_cfg import channel_id as _dcid, role_ids as _drid
-        _gid = getattr(tournament, "guild_id", None) or (
-            guild.id if guild else 0)
-        _nch = _dcid(_gid, "discord.notification_channel_id",
-                     NOTIFICATION_CHANNEL_ID)
-        _nroles = [_dcid(_gid, "discord.notification_role_id", 0)]
-        channel = guild.get_channel(_nch)
-        if not channel:
-            logger.warning(f"Notification channel {_nch} not found")
-            return
+    from services.tournament_notifications import announce_safe
+    await announce_safe(guild, 'cs', str(tournament.id), tournament.channel_id,
+                        tournament.message_id, is_test=tournament.is_test)
 
-        _nrid = _nroles[0] if _nroles else 0
-        role = guild.get_role(_nrid)
-        role_mention = role.mention if role else ""
-
-        # Control Center template override: tournament.announcement
-        # (guild → global). Fallback — стандартный embed.
-        custom_view = None
-        try:
-            from storage import admin_config_store as _cfg_store
-            from services.cv2_templates import render_template
-            _gid = getattr(tournament, "guild_id", None) or guild.id
-            tpl = await _cfg_store.get_template(
-                _gid, "tournament.announcement") or \
-                await _cfg_store.get_template(0, "tournament.announcement")
-            if tpl:
-                custom_view = render_template(tpl["payload"])
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                f"tournament.announcement template failed: {exc}")
-            custom_view = None
-
-        if custom_view is not None:
-            await channel.send(view=custom_view,
-                               allowed_mentions=discord.AllowedMentions(
-                                   roles=True))
-        else:
-            embed = discord.Embed(
-                title="Турнир Создан",
-                description=(
-                    f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
-                    f"**Регистрация** <#{tournament.channel_id}>"
-                ),
-                color=discord.Color.blue()
-            )
-            await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
-        logger.info(f"Tournament notification sent: {action} in guild {guild.id}")
-    except Exception as e:
-        logger.error(f"Failed to send tournament notification: {e}")
 
 
 def _help_category_embed(value: str) -> discord.Embed | None:

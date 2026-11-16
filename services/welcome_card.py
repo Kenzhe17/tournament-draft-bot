@@ -1,7 +1,6 @@
 """Welcome-карточка Components V2 для новых участников.
 
-Структура: приветствие → Separator → информация → Separator →
-финальная строка. Без картинок, кнопок и эмодзи-UI.
+Компактное приветствие и ссылки на старт/правила. Без старых баннеров.
 
 send_welcome_message() — полная логика отправки: проверка настройки,
 поиск канала WELCOME_CHANNEL_ID (env). Используется и on_member_join,
@@ -23,63 +22,48 @@ def build_welcome_view(
     member_number: int,
     member: discord.Member,
     info_channel_id: int | None = None,
+    start_channel_id: int | None = None,
 ) -> discord.ui.LayoutView:
-    """Собрать V2-view приветствия с баннером welcome.png."""
-    from services.social.common import BANNER_WELCOME, social_view
-
-    info_ref = f"<#{info_channel_id}>" if info_channel_id else "#информация"
-    view = social_view(BANNER_WELCOME, timeout=None)
-    view.text(
-        "**Добро пожаловать на сервер**, "
-        f"{member.mention}!\n\n"
-        f"Ты стал(а) нашим **{member_number}-м** участником"
-    )
-    view.sep()
-    view.text(
-        "Рады видеть тебя среди нас. Ознакомься с информацией и "
-        f"правилами в {info_ref}."
-    )
-    view.sep()
-    view.text("୨୧ надеемся, тебе у нас понравится ୨୧")
+    """Compact welcome; existing call signature stays compatible."""
+    from utils.design.layouts import DesignView
+    view = DesignView(title="Добро пожаловать в Discord Server r!z3", timeout=None)
+    view.text(f"{member.mention}, начни с главного меню.")
+    buttons = []
+    for label, cid in (("Открыть старт", start_channel_id), ("Правила", info_channel_id)):
+        if cid:
+            buttons.append(discord.ui.Button(label=label, style=discord.ButtonStyle.link,
+                url=f"https://discord.com/channels/{member.guild.id}/{cid}"))
+    if buttons:
+        view.row(*buttons)
+    else:
+        view.text("Открой /hub, чтобы перейти к основным разделам.")
     return view
 
 
-async def _find_channel(
-    client: discord.Client, member: discord.Member
-) -> tuple[discord.abc.Messageable | None, discord.Guild | None]:
-    """Канал приветствий: сначала гильдия участника, затем все гильдии бота."""
-    channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
-    if channel is not None:
-        return channel, member.guild
-    try:
-        channel = await member.guild.fetch_channel(WELCOME_CHANNEL_ID)
-        return channel, member.guild
-    except discord.HTTPException as e:
-        logger.warning(
-            f"Welcome channel fetch failed in member guild "
-            f"{member.guild.id}: {e}")
-
-    for g in client.guilds:
-        if g.id == member.guild.id:
-            continue
-        ch = g.get_channel(WELCOME_CHANNEL_ID)
-        if ch is None:
-            try:
-                ch = await g.fetch_channel(WELCOME_CHANNEL_ID)
-            except discord.HTTPException as e:
-                logger.warning(
-                    f"Welcome channel fetch failed in guild {g.id}: {e}")
-                ch = None
-        if ch is not None:
-            return ch, g
-    return None, None
+async def _find_channel(client, member):
+    from services.discord_cfg import channel_id
+    from storage.server_layout_store import server_layout_store
+    cid = server_layout_store.binding(member.guild.id, "welcome") or channel_id(
+        member.guild.id, "discord.welcome_channel_id", WELCOME_CHANNEL_ID)
+    if not cid:
+        return None, None
+    channel = member.guild.get_channel(cid)
+    if channel is None:
+        try:
+            channel = await member.guild.fetch_channel(cid)
+        except discord.HTTPException:
+            return None, None
+    # Never send another guild's welcome to this guild's configured channel.
+    if getattr(getattr(channel, "guild", None), "id", None) != member.guild.id:
+        return None, None
+    return channel, member.guild
 
 
 async def send_welcome_message(
     client: discord.Client, member: discord.Member
 ) -> bool:
     """Отправить welcome-карточку. True — сообщение отправлено."""
-    if member.bot or not WELCOME_CHANNEL_ID:
+    if member.bot:
         return False
 
     # Control Center (PG) → legacy settings.json fallback в peek.
@@ -95,10 +79,11 @@ async def send_welcome_message(
             f"{[g.id for g in client.guilds]})")
         return False
 
-    # N = текущее количество участников + 1
-    number = max(1, (member.guild.member_count or 0) + 1)
-
-    info_channel_id = INFO_CHANNEL_ID or None
+    from storage.info_store import info_store
+    from storage.server_layout_store import server_layout_store
+    info_channel_id = server_layout_store.binding(member.guild.id, "info") or await info_store.get_channel_id(member.guild.id) or INFO_CHANNEL_ID or None
+    start_channel_id = server_layout_store.binding(member.guild.id, "start") or None
+    mentions = discord.AllowedMentions(users=[member], roles=False, everyone=False, replied_user=False)
 
     # Control Center template override: admin_templates['welcome.card']
     # (guild → global). Если шаблон есть и валиден — используем его
@@ -117,11 +102,10 @@ async def send_welcome_message(
 
     try:
         if custom_view is not None:
-            await channel.send(view=custom_view)
+            await channel.send(view=custom_view, allowed_mentions=mentions)
         else:
-            from services.social.common import BANNER_WELCOME, banner_file
-            view = build_welcome_view(number, member, info_channel_id)
-            await channel.send(view=view, file=banner_file(BANNER_WELCOME))
+            view = build_welcome_view(0, member, info_channel_id, start_channel_id)
+            await channel.send(view=view, allowed_mentions=mentions)
         logger.info(
             f"Welcome sent to {channel.id} in guild "
             f"{channel_guild.id if channel_guild else '?'} "
