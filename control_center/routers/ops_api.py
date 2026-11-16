@@ -103,6 +103,11 @@ async def create_action(
     if needed and not user.can(needed):
         raise HTTPException(403, f"missing permission: {needed}")
     gid = body.guild_id or user.guild_id or 0
+    # Не-owner не может отправлять действия от имени чужого guild.
+    if user.role != "owner" and user.guild_id:
+        if body.guild_id and body.guild_id != user.guild_id:
+            raise HTTPException(403, "guild scope violation")
+        gid = user.guild_id
     row = await store.create_action_request(
         guild_id=gid,
         action=body.action,

@@ -67,7 +67,8 @@ class CaseOpenButton(discord.ui.Button):
             pass
 
         # Открыть кейс
-        result = await case_store.open_case(
+        from services.shop_purchase_service import open_case_safe
+        result = await open_case_safe(
             interaction.guild_id,
             interaction.user.id,
             self.case_id,
@@ -75,7 +76,11 @@ class CaseOpenButton(discord.ui.Button):
         )
 
         # Формировать результат
-        if result["type"] == "nothing":
+        if result.get("type") == "pending":
+            message = result.get("value", "Операция обрабатывается.")
+            color = discord.Color.blurple()
+            reaction_emoji = "gear"
+        elif result["type"] == "nothing":
             message = "Ничего не выпало!"
             color = discord.Color.red()
             reaction_emoji = "cross"
@@ -214,7 +219,8 @@ class CaseSelect(discord.ui.Select):
             pass
 
         # Открыть кейс
-        result = await case_store.open_case(
+        from services.shop_purchase_service import open_case_safe
+        result = await open_case_safe(
             interaction.guild_id,
             interaction.user.id,
             case_id,
@@ -222,7 +228,11 @@ class CaseSelect(discord.ui.Select):
         )
 
         # Формировать результат
-        if result["type"] == "nothing":
+        if result.get("type") == "pending":
+            message = result.get("value", "Операция обрабатывается.")
+            color = discord.Color.blurple()
+            reaction_emoji = "gear"
+        elif result["type"] == "nothing":
             message = "Ничего не выпало!"
             color = discord.Color.red()
             reaction_emoji = "cross"
