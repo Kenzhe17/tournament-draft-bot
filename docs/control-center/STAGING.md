@@ -4,13 +4,18 @@
 
 ## Архитектура staging
 
-| Сервис | Назначение | Образ |
-|---|---|---|
-| `bot-staging` | Discord-бот + admin action executor | корневой `Dockerfile`, `SERVICE_ROLE` unset → `python bot.py` |
-| `panel` | FastAPI Control Center + React static | тот же `Dockerfile`, `SERVICE_ROLE=panel` → `uvicorn control_center.main:app` |
-| `Postgres`/`Redis` | staging-only | ⚠️ не provisioned — упор в лимит 3 volumes/project |
+Railway project `riz3-classic` → env `staging` (services `bot-staging`,
+`panel` — domain `https://panel-staging-b7f974de.up.railway.app`).
 
-Panel domain: `https://panel-staging-b7f974de.up.railway.app`
+Отдельный проект `riz3-classic-staging` создан для полного
+isolated-окружения, но **Postgres/Redis не provisioned**: Railway
+free plan — лимит ресурсов на проект. Варианты:
+1. `DATABASE_URL`/`REDIS_URL` на внешний staging (Neon/Supabase/Upstash).
+2. Upgrade Railway plan → `railway add -d postgres -d redis`.
+
+Без staging БД бот не стартует (DATABASE_URL обязателен для PG-модулей;
+без него часть функций работает в JSON-режиме, но Control Center
+полностью нерабочий).
 
 ## Обязательные секреты (только staging, НЕ копировать из production)
 
