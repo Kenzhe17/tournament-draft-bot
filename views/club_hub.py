@@ -56,8 +56,7 @@ def navigation(view, owner_id):
 
 class HubView(DesignView):
     def __init__(self):
-        super().__init__(timeout=None, title='r!z3 · ИГРОВОЙ КЛУБ')
-        self.text('CS 4×4 · Battle Royale · Ultimatum\nТурниры организаторов, достижения и сообщество.')
+        super().__init__(timeout=None, title='Discord Server r!z3')
         self.row(*(HubButton(key, label, public=True) for key, label in PAGES))
 
 
@@ -120,7 +119,7 @@ async def build_page(interaction, key):
         return compose(embed, leaderboard)
     else:
         view.text('**Как играть**\nОткройте «Играть», выберите турнир и зарегистрируйтесь в его карточке.')
-        view.text('**Данные комнаты**\nКнопка в карточке комнаты доступна участникам матча и ответственным организаторам.')
+        view.text('**Данные комнаты**\nПароль указан в карточке. Кнопка «ID» доступна участникам матча и ответственным организаторам.')
         view.text('**Поддержка**\nПо вопросам матча обращайтесь к его организатору. По нарушениям — к модераторам сервера.')
         view.text('/help — полная справка\n/booyah — зал славы')
         view.row(HubButton('report', 'Подать жалобу', owner_id=uid), HubButton('appeal', 'Обжаловать наказание', owner_id=uid))

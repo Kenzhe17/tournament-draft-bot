@@ -1,3 +1,10 @@
+## Последние требования к оформлению
+
+- Главная карточка: **Discord Server r!z3**, без подзаголовка о форматах, клубе, достижениях и сообществе.
+- Карточка комнаты: пароль публично в карточке, кнопка **ID** выдаёт только ID приватно после существующей проверки участия/полномочий.
+- Сообщество: `чат`, `команды-бота`, `мини-игры`, `моменты`. Два отдельных канала для команд бота и мини-игр включены в целевую структуру; живые каналы пока не создавались.
+- Эти требования заменяют прежнее описание приватной выдачи пароля в исторических разделах ниже.
+
 # r!z3 reconstruction — current integration checkpoint
 
 Base: `feat/classic-riz3-cv2` at `e6c9bac55b5958dedf8e4cebf71c8ea14334b8cc` (verified 2026-11-16).
@@ -68,7 +75,7 @@ The base's `cogs/moderation.py` is GIF-triggered moderation; the richer staff su
 |---|---|---|
 | Информация | `старт`, `объявления`, `роли` | Public Hub, compact rules and announcements; only staff/bot publish |
 | Турниры | `турнир-1`, `турнир-2`, `турнир-3`, `battle-royale`, `результаты`, `данные-комнаты` | Reuse existing IDs; registration via cards; room credentials private |
-| Сообщество | `чат`, `моменты` | Members write; retain existing forum history |
+| Сообщество | `чат`, `команды-бота`, `мини-игры`, `моменты` | Members write; retain existing forum history |
 | Голосовые | existing lobby, create-room controls and live team voices | Preserve TempVoice integration and ownership; participant-only connection where required |
 | Дополнительно | existing mini-games/music/social channels | Optional roles/Onboarding; profile, shop and ratings live in Hub, not new channels |
 | Команда | organizer controls, reports, staff audit, system logs | Staff only; incident routing by role and responsible organizer |

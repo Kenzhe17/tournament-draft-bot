@@ -197,7 +197,7 @@ def test_room_card_view_content(tmp_path):
     # Все 8 участников матча — через mentions (<@uid>).
     for uid in (100, 101, 102, 103, 110, 111, 112, 113):
         assert f"<@{uid}>" in text
-    assert "secretpw" not in text
+    assert "secretpw" in text
     # Кнопка «ID» с custom_id rcard:id:...
     custom_ids = [
         getattr(i, "custom_id", "")

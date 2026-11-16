@@ -3,8 +3,8 @@
 Формат (возвращённый старый стиль):
 - CV2-карточка «КОМНАТА ОТКРЫТА» в ROOM_DATA_CHANNEL_ID:
   названия команд, ростеры <@id> всех 8 участников, правила
-  матча (если заданы), кнопка «Данные комнаты» (приватный ответ
-  с ID и паролем после проверки участия/полномочий).
+  матча (если заданы), публичный пароль и кнопка «ID»
+  (приватный ответ с ID после проверки участия/полномочий).
 - Уведомление в ROOM_OPEN_NOTIFY_CHANNEL_ID: «КОМНАТА ОТКРЫТА»,
   «Команда A vs Команда B», упоминания 8 участников, ссылка
   на канал данных и на конкретную карточку. ID/пароль в
@@ -132,10 +132,11 @@ def build_room_card_view(
     view.text(f"**{name2}**\n{_roster_mentions(tournament, t2)}")
     if rules:
         view.text(f"**Правила:** {rules}")
-    view.text("Данные доступны участникам этого матча и ответственным организаторам.")
+    password = discord.utils.escape_mentions(discord.utils.escape_markdown(str(room.get("password", ""))))
+    view.text(f"**Пароль:** {password}")
     view.row(discord.ui.Button(
         style=discord.ButtonStyle.primary,
-        label="Данные комнаты",
+        label="ID",
         custom_id=room_card_custom_id(
             tournament.guild_id, tournament.channel_id, tournament, m
         ),
@@ -388,12 +389,12 @@ async def retry_pending_rooms(bot: discord.Client) -> int:
 
 class RoomIdBtn(discord.ui.DynamicItem[discord.ui.Button],
                 template=T_ROOM_ID):
-    """Legacy custom_id, private credentials with per-click authorization."""
+    """Legacy custom_id, private room ID with per-click authorization."""
 
     def __init__(self, custom_id: str) -> None:
         super().__init__(discord.ui.Button(
             style=discord.ButtonStyle.primary,
-            label="Данные комнаты",
+            label="ID",
             custom_id=custom_id,
         ))
 
@@ -443,10 +444,8 @@ class RoomIdBtn(discord.ui.DynamicItem[discord.ui.Button],
                 "Данные комнаты не найдены.", ephemeral=True)
             return
         # Prevent markup/mention injection in organizer supplied credentials.
-        room_id = discord.utils.escape_markdown(str(room["room_id"]))
-        password = discord.utils.escape_markdown(str(room.get("password", "")))
         await interaction.response.send_message(
-            f"**ID:** {room_id}\n**Пароль:** {password}", ephemeral=True,
+            str(room["room_id"]), ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none())
 
 
@@ -477,7 +476,11 @@ async def secure_published_cards(bot, guild_id: int) -> dict[str, int]:
             match = next((m for m in iter_tournament_matches(tournament)
                           if m["key"] == rec["key"]), None) if tournament else None
             if match is not None:
-                view = build_room_card_view(tournament, match, {})
+                room = room_store.get_active_room(guild_id, rec["channel_id"], rec["key"])
+                if room is None:
+                    counts["failed"] += 1
+                    continue
+                view = build_room_card_view(tournament, match, room)
             else:
                 view = DesignView(timeout=None, title="АРХИВ КОМНАТЫ")
                 view.text("Матч завершён. Данные доступа больше не публикуются.")

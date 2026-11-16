@@ -68,7 +68,7 @@ async def test_room_credentials_authorized_each_click(monkeypatch, uid, gid, tid
     await room_publisher.RoomIdBtn(ix.data['custom_id']).callback(ix)
     call=ix.response.send_message.call_args
     assert call.kwargs['ephemeral']
-    assert ('private-secret' in call.args[0]) is allowed
+    assert 'private-secret' not in call.args[0]
     assert ('4321' in call.args[0]) is allowed
 
 

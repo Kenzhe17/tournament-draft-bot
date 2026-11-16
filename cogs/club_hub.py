@@ -73,7 +73,7 @@ class ClubHubCog(commands.Cog):
             atomic_write_json(HUB_STATE, state)
             await interaction.followup.send(f'Панель опубликована: {message.jump_url}', ephemeral=True)
 
-    @server_group.command(name='room_cards_secure', description='Скрыть пароли в ранее опубликованных карточках комнат')
+    @server_group.command(name='room_cards_secure', description='Обновить опубликованные карточки комнат до текущего оформления')
     @app_commands.guild_only()
     @is_admin()
     async def secure_rooms(self, interaction: discord.Interaction):

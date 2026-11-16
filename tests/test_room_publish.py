@@ -177,7 +177,7 @@ async def test_publish_creates_card_and_notification(
     assert "Team0" in card_text and "Team1" in card_text
     for uid in (100, 101, 102, 103, 110, 111, 112, 113):
         assert f"<@{uid}>" in card_text
-    assert "pw1" not in card_text                     # пароль в карточке
+    assert "pw1" in card_text                     # пароль в карточке
     assert any(c.startswith("rcard:id:")
                for c in _custom_ids(data_ch.sent[0].view))
 
@@ -223,7 +223,7 @@ async def test_update_edits_card_no_second_notification(
     assert len(data_ch.sent) == 1               # карточка не дублируется
     card_msg = data_ch.sent[0]
     assert len(card_msg.edits) == 1             # отредактирована
-    assert "pw2" not in _view_text(card_msg.view)
+    assert "pw2" in _view_text(card_msg.view)
     assert len(channels[1200125075156910181].sent) == 1  # 1 уведомление
 
 
@@ -271,9 +271,9 @@ async def test_parallel_matches_isolated(room_store_tmp, channels):
     data_ch = channels[1561683314480255057]
     assert len(data_ch.sent) == 2
     texts = [_view_text(msg.view) for msg in data_ch.sent]
-    assert any("Team0" in x and "Team1" in x and "p1" not in x
+    assert any("Team0" in x and "Team1" in x and "p1" in x
                for x in texts)
-    assert any("Team2" in x and "Team3" in x and "p2" not in x
+    assert any("Team2" in x and "Team3" in x and "p2" in x
                for x in texts)
     # У каждого матча свой data_message_id.
     a0 = room_store_tmp.get_active_room(1, 2, m0["key"])
