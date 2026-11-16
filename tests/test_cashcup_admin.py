@@ -66,25 +66,18 @@ def test_no_is_org_left_in_cashcup():
 
 
 def test_admin_commands_guarded():
-    """Все административные команды проверяют _is_cashcup_admin."""
+    """Все административные действия проверяют _is_cashcup_admin
+    (методы вызываются из AdminMenuView/MatchCardView, не из slash)."""
     src = open(cashcup.__file__, encoding="utf-8").read()
-    guarded = [
-        "async def create", "async def panel", "async def verify",
-        "async def remove", "async def start", "async def result",
-        "async def game", "async def room", "async def swap_or_not",
-        "async def payout", "async def cancel", "async def pause",
-        "async def resume", "async def revert", "async def forfeit",
-        "async def dq",
-    ]
-    # swap — действие капитана, не admin; roominfo — участник+admin.
-    admin_cmds = [n for n in guarded if n != "async def swap_or_not"]
-    for name in admin_cmds:
-        cmd = name.split()[-1].split("(")[0]
-        dec = src.find(f'command(name="{cmd}"')
-        assert dec != -1, cmd
-        idx = src.find("async def", dec)
-        body = src[idx:idx + 1200]
-        assert "_is_cashcup_admin" in body, f"{cmd} без проверки ADMIN"
+    admin_methods = ["create", "panel", "verify", "remove", "start",
+                     "result", "game", "room", "payout", "cancel",
+                     "pause", "resume", "revert", "forfeit", "dq",
+                     "prizes", "admin_menu", "_admin_action"]
+    for name in admin_methods:
+        idx = src.find(f"async def {name}(")
+        assert idx != -1, name
+        body = src[idx:idx + 1500]
+        assert "_is_cashcup_admin" in body, f"{name} без проверки ADMIN"
 
 
 def test_captain_commands_not_admin_gated():

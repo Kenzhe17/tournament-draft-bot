@@ -77,20 +77,13 @@ def test_schedule_steps_all_sizes():
         assert max(steps) <= (n + 1) // 2
 
 
-def test_apply_prizes_matches_pool():
-    st = {"status": "running", "pool": 300}
-    out = _apply_prizes(st, 150, 100, 50, "KZT")
-    assert out["total"] == 300 and out["places"]["1"] == 150
+def test_apply_prizes_first_place_only():
+    st = {"status": "running"}
+    out = _apply_prizes(st, 300, "KZT")
+    assert out["places"] == {"1": 300, "2": 0, "3": 0}
+    assert out["total"] == 300
     with pytest.raises(cashcup.CashCupError):
-        _apply_prizes(st, 100, 100, 50, "KZT")  # сумма 250 != pool 300
-
-
-def test_apply_prizes_without_pool():
-    st = {"status": "running", "pool": 0}
-    out = _apply_prizes(st, 10, 5, 1, "USD")
-    assert out["currency"] == "USD"
-    with pytest.raises(cashcup.CashCupError):
-        _apply_prizes(st, -1, 0, 0, "KZT")
+        _apply_prizes(st, -1, "KZT")
 
 
 def _fake_state():
