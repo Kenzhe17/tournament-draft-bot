@@ -353,13 +353,18 @@ def _board_matches(bracket: dict) -> list:
             if m["id"] in active or m.get("status") == "disputed"]
 
 
+BOARD_PER_PAGE = 15  # совпадает с BoardSelectView.PER_PAGE: embed и select
+                     # показывают один и тот же срез матчей
+
+
 def _board_embed(state: dict, *, page: int = 0) -> discord.Embed:
     b = state.get("bracket") or {}
     matches = _board_matches(b) if b else []
     active = ready_matches(b) if b else []
     disputed = [m for m in matches if m.get("status") == "disputed"]
     lines = ["**Текущий раунд — выберите матч**"]
-    for m in matches[:15]:
+    chunk = matches[page * BOARD_PER_PAGE:(page + 1) * BOARD_PER_PAGE]
+    for m in chunk:
         score = f" · {m['score'][0]}:{m['score'][1]}" if m["bracket"] == "GF" else ""
         flag = " ⚠️ СПОР" if m["status"] == "disputed" else ""
         lines.append(f"`{m['id']}` {_team_name(state, m['a'])} vs {_team_name(state, m['b'])}"
@@ -373,9 +378,10 @@ def _board_embed(state: dict, *, page: int = 0) -> discord.Embed:
         lines.append(f"\n**🏆 Чемпион: {_team_name(state, b['champion'])}**")
         for m in done[-5:]:
             lines.append(f"`{m['id']}` {_team_name(state, m['a'])} {m['score'][0]}:{m['score'][1]} {_team_name(state, m['b'])}")
-    pages = max(1, (len(matches) + 24) // 25)
+    pages = max(1, (len(matches) + BOARD_PER_PAGE - 1) // BOARD_PER_PAGE)
     if pages > 1:
-        lines.append(f"\nМатчей: {len(matches)} · страница {page + 1}/{pages} (кнопки под списком)")
+        lines.append(f"\nМатчей: {len(matches)} · страница {page + 1}/{pages} "
+                     "(кнопки под списком)")
     return discord.Embed(title="r!z3 CASH CUP · матчи", description="\n".join(lines)[:4000],
                          color=0x26262A)
 
@@ -383,7 +389,7 @@ def _board_embed(state: dict, *, page: int = 0) -> discord.Embed:
 class BoardSelectView(discord.ui.View):
     """Persistent Select активных матчей → ephemeral карточка матча.
     Пагинация кнопками «Назад/Вперёд» при >25 матчах на доске."""
-    PER_PAGE = 25
+    PER_PAGE = BOARD_PER_PAGE
 
     def __init__(self, matches=None, *, page: int = 0, state: dict | None = None):
         super().__init__(timeout=None)
@@ -433,9 +439,10 @@ class BoardSelectView(discord.ui.View):
         if not state or not state.get("bracket"):
             await interaction.followup.send("Состояние турнира не найдено.", ephemeral=True)
             return
+        # Через _sync_board: тот же lock + свежее состояние из PG,
+        # страница клампится по актуальному числу матчей.
         base = cog._board_pages.get(interaction.guild_id, 0)
-        page = base + delta
-        await cog._sync_board_locked(state, interaction.channel, page=page)
+        await cog._sync_board(state, interaction.channel, page=base + delta)
 
 
 def _short_desc(m: dict) -> str:
@@ -449,19 +456,39 @@ class CashCupCog(commands.Cog):
         self.bot = bot
         self._board_locks: dict[int, asyncio.Lock] = {}
         self._board_pages: dict[int, int] = {}
+        self._boards_lock = asyncio.Lock()
+        self._boards_ok = False
 
     def _board_lock(self, guild_id: int) -> asyncio.Lock:
         return self._board_locks.setdefault(guild_id, asyncio.Lock())
 
     async def cog_load(self) -> None:
+        # Только регистрация persistent components — bot.guilds на этом этапе
+        # ещё пуст (Gateway не подключён). Восстановление досок — в on_ready.
         self.bot.add_view(compose(_panel({"status": "registration", "prize": "", "teams": []}), CashCupView(True)))
         self.bot.add_view(BoardSelectView())
-        await self._restore_boards()
 
-    async def _restore_boards(self) -> None:
-        """После рестарта: для каждого guild с активной/завершённой сеткой
-        обновляем существующую доску на месте (или создаём замену только
-        при подтверждённом NotFound — внутри _sync_board_locked)."""
+    @commands.Cog.listener()
+    async def on_ready(self) -> None:
+        """Gateway готов: восстанавливаем доски активных/завершённых турниров.
+        Идемпотентно: повторный on_ready (reconnect) не создаёт дублей,
+        при полном успехе повторный запуск пропускается."""
+        if self._boards_ok:
+            return
+        async with self._boards_lock:
+            if self._boards_ok:
+                return
+            try:
+                failures = await self._restore_boards()
+                self._boards_ok = (failures == 0)
+            except Exception:
+                logger.exception("CASH CUP board restore failed")
+
+    async def _restore_boards(self) -> int:
+        """Для каждого guild с активной/завершённой сеткой обновляет доску
+        на месте (замена только при подтверждённом NotFound). Возвращает
+        число guild, для которых восстановление не удалось."""
+        failures = 0
         for guild in getattr(self.bot, "guilds", []) or []:
             try:
                 state = await cashcup_store.latest(guild.id)
@@ -473,11 +500,14 @@ class CashCupCog(commands.Cog):
                     try:
                         channel = await guild.fetch_channel(state["channel_id"])
                     except Exception:
+                        failures += 1
                         continue
                 await self._sync_board(state, channel)
             except Exception:
+                failures += 1
                 logger.exception("CASH CUP board restore failed guild=%s",
                                  getattr(guild, "id", "?"))
+        return failures
 
     async def _refresh(self, guild_id: int, state: dict | None = None) -> None:
         if state is None:
@@ -498,17 +528,20 @@ class CashCupCog(commands.Cog):
             logger.exception("CASH CUP panel refresh failed")
         await self._sync_board(state, channel)
 
-    async def _sync_board(self, state: dict, channel) -> None:
-        """Публичная карточка текущего раунда: одно сообщение, обновляется на месте."""
-        if state.get("status") not in ("running", "completed")                 or not state.get("bracket"):
+    async def _sync_board(self, state: dict, channel, *,
+                          page: int | None = None) -> None:
+        """Публичная карточка текущего раунда: одно сообщение, обновляется
+        на месте. Все изменения — под per-guild lock с перечитыванием PG."""
+        if state.get("status") not in ("running", "completed") \
+                or not state.get("bracket"):
             return
-        # Блокировка на guild: внутри неё перечитываем state из PG —
-        # параллельные изменения не дадут создать дублирующие доски.
         async with self._board_lock(state.get("guild_id") or 0):
             fresh = await cashcup_store.active(state["guild_id"]) \
                 or await cashcup_store.latest(state["guild_id"])
             if fresh:
-                await self._sync_board_locked(fresh, channel)
+                if page is None:
+                    page = self._board_pages.get(state["guild_id"], 0)
+                await self._sync_board_locked(fresh, channel, page=page)
 
     async def _sync_board_locked(self, state: dict, channel, *,
                                  page: int = 0) -> None:
@@ -517,6 +550,9 @@ class CashCupCog(commands.Cog):
             return
         try:
             active = _board_matches(state["bracket"])
+            pages = max(1, (len(active) + BoardSelectView.PER_PAGE - 1)
+                        // BoardSelectView.PER_PAGE)
+            page = max(0, min(page, pages - 1))
             view = BoardSelectView(active, page=page, state=state)
             board_id = state.get("board_message_id")
             if board_id:
@@ -1227,16 +1263,19 @@ class CashCupCog(commands.Cog):
             snapshot = await cashcup_store.active(interaction.guild_id)
             if not snapshot or snapshot["status"] != "registration":
                 raise CashCupError("Регистрация закрыта")
-            prizes = snapshot.get("prizes") or {}
-            if ((prizes.get("places") or {}).get("1") or 0) <= 0:
-                raise CashCupError(
-                    "Сначала ADMIN устанавливает приз за 1 место («Управление» → «Приз за 1 место»)")
+            _check_prize_state(snapshot)
             await _validate_teams(self.bot, interaction.guild, snapshot)
             signature = json.dumps(snapshot["teams"], sort_keys=True)
+            prize_sig = json.dumps(snapshot.get("prizes") or {}, sort_keys=True)
             def change(state):
                 _assert_registration(state)
                 if json.dumps(state["teams"], sort_keys=True) != signature:
                     raise CashCupError("Составы изменились при проверке. Повторите /cashcup start")
+                # Приз перепроверяется внутри транзакции: конкурентное
+                # изменение prizes отклоняет старт без частичной сетки.
+                if json.dumps(state.get("prizes") or {}, sort_keys=True) != prize_sig:
+                    raise CashCupError("Приз изменился при проверке. Повторите /cashcup start")
+                _check_prize_state(state)
                 state["bracket"] = create_bracket([t["id"] for t in state["teams"]])
                 state["status"] = "running"
                 return len(state["teams"])
@@ -1820,6 +1859,19 @@ class CashCupCog(commands.Cog):
                               "/cashcup payout после завершения.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
+
+
+def _check_prize_state(state: dict) -> None:
+    """Приз за 1 место обязателен для денежного турнира; 2/3 места — 0."""
+    pr = state.get("prizes") or {}
+    places = pr.get("places") or {}
+    if (places.get("1") or 0) <= 0:
+        raise CashCupError(
+            "Сначала ADMIN устанавливает приз за 1 место («Управление» → «Приз за 1 место»)")
+    if places.get("2") or places.get("3"):
+        raise CashCupError("Допускается только приз за 1 место")
+    if not str(pr.get("currency") or "").strip():
+        raise CashCupError("Не указана валюта приза")
 
 
 def _apply_prizes(state: dict, amount: int, currency: str) -> dict:

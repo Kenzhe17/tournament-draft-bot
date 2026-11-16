@@ -142,10 +142,12 @@ def test_board_pagination_over_25():
                 "status": "ready", "checkins": [], "room_id": "",
                 "a": "A", "b": "B"} for i in range(30)]
     v = cashcup.BoardSelectView(matches)
-    assert len(v._sel.options) == 25
+    assert len(v._sel.options) == cashcup.BOARD_PER_PAGE
     v2 = cashcup.BoardSelectView(matches, page=1)
-    assert len(v2._sel.options) == 5
+    assert len(v2._sel.options) == 30 - cashcup.BOARD_PER_PAGE
     assert v2._page == 1
+    # единый размер страницы для embed и select
+    assert cashcup.BoardSelectView.PER_PAGE == cashcup.BOARD_PER_PAGE
 
 
 def test_cashcup_disabled_by_default():

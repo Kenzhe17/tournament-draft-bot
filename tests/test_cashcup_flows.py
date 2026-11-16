@@ -2,6 +2,8 @@
 Проверяют реальное исполнение обработчиков, а не исходный код."""
 from types import SimpleNamespace
 
+import asyncio
+
 import pytest
 
 from cogs import cashcup
@@ -136,6 +138,8 @@ def cog(monkeypatch):
     c._store = store
     c._board_pages = {}
     c._board_locks = {}
+    c._boards_lock = asyncio.Lock()
+    c._boards_ok = False
     return c
 
 
@@ -746,7 +750,7 @@ async def test_restore_completed_board(cog):
 @pytest.mark.asyncio
 async def test_board_pages_tracking(cog):
     """_board_pages обновляется при sync — _nav не использует устаревший self._page."""
-    st = _running_state(4)
+    st = _running_state(60)  # >15 матчей -> несколько страниц
     cog._store.state = st
     msg = FakeMsg()
     ch = FakeChannel(msg=msg)
@@ -754,3 +758,123 @@ async def test_board_pages_tracking(cog):
     assert cog._board_pages[1] == 0
     await cog._sync_board_locked(st, ch, page=1)
     assert cog._board_pages[1] == 1
+    # страница за пределами клампится в допустимый диапазон
+    await cog._sync_board_locked(st, ch, page=999)
+    assert cog._board_pages[1] < 999
+
+
+# ================= Hardening-2: on_ready restore, nav lock, prize TX, embed pages =================
+
+@pytest.mark.asyncio
+async def test_on_ready_empty_guilds_ok(cog):
+    """Холодный старт: bot.guilds пуст в setup_hook — on_ready не падает."""
+    cog.bot = SimpleNamespace(guilds=[], add_view=lambda v: None)
+    cog._boards_ok = False
+    await cog.on_ready()
+    assert cog._boards_ok is True
+
+
+@pytest.mark.asyncio
+async def test_on_ready_idempotent_and_retries(cog, monkeypatch):
+    calls = []
+
+    async def fake_restore():
+        calls.append(1)
+        return 0
+    monkeypatch.setattr(cog, "_restore_boards", fake_restore)
+    cog.bot = SimpleNamespace(guilds=[])
+    cog._boards_ok = False
+    await cog.on_ready()
+    await cog.on_ready()  # повторный — пропуск
+    assert len(calls) == 1
+    # сбой -> _boards_ok False -> следующий on_ready повторяет
+    async def fail_restore():
+        calls.append(1)
+        return 2
+    monkeypatch.setattr(cog, "_restore_boards", fail_restore)
+    cog._boards_ok = False
+    await cog.on_ready()
+    await cog.on_ready()
+    assert len(calls) == 3  # 1 + 2 попытки
+
+
+@pytest.mark.asyncio
+async def test_nav_goes_through_sync_board(cog):
+    """_nav обязан идти через _sync_board (lock + свежее PG), не locked."""
+    calls = []
+
+    async def fake_sync(state, channel, *, page=None):
+        calls.append(page)
+    cog._sync_board = fake_sync
+    cog._board_pages[1] = 2
+    cog._store.state = _running_state(60)
+    v = cashcup.BoardSelectView()
+    i = make_interaction(_member(1))
+    i.client = FakeClient(cog)
+    i.channel = SimpleNamespace(id=5)
+    await v._nav(i, +1)
+    assert calls == [3]
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_when_prize_changes_in_tx(cog, monkeypatch):
+    """Приз изменён между snapshot и mutate -> start отклоняется, сетки нет."""
+    st = _valid_team_state()
+    st["status"] = "registration"
+
+    class RaceStore(FakeStore):
+        async def mutate(self, guild_id, actor_id, action, change,
+                         details=None, **kw):
+            if action == "start":
+                self.state["prizes"] = {
+                    "places": {"1": 1, "2": 0, "3": 0},
+                    "currency": "KZT", "total": 1}
+            return await super().mutate(guild_id, actor_id, action, change,
+                                        details, **kw)
+
+    cog._store = RaceStore(st)
+    monkeypatch.setattr(cashcup, "cashcup_store", cog._store)
+    async def fake_validate(bot, guild, state):
+        return None
+    monkeypatch.setattr(cashcup, "_validate_teams", fake_validate)
+    admin = _member(99, admin=True)
+    i = make_interaction(admin)
+    await cog.start(i)
+    assert st["bracket"] is None
+    assert st["status"] == "registration"
+    assert "зменил" in _last(i) or "овторите" in _last(i)
+
+
+def test_check_prize_state():
+    ok = {"prizes": {"places": {"1": 100, "2": 0, "3": 0}, "currency": "KZT"}}
+    cashcup._check_prize_state(ok)  # не падает
+    for bad in ({}, {"prizes": {}},
+                {"prizes": {"places": {"1": 0, "2": 0, "3": 0}, "currency": "KZT"}},
+                {"prizes": {"places": {"1": -5, "2": 0, "3": 0}, "currency": "KZT"}},
+                {"prizes": {"places": {"1": 100, "2": 50, "3": 0}, "currency": "KZT"}},
+                {"prizes": {"places": {"1": 100, "2": 0, "3": 0}, "currency": ""}}):
+        with pytest.raises(cashcup.CashCupError):
+            cashcup._check_prize_state(bad)
+
+
+def test_embed_and_select_same_page():
+    """Embed и Select показывают один и тот же срез матчей на странице."""
+    st = _running_state(60)  # команд 120 -> матчей >15 -> 2+ страниц
+    b = st["bracket"]
+    matches = cashcup._board_matches(b)
+    page = 1
+    emb = cashcup._board_embed(st, page=page)
+    emb_ids = [m["id"] for m in matches[
+        page * cashcup.BOARD_PER_PAGE:(page + 1) * cashcup.BOARD_PER_PAGE]]
+    text = emb.description
+    for mid in emb_ids:
+        assert f"`{mid}`" in text
+    view = cashcup.BoardSelectView(matches, page=page, state=st)
+    sel_ids = [o.value for o in view.children[0].options]
+    assert sel_ids == emb_ids[:len(sel_ids)] or set(sel_ids) == set(emb_ids)
+    # страница за пределами — кламп
+    v2 = cashcup.BoardSelectView(matches, page=999, state=st)
+    last_page_ids = [o.value for o in v2.children[0].options]
+    n_pages = (len(matches) + cashcup.BOARD_PER_PAGE - 1) // cashcup.BOARD_PER_PAGE
+    expected = matches[(n_pages - 1) * cashcup.BOARD_PER_PAGE:]
+    assert [m["id"] for m in expected] == last_page_ids
