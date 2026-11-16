@@ -137,8 +137,15 @@ def record_result(
 
 
 def _advance(b: dict[str, Any], m: dict[str, Any]) -> None:
-    """Переход к следующему этапу после завершения раунда."""
-    if ready_matches(b):
+    """Переход к следующему этапу после завершения раунда.
+
+    Блокируется любым незавершённым матчем активного этапа: ready И disputed.
+    ready_matches() не подходит — он исключает disputed, и спорный матч
+    ошибочно считался бы отсутствующим, теряя участников раунда."""
+    pending = [x for x in b["matches"]
+               if x["id"] in b["active_keys"]
+               and x["status"] in ("ready", "disputed")]
+    if pending:
         return
     current = [x for x in b["matches"] if x["id"] in b["active_keys"]]
     winners = [x["winner"] for x in current if x["winner"]] + b["carry"]

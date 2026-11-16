@@ -83,8 +83,10 @@ def test_admin_commands_guarded():
 def test_captain_commands_not_admin_gated():
     """Капитан/игрок команды не должны проходить через admin-check."""
     src = open(cashcup.__file__, encoding="utf-8").read()
-    for name in ("async def register_team", "async def join_team",
-                 "async def approve", "async def checkin"):
+    # roominfo/dispute/evidence легально допускают ADMIN как альтернативу
+    # капитану — проверяем только чисто пользовательские действия.
+    for name in ("async def confirm_ff", "async def invite_sub",
+                 "async def checkin"):
         idx = src.find(name)
         assert idx != -1, name
         body = src[idx:idx + 1200]
