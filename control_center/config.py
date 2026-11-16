@@ -59,3 +59,21 @@ DISCORD_SCOPES = "identify guilds"
 
 # Health/readiness.
 SERVICE_NAME = "control-center-api"
+
+
+def missing_required() -> list[str]:
+    """Обязательные переменные, без которых сервис нерабочий.
+
+    DATABASE_URL — данные; OAuth2+SESSION_SECRET — авторизация;
+    без них API поднимется, но login/данные не заработают.
+    """
+    missing = []
+    if not DATABASE_URL:
+        missing.append("DATABASE_URL")
+    if not DISCORD_CLIENT_ID:
+        missing.append("CONTROL_CENTER_DISCORD_CLIENT_ID")
+    if not DISCORD_CLIENT_SECRET:
+        missing.append("CONTROL_CENTER_DISCORD_CLIENT_SECRET")
+    if not SESSION_SECRET or len(SESSION_SECRET) < 32:
+        missing.append("CONTROL_CENTER_SESSION_SECRET (>=32 chars)")
+    return missing

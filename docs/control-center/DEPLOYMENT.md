@@ -6,8 +6,7 @@
 | Сервис | Каталог | Команда запуска |
 |---|---|---|
 | Bot (Discord) | корень репо | `python bot.py` |
-| Control Center API | `control_center/` | `uvicorn control_center.main:create_app --factory --host 0.0.0.0 --port $PORT` |
-| Panel (frontend) | `panel/` | `npm run build` → раздача `panel/dist` (static) |
+| Control Center API + Panel | `control_center/` + `panel/dist` | `SERVICE_ROLE=panel` → `uvicorn control_center.main:app --host 0.0.0.0 --port $PORT` (React build монтируется тем же сервисом) |
 
 ## Переменные окружения
 
@@ -24,10 +23,17 @@
 
 ### Control Center API
 - `DATABASE_URL` — та же PostgreSQL (admin_config_* таблицы)
-- `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` — OAuth2 (secret)
-- `SESSION_SECRET` — HMAC-ключ сессий (secret, ≥32 байта)
-- `PUBLIC_BASE_URL` — публичный URL API (callback OAuth, CORS)
-- `PANEL_GUILD_ID` — Discord guild ID, к которому привязана панель
+- `CONTROL_CENTER_DISCORD_CLIENT_ID`, `CONTROL_CENTER_DISCORD_CLIENT_SECRET` — OAuth2 (secret)
+- `CONTROL_CENTER_SESSION_SECRET` — HMAC-ключ сессий (secret, ≥32 байта)
+- `CONTROL_CENTER_PUBLIC_URL` — публичный URL сервиса (callback OAuth, CORS)
+- `CONTROL_CENTER_REDIRECT_URI` — опционально; default `{PUBLIC_BASE_URL}/auth/callback`
+- `CONTROL_CENTER_GUILD_ID` — guild ID панели (0 = любой guild пользователя)
+- `CONTROL_CENTER_OWNER_IDS` — Discord user ID владельцев панели (csv)
+- `CONTROL_CENTER_COOKIE_SECURE` — `true` для HTTPS, `auto`/`false` для dev
+- `SERVICE_ROLE=panel` — если используется общий Dockerfile (uvicorn вместо bot.py)
+
+Обязательные переменные валидируются при старте (`config.missing_required()`)
+и отражаются в `GET /api/health` → `config`.
 
 ### Panel
 - `VITE_API_URL` — URL API (опционально; в проде лучше same-origin

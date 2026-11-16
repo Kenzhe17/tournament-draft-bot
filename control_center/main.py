@@ -53,6 +53,15 @@ def create_app() -> FastAPI:
     app.include_router(players_api.router)
     app.include_router(admin_modules.router)
 
+    missing = config.missing_required()
+    if missing:
+        logger.error(
+            "Control Center: отсутствуют обязательные переменные: %s",
+            ", ".join(missing),
+        )
+    else:
+        logger.info("Control Center: все обязательные переменные заданы")
+
     # React-сборка панели (panel/dist). Если каталог отсутствует
     # (dev-окружение без frontend build), API продолжает работать —
     # статика просто не монтируется.

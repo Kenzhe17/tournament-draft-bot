@@ -23,10 +23,12 @@ async def health() -> dict[str, Any]:
         db_ok = True
     except Exception:  # noqa: BLE001, S110 — health не должен падать
         pass
+    missing = config.missing_required()
     return {
         "service": config.SERVICE_NAME,
-        "status": "ok" if db_ok else "degraded",
+        "status": "ok" if db_ok and not missing else "degraded",
         "database": "up" if db_ok else "down",
+        "config": "ok" if not missing else f"missing: {', '.join(missing)}",
     }
 
 

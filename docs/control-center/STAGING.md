@@ -29,7 +29,7 @@ Panel domain: `https://panel-staging-b7f974de.up.railway.app`
 - `CONTROL_CENTER_OWNER_IDS` — Discord user ID владельца
 - `CONTROL_CENTER_COOKIE_SECURE` — `true` (HTTPS domain)
 - OAuth2 redirect URI в Discord Developer Portal:
-  `https://panel-staging-b7f974de.up.railway.app/auth/discord/callback`
+  `https://panel-staging-b7f974de.up.railway.app/auth/callback`
 - `DATABASE_URL` — та же staging БД, что у bot-staging (общие таблицы `admin_*`)
 
 ## Запрещено
