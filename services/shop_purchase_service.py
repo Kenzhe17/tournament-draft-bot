@@ -831,6 +831,36 @@ async def _recover_purchase_op(op: dict, bot) -> str:
         return "done"
 
 
+async def _recover_wardrobe_op(op: dict) -> str:
+    """Восстановить wardrobe-операцию (гардероб Free Fire).
+
+    payload.ff_item — id предмета FF. Если предмет уже в
+    гардеробе — операция завершена (done). Иначе выдача не
+    подтверждена → безопасный refund обеих валют."""
+    gid, uid = op["guild_id"], op["user_id"]
+    payload = op.get("payload") or {}
+    if payload.get("refund_done"):
+        await purchase_ops_store.settle_pending_refund(op)
+        return "refunded"
+    from storage.wardrobe_store import wardrobe_store
+    try:
+        ff_item = int(payload.get("ff_item") or op["item_id"])
+    except (TypeError, ValueError):
+        ff_item = None
+    if ff_item is not None and wardrobe_store.is_owned(gid, uid, ff_item):
+        await purchase_ops_store.set_status(op["op_id"], "done")
+        return "done"
+    res = await _refund_once(gid, uid, op["price"], op["op_id"])
+    if _refund_incomplete(res):
+        await purchase_ops_store.set_status(
+            op["op_id"], "unknown",
+            payload={"refund_pending": op["price"], "rep_pending": res.get("rep_pending", 0)},
+        )
+        return "unknown"
+    await _record_refund(op["op_id"], res)
+    return "refunded"
+
+
 async def _recover_pet_op(op: dict) -> str:
     """Восстановить pet/egg операцию."""
     gid, uid = op["guild_id"], op["user_id"]
@@ -1039,6 +1069,21 @@ async def recover_pending(bot=None) -> int:
                     await _recover_pet_op(op)
                 elif kind == "case":
                     await _recover_case_op(op)
+                elif kind == "wardrobe":
+                    await _recover_wardrobe_op(op)
+                elif kind == "nickname":
+                    # Свой контур восстановления (nickname_ops_store
+                    # + фактический ник в Discord) — generic
+                    # recovery не трогает, иначе возможен refund
+                    # при уже применённой смене ника.
+                    pass
+                else:
+                    # Неизвестный kind — не трогаем, оставляем
+                    # charged для ручного разбора.
+                    logger.warning(
+                        "shop ops recovery: unknown kind=%s op=%s",
+                        kind, op["op_id"],
+                    )
                 resolved += 1
         except Exception:
             logger.exception("shop ops recovery failed op=%s", op.get("op_id"))

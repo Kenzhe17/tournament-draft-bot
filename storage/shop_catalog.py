@@ -37,7 +37,11 @@ ALTER TABLE shop_items
     ADD COLUMN IF NOT EXISTS required_level INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'default',
     ADD COLUMN IF NOT EXISTS updated_by BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ADD COLUMN IF NOT EXISTS available_from TEXT,
+    ADD COLUMN IF NOT EXISTS available_until TEXT,
+    ADD COLUMN IF NOT EXISTS bundle JSONB,
+    ADD COLUMN IF NOT EXISTS rep_price INTEGER;
 CREATE INDEX IF NOT EXISTS idx_shop_items_category
     ON shop_items(category);
 CREATE INDEX IF NOT EXISTS idx_shop_items_active
@@ -61,12 +65,19 @@ async def load_all() -> list[dict[str, Any]]:
             """
             SELECT item_id, name, description, price, category, rarity,
                    is_sellable, emoji, is_active, cosmetic_type, value,
-                   item_type, role_id, required_level
+                   item_type, role_id, required_level,
+                   available_from, available_until, bundle, rep_price
             FROM shop_items ORDER BY item_id
             """
         )
     out = []
     for r in rows:
+        bundle = r["bundle"]
+        if isinstance(bundle, str):
+            try:
+                bundle = json.loads(bundle)
+            except Exception:
+                bundle = None
         out.append({
             "id": r["item_id"],
             "name": r["name"],
@@ -81,8 +92,61 @@ async def load_all() -> list[dict[str, Any]]:
             "item_type": r["item_type"],
             "role_id": r["role_id"],
             "required_level": r["required_level"],
+            "available_from": r["available_from"],
+            "available_until": r["available_until"],
+            "bundle": bundle,
+            "rep_price": r["rep_price"],
         })
     return out
+
+
+def _item_params(item: dict[str, Any]) -> tuple:
+    """Общий набор bind-параметров для upsert/seed."""
+    bundle = item.get("bundle")
+    return (
+        item["id"], item.get("name", ""), item.get("description", ""),
+        int(item.get("price", 0)), item.get("category", ""),
+        item.get("rarity", "basic"),
+        bool(item.get("is_sellable", True)),
+        bool(item.get("is_active", True)),
+        item.get("cosmetic_type", "icon"), item.get("value", ""),
+        item.get("item_type", "cosmetic"),
+        item.get("role_id"), int(item.get("required_level", 0)),
+        item.get("available_from"), item.get("available_until"),
+        json.dumps(bundle) if bundle is not None else None,
+        item.get("rep_price"),
+    )
+
+
+_UPSERT_SQL = """
+    INSERT INTO shop_items
+        (item_id, name, description, price, category, rarity,
+         is_sellable, is_active, cosmetic_type, value,
+         item_type, role_id, required_level,
+         available_from, available_until, bundle, rep_price,
+         source, updated_by, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now())
+    ON CONFLICT (item_id) DO UPDATE SET
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        price = EXCLUDED.price,
+        category = EXCLUDED.category,
+        rarity = EXCLUDED.rarity,
+        is_sellable = EXCLUDED.is_sellable,
+        is_active = EXCLUDED.is_active,
+        cosmetic_type = EXCLUDED.cosmetic_type,
+        value = EXCLUDED.value,
+        item_type = EXCLUDED.item_type,
+        role_id = EXCLUDED.role_id,
+        required_level = EXCLUDED.required_level,
+        available_from = EXCLUDED.available_from,
+        available_until = EXCLUDED.available_until,
+        bundle = EXCLUDED.bundle,
+        rep_price = EXCLUDED.rep_price,
+        source = EXCLUDED.source,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = now()
+"""
 
 
 async def upsert_item(item: dict[str, Any], *, actor_id: int = 0,
@@ -90,40 +154,10 @@ async def upsert_item(item: dict[str, Any], *, actor_id: int = 0,
     """Создать/обновить товар. Не трогает чужие поля."""
     pool = await get_pool()
     async with pool.acquire() as conn:
+        await conn.execute(SCHEMA)
         await conn.execute(
-            """
-            INSERT INTO shop_items
-                (item_id, name, description, price, category, rarity,
-                 is_sellable, is_active, cosmetic_type, value,
-                 item_type, role_id, required_level, source,
-                 updated_by, updated_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())
-            ON CONFLICT (item_id) DO UPDATE SET
-                name = EXCLUDED.name,
-                description = EXCLUDED.description,
-                price = EXCLUDED.price,
-                category = EXCLUDED.category,
-                rarity = EXCLUDED.rarity,
-                is_sellable = EXCLUDED.is_sellable,
-                is_active = EXCLUDED.is_active,
-                cosmetic_type = EXCLUDED.cosmetic_type,
-                value = EXCLUDED.value,
-                item_type = EXCLUDED.item_type,
-                role_id = EXCLUDED.role_id,
-                required_level = EXCLUDED.required_level,
-                source = EXCLUDED.source,
-                updated_by = EXCLUDED.updated_by,
-                updated_at = now()
-            """,
-            item["id"], item.get("name", ""), item.get("description", ""),
-            int(item.get("price", 0)), item.get("category", ""),
-            item.get("rarity", "basic"),
-            bool(item.get("is_sellable", True)),
-            bool(item.get("is_active", True)),
-            item.get("cosmetic_type", "icon"), item.get("value", ""),
-            item.get("item_type", "cosmetic"),
-            item.get("role_id"), int(item.get("required_level", 0)),
-            source, actor_id,
+            _UPSERT_SQL,
+            *_item_params(item), source, actor_id,
         )
 
 
@@ -142,25 +176,39 @@ async def seed_defaults(items: list[dict[str, Any]]) -> int:
                 INSERT INTO shop_items
                     (item_id, name, description, price, category, rarity,
                      is_sellable, is_active, cosmetic_type, value,
-                     item_type, role_id, required_level, source,
-                     updated_at)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+                     item_type, role_id, required_level,
+                     available_from, available_until, bundle, rep_price,
+                     source, updated_at)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
                         'default', now())
                 ON CONFLICT (item_id) DO NOTHING
                 """,
-                it["id"], it.get("name", ""), it.get("description", ""),
-                int(it.get("price", 0)), it.get("category", ""),
-                it.get("rarity", "basic"),
-                bool(it.get("is_sellable", True)),
-                bool(it.get("is_active", True)),
-                it.get("cosmetic_type", "icon"), it.get("value", ""),
-                it.get("item_type", "cosmetic"),
-                it.get("role_id"), int(it.get("required_level", 0)),
+                *_item_params(it),
             )
             # INSERT 0 1 / INSERT 0 0
             if result.endswith("1"):
                 inserted += 1
     return inserted
+
+
+async def save_item_confirmed(
+    item, *, actor_id: int = 0, source: str = "discord_admin"
+) -> bool:
+    """Сохранить товар в PG с подтверждением результата.
+
+    Для критических записей из Discord-админки: возвращает True
+    только если upsert реально выполнен в PostgreSQL. При ошибке
+    — False, вызывающий код обязан НЕ показывать успех и НЕ
+    считать изменение сохранённым.
+    """
+    try:
+        await upsert_item(item.to_dict(), actor_id=actor_id,
+                          source=source)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.error("shop catalog save_item failed id=%s: %s",
+                     getattr(item, "id", "?"), exc)
+        return False
 
 
 async def notify_catalog_changed() -> None:
@@ -186,6 +234,26 @@ async def sync_to_store(shop_store) -> str:
 
     await ensure_schema()
     rows = await load_all()
+
+    # Восстановление ассортимента: дефолтные id, отсутствующие в PG,
+    # досеиваются при КАЖДОЙ синхронизации. ON CONFLICT DO NOTHING —
+    # существующие строки (в т.ч. скрытые is_active=false и
+    # отредактированные панелью) не перезаписываются и не
+    # реактивируются.
+    from storage.shop_items import default_shop_items
+    defaults = [it.to_dict() for it in default_shop_items()]
+    have = {r["id"] for r in rows}
+    missing = [d for d in defaults if d["id"] not in have]
+    if missing:
+        try:
+            n = await seed_defaults(missing)
+            if n:
+                logger.info(
+                    "shop catalog: restored %d missing default items", n
+                )
+                rows = await load_all()
+        except Exception as exc:  # noqa: BLE001 — не роняем синк
+            logger.warning("shop catalog: default reseed failed: %s", exc)
 
     if rows:
         items = []

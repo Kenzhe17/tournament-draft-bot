@@ -25,6 +25,69 @@ async def add_balance(guild_id: int, user_id: int, amount: int) -> None:
     await user_balance_store.add_balance(guild_id, user_id, amount)
 
 
+async def _ensure_role_removed(
+    guild: discord.Guild, user_id: int, role_id: int
+) -> bool:
+    """Подтвердить фактическое отсутствие Discord-роли у member.
+
+    True — роли нет (снята или не было). False — роль всё ещё
+    есть либо состояние не удалось проверить (неизвестный
+    результат Discord API → повторная проверка member.roles,
+    а не слепая выплата).
+    """
+    try:
+        member = await guild.fetch_member(user_id)
+    except Exception:
+        return False
+    role = guild.get_role(role_id)
+    if role is None:
+        # Роль удалена с сервера — снимать нечего, продажа безопасна.
+        return True
+    if not any(r.id == role_id for r in member.roles):
+        return True
+    try:
+        from utils.role_manager import remove_role
+        removed = await remove_role(guild, user_id, role_id)
+    except Exception:
+        removed = False
+    # Повторная проверка фактического состояния — покрывает и
+    # «снятие выполнилось, ответ потерялся».
+    try:
+        member = await guild.fetch_member(user_id)
+    except Exception:
+        return removed
+    return not any(r.id == role_id for r in member.roles)
+
+
+async def _credit_sale_once(
+    guild_id: int, user_id: int, amount: int
+) -> None:
+    """Идемпотентное начисление выручки за продажу.
+
+    Ключ уникален для каждой попытки продажи. Если ответ PG
+    потерялся после COMMIT, повторный вызов с тем же ключом
+    возвращает зафиксированную сумму — зачисление не дублируется
+    и не «откатывается» ошибкой.
+    """
+    if amount <= 0:
+        return
+    import uuid
+    from storage.user_balance_store import user_balance_store
+    key = f"sell:{uuid.uuid4()}"
+    try:
+        await user_balance_store.add_balance_once(
+            guild_id, user_id, amount, key
+        )
+    except Exception:
+        # Неопределённый исход: пробуем тот же ключ — вернёт
+        # recorded amount, если грант закоммитился.
+        credited = await user_balance_store.add_balance_once(
+            guild_id, user_id, amount, key
+        )
+        if not credited:
+            raise
+
+
 async def get_shop_item(item_id: str) -> Optional[dict]:
     """Получение информации о предмете из каталога (тег / значок)."""
     return shop_store.get_item(item_id)
@@ -147,24 +210,29 @@ class SellCog(commands.Cog):
 
             sell_price = math.floor(base_price * base_sell_percent)
 
-            # Для role-предметов снимаем Discord-роль до удаления
-            # из инвентаря — иначе роль осталась бы без владения.
+            # Для role-предметов проверяем ФАКТИЧЕСКОЕ снятие
+            # Discord-роли до удаления из инвентаря и выплаты.
+            # Снятие не подтверждено → продажа не считается
+            # успешной: предмет остаётся, монеты не начисляются.
             if item.item_type == "role" and item.role_id and guild is not None:
-                try:
-                    from utils.role_manager import remove_role
-                    await remove_role(guild, interaction.user.id, item.role_id)
-                except Exception:
-                    import logging
-                    logging.getLogger(__name__).error(
-                        "sell: remove_role failed item=%s", item.id
+                if not await _ensure_role_removed(
+                    guild, interaction.user.id, item.role_id
+                ):
+                    await interaction.followup.send(
+                        " Не удалось подтвердить снятие Discord-роли — "
+                        "продажа отменена, предмет и баланс не изменены.",
+                        ephemeral=True
                     )
+                    return
 
-            # 4. Удаляем предмет и начисляем монеты.
+            # 4. Удаляем предмет и начисляем монеты идемпотентно.
             #    При сбое начисления предмет возвращается в инвентарь —
             #    пользователь не теряет его без компенсации.
             await remove_user_item(guild_id, interaction.user.id, item.id)
             try:
-                await add_balance(guild_id, interaction.user.id, sell_price)
+                await _credit_sale_once(
+                    guild_id, interaction.user.id, sell_price
+                )
             except Exception:
                 inventory_store.add_cosmetic(cosmetic)
                 # Откат: вернуть и Discord-роль, если снимали
