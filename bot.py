@@ -12,7 +12,7 @@ import time
 import discord
 from discord.ext import commands
 
-from config import DATABASE_URL, DISCORD_TOKEN, GUILD_ID, guild_allowed, replace_emojis
+from config import DATABASE_URL, DISCORD_TOKEN, GUILD_ID, guild_allowed, replace_emojis, CASHCUP_ENABLED
 from models.tournament import Tournament, TournamentPhase
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
@@ -339,7 +339,8 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.moderation")
         await self.load_extension("cogs.mod")
         await self.load_extension("cogs.freefire")
-        await self.load_extension("cogs.cashcup")
+        if CASHCUP_ENABLED:
+            await self.load_extension("cogs.cashcup")
         await self.load_extension("cogs.wardrobe")
         await self.load_extension("cogs.emoji")
         await self.load_extension("cogs.reputation")

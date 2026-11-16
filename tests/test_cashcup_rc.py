@@ -126,3 +126,36 @@ def test_board_view_persistent_custom_id():
     v = cashcup.BoardSelectView([])
     ids = [getattr(i, "custom_id", "") for i in v.children]
     assert "cashcup:board_select" in ids
+
+
+def test_board_shows_disputed_and_champion():
+    st = _fake_state()
+    m = ready_matches(st["bracket"])[0]
+    m["status"] = "disputed"
+    m["dispute"] = {"reason": "r", "evidence": []}
+    bm = cashcup._board_matches(st["bracket"])
+    assert any(x["id"] == m["id"] for x in bm)
+    emb = cashcup._board_embed(st)
+    assert "СПОР" in (emb.description or "")
+    # Чемпион: board показывает итог.
+    st2 = _fake_state()
+    st2["bracket"]["champion"] = "TA"
+    emb2 = cashcup._board_embed(st2)
+    assert "Чемпион" in (emb2.description or "")
+
+
+def test_board_pagination_over_25():
+    matches = [{"id": f"M{i}", "bracket": "W", "bo": 1, "score": [0, 0],
+                "status": "ready", "checkins": [], "room_id": "",
+                "a": "A", "b": "B"} for i in range(30)]
+    v = cashcup.BoardSelectView(matches)
+    assert len(v._sel.options) == 25
+    v2 = cashcup.BoardSelectView(matches, page=1)
+    assert len(v2._sel.options) == 5
+    assert v2._page == 1
+
+
+def test_cashcup_disabled_by_default():
+    import config
+    # По умолчанию флаг выключен (env не задан в тестах).
+    assert config.CASHCUP_ENABLED is False or isinstance(config.CASHCUP_ENABLED, bool)

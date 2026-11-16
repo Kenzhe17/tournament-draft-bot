@@ -324,39 +324,76 @@ def _match_card_text(state: dict, m: dict) -> str:
     return "\n".join(lines)[:1900]
 
 
-def _board_embed(state: dict) -> discord.Embed:
+def _board_matches(bracket: dict) -> list:
+    """Матчи для публичной доски: активные + disputed (видны, но не продвигаются)."""
+    active = {m["id"] for m in ready_matches(bracket)}
+    return [m for m in bracket["matches"]
+            if m["id"] in active or m.get("status") == "disputed"]
+
+
+def _board_embed(state: dict, *, page: int = 0) -> discord.Embed:
     b = state.get("bracket") or {}
+    matches = _board_matches(b) if b else []
     active = ready_matches(b) if b else []
+    disputed = [m for m in matches if m.get("status") == "disputed"]
     lines = ["**Текущий раунд — выберите матч**"]
-    for m in active[:15]:
+    for m in matches[:15]:
         score = f" · {m['score'][0]}:{m['score'][1]}" if m["bracket"] == "GF" else ""
         flag = " ⚠️ СПОР" if m["status"] == "disputed" else ""
         lines.append(f"`{m['id']}` {_team_name(state, m['a'])} vs {_team_name(state, m['b'])}"
                      f" · BO{m['bo']}{score}{flag}")
-    if not active:
+    if not matches:
         lines.append("Активных матчей нет" +
                      (f". Чемпион: **{_team_name(state, b['champion'])}**"
                       if b.get("champion") else "."))
-    if len(active) > 15:
-        lines.append(f"… ещё {len(active)-15} — `/cashcup info matches`")
-    return discord.Embed(title="r!z3 CASH CUP · матчи", description="\n".join(lines),
+    if b.get("champion"):
+        done = [m for m in b["matches"] if m["status"] == "completed"]
+        lines.append(f"\n**🏆 Чемпион: {_team_name(state, b['champion'])}**")
+        for m in done[-5:]:
+            lines.append(f"`{m['id']}` {_team_name(state, m['a'])} {m['score'][0]}:{m['score'][1]} {_team_name(state, m['b'])}")
+    pages = max(1, (len(matches) + 24) // 25)
+    if pages > 1:
+        lines.append(f"\nМатчей: {len(matches)} · страница {page + 1}/{pages} (кнопки под списком)")
+    return discord.Embed(title="r!z3 CASH CUP · матчи", description="\n".join(lines)[:4000],
                          color=0x26262A)
 
 
 class BoardSelectView(discord.ui.View):
-    """Persistent Select активных матчей → ephemeral карточка матча."""
-    def __init__(self, matches=None):
+    """Persistent Select активных матчей → ephemeral карточка матча.
+    Пагинация кнопками «Назад/Вперёд» при >25 матчах на доске."""
+    PER_PAGE = 25
+
+    def __init__(self, matches=None, *, page: int = 0, state: dict | None = None):
         super().__init__(timeout=None)
+        matches = matches or []
+        self._total = len(matches)
+        self._page = max(0, min(page, (self._total - 1) // self.PER_PAGE
+                                if self._total else 0))
+        self._state = state
+        chunk = matches[self._page * self.PER_PAGE:
+                       (self._page + 1) * self.PER_PAGE]
         options = [discord.SelectOption(
             label=m["id"], value=m["id"],
-            description=(f"{_short_desc(m)}")[:100]) for m in (matches or [])[:25]]
+            description=_short_desc(m)[:100]) for m in chunk]
         if not options:
-            options = [discord.SelectOption(label="Матчов нет", value="none")]
+            options = [discord.SelectOption(label="Матчей нет", value="none")]
         self._sel = discord.ui.Select(
             placeholder="Открыть матч…", custom_id="cashcup:board_select",
             options=options, disabled=not matches)
         self._sel.callback = self._pick
         self.add_item(self._sel)
+        pages = max(1, (self._total + self.PER_PAGE - 1) // self.PER_PAGE)
+        if pages > 1:
+            prev_b = discord.ui.Button(label="Назад", style=discord.ButtonStyle.secondary,
+                                       custom_id="cashcup:board_prev",
+                                       disabled=self._page == 0)
+            next_b = discord.ui.Button(label="Вперёд", style=discord.ButtonStyle.secondary,
+                                       custom_id="cashcup:board_next",
+                                       disabled=self._page >= pages - 1)
+            prev_b.callback = lambda i: self._nav(i, -1)
+            next_b.callback = lambda i: self._nav(i, +1)
+            self.add_item(prev_b)
+            self.add_item(next_b)
 
     async def _pick(self, interaction: discord.Interaction) -> None:
         mid = self._sel.values[0]
@@ -365,6 +402,18 @@ class BoardSelectView(discord.ui.View):
             return
         cog = interaction.client.get_cog("CashCupCog")
         await cog.show_match_card(interaction, mid)
+
+    async def _nav(self, interaction: discord.Interaction, delta: int) -> None:
+        await interaction.response.defer()
+        cog = interaction.client.get_cog("CashCupCog")
+        state = await cashcup_store.active(interaction.guild_id)             or await cashcup_store.latest(interaction.guild_id)
+        if not state or not state.get("bracket"):
+            await interaction.followup.send("Состояние турнира не найдено.", ephemeral=True)
+            return
+        matches = _board_matches(state["bracket"])
+        pages = max(1, (len(matches) + self.PER_PAGE - 1) // self.PER_PAGE)
+        page = max(0, min(self._page + delta, pages - 1))
+        await cog._sync_board_locked(state, interaction.channel, page=page)
 
 
 def _short_desc(m: dict) -> str:
@@ -409,26 +458,38 @@ class CashCupCog(commands.Cog):
 
     async def _sync_board(self, state: dict, channel) -> None:
         """Публичная карточка текущего раунда: одно сообщение, обновляется на месте."""
-        if state.get("status") != "running" or not state.get("bracket"):
+        if state.get("status") not in ("running", "completed")                 or not state.get("bracket"):
             return
-        # Блокировка на guild: параллельные _refresh не создадут дубликаты борда.
+        # Блокировка на guild: внутри неё перечитываем state из PG —
+        # параллельные изменения не дадут создать дублирующие доски.
         async with self._board_lock(state.get("guild_id") or 0):
-            await self._sync_board_locked(state, channel)
+            fresh = await cashcup_store.active(state["guild_id"]) \
+                or await cashcup_store.latest(state["guild_id"])
+            if fresh:
+                await self._sync_board_locked(fresh, channel)
 
-    async def _sync_board_locked(self, state: dict, channel) -> None:
+    async def _sync_board_locked(self, state: dict, channel, *,
+                                 page: int = 0) -> None:
+        if state.get("status") not in ("running", "completed") \
+                or not state.get("bracket"):
+            return
         try:
-            active = ready_matches(state["bracket"])
-            view = BoardSelectView(active)
+            active = _board_matches(state["bracket"])
+            view = BoardSelectView(active, page=page, state=state)
             board_id = state.get("board_message_id")
             if board_id:
                 try:
                     msg = await channel.fetch_message(board_id)
-                    await msg.edit(embed=_board_embed(state), view=view,
+                    await msg.edit(embed=_board_embed(state, page=page), view=view,
                                    allowed_mentions=discord.AllowedMentions.none())
                     return
-                except discord.HTTPException:
-                    pass  # сообщение удалено — создадим заново
-            msg = await channel.send(embed=_board_embed(state), view=view,
+                except discord.NotFound:
+                    pass  # сообщение удалено вручную — создаём замену
+                except discord.HTTPException as exc:
+                    # 429/403/5xx — не создаём дубликат: ретрай позже через _refresh.
+                    logger.warning("CASH CUP board edit failed: %s", exc)
+                    return
+            msg = await channel.send(embed=_board_embed(state, page=page), view=view,
                                      allowed_mentions=discord.AllowedMentions.none())
             def change(st):
                 st["board_message_id"] = msg.id
