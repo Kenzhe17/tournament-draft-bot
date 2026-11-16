@@ -134,6 +134,8 @@ def cog(monkeypatch):
     store = FakeStore()
     monkeypatch.setattr(cashcup, "cashcup_store", store)
     c._store = store
+    c._board_pages = {}
+    c._board_locks = {}
     return c
 
 
@@ -143,8 +145,10 @@ def _reg_state():
             "teams": [], "bracket": None, "payouts": [], "prizes": {}}
 
 
-def _player(uid, ff="FF1", nick=None, device="mobile", verified=False,
+def _player(uid, ff=None, nick=None, device="mobile", verified=False,
             ff_ok=True):
+    if ff is None:
+        ff = f"1000{uid:02d}"
     return {"discord_id": uid, "device": device, "ff_uid": ff,
             "nick": nick if nick is not None else f"nick{uid}",
             "region": "ru", "verified": verified,
@@ -459,3 +463,294 @@ def test_gamesideview_buttons():
 def test_command_tree_only_two():
     names = {c.name for c in cashcup.CashCupCog.cashcup._children.values()}
     assert names == {"create", "panel"}
+
+
+
+
+# ================= Hardening: выплата без приза / валюта / валидация / board =================
+
+@pytest.mark.asyncio
+async def test_payout_rejected_without_prize(cog):
+    st = _completed_state()
+    st["prizes"] = {}
+    cog._store.state = st
+    admin = _member(99, admin=True)
+    i = make_interaction(admin, members={10: _member(10), 99: admin})
+    await cog._mi_payout(i, ["10", "100000", "KZT",
+                             "https://discord.com/channels/1/2/3"])
+    assert not st["payouts"]
+    assert "приз" in _last(i).lower()
+
+
+@pytest.mark.asyncio
+async def test_payout_rejected_zero_prize(cog):
+    st = _completed_state()
+    st["prizes"] = {"places": {"1": 0, "2": 0, "3": 0}, "currency": "KZT"}
+    cog._store.state = st
+    admin = _member(99, admin=True)
+    i = make_interaction(admin, members={10: _member(10), 99: admin})
+    await cog._mi_payout(i, ["10", "100000", "KZT",
+                             "https://discord.com/channels/1/2/3"])
+    assert not st["payouts"]
+
+
+@pytest.mark.asyncio
+async def test_payout_usd_currency(cog):
+    st = _completed_state()
+    st["prizes"] = {"places": {"1": 500, "2": 0, "3": 0},
+                    "currency": "USD", "total": 500}
+    cog._store.state = st
+    admin = _member(99, admin=True)
+    i = make_interaction(admin, members={10: _member(10), 99: admin})
+    await cog._mi_payout(i, ["10", "500", "USD",
+                             "https://discord.com/channels/1/2/3"])
+    p = st["payouts"][0]
+    assert p["currency"] == "USD" and p["amount"] == 500
+    assert "500 USD" in _last(i)
+    assert "₸" not in _last(i)
+    assert cog._store.audits[-1]["details"]["currency"] == "USD"
+
+
+@pytest.mark.asyncio
+async def test_payout_wrong_currency_rejected(cog):
+    cog._store.state = _completed_state()
+    admin = _member(99, admin=True)
+    i = make_interaction(admin, members={10: _member(10), 99: admin})
+    await cog._mi_payout(i, ["10", "100000", "USD",
+                             "https://discord.com/channels/1/2/3"])
+    assert not cog._store.state["payouts"]
+
+
+# ---------- _validate_teams: независимая проверка ----------
+
+def _valid_team_state():
+    st = _reg_state()
+    st["teams"] = [
+        _team("t1", "Alpha", 10,
+              [_player(u, verified=True) for u in (10, 11, 12, 13)],
+              lineup=[10, 11, 12, 13]),
+        _team("t2", "Beta", 20,
+              [_player(u, verified=True) for u in (20, 21, 22, 23)],
+              lineup=[20, 21, 22, 23]),
+    ]
+    st["prizes"] = {"places": {"1": 1000, "2": 0, "3": 0}, "currency": "KZT"}
+    return st
+
+
+async def _run_validate(monkeypatch, state):
+    async def _fake_check(bot, guild, uid):
+        return None
+    monkeypatch.setattr(cashcup, "_member_check", _fake_check)
+    guild = SimpleNamespace(id=1)
+    return await cashcup._validate_teams(object(), guild, state)
+
+
+@pytest.mark.asyncio
+async def test_validate_empty_ff_uid_rejected(monkeypatch):
+    st = _valid_team_state()
+    st["teams"][0]["members"][0]["ff_uid"] = ""
+    with pytest.raises(cashcup.CashCupError, match="UID"):
+        await _run_validate(monkeypatch, st)
+
+
+@pytest.mark.asyncio
+async def test_validate_ff_ok_false_rejected(monkeypatch):
+    st = _valid_team_state()
+    st["teams"][0]["members"][0]["ff_ok"] = False
+    st["teams"][0]["members"][0]["verified"] = True  # verified не спасает
+    with pytest.raises(cashcup.CashCupError, match="API"):
+        await _run_validate(monkeypatch, st)
+
+
+@pytest.mark.asyncio
+async def test_validate_unverified_rejected(monkeypatch):
+    st = _valid_team_state()
+    st["teams"][0]["members"][0]["verified"] = False
+    with pytest.raises(cashcup.CashCupError):
+        await _run_validate(monkeypatch, st)
+
+
+@pytest.mark.asyncio
+async def test_validate_three_pc_rejected(monkeypatch):
+    st = _valid_team_state()
+    for p in st["teams"][0]["members"][:3]:
+        p["device"] = "pc"
+    with pytest.raises(cashcup.CashCupError, match="ПК"):
+        await _run_validate(monkeypatch, st)
+
+
+@pytest.mark.asyncio
+async def test_validate_three_players_rejected(monkeypatch):
+    st = _valid_team_state()
+    st["teams"][0]["members"] = st["teams"][0]["members"][:3]
+    st["teams"][0]["lineup"] = [10, 11, 12, 99]
+    with pytest.raises(cashcup.CashCupError):
+        await _run_validate(monkeypatch, st)
+
+
+@pytest.mark.asyncio
+async def test_validate_substitute_checked(monkeypatch):
+    """Запасной (5-й) тоже проходит полную проверку профиля."""
+    st = _valid_team_state()
+    st["teams"][0]["members"].append(_player(14, verified=True))
+    st["teams"][0]["members"][4]["ff_uid"] = ""
+    with pytest.raises(cashcup.CashCupError, match="UID"):
+        await _run_validate(monkeypatch, st)
+
+
+@pytest.mark.asyncio
+async def test_validate_all_good_passes(monkeypatch):
+    await _run_validate(monkeypatch, _valid_team_state())  # без исключений
+
+
+# ---------- Board: persistent ids, restore, ошибки API ----------
+
+def test_board_nav_persistent_ids():
+    v = cashcup.BoardSelectView()
+    ids = {getattr(c, "custom_id", "") for c in v.children}
+    assert "cashcup:board_select" in ids
+    assert "cashcup:board_prev" in ids
+    assert "cashcup:board_next" in ids
+
+
+def _running_state(n_matches=30):
+    st = _reg_state()
+    st["status"] = "running"
+    st["guild_id"] = 1
+    st["channel_id"] = 5
+    st["board_message_id"] = 777
+    teams = [_team(f"t{i}", f"T{i}", i, [_player(i)])
+             for i in range(n_matches * 2)]
+    st["teams"] = teams
+    b = cb.create_bracket([t["id"] for t in teams], seed=1)
+    st["bracket"] = b
+    return st
+
+
+class FakeMsg:
+    def __init__(self, mid=777):
+        self.id = mid
+        self.edits = []
+
+    async def edit(self, **kw):
+        self.edits.append(kw)
+
+
+class FakeChannel:
+    def __init__(self, msg=None, send_exc=None, fetch_exc=None):
+        self.msg = msg
+        self.sent = []
+        self._send_exc = send_exc
+        self._fetch_exc = fetch_exc
+
+    async def fetch_message(self, mid):
+        if self._fetch_exc:
+            raise self._fetch_exc
+        if self.msg is None:
+            import discord
+            raise discord.NotFound(SimpleNamespace(status=404, reason="nf"), {"message": "nf"})
+        return self.msg
+
+    async def send(self, **kw):
+        if self._send_exc:
+            raise self._send_exc
+        m = FakeMsg(900)
+        self.sent.append((m, kw))
+        return m
+
+
+@pytest.mark.asyncio
+async def test_board_sync_edits_existing_no_duplicate(cog):
+    st = _running_state(4)
+    cog._store.state = st
+    msg = FakeMsg()
+    ch = FakeChannel(msg=msg)
+    await cog._sync_board_locked(st, ch)
+    assert len(msg.edits) == 1
+    assert not ch.sent
+    assert cog._board_pages[1] == 0
+
+
+@pytest.mark.asyncio
+async def test_board_sync_notfound_recreates_once(cog):
+    st = _running_state(4)
+    cog._store.state = st
+    ch = FakeChannel(msg=None)  # fetch -> NotFound
+    await cog._sync_board_locked(st, ch)
+    assert len(ch.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_board_sync_http_error_no_duplicate(cog):
+    import discord
+    st = _running_state(4)
+    cog._store.state = st
+    ch = FakeChannel(fetch_exc=discord.Forbidden(
+        SimpleNamespace(status=403, reason="forbidden"), {"message": "forbidden"}))
+    await cog._sync_board_locked(st, ch)
+    assert not ch.sent  # 403 не создаёт дубликат
+
+
+@pytest.mark.asyncio
+async def test_board_sync_429_no_duplicate(cog):
+    import discord
+    st = _running_state(4)
+    cog._store.state = st
+    ch = FakeChannel(fetch_exc=discord.HTTPException(
+        SimpleNamespace(status=429, reason="rate limited"), {"message": "rate limited"}))
+    await cog._sync_board_locked(st, ch)
+    assert not ch.sent
+
+
+@pytest.mark.asyncio
+async def test_restore_boards_updates_existing(cog):
+    st = _running_state(4)
+    cog._store.state = st
+    msg = FakeMsg()
+    ch = FakeChannel(msg=msg)
+    guild = SimpleNamespace(id=1, get_channel=lambda cid: ch,
+                            fetch_channel=lambda cid: ch)
+    cog.bot = SimpleNamespace(guilds=[guild], get_guild=lambda g: guild,
+                              add_view=lambda v: None,
+                              fetch_user=lambda u: None)
+    await cog._restore_boards()
+    assert len(msg.edits) == 1
+    assert not ch.sent
+
+
+@pytest.mark.asyncio
+async def test_restore_skips_registration(cog):
+    st = _reg_state()  # registration — доски нет
+    cog._store.state = st
+    ch = FakeChannel(msg=FakeMsg())
+    guild = SimpleNamespace(id=1, get_channel=lambda cid: ch)
+    cog.bot = SimpleNamespace(guilds=[guild])
+    await cog._restore_boards()
+    assert not ch.sent
+
+
+@pytest.mark.asyncio
+async def test_restore_completed_board(cog):
+    st = _running_state(4)
+    st["status"] = "completed"
+    st["bracket"]["champion"] = "t0"
+    cog._store.state = st
+    msg = FakeMsg()
+    ch = FakeChannel(msg=msg)
+    guild = SimpleNamespace(id=1, get_channel=lambda cid: ch)
+    cog.bot = SimpleNamespace(guilds=[guild])
+    await cog._restore_boards()
+    assert len(msg.edits) == 1  # завершённая доска тоже обновляется
+
+
+@pytest.mark.asyncio
+async def test_board_pages_tracking(cog):
+    """_board_pages обновляется при sync — _nav не использует устаревший self._page."""
+    st = _running_state(4)
+    cog._store.state = st
+    msg = FakeMsg()
+    ch = FakeChannel(msg=msg)
+    await cog._sync_board_locked(st, ch, page=0)
+    assert cog._board_pages[1] == 0
+    await cog._sync_board_locked(st, ch, page=1)
+    assert cog._board_pages[1] == 1

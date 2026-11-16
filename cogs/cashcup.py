@@ -222,6 +222,26 @@ async def _validate_teams(bot: commands.Bot, guild: discord.Guild, state: dict) 
             raise CashCupError(f"{_label(team)}: основной состав должен содержать 4 игроков")
         if len(set(team["lineup"])) != 4:
             raise CashCupError(f"{_label(team)}: повторяющийся игрок в основе")
+        for p in team["members"]:
+            uid_s = str(p.get("ff_uid") or "")
+            if not (uid_s.isdigit() and 5 <= len(uid_s) <= 20):
+                raise CashCupError(
+                    f"{_label(team)}: у <@{p['discord_id']}> нет корректного Free Fire UID")
+            if not p.get("nick"):
+                raise CashCupError(
+                    f"{_label(team)}: у <@{p['discord_id']}> нет игрового ника")
+            if not p.get("region"):
+                raise CashCupError(
+                    f"{_label(team)}: у <@{p['discord_id']}> не указан регион")
+            if p.get("device") not in ("pc", "mobile"):
+                raise CashCupError(
+                    f"{_label(team)}: у <@{p['discord_id']}> тип устройства mobile/pc")
+            if not p.get("ff_ok"):
+                raise CashCupError(
+                    f"{_label(team)}: Free Fire API не подтвердил аккаунт <@{p['discord_id']}>")
+            if not p.get("verified"):
+                raise CashCupError(
+                    f"{_label(team)}: ADMIN не подтвердил аккаунт <@{p['discord_id']}>")
         if any(not p["verified"] for p in team["members"]):
             raise CashCupError(f"{_label(team)}: организатор не подтвердил игровые аккаунты")
         if sum(p["device"] == "pc" for p in team["members"]) > 2:
@@ -384,18 +404,19 @@ class BoardSelectView(discord.ui.View):
             options=options, disabled=not matches)
         self._sel.callback = self._pick
         self.add_item(self._sel)
+        # Кнопки пагинации регистрируются всегда (даже disabled): persistent
+        # dispatch требует наличия custom_id в зарегистрированном view.
         pages = max(1, (self._total + self.PER_PAGE - 1) // self.PER_PAGE)
-        if pages > 1:
-            prev_b = discord.ui.Button(label="Назад", style=discord.ButtonStyle.secondary,
-                                       custom_id="cashcup:board_prev",
-                                       disabled=self._page == 0)
-            next_b = discord.ui.Button(label="Вперёд", style=discord.ButtonStyle.secondary,
-                                       custom_id="cashcup:board_next",
-                                       disabled=self._page >= pages - 1)
-            prev_b.callback = lambda i: self._nav(i, -1)
-            next_b.callback = lambda i: self._nav(i, +1)
-            self.add_item(prev_b)
-            self.add_item(next_b)
+        prev_b = discord.ui.Button(label="Назад", style=discord.ButtonStyle.secondary,
+                                   custom_id="cashcup:board_prev",
+                                   disabled=self._page == 0)
+        next_b = discord.ui.Button(label="Вперёд", style=discord.ButtonStyle.secondary,
+                                   custom_id="cashcup:board_next",
+                                   disabled=self._page >= pages - 1)
+        prev_b.callback = lambda i: self._nav(i, -1)
+        next_b.callback = lambda i: self._nav(i, +1)
+        self.add_item(prev_b)
+        self.add_item(next_b)
 
     async def _pick(self, interaction: discord.Interaction) -> None:
         mid = self._sel.values[0]
@@ -412,9 +433,8 @@ class BoardSelectView(discord.ui.View):
         if not state or not state.get("bracket"):
             await interaction.followup.send("Состояние турнира не найдено.", ephemeral=True)
             return
-        matches = _board_matches(state["bracket"])
-        pages = max(1, (len(matches) + self.PER_PAGE - 1) // self.PER_PAGE)
-        page = max(0, min(self._page + delta, pages - 1))
+        base = cog._board_pages.get(interaction.guild_id, 0)
+        page = base + delta
         await cog._sync_board_locked(state, interaction.channel, page=page)
 
 
@@ -428,6 +448,7 @@ class CashCupCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._board_locks: dict[int, asyncio.Lock] = {}
+        self._board_pages: dict[int, int] = {}
 
     def _board_lock(self, guild_id: int) -> asyncio.Lock:
         return self._board_locks.setdefault(guild_id, asyncio.Lock())
@@ -435,6 +456,28 @@ class CashCupCog(commands.Cog):
     async def cog_load(self) -> None:
         self.bot.add_view(compose(_panel({"status": "registration", "prize": "", "teams": []}), CashCupView(True)))
         self.bot.add_view(BoardSelectView())
+        await self._restore_boards()
+
+    async def _restore_boards(self) -> None:
+        """После рестарта: для каждого guild с активной/завершённой сеткой
+        обновляем существующую доску на месте (или создаём замену только
+        при подтверждённом NotFound — внутри _sync_board_locked)."""
+        for guild in getattr(self.bot, "guilds", []) or []:
+            try:
+                state = await cashcup_store.latest(guild.id)
+                if not state or state.get("status") not in ("running", "completed") \
+                        or not state.get("bracket"):
+                    continue
+                channel = guild.get_channel(state.get("channel_id"))
+                if channel is None:
+                    try:
+                        channel = await guild.fetch_channel(state["channel_id"])
+                    except Exception:
+                        continue
+                await self._sync_board(state, channel)
+            except Exception:
+                logger.exception("CASH CUP board restore failed guild=%s",
+                                 getattr(guild, "id", "?"))
 
     async def _refresh(self, guild_id: int, state: dict | None = None) -> None:
         if state is None:
@@ -481,6 +524,7 @@ class CashCupCog(commands.Cog):
                     msg = await channel.fetch_message(board_id)
                     await msg.edit(embed=_board_embed(state, page=page), view=view,
                                    allowed_mentions=discord.AllowedMentions.none())
+                    self._board_pages[state["guild_id"]] = page
                     return
                 except discord.NotFound:
                     pass  # сообщение удалено вручную — создаём замену
@@ -490,6 +534,7 @@ class CashCupCog(commands.Cog):
                     return
             msg = await channel.send(embed=_board_embed(state, page=page), view=view,
                                      allowed_mentions=discord.AllowedMentions.none())
+            self._board_pages[state["guild_id"]] = page
             def change(st):
                 st["board_message_id"] = msg.id
             await cashcup_store.mutate(state["guild_id"], 0, "board_sync", change)
@@ -1020,13 +1065,6 @@ class CashCupCog(commands.Cog):
         await cashcup_store.set_message(interaction.guild_id, msg.id)
         await self._reply(interaction, "Карточка турнира опубликована повторно")
 
-    @app_commands.choices(device=DEVICE_CHOICES, region=REGION_CHOICES)
-    async def team(self, interaction: discord.Interaction, name: str, uid: str,
-                   device: app_commands.Choice[str],
-                   region: app_commands.Choice[str] | None = None):
-        await self.register_team(interaction, name, uid, device.value,
-                                 region.value if region else "ru")
-
     async def leave(self, interaction: discord.Interaction):
         try:
             def change(state):
@@ -1189,6 +1227,10 @@ class CashCupCog(commands.Cog):
             snapshot = await cashcup_store.active(interaction.guild_id)
             if not snapshot or snapshot["status"] != "registration":
                 raise CashCupError("Регистрация закрыта")
+            prizes = snapshot.get("prizes") or {}
+            if ((prizes.get("places") or {}).get("1") or 0) <= 0:
+                raise CashCupError(
+                    "Сначала ADMIN устанавливает приз за 1 место («Управление» → «Приз за 1 место»)")
             await _validate_teams(self.bot, interaction.guild, snapshot)
             signature = json.dumps(snapshot["teams"], sort_keys=True)
             def change(state):
@@ -1296,8 +1338,6 @@ class CashCupCog(commands.Cog):
         except (CashCupError, BracketError) as exc:
             await self._reply(interaction, str(exc))
 
-    @app_commands.choices(winner=[app_commands.Choice(name="Команда A", value="a"),
-                                  app_commands.Choice(name="Команда B", value="b")])
     async def game(self, interaction: discord.Interaction,
                    winner: app_commands.Choice[str], evidence: str):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
@@ -1458,9 +1498,12 @@ class CashCupCog(commands.Cog):
                 prizes = state.get("prizes") or {}
                 expected = (prizes.get("places") or {}).get("1") or 0
                 prize_cur = prizes.get("currency") or "KZT"
+                if expected <= 0:
+                    raise CashCupError(
+                        "Приз за 1 место не установлен — выплата невозможна")
                 if currency and currency != prize_cur:
                     raise CashCupError(f"Валюта выплаты должна быть {prize_cur}")
-                if expected and amount != expected:
+                if amount != expected:
                     raise CashCupError(
                         f"Сумма должна равняться призу за 1 место ({expected} {prize_cur})")
                 if state["payouts"]:
@@ -1476,7 +1519,8 @@ class CashCupCog(commands.Cog):
                                                 "currency": currency, "proof": proof},
                                        include_finished=True, tournament_id=tournament_id)
             await self._refresh(interaction.guild_id, state)
-            await self._reply(interaction, f"Отметка о выплате {amount} ₸ записана в журнал. Денежный перевод бот НЕ выполнял.")
+            prize_cur = (((state.get("prizes") or {}).get("currency")) or "KZT")
+            await self._reply(interaction, f"Отметка о выплате {amount} {prize_cur} записана в журнал. Денежный перевод бот НЕ выполнял.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
@@ -1552,8 +1596,6 @@ class CashCupCog(commands.Cog):
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
-    @app_commands.choices(winner=[app_commands.Choice(name="Команда A", value="a"),
-                                  app_commands.Choice(name="Команда B", value="b")])
     async def forfeit(self, interaction: discord.Interaction, match_id: str,
                       winner: app_commands.Choice[str], reason: str):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
@@ -1729,8 +1771,6 @@ class CashCupCog(commands.Cog):
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
-    @app_commands.choices(winner=[app_commands.Choice(name="Команда A", value="a"),
-                                  app_commands.Choice(name="Команда B", value="b")])
     async def resolve(self, interaction: discord.Interaction, match_id: str,
                       winner: app_commands.Choice[str], evidence: str):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
