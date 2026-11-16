@@ -69,41 +69,33 @@ class CaseStore:
             self.save()
 
     def _update_drop_rates_if_needed(self) -> None:
-        """Обновить drop_rates если они старого формата."""
+        """Миграция старых кейсов: только ДОБАВЛЯЕМ недостающие ключи.
+
+        Ранее метод перезаписывал drop_rates всякий раз, когда
+        `nothing` отличался от 0.50 — это молча уничтожало
+        админские настройки вероятностей. Теперь кастомные
+        коэффициенты сохраняются; корректируем только кейсы,
+        у которых вообще нет распознаваемых ключей.
+        """
         updated = False
-        
-        for case_id, case in self._cases.items():
-            # Проверить если nothing не 0.50, обновить
-            current_nothing = case.drop_rates.get("nothing", 0.0)
-            if abs(current_nothing - 0.50) > 0.01:  # Если не 50%
-                # Пересчитать drop_rates
-                item_key = None
-                nothing_key = "nothing"
-                coin_keys = []
-                
-                for key in case.drop_rates.keys():
-                    if key.startswith("item_"):
-                        item_key = key
-                    elif key.startswith("coins_"):
-                        coin_keys.append(key)
-                
-                # Новые значения: Item 10%, Nothing 50%, Coins 40%
-                new_drop_rates = {}
-                if item_key:
-                    new_drop_rates[item_key] = 0.10
-                new_drop_rates[nothing_key] = 0.50
-                
-                # Распределить монеты по 5 уровням: 12% + 10% + 8% + 6% + 4% = 40%
-                if coin_keys:
-                    coin_keys.sort()
-                    coin_rates = [0.12, 0.10, 0.08, 0.06, 0.04]
-                    for i, coin_key in enumerate(coin_keys):
-                        if i < len(coin_rates):
-                            new_drop_rates[coin_key] = coin_rates[i]
-                
-                case.drop_rates = new_drop_rates
-                updated = True
-        
+        for case in self._cases.values():
+            keys = set(case.drop_rates.keys())
+            has_structure = any(
+                k.startswith(("item_", "coins_", "nothing")) for k in keys
+            )
+            if has_structure:
+                continue
+            # Пустой/нераспознанный формат — применяем стандарт
+            case.drop_rates = {
+                "item_basic": 0.10,
+                "coins_100": 0.12,
+                "coins_200": 0.10,
+                "coins_300": 0.08,
+                "coins_400": 0.06,
+                "coins_500": 0.04,
+                "nothing": 0.50,
+            }
+            updated = True
         if updated:
             self.save()
 
@@ -198,7 +190,9 @@ class CaseStore:
         self._cases[case.id] = case
         self.save()
 
-    async def open_case(self, guild_id: int, user_id: int, case_id: str, guild) -> dict[str, Any]:
+    async def open_case(self, guild_id: int, user_id: int, case_id: str, guild, precharged: bool = False,
+                        grant_key: str | None = None,
+                        on_pending_reward=None) -> dict[str, Any]:
         """Открыть кейс.
 
         Args:
@@ -206,6 +200,17 @@ class CaseStore:
             user_id: ID пользователя
             case_id: ID кейса
             guild: Discord guild object
+            precharged: True — списание уже выполнено durable-операцией
+                shop_operations (списание и статус charged атомарны);
+                проверка баланса и subtract_balance пропускаются.
+            grant_key: Ключ идемпотентного гранта монет
+                (add_balance_once) для durable-режима. None — обычное
+                add_balance (legacy).
+            on_pending_reward: async callback(desc) — вызывается
+                СРАЗУ после выбора конкретной награды, ДО её выдачи.
+                Durable-режим пишет desc в shop_operations.payload
+                (case_reward): recovery может довести выдачу до конца
+                или вернуть деньги, но не оба сразу.
 
         Returns:
             Словарь с результатом: {"type": "item"/"coins"/"nothing", "value": ..., "rarity": ...}
@@ -214,13 +219,14 @@ class CaseStore:
         if not case:
             return {"type": "error", "value": "Кейс не найден"}
 
-        # Проверить баланс
-        balance = await user_balance_store.get_balance(guild_id, user_id)
-        if balance < case.price:
-            return {"type": "error", "value": "Недостаточно монет"}
+        if not precharged:
+            # Проверить баланс
+            balance = await user_balance_store.get_balance(guild_id, user_id)
+            if balance < case.price:
+                return {"type": "error", "value": "Недостаточно монет"}
 
-        # Снять стоимость
-        await user_balance_store.subtract_balance(guild_id, user_id, case.price)
+            # Снять стоимость
+            await user_balance_store.subtract_balance(guild_id, user_id, case.price)
 
         # Выбрать результат по drop rates
         roll = random.random()
@@ -236,7 +242,26 @@ class CaseStore:
         # Обработать результат
         pet_bonus_info = {"golden_fox_bonus": 0, "golden_fox_name": None, "mimic_bonus": 0, "mimic_name": None}
 
+        async def _persist_reward(desc: dict) -> None:
+            """Зафиксировать выбранную награду ДО её выдачи."""
+            if on_pending_reward is not None:
+                try:
+                    await on_pending_reward(desc)
+                except Exception as exc:
+                    logger.error(f"case reward persist failed: {exc}")
+                    raise
+
+        async def _grant_coins(amount: int, key_suffix: str = "") -> None:
+            if grant_key:
+                await user_balance_store.add_balance_once(
+                    guild_id, user_id, amount,
+                    f"{grant_key}{key_suffix}",
+                )
+            else:
+                await user_balance_store.add_balance(guild_id, user_id, amount)
+
         if drop_type == "nothing":
+            await _persist_reward({"kind": "nothing"})
             result = {"type": "nothing", "value": "Ничего", "rarity": "common"}
         elif drop_type.startswith("coins_"):
             coins_amount = int(drop_type.split("_")[1])
@@ -288,7 +313,8 @@ class CaseStore:
             except Exception as e:
                 logger.error(f"Error applying mimic bonus to case: {e}")
 
-            await user_balance_store.add_balance(guild_id, user_id, coins_amount)
+            await _persist_reward({"kind": "coins", "amount": coins_amount, "gkey": grant_key or ""})
+            await _grant_coins(coins_amount)
             result = {"type": "coins", "value": coins_amount, "rarity": "common", "pet_bonus": pet_bonus_info}
         elif drop_type.startswith("item_"):
             # Выбрать случайный предмет по редкости
@@ -310,7 +336,8 @@ class CaseStore:
                 # Fallback to coins if no items of this rarity
                 if not items:
                     fallback_coins = case.price // 2
-                    await user_balance_store.add_balance(guild_id, user_id, fallback_coins)
+                    await _persist_reward({"kind": "coins", "amount": fallback_coins, "key_suffix": ":fb", "gkey": (grant_key or "") + ":fb"})
+                    await _grant_coins(fallback_coins, ":fb")
                     result = {"type": "coins", "value": fallback_coins, "rarity": "common", "pet_bonus": pet_bonus_info}
                 else:
                     item = random.choice(items)
@@ -320,10 +347,12 @@ class CaseStore:
 
                     if has_item:
                         # Предмет уже есть - выдать полную стоимость
-                        await user_balance_store.add_balance(guild_id, user_id, item.price)
+                        await _persist_reward({"kind": "coins", "amount": item.price, "key_suffix": ":dup", "gkey": (grant_key or "") + ":dup"})
+                        await _grant_coins(item.price, ":dup")
                         result = {"type": "coins", "value": item.price, "rarity": "common", "pet_bonus": pet_bonus_info}
                     else:
                         # Добавить в инвентарь
+                        await _persist_reward({"kind": "item", "item_id": item.id})
                         from models.shop_item import PlayerCosmetic
                         cosmetic = PlayerCosmetic(
                             guild_id=guild_id,
@@ -336,6 +365,7 @@ class CaseStore:
             else:
                 result = {"type": "nothing", "value": "Ничего", "rarity": "common", "pet_bonus": pet_bonus_info}
         else:
+            await _persist_reward({"kind": "nothing"})
             result = {"type": "nothing", "value": "Ничего", "rarity": "common", "pet_bonus": pet_bonus_info}
 
         # Записать в историю

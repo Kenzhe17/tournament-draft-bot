@@ -1,4 +1,10 @@
-"""Инициализация товаров магазина."""
+"""Инициализация товаров магазина.
+
+Важно: seeding — ТОЛЬКО upsert по стабильным id. Товары,
+добавленные администратором в рантайме, не удаляются.
+"""
+import json
+import os
 from config import replace_emojis
 
 
@@ -6,13 +12,59 @@ from models.shop_item import ShopItem, CosmeticType, CosmeticRarity
 from storage.shop_store import shop_store
 
 
-def initialize_shop_items() -> None:
-    """Инициализировать товары в магазине."""
+def _color_role_items() -> list[ShopItem]:
+    """Цветные роли из env SHOP_COLOR_ROLES (JSON).
 
-    # Очистить существующие товары перед инициализацией
-    shop_store.clear_all()
+    Формат: {"emerald": {"name": "Emerald", "role_id": 123,
+    "price": 2000, "rarity": "premium", "color": "#57F287"}, ...}
+    Роли не дают прав — только цвет ника. Активен один цвет.
+    """
+    raw = os.getenv("SHOP_COLOR_ROLES", "").strip()
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    rarity_map = {
+        "basic": CosmeticRarity.BASIC,
+        "premium": CosmeticRarity.PREMIUM,
+        "elite": CosmeticRarity.ELITE,
+        "special": CosmeticRarity.SPECIAL,
+    }
+    items: list[ShopItem] = []
+    for key, cfg in data.items():
+        if not isinstance(cfg, dict):
+            continue
+        role_id = cfg.get("role_id")
+        if not role_id:
+            continue
+        items.append(ShopItem(
+            id=f"color_{key}",
+            name=cfg.get("name", key.title()),
+            description=cfg.get("description", "Цветная роль — меняет цвет вашего ника."),
+            price=int(cfg.get("price", 2000)),
+            cosmetic_type=CosmeticType.COLOR,
+            rarity=rarity_map.get(str(cfg.get("rarity", "premium")), CosmeticRarity.PREMIUM),
+            value=str(cfg.get("color", "#FFFFFF")),
+            category="color_roles",
+            item_type="role",
+            role_id=int(role_id),
+            is_sellable=False,
+        ))
+    return items
 
-    # Цвета удалены (Discord не поддерживает цветной текст в embed'ах)
+
+def default_shop_items() -> list[ShopItem]:
+    """Статический каталог товаров по умолчанию.
+
+    Используется для идемпотентного сидинга: отсутствующие id
+    добавляются, существующие (в т.ч. изменённые через Control
+    Center) не перезаписываются.
+    """
+
 
     # Графические значки (Icons & Emblems)
     icons = [
@@ -436,10 +488,82 @@ def initialize_shop_items() -> None:
         ),
     ]
 
-    # Добавить все товары в магазин
-    for item in icons + tags + services:
-        shop_store.add_item(item)
+    # Рамки профиля (FRAME) — отображаются в карточках/именах бота
+    frames = [
+        ShopItem(
+            id="frame_ember",
+            name="Уголёк",
+            description="Тёплая рамка профиля.",
+            price=1200,
+            cosmetic_type=CosmeticType.FRAME,
+            rarity=CosmeticRarity.BASIC,
+            value="🔥",
+            category="frames",
+        ),
+        ShopItem(
+            id="frame_nova",
+            name="Вспышка",
+            description="Яркая рамка для активных игроков.",
+            price=2500,
+            cosmetic_type=CosmeticType.FRAME,
+            rarity=CosmeticRarity.PREMIUM,
+            value="⚡",
+            category="frames",
+        ),
+        ShopItem(
+            id="frame_void",
+            name="Бездна",
+            description="Тёмная элитная рамка.",
+            price=6000,
+            cosmetic_type=CosmeticType.FRAME,
+            rarity=CosmeticRarity.SPECIAL,
+            value="🌑",
+            category="frames",
+        ),
+    ]
+
+    # Цветные роли Discord (только цвет ника, без прав)
+    color_roles = _color_role_items()
+
+    # Тематический набор: покупка выдаёт все компоненты разом
+    bundle = ShopItem(
+        id="bundle_shadow",
+        name="SHADOW COLLECTION",
+        description="Набор: тег [SHADOW], значок и рамка «Бездна».",
+        price=8000,
+        cosmetic_type=CosmeticType.TAG,
+        rarity=CosmeticRarity.SPECIAL,
+        value="[SHADOW]",
+        category="bundles",
+        bundle=["tag_shadow", "icon_black_rose", "frame_void"],
+    )
+    # Компонент набора, которого ещё нет в каталоге
+    shadow_tag = ShopItem(
+        id="tag_shadow",
+        name="[SHADOW]",
+        description="Тёмный тег из коллекции SHADOW.",
+        price=3500,
+        cosmetic_type=CosmeticType.TAG,
+        rarity=CosmeticRarity.ELITE,
+        value="[SHADOW]",
+        category="tags",
+    )
+
+    return (icons + tags + services + frames + color_roles
+            + [shadow_tag, bundle])
 
 
-# Инициализировать товары при импорте
+def initialize_shop_items() -> None:
+    """Идемпотентный сидинг каталога (JSON-режим без DATABASE_URL).
+
+    НЕ удаляет существующие товары: панельные правки и товары,
+    созданные через Control Center, сохраняются. При наличии
+    PostgreSQL авторитетным источником является shop_catalog.sync_to_store().
+    """
+    for item in default_shop_items():
+        if shop_store.get_item(item.id) is None:
+            shop_store.add_item(item)
+
+
+# Инициализировать товары при импорте (безопасно: только добавление)
 initialize_shop_items()

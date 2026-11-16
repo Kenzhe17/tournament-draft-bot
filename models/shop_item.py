@@ -32,10 +32,15 @@ class ShopItem:
     rarity: CosmeticRarity
     value: str  # Значение (hex код цвета, эмодзи, текст тега)
     category: str  # Для группировки в магазине
-    item_type: str = "cosmetic"  # "cosmetic" или "role"
+    item_type: str = "cosmetic"  # "cosmetic", "role" или "service"
     role_id: int | None = None  # Discord role ID (для ролей)
     required_level: int = 0  # Требуемый уровень для покупки
     is_sellable: bool = True  # Можно ли продать предмет
+    is_active: bool = True  # Доступен ли товар в каталоге
+    available_from: str | None = None  # ISO-дата начала сезонной продажи
+    available_until: str | None = None  # ISO-дата конца сезонной продажи
+    bundle: list[str] | None = None  # ID компонентов для набора
+    rep_price: int | None = None  # Фиксированная цена REP (None = по тарифу)
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализовать в словарь."""
@@ -52,6 +57,11 @@ class ShopItem:
             "role_id": self.role_id,
             "required_level": self.required_level,
             "is_sellable": self.is_sellable,
+            "is_active": self.is_active,
+            "available_from": self.available_from,
+            "available_until": self.available_until,
+            "bundle": self.bundle,
+            "rep_price": self.rep_price,
         }
 
     @classmethod
@@ -78,6 +88,11 @@ class ShopItem:
             role_id=data.get("role_id"),
             required_level=data.get("required_level", 0),
             is_sellable=data.get("is_sellable", True),
+            is_active=data.get("is_active", True),
+            available_from=data.get("available_from"),
+            available_until=data.get("available_until"),
+            bundle=data.get("bundle"),
+            rep_price=data.get("rep_price"),
         )
 
 

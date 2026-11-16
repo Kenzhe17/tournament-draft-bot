@@ -81,52 +81,109 @@ class SellCog(commands.Cog):
             )
             return
 
-        # 2. Проверяем наличие предмета в инвентаре у игрока
-        if not await has_user_item(guild_id, interaction.user.id, item.id):
+        # Цветные роли не продаются: Discord-роль — отдельная сущность,
+        # её нельзя отчуждать за монеты через /economy sell.
+        if item.category == "color_roles":
             await interaction.followup.send(
-                f" У вас нет этого предмета в инвентаре!",
+                " Цветные роли нельзя продать — они остаются на вашем аккаунте.",
                 ephemeral=True
             )
             return
 
-        # 3. Расчёт стоимости продажи (50% от стоимости предмета в магазине)
-        base_price = item.price
-        base_sell_percent = 0.5
+        guild_id = interaction.guild_id if interaction.guild else 0
+        guild = interaction.guild
 
-        # Бонусы питомцев для отслеживания
-        pet_bonus_info = {"bonus_value": 0, "pet_name": None, "ability_name": None}
+        # Сериализуем с покупками того же пользователя: продажа и
+        # покупка не могут пересечься и потерять/продублировать предмет.
+        from services.shop_purchase_service import _user_lock
+        async with await _user_lock(guild_id, interaction.user.id):
+            # Повторная проверка владения внутри блокировки
+            # (двойной клик / гонка с покупкой).
+            cosmetics = inventory_store.get_player_inventory(
+                guild_id, interaction.user.id
+            )
+            cosmetic = next(
+                (c for c in cosmetics if c.item_id == item.id), None
+            )
+            if cosmetic is None:
+                await interaction.followup.send(
+                    f" У вас нет этого предмета в инвентаре!",
+                    ephemeral=True
+                )
+                return
 
-        # Применить бонус питомца (Чёрный рынок / Торговый нюх)
-        try:
-            from storage.pet_store import pet_store
-            pet = await pet_store.get_user_pet(guild_id, interaction.user.id)
+            # 3. Расчёт стоимости продажи (50% от стоимости предмета в магазине)
+            base_price = item.price
+            base_sell_percent = 0.5
 
-            if pet and pet.fullness > 0:
-                # Списать энергию за использование способности
-                energy_consumed = await pet_store.consume_energy_for_ability(guild_id, interaction.user.id, "sell")
+            # Бонусы питомцев для отслеживания
+            pet_bonus_info = {"bonus_value": 0, "pet_name": None, "ability_name": None}
 
-                if energy_consumed:
-                    from storage.pet_store import pet_catalog
-                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
+            # Применить бонус питомца (Чёрный рынок / Торговый нюх)
+            try:
+                from storage.pet_store import pet_store
+                pet = await pet_store.get_user_pet(guild_id, interaction.user.id)
 
-                    if pet_def:  # Способности открыты с 1 возраста
-                        ability = pet_def["abilities"][2]
-                        if ability["name"] in ["Чёрный рынок", "Торговый нюх"]:
-                            bonus_value = ability.get("max_val", 0)
-                            fee_reduction = bonus_value / 100
-                            base_sell_percent = base_sell_percent * (1 + fee_reduction)  # Уменьшение комиссии = увеличение цены
-                            pet_bonus_info["bonus_value"] = bonus_value
-                            pet_bonus_info["pet_name"] = pet.pet_name
-                            pet_bonus_info["ability_name"] = ability["name"]
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Error applying pet bonus to sell: {e}")
+                if pet and pet.fullness > 0:
+                    # Списать энергию за использование способности
+                    energy_consumed = await pet_store.consume_energy_for_ability(guild_id, interaction.user.id, "sell")
 
-        sell_price = math.floor(base_price * base_sell_percent)
+                    if energy_consumed:
+                        from storage.pet_store import pet_catalog
+                        pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-        # 4. Удаляем предмет и начисляем монеты
-        await remove_user_item(guild_id, interaction.user.id, item.id)
-        await add_balance(guild_id, interaction.user.id, sell_price)
+                        if pet_def:  # Способности открыты с 1 возраста
+                            ability = pet_def["abilities"][2]
+                            if ability["name"] in ["Чёрный рынок", "Торговый нюх"]:
+                                bonus_value = ability.get("max_val", 0)
+                                fee_reduction = bonus_value / 100
+                                base_sell_percent = base_sell_percent * (1 + fee_reduction)  # Уменьшение комиссии = увеличение цены
+                                pet_bonus_info["bonus_value"] = bonus_value
+                                pet_bonus_info["pet_name"] = pet.pet_name
+                                pet_bonus_info["ability_name"] = ability["name"]
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Error applying pet bonus to sell: {e}")
+
+            sell_price = math.floor(base_price * base_sell_percent)
+
+            # Для role-предметов снимаем Discord-роль до удаления
+            # из инвентаря — иначе роль осталась бы без владения.
+            if item.item_type == "role" and item.role_id and guild is not None:
+                try:
+                    from utils.role_manager import remove_role
+                    await remove_role(guild, interaction.user.id, item.role_id)
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).error(
+                        "sell: remove_role failed item=%s", item.id
+                    )
+
+            # 4. Удаляем предмет и начисляем монеты.
+            #    При сбое начисления предмет возвращается в инвентарь —
+            #    пользователь не теряет его без компенсации.
+            await remove_user_item(guild_id, interaction.user.id, item.id)
+            try:
+                await add_balance(guild_id, interaction.user.id, sell_price)
+            except Exception:
+                inventory_store.add_cosmetic(cosmetic)
+                # Откат: вернуть и Discord-роль, если снимали
+                if (
+                    item.item_type == "role" and item.role_id
+                    and guild is not None
+                ):
+                    try:
+                        from utils.role_manager import apply_role
+                        await apply_role(
+                            guild, interaction.user.id, item.role_id
+                        )
+                    except Exception:
+                        pass
+                await interaction.followup.send(
+                    " Ошибка начисления монет — предмет не продан.",
+                    ephemeral=True
+                )
+                return
 
         # 5. Формировать текст бонуса питомца
         pet_bonus_text = ""

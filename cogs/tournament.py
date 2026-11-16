@@ -14,6 +14,7 @@ from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
+import config as _cfg
 from config import TOURNAMENT_CHANNELS, BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL, NOTIFICATION_ROLE_ID, NOTIFICATION_CHANNEL_ID
 from models.tournament import (
     FormationMode,
@@ -152,7 +153,9 @@ async def _perform_tournament_delete(
 
     # Update organizer setup embed if it exists
     from storage.organizer_store import organizer_store as org_store
-    for ch_id in TOURNAMENT_CHANNELS:
+    from services.discord_cfg import channel_ids as _dc_ids
+    for ch_id in _dc_ids(guild.id, "discord.tournament_channels",
+                         TOURNAMENT_CHANNELS):
         orgs = org_store.get(guild.id, ch_id)
         if orgs and orgs.message_id:
             try:
@@ -250,6 +253,15 @@ class TournamentCog(commands.Cog):
         formation: Literal["draft", "balanced-sr", "random"] = "draft",
     ) -> None:
         """Создать турнир с указанным размером."""
+        try:
+            from services.settings_service import settings_service
+            if not settings_service.peek(
+                    interaction.guild_id, "feature.tournaments_enabled"):
+                await interaction.response.send_message(
+                    "Этот раздел временно отключён.", ephemeral=True)
+                return
+        except Exception:
+            pass
         # Проверить если канал заблокирован поиском (только если есть активные игроки)
         from cogs.mm import LOCKED_CHANNELS
         if interaction.channel_id in LOCKED_CHANNELS:
@@ -393,7 +405,10 @@ class TournamentCog(commands.Cog):
 
         # Update organizer setup embed if it exists
         from storage.organizer_store import organizer_store as org_store
-        for channel_id in TOURNAMENT_CHANNELS:
+        from services.discord_cfg import channel_ids as _dc_ids2
+        for channel_id in _dc_ids2(interaction.guild_id,
+                                   "discord.tournament_channels",
+                                   TOURNAMENT_CHANNELS):
             orgs = org_store.get(interaction.guild_id, channel_id)
             if orgs and orgs.message_id:
                 try:
@@ -933,180 +948,20 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="shop", description="Магазин")
     async def shop(self, interaction: discord.Interaction) -> None:
-        """Показать магазин."""
-        from storage.user_balance_store import user_balance_store
-        from storage.shop_store import inventory_store
-        from storage.player_stats_store import player_stats_store
-        from views.shop_view import ShopMainView
-        from models.player_stats import PlayerStats
-
-        # Получить баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-
-        # Получить инвентарь
-        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-        inventory_count = len(cosmetics)
-        max_inventory = 20
-
-        # Получить ранг
-        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-        rank = "Без ранга"
-        if stats:
-            from cogs.tournament import get_rank_emoji
-            rank = get_rank_emoji(stats.level)
-
-        # Создать embed в новом формате
-        embed = discord.Embed(
-            title=replace_emojis("МАГАЗИН СЕРВЕРА | Главное меню"),
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
-        embed.description = (
-            f"Добро пожаловать в игровой магазин \n"
-            f"Выберите нужный раздел в выпадающем меню ниже, чтобы посмотреть доступные товары."
-        )
-
-        # Профиль пользователя
-        embed.add_field(
-            name=replace_emojis("• Ваш профиль:"),
-            value=f" Баланс: {balance:,} {get_emoji('money')}\n"
-                  f" Ранг: {rank}\n"
-                  f" Инвентарь: {inventory_count}/{max_inventory}",
-            inline=False
-        )
-
-        embed.add_field(
-            name=replace_emojis("Для навигации используйте компоненты ниже"),
-            value="",
-            inline=False
-        )
-
-        # Создать View с выпадающим меню категорий
-        view = ShopMainView()
-
-        try:
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-        except (discord.NotFound, discord.DiscordServerError):
-            pass
+        """Показать магазин (SHOP 2.0, CV2)."""
+        from views.shop2_view import open_shop
+        await open_shop(interaction)
 
     @app_commands.command(name="inventory", description="Ваш инвентарь")
     async def inventory(self, interaction: discord.Interaction) -> None:
-        """Показать инвентарь косметики."""
-        from storage.shop_store import inventory_store, shop_store
-        from views.shop_view import InventoryEquipSelect, InventoryUnequipSelect
-
-        # Получить инвентарь
-        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-
-        if not cosmetics:
-            await interaction.response.send_message(
-                replace_emojis("• Ваш инвентарь пуст. Используйте `/shop` для покупки косметики."),
-                ephemeral=True
-            )
-            return
-
-        # Icon map для значков
-        icon_map = {
-            "icon_letter": "icon_letter",
-            "icon_paw": "icon_paw",
-            "icon_bluestacks": "icon_bluestacks",
-            "icon_teacup": "icon_teacup",
-            "icon_ribbon": "icon_ribbon",
-            "icon_18plus": "icon_18plus",
-            "icon_heart": "icon_heart",
-            "icon_v_badge": "icon_v_badge",
-            "icon_cards": "icon_cards",
-            "icon_cat_ears": "icon_cat_ears",
-            "icon_wing": "icon_wing",
-            "icon_fuck_you": "icon_fuck_you",
-            "icon_zzz": "icon_zzz",
-        }
-
-        # Rare emoji map
-        rare_map = {
-            "basic": "rare_basic",
-            "premium": "rare_premium",
-            "elite": "rare_elite",
-            "special": "rare_special",
-        }
-
-        # Сгруппировать по типам
-        equipped_tags = []
-        equipped_icons = []
-        unequipped_tags = []
-        unequipped_icons = []
-        equipped_items = []
-        unequipped_items = []
-
-        for cosmetic in cosmetics:
-            item = shop_store.get_item(cosmetic.item_id)
-            if not item:
-                continue
-
-            rare_emoji = rare_map.get(item.rarity.value, "")
-            if cosmetic.equipped:
-                equipped_items.append((cosmetic.item_id, item.name))
-                if item.cosmetic_type.value == "tag":
-                    equipped_tags.append(f" Тег: **{item.value}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-                elif item.cosmetic_type.value == "icon":
-                    icon_emoji = icon_map.get(item.value, "")
-                    equipped_icons.append(f" Значок: {replace_emojis(icon_emoji)} **{item.name}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-            else:
-                unequipped_items.append((cosmetic.item_id, item.name))
-                if item.cosmetic_type.value == "tag":
-                    unequipped_tags.append(f" Тег: **{item.value}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-                elif item.cosmetic_type.value == "icon":
-                    icon_emoji = icon_map.get(item.value, "")
-                    unequipped_icons.append(f" Значок: {replace_emojis(icon_emoji)} **{item.name}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-
-        # Build description
-        description_parts = ["Управление вашей экипировкой и предметами:\n"]
-
-        # Экипировано
-        description_parts.append(f"**Экипировано:**")
-        if equipped_tags:
-            description_parts.extend(equipped_tags)
-        if equipped_icons:
-            description_parts.extend(equipped_icons)
-        if not equipped_tags and not equipped_icons:
-            description_parts.append(f" Ничего не экипировано")
-        description_parts.append("")
-
-        # В инвентаре
-        description_parts.append(f"**В инвентаре:**")
-        if unequipped_tags:
-            description_parts.extend(unequipped_tags)
-        if unequipped_icons:
-            description_parts.extend(unequipped_icons)
-        if not unequipped_tags and not unequipped_icons:
-            description_parts.append(f" Инвентарь пуст")
-        description_parts.append("")
-
-        # Управление
-        description_parts.append(f"**Управление:**")
-        description_parts.append(f" Используйте выпадающие меню ниже для экипировки/снятия.")
-        description_parts.append("")
-        description_parts.append(f"Максимум 1 тег и 1 значок одновременно")
-
-        # Создать embed
-        embed = discord.Embed(
-            title=f"ИНВЕНТАРЬ ПОЛЬЗОВАТЕЛЯ",
-            description="\n".join(description_parts),
-            color=discord.Color.from_rgb(69, 69, 69)
+        """Показать инвентарь (SHOP 2.0, CV2)."""
+        from views.inventory2_view import build_inventory_view
+        await interaction.response.send_message(
+            view=await build_inventory_view(
+                interaction.guild_id, interaction.user.id
+            ),
+            ephemeral=True,
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-        # Создать View с select menu
-        view = discord.ui.View()
-
-        # Добавить select menu для экипировки и снятия
-        if unequipped_items:
-            view.add_item(InventoryEquipSelect(unequipped_items))
-
-        if equipped_items:
-            view.add_item(InventoryUnequipSelect(equipped_items))
-
-        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
     # @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
     # async def rps(self, interaction: discord.Interaction) -> None:
@@ -2564,6 +2419,16 @@ class TournamentCog(commands.Cog):
             await interaction.response.send_message(replace_emojis("• Предмет не найден"), ephemeral=True)
             return
 
+        # Discord-роли нельзя передавать как предметы: роль —
+        # отдельная сущность аккаунта, инвентарная запись без
+        # переноса роли привела бы к рассинхронизации.
+        if item.item_type == "role":
+            await interaction.response.send_message(
+                replace_emojis("• Роли нельзя передавать как предметы"),
+                ephemeral=True
+            )
+            return
+
         # Check if sender has the item
         sender_inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
         has_item = any(cosmetic.item_id == item_id for cosmetic in sender_inventory)
@@ -3155,24 +3020,52 @@ def get_rank_emoji(level: int) -> str:
 async def send_tournament_notification(tournament, guild, action: str) -> None:
     """Send tournament notification to notification channel."""
     try:
-        channel = guild.get_channel(NOTIFICATION_CHANNEL_ID)
+        from services.discord_cfg import channel_id as _dcid, role_ids as _drid
+        _gid = getattr(tournament, "guild_id", None) or (
+            guild.id if guild else 0)
+        _nch = _dcid(_gid, "discord.notification_channel_id",
+                     NOTIFICATION_CHANNEL_ID)
+        _nroles = [_dcid(_gid, "discord.notification_role_id", 0)]
+        channel = guild.get_channel(_nch)
         if not channel:
-            logger.warning(f"Notification channel {NOTIFICATION_CHANNEL_ID} not found")
+            logger.warning(f"Notification channel {_nch} not found")
             return
 
-        role = guild.get_role(NOTIFICATION_ROLE_ID)
+        _nrid = _nroles[0] if _nroles else 0
+        role = guild.get_role(_nrid)
         role_mention = role.mention if role else ""
 
-        embed = discord.Embed(
-            title="Турнир Создан",
-            description=(
-                f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
-                f"**Регистрация** <#{tournament.channel_id}>"
-            ),
-            color=discord.Color.blue()
-        )
+        # Control Center template override: tournament.announcement
+        # (guild → global). Fallback — стандартный embed.
+        custom_view = None
+        try:
+            from storage import admin_config_store as _cfg_store
+            from services.cv2_templates import render_template
+            _gid = getattr(tournament, "guild_id", None) or guild.id
+            tpl = await _cfg_store.get_template(
+                _gid, "tournament.announcement") or \
+                await _cfg_store.get_template(0, "tournament.announcement")
+            if tpl:
+                custom_view = render_template(tpl["payload"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                f"tournament.announcement template failed: {exc}")
+            custom_view = None
 
-        await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
+        if custom_view is not None:
+            await channel.send(view=custom_view,
+                               allowed_mentions=discord.AllowedMentions(
+                                   roles=True))
+        else:
+            embed = discord.Embed(
+                title="Турнир Создан",
+                description=(
+                    f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
+                    f"**Регистрация** <#{tournament.channel_id}>"
+                ),
+                color=discord.Color.blue()
+            )
+            await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
         logger.info(f"Tournament notification sent: {action} in guild {guild.id}")
     except Exception as e:
         logger.error(f"Failed to send tournament notification: {e}")
@@ -3209,9 +3102,10 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f" **Доступные команды:**\n"
                 f"{dot}  `/top` — Таблица лидеров `(уровень / монеты / ELO / репутация)`\n"
                 f"{dot}  `/booyah` — Зал славы, рекорды и история турниров\n"
-                f"{dot}  `/mm squad` — Поиск матча 4×4 (Ranked Matchmaking)\n"
-                f"{dot}  `/mm delete` — Удалить поиски на сервере (орг)\n"
-                f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
+                + (f"{dot}  `/mm squad` — Поиск матча 4×4 (Ranked Matchmaking)\n"
+                   f"{dot}  `/mm delete` — Удалить поиски на сервере (орг)\n"
+                   if _cfg.MM_ENABLED else "")
+                + f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
                 f"{dot}  `/br create|delete` — Battle Royale (орг)\n"
                 f"{dot}  `/tournament ультиматум создать|удалить` — Ультиматум (орг)\n"
                 f"{dot}  `/team create|status|delete` — Команды для BR\n"
@@ -3360,8 +3254,9 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f"{dot}  `/tournament create|delete|deleteall|test` — Сетка турнира\n"
                 f"{dot}  `/br create|delete|test_fill|test_teams|test_stats` — Battle Royale\n"
                 f"{dot}  `/tournament ультиматум создать|удалить|сетка|статус|история|исправить` — Ультиматум\n"
-                f"{dot}  `/mm squad|delete|test` — Matchmaking 4×4\n"
-                f"{dot}  `/team create|delete|status` — Команды BR\n\n"
+                + (f"{dot}  `/mm squad|delete|test` — Matchmaking 4×4\n"
+                   if _cfg.MM_ENABLED else "")
+                + f"{dot}  `/team create|delete|status` — Команды BR\n\n"
                 f" **Сервер и контент:**\n"
                 f"{dot}  `/server role|welcome|check2fa|off` — Настройки сервера\n"
                 f"{dot}  `/info publish|update|status|validate` — Информационный центр\n"

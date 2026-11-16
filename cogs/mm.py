@@ -119,6 +119,28 @@ class MMCog(commands.Cog):
         self._begin_inflight: dict[tuple[int, int], float] = {}
         self.bot.mm_cog = self  # Регистрация для доступа из view
 
+    @staticmethod
+    def _mm_enabled(guild_id: int | None = None) -> bool:
+        """MM_ENABLED env-флаг + runtime-флаг Control Center
+        (feature.matchmaking_enabled). Выключение запрещает новые
+        поиски и вход в очередь; активные матчи доигрываются."""
+        try:
+            from config import MM_ENABLED
+            if not MM_ENABLED:
+                return False
+        except Exception:
+            pass
+        try:
+            from services.settings_service import settings_service
+            val = settings_service.peek(
+                guild_id, "feature.matchmaking_enabled")
+            if isinstance(val, str):
+                return val.strip().lower() not in ("0", "false", "no", "off")
+            return bool(val)
+        except Exception:
+            pass
+        return True
+
     async def cog_load(self) -> None:
         """Загрузить очереди, запустить sweeper матчей и восстановление."""
         try:
@@ -360,6 +382,11 @@ class MMCog(commands.Cog):
 
     async def _create_search(self, interaction: discord.Interaction, format: MMFormat) -> None:
         """Создать новый поиск."""
+        if not self._mm_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "Matchmaking сейчас отключён.", ephemeral=True
+            )
+            return
         existing = mm_search_store.get(interaction.guild_id, interaction.channel_id)
         if existing:
             await interaction.response.send_message(
@@ -450,11 +477,18 @@ class MMCog(commands.Cog):
     ) -> None:
         try:
             from config import NOTIFICATION_CHANNEL_ID, NOTIFICATION_ROLE_ID
-            notification_channel = self.bot.get_channel(NOTIFICATION_CHANNEL_ID)
+            from services.discord_cfg import channel_id as _dc
+            _gid = search.guild_id
+            _notify_ch = _dc(_gid, "discord.notification_channel_id",
+                             NOTIFICATION_CHANNEL_ID)
+            _notify_role = _dc(_gid, "discord.notification_role_id",
+                               NOTIFICATION_ROLE_ID or 0)
+            _notify_roles = [_notify_role] if _notify_role else []
+            notification_channel = self.bot.get_channel(_notify_ch)
             if notification_channel is None:
                 try:
                     notification_channel = await self.bot.fetch_channel(
-                        NOTIFICATION_CHANNEL_ID)
+                        _notify_ch)
                 except Exception as e:
                     logger.warning(
                         "MM notify: fetch notification channel failed: %s", e)
@@ -471,10 +505,8 @@ class MMCog(commands.Cog):
                     notification_channel, search_channel)
                 self._finish_notification(search, kind, 0)
                 return
-            role_mention = (
-                f"<@&{NOTIFICATION_ROLE_ID}>"
-                if NOTIFICATION_ROLE_ID else ""
-            )
+            _role_id = _notify_roles[0] if _notify_roles else 0
+            role_mention = f"<@&{_role_id}>" if _role_id else ""
 
             count = len(search.players)
             required = search.required_players
@@ -1252,6 +1284,12 @@ class MMCog(commands.Cog):
             await interaction.response.defer(ephemeral=True, thinking=True)
         except Exception:
             pass
+
+        if not self._mm_enabled(guild_id):
+            await self._ephemeral(
+                interaction, "Matchmaking сейчас отключён."
+            )
+            return
 
         begin_search: MMSearch | None = None
         async with self._queue_lock(guild_id, channel_id):

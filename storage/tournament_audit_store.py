@@ -193,7 +193,7 @@ async def add_event(
 async def list_events(
     *,
     guild_id: int,
-    channel_id: int,
+    channel_id: int | None = None,
     tournament_id: str | None = None,
     source: str | None = None,
     match_id: str | None = None,
@@ -201,11 +201,18 @@ async def list_events(
     limit: int = 10,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """Последние события (id DESC), с фильтрами."""
+    """Последние события (id DESC), с фильтрами.
+
+    ``channel_id=None`` — без фильтра по каналу (нужно журналу
+    для архивных турниров, где исходный канал неизвестен).
+    """
     from storage.db import get_pool
 
-    clauses = ["guild_id = $1", "channel_id = $2"]
-    params: list[Any] = [guild_id, channel_id]
+    clauses = ["guild_id = $1"]
+    params: list[Any] = [guild_id]
+    if channel_id is not None:
+        params.append(channel_id)
+        clauses.append(f"channel_id = ${len(params)}")
     if tournament_id is not None:
         params.append(tournament_id)
         clauses.append(f"tournament_id = ${len(params)}")
@@ -310,7 +317,14 @@ async def mark_discord_posted(
 
 
 async def unpublished_events(limit: int = 50) -> list[dict[str, Any]]:
-    """События, для которых ещё не отправлена карточка в канал."""
+    """События, для которых ещё не отправлена карточка в канал.
+
+    События турнира/комнаты/организатора с tournament_id
+    исключены: они публикуются группированно карточками журнала
+    (services/tournament_journal), отдельный discord_message_id
+    им не нужен — иначе republish_unpublished крутил бы их
+    по кругу при каждом рестарте.
+    """
     from storage.db import get_pool
 
     pool = await get_pool()
@@ -321,6 +335,10 @@ async def unpublished_events(limit: int = 50) -> list[dict[str, Any]]:
             SELECT * FROM tournament_audit_log
             WHERE discord_message_id IS NULL
               AND status IN ('success', 'pending')
+              AND NOT (
+                  tournament_id IS NOT NULL
+                  AND source IN ('tournament', 'room', 'organizer')
+              )
             ORDER BY id ASC LIMIT $1
             """,
             limit,

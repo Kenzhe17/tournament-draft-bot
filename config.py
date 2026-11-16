@@ -109,7 +109,9 @@ MATCH_FOUND_CHANNEL_ID = int(os.getenv("MATCH_FOUND_CHANNEL_ID", "0")) or (
 
 # Канал журнала аудита турниров (CV2-карточки событий).
 # 0 = публикация отключена, записи остаются в PostgreSQL.
-TOURNAMENT_AUDIT_CHANNEL_ID = int(os.getenv("TOURNAMENT_AUDIT_CHANNEL_ID", "0"))
+TOURNAMENT_AUDIT_CHANNEL_ID = int(
+    os.getenv("TOURNAMENT_AUDIT_CHANNEL_ID") or "0"
+)
 
 # Moderation logging webhook — СЕКРЕТ, только через env.
 # Пустое значение = mod-log отключён (send_mod_log no-op).
@@ -195,6 +197,15 @@ CIRCLES = (2, 3, 4)
 
 # Smart Balance (r!z3 Ranked 4×4): веса критериев и допуски.
 # SR в диапазоне 0–10, команды по 4 игрока.
+
+# MM_ENABLED=0 скрывает Matchmaking от игроков: новые поиски и вход
+# в очереди запрещены, существующие матчи доигрываются, история и
+# инфраструктура сохраняются. Включение обратно — env + редеплой
+# (или runtime-флаг Control Center после его интеграции).
+MM_ENABLED = os.getenv("MM_ENABLED", "1").strip().lower() not in (
+    "0", "false", "no", "off",
+)
+
 MM_BALANCE_WEIGHTS = {
     "sum": float(os.getenv("MM_BALANCE_W_SUM", "0.40")),
     "top": float(os.getenv("MM_BALANCE_W_TOP", "0.30")),
