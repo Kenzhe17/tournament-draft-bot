@@ -14,6 +14,7 @@ from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
+import config as _cfg
 from config import TOURNAMENT_CHANNELS, BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL, NOTIFICATION_ROLE_ID, NOTIFICATION_CHANNEL_ID
 from models.tournament import (
     FormationMode,
@@ -3059,9 +3060,10 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f" **Доступные команды:**\n"
                 f"{dot}  `/top` — Таблица лидеров `(уровень / монеты / ELO / репутация)`\n"
                 f"{dot}  `/booyah` — Зал славы, рекорды и история турниров\n"
-                f"{dot}  `/mm squad` — Поиск матча 4×4 (Ranked Matchmaking)\n"
-                f"{dot}  `/mm delete` — Удалить поиски на сервере (орг)\n"
-                f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
+                + (f"{dot}  `/mm squad` — Поиск матча 4×4 (Ranked Matchmaking)\n"
+                   f"{dot}  `/mm delete` — Удалить поиски на сервере (орг)\n"
+                   if _cfg.MM_ENABLED else "")
+                + f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
                 f"{dot}  `/br create|delete` — Battle Royale (орг)\n"
                 f"{dot}  `/tournament ультиматум создать|удалить` — Ультиматум (орг)\n"
                 f"{dot}  `/team create|status|delete` — Команды для BR\n"
@@ -3210,8 +3212,9 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f"{dot}  `/tournament create|delete|deleteall|test` — Сетка турнира\n"
                 f"{dot}  `/br create|delete|test_fill|test_teams|test_stats` — Battle Royale\n"
                 f"{dot}  `/tournament ультиматум создать|удалить|сетка|статус|история|исправить` — Ультиматум\n"
-                f"{dot}  `/mm squad|delete|test` — Matchmaking 4×4\n"
-                f"{dot}  `/team create|delete|status` — Команды BR\n\n"
+                + (f"{dot}  `/mm squad|delete|test` — Matchmaking 4×4\n"
+                   if _cfg.MM_ENABLED else "")
+                + f"{dot}  `/team create|delete|status` — Команды BR\n\n"
                 f" **Сервер и контент:**\n"
                 f"{dot}  `/server role|welcome|check2fa|off` — Настройки сервера\n"
                 f"{dot}  `/info publish|update|status|validate` — Информационный центр\n"

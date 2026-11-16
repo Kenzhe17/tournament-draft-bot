@@ -119,6 +119,28 @@ class MMCog(commands.Cog):
         self._begin_inflight: dict[tuple[int, int], float] = {}
         self.bot.mm_cog = self  # Регистрация для доступа из view
 
+    @staticmethod
+    def _mm_enabled() -> bool:
+        """MM_ENABLED env-флаг. Runtime-флаг Control Center
+        (feature.matchmaking_enabled) применяется поверх после
+        интеграции панели — см. _runtime_mm_enabled."""
+        try:
+            from config import MM_ENABLED
+            if not MM_ENABLED:
+                return False
+        except Exception:
+            pass
+        try:
+            from services import settings_service
+            val = settings_service.peek("feature.matchmaking_enabled")
+            if val is not None:
+                if isinstance(val, str):
+                    return val.strip().lower() not in ("0", "false", "no", "off")
+                return bool(val)
+        except Exception:
+            pass
+        return True
+
     async def cog_load(self) -> None:
         """Загрузить очереди, запустить sweeper матчей и восстановление."""
         try:
@@ -360,6 +382,11 @@ class MMCog(commands.Cog):
 
     async def _create_search(self, interaction: discord.Interaction, format: MMFormat) -> None:
         """Создать новый поиск."""
+        if not self._mm_enabled():
+            await interaction.response.send_message(
+                "Matchmaking сейчас отключён.", ephemeral=True
+            )
+            return
         existing = mm_search_store.get(interaction.guild_id, interaction.channel_id)
         if existing:
             await interaction.response.send_message(
@@ -1252,6 +1279,12 @@ class MMCog(commands.Cog):
             await interaction.response.defer(ephemeral=True, thinking=True)
         except Exception:
             pass
+
+        if not self._mm_enabled():
+            await self._ephemeral(
+                interaction, "Matchmaking сейчас отключён."
+            )
+            return
 
         begin_search: MMSearch | None = None
         async with self._queue_lock(guild_id, channel_id):
