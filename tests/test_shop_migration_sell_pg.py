@@ -852,3 +852,208 @@ async def test_sell_precheck_two_concurrent_recoveries(env):
     assert await user_balance_store.get_balance(G, U) == 0
     assert await _grant_count(env, op_id) == 0
 
+
+# ------------------------------------------- pending() PG failure (P0)
+
+@pytest.mark.asyncio
+async def test_pending_raises_on_pg_failure(env, monkeypatch):
+    """PG недоступен → pending() ОБЯЗАН бросить исключение,
+    а не вернуть пустой/неполный JSON-список: recovery не
+    должен «не видеть» действующие финансовые операции."""
+    _add_item(env, "tag_pg1")
+    await _reset_balance(env)
+    op_id = await _mk_sell_op(
+        env, price=100, item_id="tag_pg1",
+        payload={"ready": True,
+                 "cosmetic": {"item_id": "tag_pg1"}})
+
+    async def _boom():
+        raise RuntimeError("pg down")
+
+    monkeypatch.setattr(purchase_ops_store, "_pool", _boom)
+    with pytest.raises(RuntimeError):
+        await purchase_ops_store.pending()
+    # recover_pending тоже не должен «успешно» обработать
+    # пустой список — ошибка доходит до вызывающего кода.
+    with pytest.raises(RuntimeError):
+        await svc.recover_pending(bot=None)
+    # Операция не тронута.
+    monkeypatch.undo()
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "reserved"
+
+
+@pytest.mark.asyncio
+async def test_pending_json_mode_and_fallback_merge(
+        env, monkeypatch, tmp_path):
+    """Настоящий JSON-режим (_use_db=False) → pending() читает
+    JSON. PG-режим + op, созданная через JSON-fallback во время
+    сбоя PG → она видна в pending() вместе с PG-операциями."""
+    import storage.shop_purchase_ops_store as pops_mod
+    monkeypatch.setattr(
+        pops_mod, "OPS_JSON", tmp_path / "shop_purchase_ops.json")
+    _add_item(env, "tag_j1")
+    await _reset_balance(env)
+
+    # 1) JSON-fallback op: PG «упал» в момент create().
+    async def _boom():
+        raise RuntimeError("pg down")
+    monkeypatch.setattr(purchase_ops_store, "_pool", _boom)
+    json_op_id = await _mk_sell_op(
+        env, price=50, item_id="tag_j1",
+        payload={"ready": True,
+                 "cosmetic": {"item_id": "tag_j1"}})
+    monkeypatch.undo()
+
+    # 2) PG-режим: pending() видит И pg-операции, И json-fallback.
+    pg_op_id = await _mk_sell_op(
+        env, price=60, item_id="tag_j2",
+        payload={"ready": True,
+                 "cosmetic": {"item_id": "tag_j2"}})
+    ops = await purchase_ops_store.pending()
+    ids = {o["op_id"] for o in ops}
+    assert json_op_id in ids
+    assert pg_op_id in ids
+
+    # 3) Настоящий JSON-режим.
+    purchase_ops_store._use_db = False
+    try:
+        ops = await purchase_ops_store.pending()
+        assert any(o["op_id"] == json_op_id for o in ops)
+    finally:
+        purchase_ops_store._use_db = True
+        purchase_ops_store._json_ops.clear()
+        purchase_ops_store._save_json()
+
+
+# ------------------------------------------- role cleanup gate (P1)
+
+@pytest.mark.asyncio
+async def test_sell_recovery_role_forbidden_stays_charged(
+        env, monkeypatch):
+    """Discord Forbidden при снятии роли → роль остаётся →
+    op НЕ done: предмет не удаляется, монеты не дублируются,
+    op доступен для повторного recovery."""
+    import discord as _discord
+    _add_item(env, "role_item")
+    await _reset_balance(env)
+    member = _FakeMember([777])  # роль не снимается
+    guild = _FakeGuild(member=member, role_id=777)
+    op_id = await _mk_sell_op(
+        env, price=500, item_id="role_item",
+        payload=_role_payload(ready=True))
+
+    async def _forbidden(g, u, r):
+        raise _discord.Forbidden(
+            _discord.http.HTTPException(
+                None, "Forbidden"), "no perms")
+    monkeypatch.setattr(
+        "utils.role_manager.remove_role", _forbidden,
+        raising=False)
+
+    op = await purchase_ops_store.get(op_id)
+    result = await svc._recover_sell_op(op, _role_bot(guild))
+    assert result == "charged"
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "charged"  # НЕ done
+    assert _has_item(env, "role_item")  # предмет цел
+    # Кредит прошёл один раз и не повторяется.
+    assert await user_balance_store.get_balance(G, U) == 500
+    assert await _grant_count(env, op_id) == 1
+    assert any(r.id == 777 for r in member.roles)
+
+
+@pytest.mark.asyncio
+async def test_sell_recovery_role_http_exception_waits(
+        env, monkeypatch):
+    """Discord HTTPException/потерянный ответ: remove_role
+    «успешен», но роль фактически на месте → state=unknown →
+    op остаётся charged, done не ставится."""
+    _add_item(env, "role_item")
+    await _reset_balance(env)
+    member = _FakeMember([777])  # re-fetch всё ещё показывает роль
+    guild = _FakeGuild(member=member, role_id=777)
+    op_id = await _mk_sell_op(
+        env, price=500, item_id="role_item",
+        payload=_role_payload(ready=True))
+
+    async def _lost_response(g, u, r):
+        return True  # «успех», но Discord не применил
+    monkeypatch.setattr(
+        "utils.role_manager.remove_role", _lost_response,
+        raising=False)
+
+    op = await purchase_ops_store.get(op_id)
+    result = await svc._recover_sell_op(op, _role_bot(guild))
+    assert result == "charged"
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "charged"
+    assert _has_item(env, "role_item")
+    assert await _grant_count(env, op_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_sell_recovery_role_fetch_fails_waits(env):
+    """fetch_member недоступен → state=unknown → op charged,
+    без done, без повторного кредита."""
+    _add_item(env, "role_item")
+    await _reset_balance(env)
+    guild = _FakeGuild(member=_FakeMember([]), role_id=777,
+                       fail_fetch=True)
+    op_id = await _mk_sell_op(
+        env, price=500, item_id="role_item",
+        payload=_role_payload(ready=True))
+    op = await purchase_ops_store.get(op_id)
+    result = await svc._recover_sell_op(op, _role_bot(guild))
+    assert result == "charged"
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "charged"
+    assert _has_item(env, "role_item")
+    assert await _grant_count(env, op_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_sell_recovery_role_retry_then_done(env, monkeypatch):
+    """Первый recovery: Discord недоступен → charged.
+    Второй recovery: роль подтверждённо отсутствует →
+    предмет удалён, done. Кредит — ровно один."""
+    _add_item(env, "role_item")
+    await _reset_balance(env)
+    member = _FakeMember([])  # роль уже снята live-потоком
+    guild_down = _FakeGuild(member=member, role_id=777,
+                            fail_fetch=True)
+    guild_up = _FakeGuild(member=member, role_id=777)
+    op_id = await _mk_sell_op(
+        env, price=500, item_id="role_item",
+        payload=_role_payload(ready=True))
+
+    op = await purchase_ops_store.get(op_id)
+    r1 = await svc._recover_sell_op(op, _role_bot(guild_down))
+    assert r1 == "charged"
+    assert (await purchase_ops_store.get(op_id))["status"] == "charged"
+
+    op = await purchase_ops_store.get(op_id)
+    r2 = await svc._recover_sell_op(op, _role_bot(guild_up))
+    assert r2 == "done"
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "done"
+    assert not _has_item(env, "role_item")
+    assert await user_balance_store.get_balance(G, U) == 500
+    assert await _grant_count(env, op_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_sell_recovery_role_no_bot_stays_charged(env):
+    """bot=None при role-item → проверить Discord нельзя →
+    charged, НЕ done."""
+    _add_item(env, "role_item")
+    await _reset_balance(env)
+    op_id = await _mk_sell_op(
+        env, price=500, item_id="role_item",
+        payload=_role_payload(ready=True))
+    op = await purchase_ops_store.get(op_id)
+    result = await svc._recover_sell_op(op, bot=None)
+    assert result == "charged"
+    assert (await purchase_ops_store.get(op_id))["status"] == "charged"
+    assert _has_item(env, "role_item")
+

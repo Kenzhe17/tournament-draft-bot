@@ -666,6 +666,10 @@ class ShopPurchaseOpsStore:
     # -------------------------------------------------------------- queries
 
     async def pending(self) -> list[dict[str, Any]]:
+        json_pending = [
+            dict(op) for op in self._json_ops.values()
+            if op.get("status") in PENDING_STATUSES
+        ]
         if self._use_db:
             try:
                 pool = await self._pool()
@@ -677,13 +681,24 @@ class ShopPurchaseOpsStore:
                         "ORDER BY created_at",
                         list(PENDING_STATUSES),
                     )
-                    return [self._row_to_op(r) for r in rows]
+                    ops = [self._row_to_op(r) for r in rows]
             except Exception:
+                # PG — источник истины для финансовых операций.
+                # Молчаливый JSON-фолбэк вернул бы заведомо
+                # неполный список, и recovery «не увидел» бы
+                # действующие операции. Ошибку передаём
+                # вызывающему коду — он обязан прервать операцию.
                 logger.exception("shop ops pending: PG failed")
-        return [
-            dict(op) for op in self._json_ops.values()
-            if op.get("status") in PENDING_STATUSES
-        ]
+                raise
+            # Операции, попавшие в JSON-fallback create() пока PG
+            # был недоступен, тоже требуют recovery — добавляем их
+            # к PG-списку (дедупликация по op_id).
+            seen = {o["op_id"] for o in ops}
+            ops.extend(
+                o for o in json_pending if o["op_id"] not in seen
+            )
+            return ops
+        return json_pending
 
     async def recent(
         self, guild_id: int | None = None, limit: int = 100

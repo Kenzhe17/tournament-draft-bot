@@ -869,10 +869,14 @@ async def _restore_sell_role(guild, user_id: int, role_id: int) -> bool:
     неизвестен, op остаётся на ручное разрешение.
     """
     try:
+        import discord
         role = guild.get_role(role_id)
         if role is None:
             return True  # роль удалена с сервера — возвращать нечего
-        member = await guild.fetch_member(user_id)
+        try:
+            member = await guild.fetch_member(user_id)
+        except discord.NotFound:
+            return True  # пользователя нет на сервере — роль отсутствует
         if any(r.id == role_id for r in member.roles):
             return True
         await member.add_roles(role)
@@ -1000,34 +1004,41 @@ async def _recover_sell_op(op: dict, bot=None) -> str:
             op_id, "charged", payload={"credited": credited}
         )
 
-    # Для role-предметов: live-поток снимает роль до credit,
-    # но crash мог произойти между create op и снятием —
-    # best-effort доснимаем, чтобы роль не осталась «бесплатной».
+    # Для role-предметов: ФАКТИЧЕСКОЕ отсутствие Discord-роли —
+    # обязательное условие done. Проверяем через Discord API,
+    # при наличии роли пробуем снять и перепроверяем.
+    # 'absent' → можно завершать; 'present'/'unknown' → op
+    # остаётся charged и будет повторён следующим recovery.
+    # Начисление монет при этом НЕ повторяется (грант
+    # sellop:{op_id} идемпотентен), предмет НЕ удаляется.
     role_id = payload.get("role_id")
-    if role_id and bot is not None:
+    if role_id:
+        if bot is None:
+            # Нет Discord-клиента — состояние роли проверить
+            # невозможно, done ставить нельзя.
+            logger.warning(
+                "sell recovery: no bot for role check op=%s", op_id)
+            return "charged"
+        guild = bot.get_guild(gid)
+        if guild is None:
+            logger.warning(
+                "sell recovery: guild %s unavailable op=%s",
+                gid, op_id)
+            return "charged"
         try:
-            guild = bot.get_guild(gid)
-            if guild is not None:
-                member = guild.get_member(uid)
-                if member is None:
-                    try:
-                        member = await guild.fetch_member(uid)
-                    except Exception:  # noqa: BLE001
-                        member = None
-                role = guild.get_role(int(role_id))
-                if (
-                    member is not None and role is not None
-                    and any(r.id == role.id for r in member.roles)
-                ):
-                    try:
-                        await member.remove_roles(role)
-                    except Exception:  # noqa: BLE001
-                        logger.warning(
-                            "sell recovery: role %s removal failed "
-                            "op=%s", role_id, op_id)
+            from cogs.sell import _role_absent_state
+            role_state = await _role_absent_state(
+                guild, uid, int(role_id)
+            )
         except Exception:  # noqa: BLE001
             logger.exception(
-                "sell recovery: role cleanup failed op=%s", op_id)
+                "sell recovery: role check failed op=%s", op_id)
+            return "charged"
+        if role_state != "absent":
+            logger.warning(
+                "sell recovery: role %s state=%s op=%s — "
+                "stays charged", role_id, role_state, op_id)
+            return "charged"
 
     # Удалить предмет, если он ещё в инвентаре — и ПОДТВЕРДИТЬ
     # фактическое отсутствие перед done: без подтверждения op

@@ -45,6 +45,9 @@ async def _role_absent_state(
     """
     try:
         member = await guild.fetch_member(user_id)
+    except discord.NotFound:
+        # Пользователя нет на сервере — роли точно нет.
+        return "absent"
     except Exception:  # noqa: BLE001
         return "unknown"
     role = guild.get_role(role_id)
@@ -64,6 +67,8 @@ async def _role_absent_state(
     # «снятие выполнилось, ответ потерялся».
     try:
         member = await guild.fetch_member(user_id)
+    except discord.NotFound:
+        return "absent"
     except Exception:  # noqa: BLE001
         return "unknown"
     if not any(r.id == role_id for r in member.roles):
