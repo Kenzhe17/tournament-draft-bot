@@ -138,7 +138,13 @@ from cogs.groups import admin_group, bind_commands
 class CoinDropCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
-        self.target_channel_id = NOTIFICATION_CHANNEL_ID
+        self._default_channel_id = NOTIFICATION_CHANNEL_ID
+
+    def _target_channel_id(self, guild) -> int:
+        from services.discord_cfg import channel_id as _dc
+        gid = guild.id if guild else None
+        return _dc(gid, "discord.notification_channel_id",
+                   self._default_channel_id)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -147,7 +153,7 @@ class CoinDropCog(commands.Cog):
             return
 
         # Проверяем нужный канал
-        if message.channel.id != self.target_channel_id:
+        if message.channel.id != self._target_channel_id(message.guild):
             return
 
         channel_id = message.channel.id
@@ -169,10 +175,11 @@ class CoinDropCog(commands.Cog):
 
     async def trigger_drop(self, channel: discord.TextChannel):
         """Логика генерации случайного ивента (сумма 100-500, шанс 50/50)."""
-        # Check if coin drops are enabled in settings
-        from storage.json_store import store
-        settings = store.get_settings()
-        if not settings.get("coin_drop_enabled", True):
+        # Check if coin drops are enabled: Control Center (PG) →
+        # legacy settings.json fallback внутри peek.
+        from services.settings_service import settings_service
+        if not settings_service.peek(message.guild.id if message.guild else None,
+                                      "feature.coin_drop_enabled"):
             return
 
         # Записываем время ивента

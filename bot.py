@@ -150,6 +150,8 @@ class TournamentBot(commands.Bot):
         intents = discord.Intents.default()
         intents.members = True
         intents.message_content = True
+        if hasattr(intents, "auto_moderation_execution"):
+            intents.auto_moderation_execution = True
         super().__init__(
             command_prefix="!",
             intents=intents,
@@ -243,8 +245,63 @@ class TournamentBot(commands.Bot):
                     logger.info(f"Synced {synced} games from config to database")
                 except Exception as e:
                     logger.error(f"Failed to sync games from config: {e}")
+
+                # Магазин: PostgreSQL — авторитетный каталог.
+                # Идемпотентная миграция JSON→PG при первом запуске,
+                # далее каталог управляется через Control Center.
+                try:
+                    from storage import shop_catalog
+                    from storage.shop_store import shop_store
+                    mode = await shop_catalog.sync_to_store(shop_store)
+                    logger.info("Shop catalog synced from %s", mode)
+                except Exception as e:
+                    logger.error("Failed to sync shop catalog: %s", e)
             except Exception as e:
                 logger.error("Failed to initialize database: %s", e)
+
+        # Control Center: движок динамической конфигурации.
+        # PostgreSQL — источник истины; LISTEN/NOTIFY + poll-fallback
+        # применяют изменения без рестарта. Без DATABASE_URL сервис
+        # остаётся в degraded-режиме (defaults + legacy settings.json).
+        try:
+            from services.settings_service import settings_service
+            await settings_service.init()
+            if settings_service.available:
+                await settings_service.start_sync()
+                logger.info("Control Center settings engine active")
+
+                # Каталог магазина: перечитывать PG по notify
+                # (панель пишет shop_items + pg_notify).
+                async def _resync_shop(gid, key):
+                    try:
+                        from storage import shop_catalog
+                        from storage.shop_store import shop_store
+                        await shop_catalog.sync_to_store(shop_store)
+                    except Exception as exc:
+                        logger.warning("shop catalog resync failed: %s", exc)
+
+                settings_service.register_change_handler(
+                    "shop.catalog", _resync_shop
+                )
+
+                # Очередь админ-действий Control Center: панель пишет
+                # admin_action_requests, бот исполняет зарегистрированные
+                # handlers и пишет статус обратно.
+                from services import admin_actions
+                admin_actions.bind_bot(self)
+                self.loop.create_task(admin_actions.actions_loop())
+
+                # Периодический снимок состояния для панели
+                # (турниры, очереди MM, каналы/роли Discord).
+                from services import admin_snapshots
+                self.loop.create_task(admin_snapshots.snapshot_loop(self))
+            else:
+                logger.warning(
+                    "Control Center settings engine unavailable "
+                    "(no DATABASE_URL) — running on defaults"
+                )
+        except Exception as exc:
+            logger.warning("settings service init failed: %s", exc)
 
         # Журнал аудита: привязка бота для публикации карточек
         # и восстановление pending-событий после рестарта/сбоя БД.
@@ -280,6 +337,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.team")
         await self.load_extension("cogs.bot_settings")
         await self.load_extension("cogs.moderation")
+        await self.load_extension("cogs.mod")
         await self.load_extension("cogs.freefire")
         await self.load_extension("cogs.wardrobe")
         await self.load_extension("cogs.emoji")
@@ -1176,6 +1234,11 @@ class TournamentBot(commands.Bot):
 
     async def close(self) -> None:
         """Graceful shutdown: остановить фоновые метрики."""
+        try:
+            from services.settings_service import settings_service
+            await settings_service.stop()
+        except Exception:
+            pass
         try:
             from utils import perf_metrics
 

@@ -57,8 +57,13 @@ def _color_role_items() -> list[ShopItem]:
     return items
 
 
-def initialize_shop_items() -> None:
-    """Инициализировать стандартные товары (upsert, без очистки)."""
+def default_shop_items() -> list[ShopItem]:
+    """Статический каталог товаров по умолчанию.
+
+    Используется для идемпотентного сидинга: отсутствующие id
+    добавляются, существующие (в т.ч. изменённые через Control
+    Center) не перезаписываются.
+    """
 
 
     # Графические значки (Icons & Emblems)
@@ -544,10 +549,21 @@ def initialize_shop_items() -> None:
         category="tags",
     )
 
-    # Добавить все стандартные товары (upsert — ничего не стираем)
-    for item in icons + tags + services + frames + color_roles + [shadow_tag, bundle]:
-        shop_store.add_item(item)
+    return (icons + tags + services + frames + color_roles
+            + [shadow_tag, bundle])
 
 
-# Инициализировать товары при импорте
+def initialize_shop_items() -> None:
+    """Идемпотентный сидинг каталога (JSON-режим без DATABASE_URL).
+
+    НЕ удаляет существующие товары: панельные правки и товары,
+    созданные через Control Center, сохраняются. При наличии
+    PostgreSQL авторитетным источником является shop_catalog.sync_to_store().
+    """
+    for item in default_shop_items():
+        if shop_store.get_item(item.id) is None:
+            shop_store.add_item(item)
+
+
+# Инициализировать товары при импорте (безопасно: только добавление)
 initialize_shop_items()

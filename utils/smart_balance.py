@@ -30,6 +30,42 @@ from config import (
     MM_BALANCE_WEIGHTS,
 )
 
+
+def _cfg_weights() -> dict[str, float]:
+    """Веса балансировки: Control Center (PG) → env-дефолты."""
+    try:
+        from services.settings_service import settings_service
+        return {
+            "sum": float(settings_service.peek(
+                None, "matchmaking.balance_weight_sum")),
+            "top": float(settings_service.peek(
+                None, "matchmaking.balance_weight_top")),
+            "dist": float(settings_service.peek(
+                None, "matchmaking.balance_weight_dist")),
+            "spread": float(settings_service.peek(
+                None, "matchmaking.balance_weight_spread")),
+        }
+    except Exception:
+        return MM_BALANCE_WEIGHTS
+
+
+def _cfg_sum_tolerance() -> float:
+    try:
+        from services.settings_service import settings_service
+        return float(settings_service.peek(
+            None, "matchmaking.balance_sum_tolerance"))
+    except Exception:
+        return MM_BALANCE_SUM_TOLERANCE
+
+
+def _cfg_epsilon() -> float:
+    try:
+        from services.settings_service import settings_service
+        return float(settings_service.peek(
+            None, "matchmaking.balance_epsilon"))
+    except Exception:
+        return MM_BALANCE_EPSILON
+
 PlayersWithSR = Sequence[tuple[str, float]]
 
 
@@ -61,7 +97,7 @@ def _metrics(srs_a: list[float], srs_b: list[float]) -> dict[str, float]:
 
 def balance_score(metrics: dict[str, float]) -> float:
     """Итоговая взвешенная оценка дисбаланса (меньше — лучше)."""
-    w = MM_BALANCE_WEIGHTS
+    w = _cfg_weights()
     return (
         w["sum"] * metrics["sum_diff"] / 40.0
         + w["top"] * metrics["top_diff"] / 20.0
@@ -72,7 +108,7 @@ def balance_score(metrics: dict[str, float]) -> float:
 
 def _secondary_score(metrics: dict[str, float]) -> float:
     """Оценка по критериям кроме суммарного SR (веса нормализованы)."""
-    w = MM_BALANCE_WEIGHTS
+    w = _cfg_weights()
     norm = w["top"] + w["dist"] + w["spread"] or 1.0
     return (
         w["top"] * metrics["top_diff"] / 20.0
@@ -127,14 +163,14 @@ def smart_balance_4v4(
     min_sum = min(c["metrics"]["sum_diff"] for c in combos)
     allowed = [
         c for c in combos
-        if c["metrics"]["sum_diff"] <= min_sum + MM_BALANCE_SUM_TOLERANCE
+        if c["metrics"]["sum_diff"] <= min_sum + _cfg_sum_tolerance()
     ]
 
     # Этап 2: лучший вариант по остальным критериям.
     best_secondary = min(c["secondary"] for c in allowed)
     tied = [
         c for c in allowed
-        if c["secondary"] <= best_secondary + MM_BALANCE_EPSILON
+        if c["secondary"] <= best_secondary + _cfg_epsilon()
     ]
     chosen = (rng or random).choice(tied)
 

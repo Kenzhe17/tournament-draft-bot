@@ -46,21 +46,46 @@ class ShopStore:
         atomic_write_json(SHOP_FILE, data)
 
     def get_item(self, item_id: str) -> ShopItem | None:
-        """Получить товар по ID."""
+        """Получить товар по ID (включая скрытые — для инвентаря/продажи)."""
         return self._items.get(item_id)
 
     def get_all_items(self) -> list[ShopItem]:
-        """Получить все товары."""
-        return list(self._items.values())
+        """Получить все активные товары (видимые в магазине)."""
+        return [i for i in self._items.values() if i.is_active]
 
     def get_items_by_category(self, category: str) -> list[ShopItem]:
-        """Получить товары по категории."""
-        return [item for item in self._items.values() if item.category == category]
+        """Получить активные товары по категории."""
+        return [
+            item for item in self._items.values()
+            if item.category == category and item.is_active
+        ]
 
     def get_items_by_rarity(self, rarity) -> list[ShopItem]:
         """Получить товары по редкости (только icons и tags, без roles)."""
-        items = [item for item in self._items.values() if item.rarity == rarity and item.category in ["icons", "tags"]]
+        items = [
+            item for item in self._items.values()
+            if item.rarity == rarity and item.is_active
+            and item.category in ["icons", "tags"]
+        ]
         return items
+
+    def get_all_items_raw(self) -> list[ShopItem]:
+        """Все товары включая скрытые (для админки/миграции)."""
+        return list(self._items.values())
+
+    def replace_all(self, items: list[ShopItem]) -> None:
+        """Полностью заменить каталог (синхронизация из PG).
+
+        Скрытые товары (is_active=False) сохраняются в _items —
+        покупки в инвентаре не затрагиваются.
+        """
+        self._items = {item.id: item for item in items}
+        self.save()
+
+    def upsert_item(self, item: ShopItem) -> None:
+        """Создать/обновить один товар без затрагивания остальных."""
+        self._items[item.id] = item
+        self.save()
 
     def add_item(self, item: ShopItem) -> None:
         """Добавить/обновить товар (upsert по стабильному id)."""
@@ -334,7 +359,7 @@ class InventoryStore:
             True если успешно, False если ошибка
         """
         item = shop_store.get_item(item_id)
-        if not item:
+        if not item or not item.is_active:
             return False
 
         # Услуги не являются предметами инвентаря.
