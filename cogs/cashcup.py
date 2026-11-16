@@ -439,10 +439,9 @@ class BoardSelectView(discord.ui.View):
         if not state or not state.get("bracket"):
             await interaction.followup.send("Состояние турнира не найдено.", ephemeral=True)
             return
-        # Через _sync_board: тот же lock + свежее состояние из PG,
-        # страница клампится по актуальному числу матчей.
-        base = cog._board_pages.get(interaction.guild_id, 0)
-        await cog._sync_board(state, interaction.channel, page=base + delta)
+        # delta передаётся внутрь: базовая страница читается и
+        # вычисляется уже под per-guild lock вместе со свежим PG-стейтом.
+        await cog._sync_board(state, interaction.channel, delta=delta)
 
 
 def _short_desc(m: dict) -> str:
@@ -502,7 +501,11 @@ class CashCupCog(commands.Cog):
                     except Exception:
                         failures += 1
                         continue
-                await self._sync_board(state, channel)
+                # False = edit/send не выполнен (403/429/5xx/нет fresh state):
+                # считаем guild неудачным — on_ready повторит при следующем
+                # вызове, т.к. _boards_ok останется False.
+                if not await self._sync_board(state, channel):
+                    failures += 1
             except Exception:
                 failures += 1
                 logger.exception("CASH CUP board restore failed guild=%s",
@@ -529,29 +532,39 @@ class CashCupCog(commands.Cog):
         await self._sync_board(state, channel)
 
     async def _sync_board(self, state: dict, channel, *,
-                          page: int | None = None) -> None:
+                          page: int | None = None,
+                          delta: int | None = None) -> bool:
         """Публичная карточка текущего раунда: одно сообщение, обновляется
-        на месте. Все изменения — под per-guild lock с перечитыванием PG."""
+        на месте. Все изменения — под per-guild lock с перечитыванием PG.
+        Возвращает True при успешном edit/send, иначе False."""
         if state.get("status") not in ("running", "completed") \
                 or not state.get("bracket"):
-            return
+            return False
         async with self._board_lock(state.get("guild_id") or 0):
             fresh = await cashcup_store.active(state["guild_id"]) \
                 or await cashcup_store.latest(state["guild_id"])
-            if fresh:
-                if page is None:
-                    page = self._board_pages.get(state["guild_id"], 0)
-                await self._sync_board_locked(fresh, channel, page=page)
+            if not fresh:
+                return False
+            return await self._sync_board_locked(
+                fresh, channel, page=page, delta=delta)
 
     async def _sync_board_locked(self, state: dict, channel, *,
-                                 page: int = 0) -> None:
+                                 page: int | None = None,
+                                 delta: int | None = None) -> bool:
+        """Вызывается только под _board_lock. Страница вычисляется здесь:
+        delta применяется к последней синхронизированной странице."""
         if state.get("status") not in ("running", "completed") \
                 or not state.get("bracket"):
-            return
+            return False
         try:
             active = _board_matches(state["bracket"])
             pages = max(1, (len(active) + BoardSelectView.PER_PAGE - 1)
                         // BoardSelectView.PER_PAGE)
+            base = self._board_pages.get(state["guild_id"], 0)
+            if delta is not None:
+                page = base + delta
+            elif page is None:
+                page = base
             page = max(0, min(page, pages - 1))
             view = BoardSelectView(active, page=page, state=state)
             board_id = state.get("board_message_id")
@@ -561,21 +574,28 @@ class CashCupCog(commands.Cog):
                     await msg.edit(embed=_board_embed(state, page=page), view=view,
                                    allowed_mentions=discord.AllowedMentions.none())
                     self._board_pages[state["guild_id"]] = page
-                    return
+                    return True
                 except discord.NotFound:
                     pass  # сообщение удалено вручную — создаём замену
                 except discord.HTTPException as exc:
                     # 429/403/5xx — не создаём дубликат: ретрай позже через _refresh.
                     logger.warning("CASH CUP board edit failed: %s", exc)
-                    return
+                    return False
             msg = await channel.send(embed=_board_embed(state, page=page), view=view,
                                      allowed_mentions=discord.AllowedMentions.none())
             self._board_pages[state["guild_id"]] = page
             def change(st):
                 st["board_message_id"] = msg.id
-            await cashcup_store.mutate(state["guild_id"], 0, "board_sync", change)
+            # tournament_id + include_finished: completed-турнир тоже
+            # получает новый board_message_id адресной транзакцией.
+            await cashcup_store.mutate(
+                state["guild_id"], 0, "board_sync", change,
+                include_finished=True,
+                tournament_id=state.get("tournament_id"))
+            return True
         except Exception:
             logger.exception("CASH CUP board sync failed")
+            return False
 
     # ---------- BR-команда → CASH CUP, self-service, ADMIN-меню ----------
 

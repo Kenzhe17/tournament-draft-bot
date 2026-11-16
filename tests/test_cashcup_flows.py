@@ -103,6 +103,7 @@ class FakeStore:
     def __init__(self, state=None):
         self.state = state
         self.audits = []
+        self.mutate_calls = []
 
     async def active(self, guild_id):
         st = self.state
@@ -118,6 +119,9 @@ class FakeStore:
         res = change(self.state)
         self.audits.append({"action": action, "actor": actor_id,
                             "details": details})
+        self.mutate_calls.append({"action": action,
+                                  "tournament_id": tournament_id,
+                                  "include_finished": include_finished})
         return self.state, res
 
     async def create(self, *a, **kw):
@@ -803,8 +807,8 @@ async def test_nav_goes_through_sync_board(cog):
     """_nav обязан идти через _sync_board (lock + свежее PG), не locked."""
     calls = []
 
-    async def fake_sync(state, channel, *, page=None):
-        calls.append(page)
+    async def fake_sync(state, channel, *, page=None, delta=None):
+        calls.append((page, delta))
     cog._sync_board = fake_sync
     cog._board_pages[1] = 2
     cog._store.state = _running_state(60)
@@ -813,7 +817,7 @@ async def test_nav_goes_through_sync_board(cog):
     i.client = FakeClient(cog)
     i.channel = SimpleNamespace(id=5)
     await v._nav(i, +1)
-    assert calls == [3]
+    assert calls == [(None, 1)]  # страница вычисляется внутри lock
 
 
 @pytest.mark.asyncio
@@ -878,3 +882,97 @@ def test_embed_and_select_same_page():
     n_pages = (len(matches) + cashcup.BOARD_PER_PAGE - 1) // cashcup.BOARD_PER_PAGE
     expected = matches[(n_pages - 1) * cashcup.BOARD_PER_PAGE:]
     assert [m["id"] for m in expected] == last_page_ids
+
+
+# ================= Release-2: результат sync, tournament_id, delta под lock =================
+
+@pytest.mark.asyncio
+async def test_restore_counts_sync_failure_and_retries(cog):
+    """403 при edit -> _sync_board False -> failures>0 -> _boards_ok False."""
+    import discord
+    st = _running_state(60)
+    st["status"] = "completed"
+    cog._store.state = st
+    exc = discord.HTTPException(
+        SimpleNamespace(status=403, reason="forbidden"), {"message": "forbidden"})
+    ch = FakeChannel(msg=FakeMsg(), fetch_exc=exc)
+    guild = SimpleNamespace(id=1, get_channel=lambda cid: ch,
+                            fetch_channel=lambda cid: ch)
+    cog.bot = SimpleNamespace(guilds=[guild], get_guild=lambda g: guild,
+                              fetch_user=lambda u: None,
+                              add_view=lambda v: None)
+    failures = await cog._restore_boards()
+    assert failures == 1
+    cog._boards_ok = False
+    await cog.on_ready()
+    assert cog._boards_ok is False  # ошибка не потеряна — будет retry
+
+
+@pytest.mark.asyncio
+async def test_completed_board_id_saved_by_tournament_id(cog):
+    """completed-турнир: board_message_id пишется адресной mutate
+    с tournament_id и include_finished."""
+    st = _running_state(4)
+    st["status"] = "completed"
+    st["tournament_id"] = "tid123"
+    st["board_message_id"] = None  # -> send path
+    cog._store.state = st
+    ch = FakeChannel()
+    ok = await cog._sync_board(st, ch)
+    assert ok is True
+    assert len(ch.sent) == 1
+    call = cog._store.mutate_calls[-1]
+    assert call["tournament_id"] == "tid123"
+    assert call["include_finished"] is True
+    assert st["board_message_id"] == 900
+
+
+@pytest.mark.asyncio
+async def test_sync_board_returns_false_without_state(cog):
+    """Нет свежего состояния в PG -> False, без побочных эффектов."""
+    st = _running_state(4)
+    st["status"] = "completed"
+    cog._store.state = None
+    ch = FakeChannel()
+    assert await cog._sync_board(st, ch) is False
+    assert not ch.sent
+
+
+@pytest.mark.asyncio
+async def test_concurrent_nav_single_board_consistent_page(cog):
+    """Два одновременных «Вперёд»: одна доска, страница детерминирована."""
+    st = _running_state(60)
+    cog._store.state = st
+    msg = FakeMsg()
+    ch = FakeChannel(msg=msg)
+    i1 = make_interaction(_member(1))
+    i2 = make_interaction(_member(2))
+    for i in (i1, i2):
+        i.client = FakeClient(cog)
+        i.channel = ch
+    v = cashcup.BoardSelectView()
+    await asyncio.gather(v._nav(i1, +1), v._nav(i2, +1))
+    # обе операции под lock: +1 дважды -> страница 2, сообщений не создано
+    assert cog._board_pages[1] == 2
+    assert not ch.sent
+    assert len(msg.edits) == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_nav_clamps_at_bounds(cog):
+    """«Назад» с первой страницы и «Вперёд» за последнюю — кламп без ошибок."""
+    st = _running_state(60)
+    cog._store.state = st
+    msg = FakeMsg()
+    ch = FakeChannel(msg=msg)
+    i1 = make_interaction(_member(1))
+    i2 = make_interaction(_member(2))
+    for i in (i1, i2):
+        i.client = FakeClient(cog)
+        i.channel = ch
+    v = cashcup.BoardSelectView()
+    await asyncio.gather(v._nav(i1, -1), v._nav(i2, +999))
+    pages = (len(cashcup._board_matches(st["bracket"]))
+             + cashcup.BOARD_PER_PAGE - 1) // cashcup.BOARD_PER_PAGE
+    assert 0 <= cog._board_pages[1] <= pages - 1
+    assert not ch.sent
