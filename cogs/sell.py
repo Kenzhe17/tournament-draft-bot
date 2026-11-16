@@ -29,38 +29,55 @@ async def add_balance(guild_id: int, user_id: int, amount: int) -> None:
     await user_balance_store.add_balance(guild_id, user_id, amount)
 
 
-async def _ensure_role_removed(
-    guild: discord.Guild, user_id: int, role_id: int
-) -> bool:
-    """Подтвердить фактическое отсутствие Discord-роли у member.
+async def _role_absent_state(
+    guild: discord.Guild, user_id: int, role_id: int,
+    *, attempt_remove: bool = True,
+) -> str:
+    """Фактическое состояние Discord-роли: 'absent' | 'present' | 'unknown'.
 
-    True — роли нет (снята или не было). False — роль всё ещё
-    есть либо состояние не удалось проверить (неизвестный
-    результат Discord API → повторная проверка member.roles,
-    а не слепая выплата).
+    'absent' — роли точно нет (снята или не было). 'present' —
+    роль подтверждённо на месте. 'unknown' — Discord API не дал
+    подтверждения: при неопределённом исходе нельзя ни платить,
+    ни считать снятие выполненным.
+
+    attempt_remove=True — при наличии роли сначала пытается её
+    снять и подтверждает результат повторным fetch_member.
     """
     try:
         member = await guild.fetch_member(user_id)
-    except Exception:
-        return False
+    except Exception:  # noqa: BLE001
+        return "unknown"
     role = guild.get_role(role_id)
     if role is None:
-        # Роль удалена с сервера — снимать нечего, продажа безопасна.
-        return True
+        # Роль удалена с сервера — снимать нечего.
+        return "absent"
     if not any(r.id == role_id for r in member.roles):
-        return True
+        return "absent"
+    if not attempt_remove:
+        return "present"
     try:
         from utils.role_manager import remove_role
         removed = await remove_role(guild, user_id, role_id)
-    except Exception:
+    except Exception:  # noqa: BLE001
         removed = False
     # Повторная проверка фактического состояния — покрывает и
     # «снятие выполнилось, ответ потерялся».
     try:
         member = await guild.fetch_member(user_id)
-    except Exception:
-        return removed
-    return not any(r.id == role_id for r in member.roles)
+    except Exception:  # noqa: BLE001
+        return "unknown"
+    if not any(r.id == role_id for r in member.roles):
+        return "absent"
+    # Роль на месте. remove_role отрапортовал успех, а роль
+    # осталась — ответ Discord противоречив, исход неизвестен.
+    return "unknown" if removed else "present"
+
+
+async def _ensure_role_removed(
+    guild: discord.Guild, user_id: int, role_id: int
+) -> bool:
+    """True — роли точно нет; False — есть либо состояние неизвестно."""
+    return (await _role_absent_state(guild, user_id, role_id)) == "absent"
 
 
 async def _credit_sale_once(
@@ -287,24 +304,68 @@ class SellCog(commands.Cog):
                 )
                 return
 
-            # 4c. Для role-предметов проверяем ФАКТИЧЕСКОЕ снятие
-            #     Discord-роли до начисления и удаления предмета.
-            #     Снятие не подтверждено → продажа не считается
-            #     успешной: предмет остаётся, монеты не начисляются.
+            # 4c. Для role-предметов: фиксируем, была ли роль у
+            #     пользователя ДО попытки снятия — recovery по
+            #     этому маркеру отличает «снятие выполнялось» от
+            #     «роль изначально отсутствовала».
             if item.item_type == "role" and item.role_id and guild is not None:
-                if not await _ensure_role_removed(
-                    guild, interaction.user.id, item.role_id
-                ):
+                rid = int(item.role_id)
+                state = await _role_absent_state(
+                    guild, interaction.user.id, rid,
+                    attempt_remove=False,
+                )
+                if state == "present":
+                    if not await purchase_ops_store.merge_payload(
+                        sale_op_id, {"role_present_before": True}
+                    ):
+                        await interaction.followup.send(
+                            " Не удалось зафиксировать состояние продажи — "
+                            "попробуйте позже.",
+                            ephemeral=True,
+                        )
+                        return
+                    state = await _role_absent_state(
+                        guild, interaction.user.id, rid,
+                    )
+                if state == "present":
                     await purchase_ops_store.set_status(
                         sale_op_id, "failed",
+                        payload={"reason": "role_removal_failed"},
+                    )
+                    await interaction.followup.send(
+                        " Не удалось снять Discord-роль — продажа "
+                        "отменена, предмет и баланс не изменены.",
+                        ephemeral=True,
+                    )
+                    return
+                if state == "unknown":
+                    # Discord API не подтвердил исход — НЕ решаем
+                    # за пользователя: op уходит в unknown, recovery
+                    # перепроверит фактическое состояние роли.
+                    await purchase_ops_store.set_status(
+                        sale_op_id, "unknown",
                         payload={"reason": "role_removal_unconfirmed"},
                     )
                     await interaction.followup.send(
                         " Не удалось подтвердить снятие Discord-роли — "
-                        "продажа отменена, предмет и баланс не изменены.",
-                        ephemeral=True
+                        "продажа будет проверена автоматически.",
+                        ephemeral=True,
                     )
                     return
+
+            # 4d. Все предварительные проверки пройдены — durable
+            #     маркер «продажа разрешена к выполнению». До него
+            #     recovery НЕ имеет права начислять монеты и
+            #     удалять предмет: op = прерванная подготовка.
+            if not await purchase_ops_store.merge_payload(
+                sale_op_id, {"ready": True}
+            ):
+                await interaction.followup.send(
+                    " Не удалось подтвердить готовность продажи — "
+                    "операция будет проверена автоматически.",
+                    ephemeral=True,
+                )
+                return
 
             # 4b. Сначала зачисляем монеты (идемпотентно по
             #     sellop:{op_id}), потом изымаем предмет.
@@ -327,23 +388,22 @@ class SellCog(commands.Cog):
                 return
 
             if credited < sell_price:
-                # MAX_BALANCE достигнут между проверкой и
-                # начислением: откатываем частичное начисление
-                # и отменяем продажу — предмет не теряется.
-                try:
-                    await user_balance_store.subtract_balance(
-                        guild_id, interaction.user.id, credited
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
+                # Частичная выплата (гонка за MAX_BALANCE): предмет
+                # НЕ удаляем. Обычное вычитание баланса запрещено —
+                # оно не идемпотентно. Фиксируем факт и оставляем
+                # op на подтверждённую компенсацию / ручной разбор.
                 await purchase_ops_store.set_status(
-                    sale_op_id, "failed",
-                    payload={"reason": "credit_shortfall",
-                             "credited": credited},
+                    sale_op_id, "unknown",
+                    payload={
+                        "reason": "credit_shortfall",
+                        "credited": credited,
+                        "shortfall": sell_price - credited,
+                    },
                 )
                 await interaction.followup.send(
-                    " Недостаточно места на балансе для полной "
-                    "выплаты — продажа отменена.",
+                    " Начислена только часть суммы (достигнут лимит "
+                    "баланса) — предмет сохранён, продажа будет "
+                    "завершена после проверки.",
                     ephemeral=True,
                 )
                 return

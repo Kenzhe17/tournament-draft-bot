@@ -472,7 +472,11 @@ async def test_sell_reserved_with_committed_grant(env):
     начисления нет."""
     _add_item(env, "tag_c1")
     await _reset_balance(env)
-    op_id = await _mk_sell_op(env, price=700, item_id="tag_c1")
+    op_id = await _mk_sell_op(
+        env, price=700, item_id="tag_c1",
+        payload={"ready": True,
+                 "cosmetic": {"item_id": "tag_c1"}},
+    )
     # Имитируем закоммиченный кредит с потерянным ответом:
     credited = await user_balance_store.add_balance_once(
         G, U, 700, f"sellop:{op_id}")
@@ -492,11 +496,15 @@ async def test_sell_reserved_with_committed_grant(env):
 
 @pytest.mark.asyncio
 async def test_sell_reserved_no_credit_completes_sale(env):
-    """Крэш сразу после create: recovery завершает продажу
-    (кредит + удаление) — пользователь.intent сохраняется."""
+    """Крэш после маркера ready, до credit: recovery завершает
+    продажу (кредит + удаление) — intent подтверждён."""
     _add_item(env, "tag_c2")
     await _reset_balance(env)
-    op_id = await _mk_sell_op(env, price=300, item_id="tag_c2")
+    op_id = await _mk_sell_op(
+        env, price=300, item_id="tag_c2",
+        payload={"ready": True,
+                 "cosmetic": {"item_id": "tag_c2"}},
+    )
     op = await purchase_ops_store.get(op_id)
     assert op["status"] == "reserved"
     await svc.recover_pending(bot=None)
@@ -507,13 +515,46 @@ async def test_sell_reserved_no_credit_completes_sale(env):
 
 
 @pytest.mark.asyncio
+async def test_sell_reserved_before_ready_is_aborted(env):
+    """Крэш сразу после create, ДО preliminary checks: ready не
+    выставлен → recovery НЕ начисляет и НЕ удаляет — op failed,
+    предмет и баланс нетронуты."""
+    _add_item(env, "tag_c2b")
+    await _reset_balance(env)
+    op_id = await _mk_sell_op(env, price=300, item_id="tag_c2b")
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "reserved"
+    assert not op["payload"].get("ready")
+    await svc.recover_pending(bot=None)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "failed"
+    assert op["payload"].get("reason") == "prechecks_not_completed"
+    assert _has_item(env, "tag_c2b")
+    assert await user_balance_store.get_balance(G, U) == 0
+    async with env["pool"].acquire() as conn:
+        n = await conn.fetchval(
+            "SELECT COUNT(*) FROM match_coin_grants "
+            "WHERE match_id=$1", f"sellop:{op_id}")
+    assert n == 0
+    # Повторный recovery — без изменений.
+    await svc.recover_pending(bot=None)
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "failed"
+    assert _has_item(env, "tag_c2b")
+
+
+@pytest.mark.asyncio
 async def test_sell_unknown_shortfall_stays_unknown(env):
     """unknown sell-op с частичным кредитом НЕ переводится
     в refunded общим обработчиком — предмет сохранён."""
     from config import MAX_BALANCE
     _add_item(env, "tag_c3")
     await _reset_balance(env, MAX_BALANCE)
-    op_id = await _mk_sell_op(env, price=900, item_id="tag_c3")
+    op_id = await _mk_sell_op(
+        env, price=900, item_id="tag_c3",
+        payload={"ready": True,
+                 "cosmetic": {"item_id": "tag_c3"}},
+    )
     await purchase_ops_store.set_status(op_id, "charged")
     await purchase_ops_store.set_status(
         op_id, "unknown",
@@ -532,7 +573,11 @@ async def test_sell_concurrent_recovery_single_credit(env):
     один результат."""
     _add_item(env, "tag_c4")
     await _reset_balance(env)
-    op_id = await _mk_sell_op(env, price=800, item_id="tag_c4")
+    op_id = await _mk_sell_op(
+        env, price=800, item_id="tag_c4",
+        payload={"ready": True,
+                 "cosmetic": {"item_id": "tag_c4"}},
+    )
     op = await purchase_ops_store.get(op_id)
     await svc._recover_sell_op(op)
     op = await purchase_ops_store.get(op_id)
@@ -554,7 +599,11 @@ async def test_sell_lost_set_status_response(env):
     нельзя — грант является источником истины."""
     _add_item(env, "tag_c5")
     await _reset_balance(env)
-    op_id = await _mk_sell_op(env, price=400, item_id="tag_c5")
+    op_id = await _mk_sell_op(
+        env, price=400, item_id="tag_c5",
+        payload={"ready": True,
+                 "cosmetic": {"item_id": "tag_c5"}},
+    )
     # credit закоммичен, marker set_status «потерян» (не вызван)
     await user_balance_store.add_balance_once(
         G, U, 400, f"sellop:{op_id}")
@@ -568,3 +617,238 @@ async def test_sell_lost_set_status_response(env):
     # Повторный recovery — ноль изменений.
     await svc._recover_sell_op(op)
     assert await user_balance_store.get_balance(G, U) == 400
+
+
+# ------------------------------------------- sell precheck state machine
+
+class _FakeRole:
+    def __init__(self, rid):
+        self.id = rid
+
+
+class _FakeMember:
+    def __init__(self, role_ids):
+        self.roles = [_FakeRole(r) for r in role_ids]
+
+    async def add_roles(self, role):
+        if all(r.id != role.id for r in self.roles):
+            self.roles.append(role)
+
+
+class _FakeGuild:
+    def __init__(self, member=None, role_id=None, fail_fetch=False):
+        self._member = member
+        self._role = _FakeRole(role_id) if role_id else None
+        self._fail = fail_fetch
+
+    async def fetch_member(self, uid):
+        if self._fail:
+            raise RuntimeError("discord api down")
+        return self._member
+
+    def get_role(self, rid):
+        if self._role is not None and self._role.id == rid:
+            return self._role
+        return None
+
+
+def _role_bot(guild):
+    from types import SimpleNamespace
+    return SimpleNamespace(get_guild=lambda gid: guild)
+
+
+def _role_payload(role_id=777, **extra):
+    p = {"item_type": "role", "role_id": role_id,
+         "cosmetic": {"item_id": "role_item"}}
+    p.update(extra)
+    return p
+
+
+async def _grant_count(env, op_id):
+    async with env["pool"].acquire() as conn:
+        return await conn.fetchval(
+            "SELECT COUNT(*) FROM match_coin_grants "
+            "WHERE match_id=$1", f"sellop:{op_id}")
+
+
+@pytest.mark.asyncio
+async def test_sell_precheck_crash_after_headroom_role_present(env):
+    """Крэш после проверки баланса, ДО маркера role_present_before:
+    роль на месте, мутаций не было → failed, ничего не трогаем."""
+    _add_item(env, "role_item")
+    await _reset_balance(env)
+    member = _FakeMember([777])
+    guild = _FakeGuild(member=member, role_id=777)
+    op_id = await _mk_sell_op(
+        env, price=500, item_id="role_item",
+        payload=_role_payload())
+    op = await purchase_ops_store.get(op_id)
+    result = await svc._recover_sell_op(op, _role_bot(guild))
+    assert result == "failed"
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "failed"
+    assert op["payload"].get("reason") == "prechecks_not_completed"
+    assert op["payload"].get("role_state") == "present"
+    # Роль НЕ снята повторно, предмет цел, денег нет.
+    assert any(r.id == 777 for r in member.roles)
+    assert _has_item(env, "role_item")
+    assert await user_balance_store.get_balance(G, U) == 0
+    assert await _grant_count(env, op_id) == 0
+    # Повторный recovery — те же failed, без изменений.
+    await svc._recover_sell_op(op, _role_bot(guild))
+    assert (await purchase_ops_store.get(op_id))["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_sell_precheck_role_removed_restores(env):
+    """Крэш ПОСЛЕ снятия Discord-роли, ДО маркера ready:
+    role_present_before + роль отсутствует → возврат роли
+    best-effort, продажа aborted → failed. Предмет и деньги
+    не тронуты."""
+    _add_item(env, "role_item")
+    await _reset_balance(env)
+    member = _FakeMember([])  # роль уже снята live-потоком
+    guild = _FakeGuild(member=member, role_id=777)
+    op_id = await _mk_sell_op(
+        env, price=500, item_id="role_item",
+        payload=_role_payload(role_present_before=True))
+    op = await purchase_ops_store.get(op_id)
+    result = await svc._recover_sell_op(op, _role_bot(guild))
+    assert result == "failed"
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "failed"
+    assert op["payload"].get("reason") == "aborted_role_removed"
+    assert op["payload"].get("role_restored") is True
+    # Роль возвращена пользователю.
+    assert any(r.id == 777 for r in member.roles)
+    assert _has_item(env, "role_item")
+    assert await user_balance_store.get_balance(G, U) == 0
+    assert await _grant_count(env, op_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_sell_precheck_role_absent_without_marker(env):
+    """Роль изначально отсутствовала у пользователя (маркер
+    role_present_before не ставился) → failed БЕЗ возврата
+    роли: нельзя выдавать роль, которой не было."""
+    _add_item(env, "role_item")
+    await _reset_balance(env)
+    member = _FakeMember([])
+    guild = _FakeGuild(member=member, role_id=777)
+    op_id = await _mk_sell_op(
+        env, price=500, item_id="role_item",
+        payload=_role_payload())
+    op = await purchase_ops_store.get(op_id)
+    result = await svc._recover_sell_op(op, _role_bot(guild))
+    assert result == "failed"
+    op = await purchase_ops_store.get(op_id)
+    assert op["payload"].get("reason") == "prechecks_not_completed"
+    # Роль НЕ добавлена — пользователь её не имел.
+    assert not member.roles
+    assert _has_item(env, "role_item")
+    assert await user_balance_store.get_balance(G, U) == 0
+
+
+@pytest.mark.asyncio
+async def test_sell_precheck_role_unknown_waits(env):
+    """Discord API недоступен при precheck → op остаётся
+    pending (reserved), НИКАКИХ мутаций: ни кредита, ни
+    удаления, ни решения по роли. Повторный recovery — то же."""
+    _add_item(env, "role_item")
+    await _reset_balance(env)
+    guild = _FakeGuild(member=_FakeMember([]), role_id=777,
+                       fail_fetch=True)
+    op_id = await _mk_sell_op(
+        env, price=500, item_id="role_item",
+        payload=_role_payload(role_present_before=True))
+    for _ in range(2):
+        op = await purchase_ops_store.get(op_id)
+        result = await svc._recover_sell_op(op, _role_bot(guild))
+        assert result == "reserved"
+        op = await purchase_ops_store.get(op_id)
+        assert op["status"] == "reserved"
+    assert _has_item(env, "role_item")
+    assert await user_balance_store.get_balance(G, U) == 0
+    assert await _grant_count(env, op_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_sell_partial_credit_no_subtract(env):
+    """Частичная выплата (баланс у cap): recovery фиксирует
+    unknown + shortfall, предмет сохранён, обычное вычитание
+    баланса НЕ выполняется — зачисленная часть остаётся."""
+    from config import MAX_BALANCE
+    _add_item(env, "tag_pc")
+    # Запас места ровно 300 при цене 1000.
+    await _reset_balance(env, MAX_BALANCE - 300)
+    op_id = await _mk_sell_op(
+        env, price=1000, item_id="tag_pc",
+        payload={"ready": True,
+                 "cosmetic": {"item_id": "tag_pc"}})
+    op = await purchase_ops_store.get(op_id)
+    result = await svc._recover_sell_op(op)
+    assert result == "unknown"
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "unknown"
+    assert op["payload"].get("shortfall") == 700
+    assert op["payload"].get("credited") == 300
+    # 300 зачислены и НЕ вычтены обратно — баланс у cap.
+    assert await user_balance_store.get_balance(G, U) == MAX_BALANCE
+    assert _has_item(env, "tag_pc")
+    # Повторный recovery: грант записан (300) — не дублируется,
+    # статус остаётся unknown для ручного разбора.
+    op = await purchase_ops_store.get(op_id)
+    await svc._recover_sell_op(op)
+    assert (await purchase_ops_store.get(op_id))["status"] == "unknown"
+    assert await _grant_count(env, op_id) == 1
+    assert await user_balance_store.get_balance(G, U) == MAX_BALANCE
+
+
+@pytest.mark.asyncio
+async def test_sell_unknown_not_refunded_by_sweeper(env):
+    """unknown sell-op с shortfall НЕ переводится в refunded
+    settle_refund_debts — у sell нет refund-задолженностей,
+    а generic-возврат закрыл бы op при предмете в инвентаре."""
+    from config import MAX_BALANCE
+    _add_item(env, "tag_sw")
+    await _reset_balance(env, MAX_BALANCE)
+    op_id = await _mk_sell_op(
+        env, price=900, item_id="tag_sw",
+        payload={"ready": True, "shortfall": 900, "credited": 0,
+                 "cosmetic": {"item_id": "tag_sw"}})
+    await purchase_ops_store.set_status(op_id, "unknown")
+    settled = await svc.settle_refund_debts()
+    assert settled == 0
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "unknown"
+    assert _has_item(env, "tag_sw")
+
+
+@pytest.mark.asyncio
+async def test_sell_precheck_two_concurrent_recoveries(env):
+    """Два параллельных recovery precheck-role-absent op:
+    оба видят absent → оба пытаются восстановить роль;
+    add_roles идемпотентен по факту, op failed один раз,
+    денег/удалений нет."""
+    import asyncio
+    _add_item(env, "role_item")
+    await _reset_balance(env)
+    member = _FakeMember([])
+    guild = _FakeGuild(member=member, role_id=777)
+    op_id = await _mk_sell_op(
+        env, price=500, item_id="role_item",
+        payload=_role_payload(role_present_before=True))
+    op1 = await purchase_ops_store.get(op_id)
+    op2 = await purchase_ops_store.get(op_id)
+    bot = _role_bot(guild)
+    r1, r2 = await asyncio.gather(
+        svc._recover_sell_op(op1, bot),
+        svc._recover_sell_op(op2, bot),
+    )
+    assert sorted([r1, r2]) == ["failed", "failed"]
+    op = await purchase_ops_store.get(op_id)
+    assert op["status"] == "failed"
+    assert _has_item(env, "role_item")
+    assert await user_balance_store.get_balance(G, U) == 0
+    assert await _grant_count(env, op_id) == 0
+

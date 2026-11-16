@@ -861,23 +861,113 @@ async def _recover_wardrobe_op(op: dict) -> str:
     return "refunded"
 
 
+async def _restore_sell_role(guild, user_id: int, role_id: int) -> bool:
+    """Вернуть Discord-роль после прерванной продажи.
+
+    True — роль подтверждённо на месте (уже была либо успешно
+    возвращена и проверена повторным fetch). False — исход
+    неизвестен, op остаётся на ручное разрешение.
+    """
+    try:
+        role = guild.get_role(role_id)
+        if role is None:
+            return True  # роль удалена с сервера — возвращать нечего
+        member = await guild.fetch_member(user_id)
+        if any(r.id == role_id for r in member.roles):
+            return True
+        await member.add_roles(role)
+        member = await guild.fetch_member(user_id)
+        return any(r.id == role_id for r in member.roles)
+    except Exception:  # noqa: BLE001
+        logger.exception("sell recovery: role restore failed")
+        return False
+
+
+async def _recover_sell_precheck(op: dict, bot=None) -> str:
+    """Продажа прервана ДО маркера ready — preliminary checks.
+
+    ready не выставлен → начисление и удаление предмета НЕ
+    разрешены: это прерванная подготовка, а не подтверждённая
+    продажа. Различаем фактическое состояние Discord-роли,
+    чтобы не оставить противоречие «роль снята, предмет цел,
+    денег нет», и не начислить/не удалить ничего.
+    """
+    gid, uid = op["guild_id"], op["user_id"]
+    op_id = op["op_id"]
+    payload = op.get("payload") or {}
+
+    role_id = payload.get("role_id")
+    if payload.get("item_type") != "role" or not role_id:
+        # Не role-предмет: мутаций до ready не бывает.
+        await purchase_ops_store.set_status(
+            op_id, "failed",
+            payload={"reason": "prechecks_not_completed"},
+        )
+        return "failed"
+
+    guild = bot.get_guild(gid) if bot is not None else None
+    if guild is None:
+        # Discord недоступен — оставляем на повторную проверку.
+        return "reserved"
+
+    try:
+        from cogs.sell import _role_absent_state
+        state = await _role_absent_state(
+            guild, uid, int(role_id), attempt_remove=False
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("sell precheck: role state failed op=%s", op_id)
+        return "reserved"
+
+    if state == "unknown":
+        # Исход Discord API не подтверждён — не решаем за
+        # пользователя, повторим при следующем recovery.
+        return "reserved"
+
+    if payload.get("role_present_before") and state == "absent":
+        # Снятие роли выполнялось, но продажа прервана до ready:
+        # возвращаем роль best-effort — предмет и деньги не тронуты.
+        if await _restore_sell_role(guild, uid, int(role_id)):
+            await purchase_ops_store.set_status(
+                op_id, "failed",
+                payload={"reason": "aborted_role_removed",
+                         "role_restored": True},
+            )
+            return "failed"
+        await purchase_ops_store.set_status(
+            op_id, "unknown",
+            payload={"reason": "role_restore_unconfirmed"},
+        )
+        return "unknown"
+
+    # Роль на месте либо изначально отсутствовала — мутаций нет.
+    await purchase_ops_store.set_status(
+        op_id, "failed",
+        payload={"reason": "prechecks_not_completed",
+                 "role_state": state},
+    )
+    return "failed"
+
+
 async def _recover_sell_op(op: dict, bot=None) -> str:
     """Восстановить sell-операцию (продажа предмета за монеты).
 
-    Порядок live-потока: op(reserved) → credit (sellop:{op_id})
-    → marker charged{credited} → remove item → done.
+    Порядок live-потока: op(reserved) → preliminary checks
+    (баланс-headroom, снятие роли) → durable маркер ready →
+    credit (sellop:{op_id}) → marker charged{credited} →
+    remove item → verify absence → done.
 
-    Recovery идемпотентно доводит любой прерванный шаг:
-    - credited не подтверждён → идемпотентное начисление тем же
-      ключом (match_coin_grants), короткая выплата → unknown.
-    - предмет ещё в инвентаре → удалить (remove_cosmetic по id).
-    - Discord-роль уже снята до создания op — подтверждать
-      повторно не требуется, повторной выдачи не будет.
+    Без маркера ready операция — прерванная ПОДГОТОВКА: ни
+    начисления, ни удаления. С маркером ready — подтверждённая
+    продажа, recovery идемпотентно доводит любой прерванный шаг.
     """
     gid, uid = op["guild_id"], op["user_id"]
     op_id = op["op_id"]
     payload = op.get("payload") or {}
     price = int(op.get("price") or 0)
+
+    if not payload.get("ready") and op.get("status") != "charged":
+        return await _recover_sell_precheck(op, bot)
 
     # credited должен быть подтверждён ПОЛНОЙ суммой: частичная
     # выплата (MAX_BALANCE) — не «кредитовано», иначе предмет
@@ -1131,6 +1221,30 @@ async def settle_refund_debts(page_size: int = 200) -> int:
             if len(page) < page_size:
                 break
         return settled
+
+
+async def recover_sell_pending(bot=None) -> int:
+    """Периодический recovery ТОЛЬКО sell-операций (sweeper).
+
+    reserved sell-op без маркера ready может ждать повторной
+    проверки Discord-роли — recover_pending вызывается лишь на
+    старте, поэтому sweeper обрабатывает sell отдельно, не
+    трогая чужие in-flight операции других типов.
+    Идемпотентно: повторный запуск безопасен.
+    """
+    ops = await purchase_ops_store.pending()
+    resolved = 0
+    for op in ops:
+        if op.get("kind") != "sell":
+            continue
+        try:
+            await _recover_sell_op(op, bot)
+            resolved += 1
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "sell op recovery failed op=%s", op.get("op_id")
+            )
+    return resolved
 
 
 async def recover_pending(bot=None) -> int:
