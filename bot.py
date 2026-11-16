@@ -1005,9 +1005,14 @@ class TournamentBot(commands.Bot):
                 if not self.is_ready():
                     continue
                 from services.shop_purchase_service import (
+                    recover_sell_pending,
                     settle_refund_debts,
                 )
                 await settle_refund_debts()
+                # Sell-ops без маркера ready ждут повторной
+                # проверки Discord-роли — recover_pending
+                # отрабатывает только на старте.
+                await recover_sell_pending(self)
             except Exception as e:
                 logger.error(f"Error in shop refund sweeper: {e}", exc_info=True)
 
