@@ -834,108 +834,69 @@ class BuyButton(discord.ui.Button):
             await show_nickname_service_card(interaction, item)
             return
 
-        # Проверить баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < self.price:
+        # Покупка через durable-сервис: монеты + REP атомарно,
+        # идемпотентная выдача и возврат, recovery после рестарта.
+        from services.shop_purchase_service import purchase as safe_purchase
+        result = await safe_purchase(
+            interaction.guild_id, interaction.user.id, self.item_id,
+            guild=interaction.guild,
+        )
+        if not result.ok:
             await interaction.response.send_message(
-                f"Недостаточно монет. Нужно: {self.price} {get_emoji('money')}, у вас: {balance} {get_emoji('money')}",
+                replace_emojis(result.message or "Покупка не удалась."),
+                ephemeral=True
+            )
+            return
+        if result.refunded:
+            await interaction.response.send_message(
+                replace_emojis(result.message or "Покупка не удалась — возврат обрабатывается."),
                 ephemeral=True
             )
             return
 
-        # Проверить требование уровня
-        if item.required_level > 0:
-            from storage.player_stats_store import player_stats_store
-            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-            if not stats or stats.level < item.required_level:
-                await interaction.response.send_message(
-                    f"Требуется уровень {item.required_level} для покупки.",
-                    ephemeral=True
-                )
-                return
+        # Успех — отрисовать карточку результата
+        rare_map = {
+            CosmeticRarity.BASIC: "rare_basic",
+            CosmeticRarity.PREMIUM: "rare_premium",
+            CosmeticRarity.ELITE: "rare_elite",
+            CosmeticRarity.SPECIAL: "rare_special",
+        }
+        rarity_label = {
+            CosmeticRarity.BASIC: "Basic",
+            CosmeticRarity.PREMIUM: "Premium",
+            CosmeticRarity.ELITE: "Elite",
+            CosmeticRarity.SPECIAL: "Special",
+        }
+        rarity_display = rarity_label.get(item.rarity, "Basic")
+        price_line = f"{self.price} {get_emoji('money')}"
+        if result.rep_price:
+            price_line += f" + {result.rep_price} REP"
 
-        # Проверить есть ли уже
-        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-        for cosmetic in inventory:
-            if cosmetic.item_id == self.item_id:
-                await interaction.response.send_message(
-                    f"У вас уже есть этот товар!",
-                    ephemeral=True
-                )
-                return
-
-        # Списать монеты
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, self.price)
-
-        # Добавить в инвентарь
         if item.item_type == "role":
-            # Купить роль
-            success = await inventory_store.purchase_item(
-                interaction.guild_id,
-                interaction.user.id,
-                self.item_id,
-                interaction.guild
+            embed = discord.Embed(
+                title=f"ПОКУПКА РОЛИ | {item.name}",
+                description=f"Покупка успешно совершена!\n\n**Товар:**\n Роль: {item.name}\n Права: {item.description}\n Цена: {price_line}\n\n**Покупатель:**\n {interaction.user.mention} купил за {price_line}\n\nРоль успешно назначена",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-            if success:
-                embed = discord.Embed(
-                    title=f"ПОКУПКА РОЛИ | {item.name}",
-                    description=f"Покупка успешно совершена!\n\n**Товар:**\n Роль: {item.name}\n Права: {item.description}\n Цена: {self.price} {get_emoji('money')}\n\n**Покупатель:**\n {interaction.user.mention} купил за {self.price} {get_emoji('money')}\n\nРоль успешно назначена",
-                    color=discord.Color.from_rgb(69, 69, 69)
-                )
-                embed.set_thumbnail(url=interaction.user.display_avatar.url)
-                await interaction.response.send_message( view=compose(embed))
-            else:
-                await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
-                await interaction.response.send_message(
-                    replace_emojis("• Не удалось назначить роль. Монеты возвращены."),
-                    ephemeral=True
-                )
-        else:
-            # Купить косметику
-            cosmetic = PlayerCosmetic(
-                guild_id=interaction.guild_id,
-                user_id=interaction.user.id,
-                item_id=self.item_id,
-                equipped=False
-            )
-            inventory_store.add_cosmetic(cosmetic)
-
-            # Определить тип для отображения
-            rare_map = {
-                CosmeticRarity.BASIC: "rare_basic",
-                CosmeticRarity.PREMIUM: "rare_premium",
-                CosmeticRarity.ELITE: "rare_elite",
-                CosmeticRarity.SPECIAL: "rare_special",
-            }
-            rarity_label = {
-                CosmeticRarity.BASIC: "Basic",
-                CosmeticRarity.PREMIUM: "Premium",
-                CosmeticRarity.ELITE: "Elite",
-                CosmeticRarity.SPECIAL: "Special",
-            }
-
-            rare_emoji = rare_map.get(item.rarity, "rare_basic")
-            rarity_display = rarity_label.get(item.rarity, "Basic")
-
-            # Icon emoji - use get_emoji
-            icon_emoji = get_emoji(item.value) if item.value else ""
-
-            if item.category == "tags":
-                embed = discord.Embed(
-                    title=f"ПОКУПКА ТЕГА | {item.name}",
-                    description=f"Покупка успешно совершена!\n\n**Товар:**\n Префикс: {item.value}\n Редкость: {rarity_display} {replace_emojis(rare_emoji)}\n Цена: {self.price} {get_emoji('money')}\n\n**Покупатель:**\n {interaction.user.mention} купил за {self.price} {get_emoji('money')}\n\nПредмет успешно добавлен в ваш инвентарь",
-                    color=discord.Color.from_rgb(69, 69, 69)
-                )
-                embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            else:
-                embed = discord.Embed(
-                    title=f"ПОКУПКА ЗНАЧКА | {item.name}",
-                    description=f"Покупка успешно совершена!\n\n**Товар:**\n Предмет: {icon_emoji} **{item.name}**\n Редкость: {rarity_display} {replace_emojis(rare_emoji)}\n Цена: {self.price} {get_emoji('money')}\n\n**Покупатель:**\n {interaction.user.mention} купил за {self.price} {get_emoji('money')}\n\nПредмет успешно добавлен в ваш инвентарь",
-                    color=discord.Color.from_rgb(69, 69, 69)
-                )
-                embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
             await interaction.response.send_message( view=compose(embed))
+            return
+
+        icon_emoji = get_emoji(item.value) if item.value else ""
+        if item.category == "tags":
+            embed = discord.Embed(
+                title=f"ПОКУПКА ТЕГА | {item.name}",
+                description=f"Покупка успешно совершена!\n\n**Товар:**\n Префикс: {item.value}\n Редкость: {rarity_display} {replace_emojis(rare_map.get(item.rarity, 'rare_basic'))}\n Цена: {price_line}\n\n**Покупатель:**\n {interaction.user.mention} купил за {price_line}\n\nПредмет успешно добавлен в ваш инвентарь",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+        else:
+            embed = discord.Embed(
+                title=f"ПОКУПКА ЗНАЧКА | {item.name}",
+                description=f"Покупка успешно совершена!\n\n**Товар:**\n Предмет: {icon_emoji} **{item.name}**\n Редкость: {rarity_display} {replace_emojis(rare_map.get(item.rarity, 'rare_basic'))}\n Цена: {price_line}\n\n**Покупатель:**\n {interaction.user.mention} купил за {price_line}\n\nПредмет успешно добавлен в ваш инвентарь",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        await interaction.response.send_message( view=compose(embed))
 
 
 class BuyCaseButton(discord.ui.Button):
@@ -968,8 +929,19 @@ class BuyCaseButton(discord.ui.Button):
             )
             return
 
-        # Открыть кейс
-        result = await case_store.open_case(interaction.guild_id, interaction.user.id, self.case_id, interaction.guild)
+        # Открыть кейс через durable-операцию (списание атомарно
+        # с shop_operations, восстановление после рестарта).
+        from services.shop_purchase_service import open_case_safe
+        result = await open_case_safe(interaction.guild_id, interaction.user.id, self.case_id, interaction.guild)
+
+        # open_case всегда возвращает dict — error-результат
+        # нельзя считать успешным открытием.
+        if isinstance(result, dict) and result.get("type") == "error":
+            await interaction.response.send_message(
+                f"• Не удалось открыть кейс: {result.get('value', 'ошибка')}",
+                ephemeral=True
+            )
+            return
 
         if result:
             # Определить case_rare эмодзи для заголовка
@@ -1207,39 +1179,30 @@ class ItemSelect(discord.ui.Select):
             await interaction.response.send_message(replace_emojis("Товар не найден."), ephemeral=True)
             return
 
-        # Проверить баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < item.price:
+        # Покупка через durable-сервис (монеты + REP атомарно)
+        from services.shop_purchase_service import purchase as safe_purchase
+        result = await safe_purchase(
+            interaction.guild_id, interaction.user.id, item_id,
+            guild=interaction.guild,
+        )
+        if not result.ok:
             await interaction.response.send_message(
-                f"Недостаточно монет. Нужно: {item.price} {get_emoji('money')}, у вас: {balance} {get_emoji('money')}",
+                replace_emojis(result.message or "Покупка не удалась."),
+                ephemeral=True
+            )
+            return
+        if result.refunded:
+            await interaction.response.send_message(
+                replace_emojis(result.message or "Покупка не удалась — возврат обрабатывается."),
                 ephemeral=True
             )
             return
 
-        # Проверить есть ли уже
-        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-        for cosmetic in inventory:
-            if cosmetic.item_id == item_id:
-                await interaction.response.send_message(
-                    f"У вас уже есть этот товар!",
-                    ephemeral=True
-                )
-                return
-
-        # Списать монеты
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
-
-        # Добавить в инвентарь (не экипировать автоматически)
-        cosmetic = PlayerCosmetic(
-            guild_id=interaction.guild_id,
-            user_id=interaction.user.id,
-            item_id=item_id,
-            equipped=False
-        )
-        inventory_store.add_cosmetic(cosmetic)
-
+        price_line = f"{item.price} {get_emoji('money')}"
+        if result.rep_price:
+            price_line += f" + {result.rep_price} REP"
         await interaction.response.send_message(
-            f"Вы купили **{item.name}** за {item.price} {get_emoji('money')}!\n\n"
+            f"Вы купили **{item.name}** за {price_line}!\n\n"
             f"Используйте `/inventory` для экипировки.",
             ephemeral=True
         )
@@ -1296,40 +1259,31 @@ class ShopBuyButton(discord.ui.Button):
             )
             return
 
-        # Проверить баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < item.price:
+        # Покупка через durable-сервис (монеты + REP атомарно)
+        from services.shop_purchase_service import purchase as safe_purchase
+        result = await safe_purchase(
+            interaction.guild_id, interaction.user.id, self.item_id,
+            guild=interaction.guild,
+        )
+        if not result.ok:
             await interaction.response.send_message(
-                f"Недостаточно монет. Нужно: {item.price} {get_emoji('money')}, у вас: {balance} {get_emoji('money')}",
+                replace_emojis(result.message or "Покупка не удалась."),
+                ephemeral=True
+            )
+            return
+        if result.refunded:
+            await interaction.response.send_message(
+                replace_emojis(result.message or "Покупка не удалась — возврат обрабатывается."),
                 ephemeral=True
             )
             return
 
-        # Проверить есть ли уже
-        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-        for cosmetic in inventory:
-            if cosmetic.item_id == self.item_id:
-                await interaction.response.send_message(
-                    f"У вас уже есть этот товар!",
-                    ephemeral=True
-                )
-                return
-
-        # Списать монеты
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
-
-        # Добавить в инвентарь (не экипировать автоматически)
-        cosmetic = PlayerCosmetic(
-            guild_id=interaction.guild_id,
-            user_id=interaction.user.id,
-            item_id=self.item_id,
-            equipped=False
-        )
-        inventory_store.add_cosmetic(cosmetic)
-
+        price_line = f"{item.price} {get_emoji('money')}"
+        if result.rep_price:
+            price_line += f" + {result.rep_price} REP"
         embed = discord.Embed(
             title=f"Куплено!",
-            description=f"Вы купили **{item.name}** за {item.price} {get_emoji('money')}!\n\n"
+            description=f"Вы купили **{item.name}** за {price_line}!\n\n"
             f"Используйте `/inventory` для экипировки.",
             color=discord.Color.green()
         )
@@ -1815,65 +1769,25 @@ class BuyPetButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Обработать покупку питомца."""
-        from storage.user_balance_store import user_balance_store
-        from storage.pet_store import pet_store
+        from services.shop_purchase_service import purchase_pet
 
-        # Проверить свободный слот
-        has_slot = await pet_store.has_pet_slot(interaction.user.id)
-        if not has_slot:
+        ok, msg, pet = await purchase_pet(
+            interaction.guild_id, interaction.user.id, self.pet_id, self.price
+        )
+        if not ok or pet is None:
             await interaction.response.send_message(
-                replace_emojis("У вас уже есть питомец! Правило: один питомец на пользователя."),
+                replace_emojis(msg or "Не удалось купить питомца."),
                 ephemeral=True
             )
             return
 
-        # Проверить баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < self.price:
-            await interaction.response.send_message(
-                replace_emojis(f"Недостаточно монет. Нужно: {self.price:,} {get_emoji('money')}, есть: {balance:,} {get_emoji('money')}"),
-                ephemeral=True
-            )
-            return
-
-        # Списать деньги
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, self.price)
-
-        # Создать питомца
-        try:
-            pet = await pet_store.create_pet(
-                owner_1_id=interaction.user.id,
-                owner_2_id=None,
-                pet_type=self.pet_id,
-                pet_name=self.pet_id.replace("_", " ").title()
-            )
-
-            # Получить данные питомца из каталога
-            from models.pets_catalog import PETS_CATALOG
-            pet_data = PETS_CATALOG.get(self.pet_id, {})
-            pet_image = pet_data.get("image_url", "")
-            pet_rarity = pet_data.get("rarity", "")
-            pet_price = pet_data.get("price", 0)
-            pet_display_name = pet_data.get("name", pet.pet_name)
-
-            # Используем новую функцию для создания embed
-            embed, file = build_won_pet_embed(pet.pet_type.value, interaction.user, is_egg_drop=False)
-
-            # Убираем кнопки из исходного сообщения
-            await interaction.response.edit_message(view=smart_view(interaction.message, None))
-
-            # Отправляем новое сообщение с результатом (видно всем)
-            if file:
-                await interaction.followup.send( view=compose(embed), file=file)
-            else:
-                await interaction.followup.send( view=compose(embed))
-        except Exception as e:
-            # Вернуть деньги при ошибке
-            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
-            await interaction.response.send_message(
-                replace_emojis(f"Ошибка при создании питомца: {str(e)}"),
-                ephemeral=True
-            )
+        # Успех — показать карточку питомца
+        embed, file = build_won_pet_embed(pet.pet_type.value, interaction.user, is_egg_drop=False)
+        await interaction.response.edit_message(view=smart_view(interaction.message, None))
+        if file:
+            await interaction.followup.send( view=compose(embed), file=file)
+        else:
+            await interaction.followup.send( view=compose(embed))
 
 
 class OpenEggButton(discord.ui.Button):
@@ -1890,34 +1804,19 @@ class OpenEggButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Обработать открытие яйца."""
-        from storage.user_balance_store import user_balance_store
-        from storage.pet_store import pet_store
+        from services.shop_purchase_service import open_egg_safe
 
-        # Проверить свободный слот
-        has_slot = await pet_store.has_pet_slot(interaction.user.id)
-        if not has_slot:
+        ok, msg, pet = await open_egg_safe(
+            interaction.guild_id, interaction.user.id, self.price
+        )
+        if not ok:
             await interaction.response.send_message(
-                replace_emojis("У вас уже есть питомец! Освободите слот перед открытием яйца."),
+                replace_emojis(msg or "Не удалось открыть яйцо."),
                 ephemeral=True
             )
             return
 
-        # Проверить баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < self.price:
-            await interaction.response.send_message(
-                replace_emojis(f"Недостаточно монет. Нужно: {self.price:,} {get_emoji('money')}, есть: {balance:,} {get_emoji('money')}"),
-                ephemeral=True
-            )
-            return
-
-        # Списать деньги
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, self.price)
-
-        # Открыть яйцо
-        result = await pet_store.open_mystery_egg()
-
-        if result["type"] == "nothing":
+        if pet is None:
             from config import get_emoji
             emoji_star = ""
             emoji_sparkle = ""
@@ -1936,35 +1835,12 @@ class OpenEggButton(discord.ui.Button):
             embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1560907251412238396/1560935450800029756/output-removebg-preview.png?ex=6ad485ec&is=6ad3346c&hm=6ecda6ff1780bf054b2727904fa9115ee51a889dffbb049b36139be1b7772153&")
             await interaction.response.send_message( view=compose(embed))
         else:
-            pet_def = result["pet"]
-            # Создать питомца
-            try:
-                pet = await pet_store.create_pet(
-                    owner_1_id=interaction.user.id,
-                    owner_2_id=None,
-                    pet_type=pet_def["id"],
-                    pet_name=pet_def["name"]
-                )
-
-                # Получить изображение питомца из каталога
-                from models.pets_catalog import PETS_CATALOG
-                pet_image = pet_def.get("image_url", "")
-                pet_price = pet_def.get("price", 0)
-
-                # Используем новую функцию для создания embed
-                embed, file = build_won_pet_embed(pet_def["id"], interaction.user, is_egg_drop=True)
-                
-                if file:
-                    await interaction.response.send_message( view=compose(embed), file=file)
-                else:
-                    await interaction.response.send_message( view=compose(embed))
-            except Exception as e:
-                # Вернуть деньги при ошибке
-                await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
-                await interaction.response.send_message(
-                    replace_emojis(f"Ошибка при создании питомца: {str(e)}"),
-                    ephemeral=True
-                )
+            pet_type = pet.pet_type.value if hasattr(pet.pet_type, "value") else str(pet.pet_type)
+            embed, file = build_won_pet_embed(pet_type, interaction.user, is_egg_drop=True)
+            if file:
+                await interaction.response.send_message( view=compose(embed), file=file)
+            else:
+                await interaction.response.send_message( view=compose(embed))
 
 
 class RoleBuyButton(discord.ui.Button):
@@ -1989,42 +1865,26 @@ class RoleBuyButton(discord.ui.Button):
             await interaction.followup.send(replace_emojis("Предмет не найден."))
             return
 
-        # Проверить баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < item.price:
+        # Покупка через durable-сервис (монеты + REP атомарно)
+        from services.shop_purchase_service import purchase as safe_purchase
+        result = await safe_purchase(
+            interaction.guild_id, interaction.user.id, self.item_id,
+            guild=interaction.guild,
+        )
+        if not result.ok:
             await interaction.followup.send(
-                f"Недостаточно монет. Нужно: {item.price} {get_emoji('money')}, у вас: {balance} {get_emoji('money')}"
+                replace_emojis(result.message or "Покупка не удалась.")
+            )
+            return
+        if result.refunded:
+            await interaction.followup.send(
+                replace_emojis(result.message or "Покупка не удалась — возврат обрабатывается.")
             )
             return
 
-        # Проверить требование уровня
-        if item.required_level > 0:
-            from storage.player_stats_store import player_stats_store
-            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-            if not stats or stats.level < item.required_level:
-                await interaction.followup.send(
-                    f"Требуется уровень {item.required_level} для покупки этой роли."
-                )
-                return
-
-        # Снять монеты
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
-
-        # Купить предмет (назначить роль)
-        success = await inventory_store.purchase_item(
-            interaction.guild_id,
-            interaction.user.id,
-            self.item_id,
-            interaction.guild
+        price_line = f"{item.price} {get_emoji('money')}"
+        if result.rep_price:
+            price_line += f" + {result.rep_price} REP"
+        await interaction.followup.send(
+            f"Вы купили **{item.name}** за {price_line}!"
         )
-
-        if success:
-            await interaction.followup.send(
-                f"Вы купили **{item.name}** за {item.price} {get_emoji('money')}!"
-            )
-        else:
-            # Возврат монет при ошибке
-            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, item.price)
-            await interaction.followup.send(
-                replace_emojis("Не удалось назначить роль. Монеты возвращены.")
-            )

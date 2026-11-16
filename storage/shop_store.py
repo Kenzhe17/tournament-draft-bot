@@ -63,9 +63,17 @@ class ShopStore:
         return items
 
     def add_item(self, item: ShopItem) -> None:
-        """Добавить товар."""
+        """Добавить/обновить товар (upsert по стабильному id)."""
         self._items[item.id] = item
         self.save()
+
+    def update_item(self, item: ShopItem) -> bool:
+        """Обновить существующий товар, сохраняя его id."""
+        if item.id not in self._items:
+            return False
+        self._items[item.id] = item
+        self.save()
+        return True
 
     def clear_all(self) -> None:
         """Очистить все товары."""
@@ -149,10 +157,11 @@ class InventoryStore:
         # Проверяем есть ли уже такой предмет
         for existing in self._inventory[key]:
             if existing.item_id == cosmetic.item_id:
-                return  # Уже есть
+                return False  # Уже есть
 
         self._inventory[key].append(cosmetic)
         self.save()
+        return True
 
     def equip_cosmetic(self, guild_id: int, user_id: int, item_id: str) -> bool:
         """Экипировать косметический предмет."""

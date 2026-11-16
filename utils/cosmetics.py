@@ -112,6 +112,7 @@ def format_player_name(guild_id: int, user_id: int, base_name: str) -> str:
     # Сгруппировать по типам
     tag = ""
     icon = ""
+    frame = ""
 
     for cosmetic in cosmetics:
         item = shop_store.get_item(cosmetic.item_id)
@@ -122,14 +123,18 @@ def format_player_name(guild_id: int, user_id: int, base_name: str) -> str:
             tag = item.value
         elif item.cosmetic_type.value == "icon":
             icon = item.value
+        elif item.cosmetic_type.value == "frame":
+            frame = item.value
 
-    # Форматировать: **[TAG]** Name ICON
+    # Форматировать: **[TAG]** Name ICON (рамка — маркер рядом с именем)
     formatted = base_name
     if tag:
         formatted = f"**{tag}** {formatted}"
     if icon:
         # Get custom emoji for the icon
         formatted = f"{formatted} {get_emoji(icon)}"
+    if frame:
+        formatted = f"{frame} {formatted}"
 
     return formatted
 

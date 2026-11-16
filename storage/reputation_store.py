@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from storage.db import get_pool
+from storage.rep_balance_store import rep_balance_store
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,9 @@ class ReputationStore:
                     guild_id, target_id, target_name, amount,
                 )
                 rep_after = int(rep_after or 0)
+                await rep_balance_store.sync_after_rep_change(
+                    conn, guild_id, target_id, rep_after, amount
+                )
 
                 await conn.execute(
                     """
@@ -218,6 +222,9 @@ class ReputationStore:
                     guild_id, user_id, user_name, amount,
                 )
                 rep_after = int(rep_after or 0)
+                await rep_balance_store.sync_after_rep_change(
+                    conn, guild_id, user_id, rep_after, amount
+                )
                 await _enqueue_rep_log(
                     conn,
                     transaction_id=int(tx_id),
@@ -850,6 +857,9 @@ class ReputationStore:
                     guild_id, target_id, target_name, amount,
                 )
                 rep_after = int(rep_after or 0)
+                await rep_balance_store.sync_after_rep_change(
+                    conn, guild_id, target_id, rep_after, amount
+                )
                 await _enqueue_rep_log(
                     conn,
                     transaction_id=int(tx_id),

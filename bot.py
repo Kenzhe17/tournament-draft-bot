@@ -210,6 +210,11 @@ class TournamentBot(commands.Bot):
             self.loop.create_task(self.birthday_loop())
         except Exception as e:
             logger.error(f"Failed to create birthday loop task: {e}", exc_info=True)
+        # SHOP 2.0: периодический досчёт непогашенных возвратов
+        try:
+            self.loop.create_task(self.shop_refund_sweeper_loop())
+        except Exception as e:
+            logger.error(f"Failed to create shop sweeper task: {e}", exc_info=True)
         
         # Initialize shop items
         try:
@@ -926,6 +931,26 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.error(f"Error in pet hunger check loop: {e}", exc_info=True)
 
+    async def shop_refund_sweeper_loop(self) -> None:
+        """SHOP 2.0: досчёт refund_pending/rep_pending каждые 5 минут.
+
+        Покрывает случай, когда возврат уперся в MAX_BALANCE или
+        временную недоступность PostgreSQL между рестартами.
+        """
+        import asyncio
+
+        while not self.is_closed():
+            try:
+                await asyncio.sleep(300)
+                if not self.is_ready():
+                    continue
+                from services.shop_purchase_service import (
+                    settle_refund_debts,
+                )
+                await settle_refund_debts()
+            except Exception as e:
+                logger.error(f"Error in shop refund sweeper: {e}", exc_info=True)
+
     async def birthday_loop(self) -> None:
         """Поздравлять с днём рождения в 00:00 по времени Астаны (UTC+5)."""
         import asyncio
@@ -1040,6 +1065,18 @@ class TournamentBot(commands.Bot):
                 )
         except Exception as e:
             logger.error(f"nickname ops recovery failed: {e}")
+
+        # Восстановление незавершённых покупок магазина (SHOP 2.0)
+        try:
+            from services.shop_purchase_service import recover_pending
+            resolved_shop = await recover_pending(self)
+            if resolved_shop:
+                logger.info(
+                    "shop ops recovery: %d операций разрешено",
+                    resolved_shop,
+                )
+        except Exception as e:
+            logger.error(f"shop ops recovery failed: {e}")
 
         # Довести отложенные публикации карточек комнат турниров
         try:
