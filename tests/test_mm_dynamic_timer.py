@@ -351,3 +351,13 @@ class TestRequeueSuppression:
         s.start_new_session(time.time())  # новая сессия
         assert s.first_notification_status == "pending"
         assert s.notify_suppressed_until == 0.0
+
+
+# Historical queue behavior is retained only for explicit rollback.
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _legacy_matchmaking_mode(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "MATCHMAKING_ENABLED", True)

@@ -81,6 +81,9 @@ def _parse_channel_role_map(raw: str) -> dict[int, int]:
 # Production: "1549809898643001484:1569740403522142258,..."
 ORG_ROLE_MAP = _parse_channel_role_map(os.getenv("ORG_ROLE_MAP", ""))
 
+# Турнирный клуб: новые очереди выключены. True — только явный откат релиза.
+MATCHMAKING_ENABLED = os.getenv("MATCHMAKING_ENABLED", "false").lower() in ("1", "true", "yes")
+
 # Пул постоянных каналов MM-матчей: вместо create/delete на каждый
 # матч канал берётся из пула, чистится и переназначается.
 # Переопределяется env MM_MATCH_CHANNEL_POOL (csv id); без env —

@@ -3,8 +3,8 @@
 Формат (возвращённый старый стиль):
 - CV2-карточка «КОМНАТА ОТКРЫТА» в ROOM_DATA_CHANNEL_ID:
   названия команд, ростеры <@id> всех 8 участников, правила
-  матча (если заданы), пароль, кнопка «ID» (ephemeral-ответ
-  с копируемым ID).
+  матча (если заданы), кнопка «Данные комнаты» (приватный ответ
+  с ID и паролем после проверки участия/полномочий).
 - Уведомление в ROOM_OPEN_NOTIFY_CHANNEL_ID: «КОМНАТА ОТКРЫТА»,
   «Команда A vs Команда B», упоминания 8 участников, ссылка
   на канал данных и на конкретную карточку. ID/пароль в
@@ -132,10 +132,10 @@ def build_room_card_view(
     view.text(f"**{name2}**\n{_roster_mentions(tournament, t2)}")
     if rules:
         view.text(f"**Правила:** {rules}")
-    view.text(f"**Пароль:** `{room.get('password', '')}`")
+    view.text("Данные доступны участникам этого матча и ответственным организаторам.")
     view.row(discord.ui.Button(
         style=discord.ButtonStyle.primary,
-        label="ID",
+        label="Данные комнаты",
         custom_id=room_card_custom_id(
             tournament.guild_id, tournament.channel_id, tournament, m
         ),
@@ -388,12 +388,12 @@ async def retry_pending_rooms(bot: discord.Client) -> int:
 
 class RoomIdBtn(discord.ui.DynamicItem[discord.ui.Button],
                 template=T_ROOM_ID):
-    """Кнопка «ID» — ephemeral-ответ с ID комнаты (копируемый)."""
+    """Legacy custom_id, private credentials with per-click authorization."""
 
     def __init__(self, custom_id: str) -> None:
         super().__init__(discord.ui.Button(
             style=discord.ButtonStyle.primary,
-            label="ID",
+            label="Данные комнаты",
             custom_id=custom_id,
         ))
 
@@ -413,14 +413,41 @@ class RoomIdBtn(discord.ui.DynamicItem[discord.ui.Button],
         tid, phase = m.group("tid"), m.group("phase")
         idx = int(m.group("idx"))
         key = f"{tid}:{phase}:{idx}"
+        # Never trust the IDs embedded in an old/copied component.
+        from storage.json_store import store
+        from views.room_view import iter_tournament_matches
+        from utils.permissions import can_manage_tournament
+        tournament = store.get(gid, cid)
+        match = next((entry for entry in iter_tournament_matches(tournament)
+                      if entry["phase"] == phase and entry["index"] == idx), None) if tournament else None
+        allowed = False
+        if (interaction.guild is not None and interaction.guild.id == gid
+                and tournament is not None and str(tournament.id) == tid
+                and match is not None):
+            from utils.embeds import team_roster_names
+            participants = set()
+            for team in _match_teams(tournament, match):
+                for name in team_roster_names(team):
+                    uid = tournament.player_user_ids.get(name)
+                    if uid is not None:
+                        participants.add(str(uid))
+            allowed = (str(interaction.user.id) in participants
+                       or can_manage_tournament(interaction.user, interaction.guild, tournament))
+        if not allowed:
+            await interaction.response.send_message(
+                "Данные доступны только участникам этого матча и его организаторам.", ephemeral=True)
+            return
         room = room_store.get_active_room(gid, cid, key)
         if not room or not room.get("room_id"):
             await interaction.response.send_message(
                 "Данные комнаты не найдены.", ephemeral=True)
             return
-        # Отвечаем ТОЛЬКО значением — удобно копировать.
+        # Prevent markup/mention injection in organizer supplied credentials.
+        room_id = discord.utils.escape_markdown(str(room["room_id"]))
+        password = discord.utils.escape_markdown(str(room.get("password", "")))
         await interaction.response.send_message(
-            str(room["room_id"]), ephemeral=True)
+            f"**ID:** {room_id}\n**Пароль:** {password}", ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none())
 
 
 class RoomCardTemplateView(discord.ui.View):
@@ -429,3 +456,37 @@ class RoomCardTemplateView(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
         self.add_item(RoomIdBtn("rcard:id:0:0:0:qualifier:0"))
+
+
+async def secure_published_cards(bot, guild_id: int) -> dict[str, int]:
+    """Explicit migration: edit known bot cards, never send or modify room records."""
+    from storage.json_store import store
+    from views.room_view import iter_tournament_matches
+
+    channel = await _get_channel(bot, ROOM_DATA_CHANNEL_ID)
+    if channel is None or channel.guild.id != guild_id:
+        raise ValueError("Канал данных комнаты недоступен или относится к другому серверу.")
+    counts = {"updated": 0, "missing": 0, "failed": 0}
+    for rec in room_store.published_cards(guild_id):
+        try:
+            message = await channel.fetch_message(rec["message_id"])
+            if message.author.id != bot.user.id:
+                counts["failed"] += 1
+                continue
+            tournament = store.get(guild_id, rec["channel_id"])
+            match = next((m for m in iter_tournament_matches(tournament)
+                          if m["key"] == rec["key"]), None) if tournament else None
+            if match is not None:
+                view = build_room_card_view(tournament, match, {})
+            else:
+                view = DesignView(timeout=None, title="АРХИВ КОМНАТЫ")
+                view.text("Матч завершён. Данные доступа больше не публикуются.")
+            await message.edit(view=view, content=None, embeds=[], attachments=[],
+                               allowed_mentions=discord.AllowedMentions.none())
+            counts["updated"] += 1
+        except discord.NotFound:
+            counts["missing"] += 1
+        except discord.HTTPException:
+            counts["failed"] += 1
+            logger.warning("Cannot secure room card %s", rec["message_id"])
+    return counts

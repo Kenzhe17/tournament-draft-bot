@@ -100,3 +100,13 @@ def test_store_persists_normal_queue_type():
     src = inspect.getsource(mss.MMSearchStore._persist_pg_one)
     assert "queue_type" in src
     assert "'normal'" in src
+
+
+# This module verifies the explicit rollback mode, not the retired default.
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _legacy_matchmaking_mode(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "MATCHMAKING_ENABLED", True)

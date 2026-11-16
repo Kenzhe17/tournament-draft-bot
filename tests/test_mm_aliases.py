@@ -176,3 +176,13 @@ async def test_alias_assignment_is_atomic_under_gather():
     results = await asyncio.gather(*(_assign(n) for n in names))
     assert len(set(results)) == len(names)  # все псевдонимы уникальны
     assert all(a in MM_ALIASES for a in results)
+
+
+# This module verifies the explicit rollback mode, not the retired default.
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _legacy_matchmaking_mode(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "MATCHMAKING_ENABLED", True)

@@ -85,3 +85,13 @@ class TestAttachmentReuse:
         msg = SimpleNamespace()
         att = banner.edit_attachments(msg)
         assert att is not None
+
+
+# This module verifies the explicit rollback mode, not the retired default.
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _legacy_matchmaking_mode(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "MATCHMAKING_ENABLED", True)

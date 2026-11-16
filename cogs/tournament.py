@@ -830,7 +830,7 @@ class TournamentCog(commands.Cog):
         """Показать интерактивную справку."""
         embed = discord.Embed(
             title=f"СПРАВКА ПО КОМАНДАМ",
-            description=f" **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n **Выберите категорию в меню ниже:**\nТурниры — Топ, Battle Royale, Ультиматум и Ranked Matchmaking\nПрофиль — Карточка игрока, ранг и история матчей\nСоциальное — Репутация, брак и дни рождения\nЭкономика — Баланс, сейф, переводы и криминал\nМагазин — Покупка предметов и инвентарь\nПитомцы — RPG-питомцы сами\nМини-игры — Казино-игры на монеты\nСистема рангов — Ранги, уровни и ELO\nОрганизаторам — Турниры, инфо-центр и баннер\nПравила сервера — Свод правил и регламент",
+            description=f" **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n **Выберите категорию в меню ниже:**\nТурниры — CS 4×4, Battle Royale, Ультиматум и рейтинги\nПрофиль — Карточка игрока, ранг и история матчей\nСоциальное — Репутация, брак и дни рождения\nЭкономика — Баланс, сейф, переводы и криминал\nМагазин — Покупка предметов и инвентарь\nПитомцы — RPG-питомцы сами\nМини-игры — Казино-игры на монеты\nСистема рангов — Ранги, уровни и ELO\nОрганизаторам — Турниры, инфо-центр и баннер\nПравила сервера — Свод правил и регламент",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         view = HelpGuideView(current=None)
@@ -3209,8 +3209,6 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f" **Доступные команды:**\n"
                 f"{dot}  `/top` — Таблица лидеров `(уровень / монеты / ELO / репутация)`\n"
                 f"{dot}  `/booyah` — Зал славы, рекорды и история турниров\n"
-                f"{dot}  `/mm squad` — Поиск матча 4×4 (Ranked Matchmaking)\n"
-                f"{dot}  `/mm delete` — Удалить поиски на сервере (орг)\n"
                 f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
                 f"{dot}  `/br create|delete` — Battle Royale (орг)\n"
                 f"{dot}  `/tournament ультиматум создать|удалить` — Ультиматум (орг)\n"
@@ -3360,7 +3358,6 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f"{dot}  `/tournament create|delete|deleteall|test` — Сетка турнира\n"
                 f"{dot}  `/br create|delete|test_fill|test_teams|test_stats` — Battle Royale\n"
                 f"{dot}  `/tournament ультиматум создать|удалить|сетка|статус|история|исправить` — Ультиматум\n"
-                f"{dot}  `/mm squad|delete|test` — Matchmaking 4×4\n"
                 f"{dot}  `/team create|delete|status` — Команды BR\n\n"
                 f" **Сервер и контент:**\n"
                 f"{dot}  `/server role|welcome|check2fa|off` — Настройки сервера\n"
@@ -3402,7 +3399,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
 _HELP_OPTIONS = [
     discord.SelectOption(label="Правила сервера", description="Свод правил и регламент турниров", value="rules"),
-    discord.SelectOption(label="Турниры", description="Топ, BR, Ультиматум и Ranked MM", value="tournaments"),
+    discord.SelectOption(label="Турниры", description="CS 4×4, BR, Ультиматум и рейтинги", value="tournaments"),
     discord.SelectOption(label="Профиль", description="Карточка игрока, ранг и история матчей", value="profile"),
     discord.SelectOption(label="Социальное", description="Репутация, брак и дни рождения", value="social"),
     discord.SelectOption(label="Экономика", description="Баланс, сейф, переводы и криминал", value="economy"),

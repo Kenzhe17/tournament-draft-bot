@@ -33,7 +33,7 @@ class InfoSection:
 SECTIONS: tuple[InfoSection, ...] = (
     InfoSection("info", "Информация", "info.png", "info.md"),
     InfoSection("osnovnoe", "Основное", "osnovnoe.png", "osnovnoe.md"),
-    InfoSection("ranked", "Ranked Matchmaking", "ranked.png", "ranked.md"),
+    InfoSection("ranked", "Рейтинги и карьера", "turniry.png", "ranked.md"),
     InfoSection("turniry", "Турниры", "turniry.png", "turniry.md"),
     InfoSection("mekhaniki", "Механики", "mekhaniki.png", "mekhaniki.md"),
     InfoSection("reputatsiya", "Репутация", "reputatsiya.png", "reputatsiya.md"),
