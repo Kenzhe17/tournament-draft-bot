@@ -120,28 +120,54 @@ def _owner_id() -> int:
         return 0
 
 
-def _is_admin(user) -> bool:
-    """Управление каталогом — ТОЛЬКО владелец бота.
+def _owner_guild_ok(guild_id: int | None) -> bool:
+    """Разрешённый guild для управления каталогом.
+
+    Если задан GUILD_ID — только он; иначе — любой guild из
+    ALLOWED_GUILD_IDS (пустой список = все)."""
+    try:
+        from config import GUILD_ID, guild_allowed
+        gid = int(GUILD_ID or 0)
+        if gid:
+            return guild_id == gid
+        return guild_allowed(guild_id)
+    except Exception:
+        return False
+
+
+def _is_admin(user, guild_id: int | None = None) -> bool:
+    """Управление каталогом — ТОЛЬКО владелец бота на
+    разрешённом guild.
 
     ADMIN_USER_IDS, Discord Administrator, организаторы и
     модераторы прав не имеют."""
     uid = getattr(user, "id", 0)
-    return bool(uid and uid == _owner_id())
+    if not (uid and uid == _owner_id()):
+        return False
+    if guild_id is None:
+        guild_id = getattr(user, "guild_id", None)
+    return _owner_guild_ok(guild_id)
 
 
-def _is_admin_uid(user_id: int) -> bool:
+def _is_admin_uid(user_id: int, guild_id: int | None = None) -> bool:
     """Admin-флаг только по uid владельца — для перестроения
     главного меню без объекта user."""
-    return bool(user_id and user_id == _owner_id())
+    return bool(
+        user_id and user_id == _owner_id()
+        and _owner_guild_ok(guild_id)
+    )
 
 
 async def _require_owner(interaction: discord.Interaction) -> bool:
     """Проверка прав владельца внутри callback/modal.
 
     user_id из сохранённого состояния интерфейса не доверяем —
-    проверяем interaction.user.id заново при каждом действии.
+    проверяем interaction.user.id и guild заново при каждом
+    действии.
     """
-    if _is_admin(interaction.user):
+    if _is_admin(
+        interaction.user, getattr(interaction, "guild_id", None)
+    ):
         return True
     try:
         if not interaction.response.is_done():
@@ -258,7 +284,9 @@ class _AdminButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not _is_admin(interaction.user):
+        if not _is_admin(
+            interaction.user, getattr(interaction, "guild_id", None)
+        ):
             await interaction.response.send_message(
                 "Нет прав.", ephemeral=True
             )
@@ -283,7 +311,7 @@ async def build_main_view(guild_id: int, user_id: int) -> DesignView:
     row2 = discord.ui.ActionRow()
     for key, label in EXTRA_BUTTONS:
         row2.add_item(_ExtraButton(key, label))
-    if _is_admin_uid(user_id):
+    if _is_admin_uid(user_id, guild_id):
         row2.add_item(_AdminButton())
     view.container.add_item(row2)
     return view

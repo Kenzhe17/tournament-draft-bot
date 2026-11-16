@@ -861,6 +861,95 @@ async def _recover_wardrobe_op(op: dict) -> str:
     return "refunded"
 
 
+async def _recover_sell_op(op: dict, bot=None) -> str:
+    """Восстановить sell-операцию (продажа предмета за монеты).
+
+    Порядок live-потока: op(reserved) → credit (sellop:{op_id})
+    → marker charged{credited} → remove item → done.
+
+    Recovery идемпотентно доводит любой прерванный шаг:
+    - credited не подтверждён → идемпотентное начисление тем же
+      ключом (match_coin_grants), короткая выплата → unknown.
+    - предмет ещё в инвентаре → удалить (remove_cosmetic по id).
+    - Discord-роль уже снята до создания op — подтверждать
+      повторно не требуется, повторной выдачи не будет.
+    """
+    gid, uid = op["guild_id"], op["user_id"]
+    op_id = op["op_id"]
+    payload = op.get("payload") or {}
+    price = int(op.get("price") or 0)
+
+    if payload.get("credited") is None:
+        from storage.user_balance_store import user_balance_store
+        try:
+            credited = await user_balance_store.add_balance_once(
+                gid, uid, price, f"sellop:{op_id}"
+            )
+        except Exception:  # noqa: BLE001
+            # Неопределённый исход — повтор с тем же ключом.
+            credited = await user_balance_store.add_balance_once(
+                gid, uid, price, f"sellop:{op_id}"
+            )
+        if credited < price:
+            await purchase_ops_store.set_status(
+                op_id, "unknown",
+                payload={
+                    "shortfall": price - credited,
+                    "credited": credited,
+                },
+            )
+            logger.error(
+                "sell op %s: credit shortfall %s<%s — manual review",
+                op_id, credited, price,
+            )
+            return "unknown"
+        await purchase_ops_store.set_status(
+            op_id, "charged", payload={"credited": credited}
+        )
+
+    # Для role-предметов: live-поток снимает роль до credit,
+    # но crash мог произойти между create op и снятием —
+    # best-effort доснимаем, чтобы роль не осталась «бесплатной».
+    role_id = payload.get("role_id")
+    if role_id and bot is not None:
+        try:
+            guild = bot.get_guild(gid)
+            if guild is not None:
+                member = guild.get_member(uid)
+                if member is None:
+                    try:
+                        member = await guild.fetch_member(uid)
+                    except Exception:  # noqa: BLE001
+                        member = None
+                role = guild.get_role(int(role_id))
+                if (
+                    member is not None and role is not None
+                    and any(r.id == role.id for r in member.roles)
+                ):
+                    try:
+                        await member.remove_roles(role)
+                    except Exception:  # noqa: BLE001
+                        logger.warning(
+                            "sell recovery: role %s removal failed "
+                            "op=%s", role_id, op_id)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "sell recovery: role cleanup failed op=%s", op_id)
+
+    # Удалить предмет, если он ещё в инвентаре.
+    item_id = op.get("item_id")
+    if item_id:
+        try:
+            cosmetics = inventory_store.get_player_inventory(gid, uid)
+            if any(c.item_id == item_id for c in cosmetics):
+                inventory_store.remove_cosmetic(gid, uid, item_id)
+        except Exception:
+            logger.exception("sell recovery: remove item failed %s", op_id)
+
+    await purchase_ops_store.set_status(op_id, "done")
+    return "done"
+
+
 async def _recover_pet_op(op: dict) -> str:
     """Восстановить pet/egg операцию."""
     gid, uid = op["guild_id"], op["user_id"]
@@ -1071,6 +1160,8 @@ async def recover_pending(bot=None) -> int:
                     await _recover_case_op(op)
                 elif kind == "wardrobe":
                     await _recover_wardrobe_op(op)
+                elif kind == "sell":
+                    await _recover_sell_op(op, bot)
                 elif kind == "nickname":
                     # Свой контур восстановления (nickname_ops_store
                     # + фактический ник в Discord) — generic

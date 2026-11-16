@@ -541,7 +541,8 @@ async def test_credit_sale_once_idempotent(pg_pool, catalog_env):
         # _credit_sale_once использует user_balance_store напрямую
         import cogs.sell as s
         # патчим там, где функция ищет стор
-        await s._credit_sale_once(G, U, 250)
+        credited = await s._credit_sale_once(G, U, 250, "op_test_1")
+        assert credited == 250
     finally:
         monkeypatch_target.add_balance_once = orig
     bal = await user_balance_store.get_balance(G, U)
@@ -550,7 +551,7 @@ async def test_credit_sale_once_idempotent(pg_pool, catalog_env):
     async with pg_pool.acquire() as conn:
         n = await conn.fetchval(
             "SELECT COUNT(*) FROM match_coin_grants "
-            "WHERE user_id=$1 AND match_id LIKE 'sell:%'",
+            "WHERE user_id=$1 AND match_id = 'sellop:op_test_1'",
             U,
         )
     assert n == 1
@@ -607,3 +608,93 @@ async def test_wardrobe_op_recovery(pg_pool, catalog_env):
     assert status == "done"
     op = await purchase_ops_store.get(op2)
     assert op["status"] == "done"
+
+
+# ===================================== P0: guild-scope владельца
+
+
+def test_owner_guild_scope(monkeypatch):
+    """BOT_OWNER_ID на ЧУЖОМOM guild не управляет каталогом."""
+    import config
+    monkeypatch.setattr(config, "BOT_OWNER_ID", OWNER, raising=False)
+    monkeypatch.setattr(config, "GUILD_ID", 777, raising=False)
+    monkeypatch.setattr(config, "ALLOWED_GUILD_IDS", {777}, raising=False)
+    import views.shop2_view as v2
+
+    owner = SimpleNamespace(id=OWNER)
+    assert v2._is_admin(owner, 777) is True
+    assert v2._is_admin(owner, 888) is False
+    assert v2._is_admin(owner, None) is False
+    assert v2._is_admin_uid(OWNER, 777) is True
+    assert v2._is_admin_uid(OWNER, 888) is False
+
+
+# ============================ P1: moderation actions из панели
+
+
+def test_moderation_actions_registered():
+    """Кнопки панели Moderation больше не 400: handlers
+    зарегистрированы."""
+    from services import admin_actions
+    allowed = admin_actions.allowed_actions()
+    assert "moderation.case_status" in allowed
+    assert "moderation.report_action" in allowed
+
+
+@pytest.mark.asyncio
+async def test_moderation_case_status_validation():
+    """case_status: невалидный статус/отсутствие guild → ошибка,
+    терминальный переход не из нетерминального → ok=False."""
+    from services import admin_actions
+
+    with pytest.raises(ValueError):
+        await admin_actions._h_mod_case_status(
+            1, {"case_id": 5, "status": "active"}, 1)
+    with pytest.raises(ValueError):
+        await admin_actions._h_mod_case_status(
+            0, {"case_id": 5, "status": "completed"}, 1)
+    with pytest.raises(ValueError):
+        await admin_actions._h_mod_case_status(
+            1, {"case_id": 0, "status": "revoked"}, 1)
+
+
+@pytest.mark.asyncio
+async def test_moderation_report_action_validation():
+    from services import admin_actions
+
+    with pytest.raises(ValueError):
+        await admin_actions._h_mod_report_action(
+            1, {"report_id": 5, "action": "nuke"}, 1)
+    with pytest.raises(ValueError):
+        await admin_actions._h_mod_report_action(
+            0, {"report_id": 5, "action": "claim"}, 1)
+
+
+# ==================== P0: изоляция guild в Control Center API
+
+
+def _panel_user(uid=1, gid=100, role="admin"):
+    from control_center.auth import PanelUser
+    u = PanelUser({"sub": str(uid), "guild_id": str(gid),
+                   "username": "t", "role": role}, set())
+    return u
+
+
+def test_settings_scoped_gid():
+    from control_center.routers import settings_api
+    owner = _panel_user(role="owner")
+    admin = _panel_user(gid=100)
+    # owner может указать любой guild
+    assert settings_api._scoped_gid(owner, 999) == 999
+    # не-owner — только свой guild, чужой игнорируется
+    assert settings_api._scoped_gid(admin, 999) == 100
+    assert settings_api._scoped_gid(admin, None) == 100
+
+
+def test_ops_action_scoped_gid():
+    """create_action: не-owner не может писать action для чужого
+    guild (проверка логики до запроса к store)."""
+    import inspect
+    from control_center.routers import ops_api
+    src = inspect.getsource(ops_api.create_action)
+    assert "guild scope violation" in src

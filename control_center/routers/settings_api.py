@@ -43,6 +43,15 @@ def _check_manage(user: PanelUser, d) -> None:
     user.require(rbac.PERM_SETTINGS_MANAGE)
 
 
+def _scoped_gid(user: PanelUser, requested: int | None) -> int:
+    """Изоляция серверов: не-owner может работать только со
+    своим guild_id — чужой guild_id из query/body игнорируется
+    (как в ops_api)."""
+    if user.role == "owner" or not user.guild_id:
+        return int(requested or 0)
+    return user.guild_id
+
+
 @router.get("")
 async def list_settings(
     module: str | None = Query(default=None),
@@ -79,13 +88,14 @@ async def list_values(
     user: PanelUser = Depends(require_perm(rbac.PERM_SETTINGS_VIEW)),
 ) -> dict[str, Any]:
     """Текущие значения всех настроек (PG + дефолты реестра)."""
+    gid = _scoped_gid(user, guild_id)
     rows = await store.get_all_values()
     stored = {
         (int(r["guild_id"]), r["key"]): r for r in rows
     }
     out = []
     for d in registry.all_defs():
-        effective_gid = 0 if d.scope == "global" else guild_id
+        effective_gid = 0 if d.scope == "global" else gid
         row = stored.get((effective_gid, d.key))
         out.append({
             "key": d.key,
@@ -96,7 +106,7 @@ async def list_values(
             "updated_at": row["updated_at"] if row else None,
             "updated_by": row["updated_by"] if row else None,
         })
-    return {"guild_id": guild_id, "values": out}
+    return {"guild_id": gid, "values": out}
 
 
 @router.get("/{key}")
@@ -108,7 +118,7 @@ async def get_setting(
     d = registry.get(key)
     if d is None:
         raise HTTPException(404, "unknown setting")
-    gid = 0 if d.scope == "global" else guild_id
+    gid = 0 if d.scope == "global" else _scoped_gid(user, guild_id)
     row = await store.get_value(gid, key)
     return {
         "key": d.key,
@@ -147,7 +157,10 @@ async def set_setting(
     except registry.SettingValidationError as exc:
         raise HTTPException(422, str(exc)) from exc
 
-    gid = 0 if d.scope == "global" else (body.guild_id or user.guild_id)
+    gid = (
+        0 if d.scope == "global"
+        else _scoped_gid(user, body.guild_id or user.guild_id)
+    )
     try:
         row = await store.set_value(
             gid, key, value,
@@ -182,7 +195,7 @@ async def setting_history(
     d = registry.get(key)
     if d is None:
         raise HTTPException(404, "unknown setting")
-    gid = 0 if d.scope == "global" else guild_id
+    gid = 0 if d.scope == "global" else _scoped_gid(user, guild_id)
     rows = await store.get_history(
         gid, key, limit=limit, before_version=before_version
     )
@@ -200,7 +213,10 @@ async def rollback_setting(
     if d is None:
         raise HTTPException(404, "unknown setting")
     _check_manage(user, d)
-    gid = 0 if d.scope == "global" else (body.guild_id or user.guild_id)
+    gid = (
+        0 if d.scope == "global"
+        else _scoped_gid(user, body.guild_id or user.guild_id)
+    )
     try:
         row = await store.rollback_to_version(
             gid, key, body.target_version,

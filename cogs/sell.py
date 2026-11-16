@@ -2,12 +2,13 @@ import math
 from typing import TYPE_CHECKING, Optional
 
 import discord
-from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
-from storage.shop_store import shop_store, inventory_store
 from config import get_emoji
+from storage.shop_ops_store import shop_ops_store
+from storage.shop_store import inventory_store, shop_store
+from utils.design import compose
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -60,32 +61,32 @@ async def _ensure_role_removed(
 
 
 async def _credit_sale_once(
-    guild_id: int, user_id: int, amount: int
-) -> None:
+    guild_id: int, user_id: int, amount: int, op_id: str
+) -> int:
     """Идемпотентное начисление выручки за продажу.
 
-    Ключ уникален для каждой попытки продажи. Если ответ PG
-    потерялся после COMMIT, повторный вызов с тем же ключом
-    возвращает зафиксированную сумму — зачисление не дублируется
-    и не «откатывается» ошибкой.
+    Ключ привязан к долговечной операции продажи (sellop:{op_id}) —
+    повторные попытки и recovery используют ОДИН И ТОТ ЖЕ ключ:
+    при повторном вызове возвращается зафиксированная сумма,
+    зачисление не дублируется.
+
+    Возвращает ФАКТИЧЕСКИ зачисленную сумму (может быть меньше
+    amount при достижении MAX_BALANCE).
     """
     if amount <= 0:
-        return
-    import uuid
+        return 0
     from storage.user_balance_store import user_balance_store
-    key = f"sell:{uuid.uuid4()}"
+    key = f"sellop:{op_id}"
     try:
-        await user_balance_store.add_balance_once(
+        return await user_balance_store.add_balance_once(
             guild_id, user_id, amount, key
         )
     except Exception:
-        # Неопределённый исход: пробуем тот же ключ — вернёт
-        # recorded amount, если грант закоммитился.
-        credited = await user_balance_store.add_balance_once(
+        # Неопределённый исход: тот же ключ вернёт recorded
+        # amount, если грант закоммитился.
+        return await user_balance_store.add_balance_once(
             guild_id, user_id, amount, key
         )
-        if not credited:
-            raise
 
 
 async def get_shop_item(item_id: str) -> Optional[dict]:
@@ -210,14 +211,84 @@ class SellCog(commands.Cog):
 
             sell_price = math.floor(base_price * base_sell_percent)
 
-            # Для role-предметов проверяем ФАКТИЧЕСКОЕ снятие
-            # Discord-роли до удаления из инвентаря и выплаты.
-            # Снятие не подтверждено → продажа не считается
-            # успешной: предмет остаётся, монеты не начисляются.
+            # 4. Долговечная операция продажи — ДО любых
+            #    изменений (роль, инвентарь, баланс). crash в
+            #    любой точке разрешается recover_pending по op_id.
+            from storage.shop_purchase_ops_store import (
+                purchase_ops_store,
+            )
+            from storage.user_balance_store import user_balance_store
+            from storage.user_balance_store import _max_balance
+
+            # Если по этому предмету уже есть незавершённая
+            # продажа — не создаём вторую, сообщаем пользователю.
+            try:
+                pending_ops = await purchase_ops_store.pending()
+                if any(
+                    o.get("kind") == "sell"
+                    and o.get("item_id") == item.id
+                    and o.get("user_id") == interaction.user.id
+                    and o.get("guild_id") == guild_id
+                    for o in pending_ops
+                ):
+                    await interaction.followup.send(
+                        " Предыдущая продажа этого предмета ещё "
+                        "обрабатывается — дождитесь завершения.",
+                        ephemeral=True,
+                    )
+                    return
+            except Exception:  # noqa: BLE001
+                # Не смогли проверить — продолжаем, op_id всё
+                # равно уникален и recovery идемпотентен.
+                pass
+
+            sale_op_id = purchase_ops_store.new_op_id()
+            await purchase_ops_store.create(
+                sale_op_id, guild_id, interaction.user.id,
+                "sell", item.id, sell_price,
+                payload={
+                    "item_name": item.name,
+                    "item_type": item.item_type,
+                    "role_id": item.role_id,
+                    "cosmetic": cosmetic.to_dict(),
+                },
+            )
+
+            # 4a. Проверка места до MAX_BALANCE: продажа не
+            #     должна «съесть» предмет без полной выплаты.
+            try:
+                balance = await user_balance_store.get_balance(
+                    guild_id, interaction.user.id
+                )
+            except Exception:  # noqa: BLE001
+                balance = 0
+            cap = _max_balance()
+            if balance + sell_price > cap:
+                await purchase_ops_store.set_status(
+                    sale_op_id, "failed",
+                    payload={"reason": "balance_cap",
+                             "balance": balance, "cap": cap},
+                )
+                await interaction.followup.send(
+                    f" На балансе нет места для выплаты "
+                    f"({sell_price:,} монет, лимит {cap:,}). "
+                    f"Сначала потратьте часть баланса.",
+                    ephemeral=True,
+                )
+                return
+
+            # 4c. Для role-предметов проверяем ФАКТИЧЕСКОЕ снятие
+            #     Discord-роли до начисления и удаления предмета.
+            #     Снятие не подтверждено → продажа не считается
+            #     успешной: предмет остаётся, монеты не начисляются.
             if item.item_type == "role" and item.role_id and guild is not None:
                 if not await _ensure_role_removed(
                     guild, interaction.user.id, item.role_id
                 ):
+                    await purchase_ops_store.set_status(
+                        sale_op_id, "failed",
+                        payload={"reason": "role_removal_unconfirmed"},
+                    )
                     await interaction.followup.send(
                         " Не удалось подтвердить снятие Discord-роли — "
                         "продажа отменена, предмет и баланс не изменены.",
@@ -225,33 +296,69 @@ class SellCog(commands.Cog):
                     )
                     return
 
-            # 4. Удаляем предмет и начисляем монеты идемпотентно.
-            #    При сбое начисления предмет возвращается в инвентарь —
-            #    пользователь не теряет его без компенсации.
-            await remove_user_item(guild_id, interaction.user.id, item.id)
+            # 4b. Сначала зачисляем монеты (идемпотентно по
+            #     sellop:{op_id}), потом изымаем предмет.
+            #     При краше между шагами recovery доводит
+            #     операцию до конца в правильном порядке.
             try:
-                await _credit_sale_once(
-                    guild_id, interaction.user.id, sell_price
+                credited = await _credit_sale_once(
+                    guild_id, interaction.user.id,
+                    sell_price, sale_op_id,
                 )
-            except Exception:
-                inventory_store.add_cosmetic(cosmetic)
-                # Откат: вернуть и Discord-роль, если снимали
-                if (
-                    item.item_type == "role" and item.role_id
-                    and guild is not None
-                ):
-                    try:
-                        from utils.role_manager import apply_role
-                        await apply_role(
-                            guild, interaction.user.id, item.role_id
-                        )
-                    except Exception:
-                        pass
+            except Exception:  # noqa: BLE001
+                # Начисление не подтверждено — предмет НЕ
+                # трогаем, операция остаётся reserved и будет
+                # завершена recovery (кредит → удаление).
                 await interaction.followup.send(
-                    " Ошибка начисления монет — предмет не продан.",
-                    ephemeral=True
+                    " Ошибка начисления монет — продажа будет "
+                    "завершена автоматически.",
+                    ephemeral=True,
                 )
                 return
+
+            if credited < sell_price:
+                # MAX_BALANCE достигнут между проверкой и
+                # начислением: откатываем частичное начисление
+                # и отменяем продажу — предмет не теряется.
+                try:
+                    await user_balance_store.subtract_balance(
+                        guild_id, interaction.user.id, credited
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                await purchase_ops_store.set_status(
+                    sale_op_id, "failed",
+                    payload={"reason": "credit_shortfall",
+                             "credited": credited},
+                )
+                await interaction.followup.send(
+                    " Недостаточно места на балансе для полной "
+                    "выплаты — продажа отменена.",
+                    ephemeral=True,
+                )
+                return
+
+            # Факт начисления зафиксирован до удаления предмета.
+            await purchase_ops_store.set_status(
+                sale_op_id, "charged",
+                payload={"credited": credited},
+            )
+
+            # 5. Удаляем предмет. При сбое удаления начисленные
+            #    монеты не откатываем — recovery доведёт
+            #    удаление и завершит операцию.
+            try:
+                await remove_user_item(
+                    guild_id, interaction.user.id, item.id
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            await purchase_ops_store.set_status(sale_op_id, "done")
+            shop_ops_store.record(
+                guild_id=guild_id, user_id=interaction.user.id,
+                kind="sell", item_id=item.id, price=sell_price,
+                status="done", op_id=sale_op_id,
+            )
 
         # 5. Формировать текст бонуса питомца
         pet_bonus_text = ""
