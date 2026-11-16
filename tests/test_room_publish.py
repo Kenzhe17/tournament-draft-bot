@@ -185,7 +185,9 @@ async def test_publish_creates_card_and_notification(
     assert "КОМНАТА ОТКРЫТА" in note_text
     assert "Team0 vs Team1" in note_text
     assert "555" not in note_text and "pw1" not in note_text
-    assert f"<#{data_ch.id}>" in note_text
+    # Строка «Данные комнаты: <#…>» убрана (7b74d97) —
+    # остаётся только jump-ссылка «Карточка:».
+    assert "Данные комнаты" not in note_text
     assert f"/{data_ch.id}/{data_ch.sent[0].id}" in note_text  # jump-ссылка
     for uid in (100, 101, 102, 103, 110, 111, 112, 113):
         assert f"<@{uid}>" in note_text

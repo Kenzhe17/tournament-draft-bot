@@ -494,7 +494,9 @@ class TournamentBot(commands.Bot):
         logger.debug("Зарегистрирован View: %s", key)
 
     def build_view_for_tournament(
-        self, tournament: Tournament
+        self, tournament: Tournament,
+        *,
+        journal_url: str | None = None,
     ) -> discord.ui.View | None:
         """Построить View в зависимости от фазы турнира."""
         phase = tournament.phase
@@ -531,6 +533,16 @@ class TournamentBot(commands.Bot):
             return FinalView(gid, tournament.channel_id, tournament.final_teams, tournament)
 
         if phase == TournamentPhase.COMPLETE:
+            # Итоговая карточка: единственная кнопка — ссылка
+            # на карточку журнала турнира (если она опубликована).
+            if journal_url:
+                view = discord.ui.View(timeout=None)
+                view.add_item(discord.ui.Button(
+                    style=discord.ButtonStyle.link,
+                    label="Журнал турнира",
+                    url=journal_url,
+                ))
+                return view
             return None  # No buttons needed for completed tournament
 
         return None
@@ -638,7 +650,19 @@ class TournamentBot(commands.Bot):
             async with perf_metrics.async_timing("embed_build_ms"):
                 embed = await build_embed_for_phase(tournament, guild)
             async with perf_metrics.async_timing("view_build_ms"):
-                view = self.build_view_for_tournament(tournament)
+                # Для завершённого турнира — ссылка на журнал
+                # (URL кэшируется в tournament_journal).
+                journal_url = None
+                if tournament.phase == TournamentPhase.COMPLETE:
+                    try:
+                        from services import tournament_journal
+                        journal_url = (
+                            await tournament_journal.journal_url_for(
+                                tournament))
+                    except Exception:
+                        journal_url = None
+                view = self.build_view_for_tournament(
+                    tournament, journal_url=journal_url)
                 self._register_view(view)
                 if (
                     tournament.phase == TournamentPhase.DRAFT
@@ -1027,6 +1051,20 @@ class TournamentBot(commands.Bot):
                 )
         except Exception as e:
             logger.error(f"room publish recovery failed: {e}")
+
+        # Централизованный журнал турниров: догнать pending-записи,
+        # гарантировать карточки активных турниров и ссылки
+        # итогов ↔ журнал после рестарта.
+        try:
+            from services import tournament_journal
+            journal_done = await tournament_journal.recover(self)
+            if journal_done:
+                logger.info(
+                    "tournament journal recovery: %d записей",
+                    journal_done,
+                )
+        except Exception as e:
+            logger.error(f"tournament journal recovery failed: {e}")
 
         # Restore org role panel if it exists
         from views.org_role_view import load_state, OrgPanelView

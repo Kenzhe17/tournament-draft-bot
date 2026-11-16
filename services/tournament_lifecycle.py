@@ -35,27 +35,50 @@ logger = logging.getLogger(__name__)
 
 
 async def _winner_card_view(
-    tournament: "Tournament", guild: discord.Guild
+    tournament: "Tournament", guild: discord.Guild,
+    journal_url: str | None = None,
 ) -> discord.ui.LayoutView:
-    """Итоговая CV2-карточка победителя (без кнопок)."""
+    """Итоговая CV2-карточка победителя.
+
+    При известном URL карточки журнала добавляет link-кнопку
+    «Журнал турнира» (двусторонняя навигация)."""
     embed = await build_winner_embed(tournament, guild)
-    return compose(embed, None)
+    view = None
+    if journal_url:
+        view = discord.ui.View(timeout=None)
+        view.add_item(discord.ui.Button(
+            style=discord.ButtonStyle.link,
+            label="Журнал турнира",
+            url=journal_url,
+        ))
+    return compose(embed, view)
 
 
 async def render_final_card_to_message(
     message: discord.Message,
     tournament: "Tournament",
     guild: discord.Guild,
+    *,
+    journal_url: str | None = None,
 ) -> bool:
     """Отредактировать сообщение в итоговую карточку победителя.
 
     True — карточка обновлена; False — ошибка Discord API
     (вызывающий решает: для архивации не критично, для
-    восстановления — надо повторить).
+    восстановления — надо повторить). Если journal_url не
+    передан — пытаемся получить его из журнала сами.
     """
+    if journal_url is None:
+        try:
+            from services import tournament_journal
+            journal_url = await tournament_journal.journal_url_for(
+                tournament)
+        except Exception:
+            journal_url = None
     try:
         await message.edit(
-            view=await _winner_card_view(tournament, guild),
+            view=await _winner_card_view(
+                tournament, guild, journal_url=journal_url),
             allowed_mentions=discord.AllowedMentions.none(),
         )
         return True

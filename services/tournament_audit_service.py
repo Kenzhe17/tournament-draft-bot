@@ -303,6 +303,14 @@ async def _publish(ev: dict[str, Any]) -> None:
     channel_id = _audit_channel_id()
     if not channel_id or _bot is None:
         return
+    # События турнира/комнаты/организаторов с tournament_id
+    # публикуются ГРУППИРОВАННО в карточках журнала
+    # (services/tournament_journal) — отдельные карточки в канал
+    # не отправляем, чтобы не превращать его в поток действий.
+    # События без турнира (MM, магазин, системные) — как раньше.
+    if ev.get("tournament_id") and ev.get("source") in (
+            "tournament", "room", "organizer"):
+        return
     channel = _bot.get_channel(channel_id)
     if channel is None:
         try:
@@ -416,7 +424,18 @@ async def record(
     event["persisted"] = "pg"
     # Публикация — best-effort, не блокирует сценарий.
     asyncio.create_task(_safe_publish(event))
+    # Группировка в централизованный журнал турнира — тоже
+    # best-effort и не блокирует сценарий.
+    asyncio.create_task(_safe_journal(event))
     return event
+
+
+async def _safe_journal(ev: dict[str, Any]) -> None:
+    try:
+        from services import tournament_journal
+        tournament_journal.notify_event(ev)
+    except Exception as exc:
+        logger.debug("journal notify failed: %s", exc)
 
 
 async def _safe_publish(ev: dict[str, Any]) -> None:
@@ -462,7 +481,9 @@ async def flush_pending(limit: int = 200) -> int:
                 dedup_key=ev.get("dedup_key"),
             )
             flushed += 1
+            ev["persisted"] = "pg"
             asyncio.create_task(_safe_publish(ev))
+            asyncio.create_task(_safe_journal(ev))
         except Exception:
             remaining.append(ev)
     leftover = items[limit:] + remaining

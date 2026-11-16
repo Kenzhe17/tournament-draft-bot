@@ -67,7 +67,7 @@ def _make_bot(monkeypatch, embed_desc="v1"):
     bot = object.__new__(bot_module.TournamentBot)
     bot._registered_view_keys = set()
     bot._register_view = lambda view: None
-    bot.build_view_for_tournament = lambda t: SimpleNamespace(
+    bot.build_view_for_tournament = lambda t, **kw: SimpleNamespace(
         children=[SimpleNamespace(
             custom_id="btn", label="OK", disabled=False,
             style=None, emoji=None, content="", placeholder="",
@@ -139,7 +139,7 @@ class TestUpdateDedup:
         bot = object.__new__(bot_module.TournamentBot)
         bot._registered_view_keys = set()
         bot._register_view = lambda view: None
-        bot.build_view_for_tournament = lambda t: SimpleNamespace(
+        bot.build_view_for_tournament = lambda t, **kw: SimpleNamespace(
             children=[]
         )
 
