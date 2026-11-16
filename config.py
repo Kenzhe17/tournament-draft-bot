@@ -110,7 +110,7 @@ MATCH_FOUND_CHANNEL_ID = int(os.getenv("MATCH_FOUND_CHANNEL_ID", "0")) or (
 # Канал журнала аудита турниров (CV2-карточки событий).
 # 0 = публикация отключена, записи остаются в PostgreSQL.
 TOURNAMENT_AUDIT_CHANNEL_ID = int(
-    os.getenv("TOURNAMENT_AUDIT_CHANNEL_ID") or "1571226820593061980"
+    os.getenv("TOURNAMENT_AUDIT_CHANNEL_ID") or "0"
 )
 
 # Moderation logging webhook — СЕКРЕТ, только через env.
