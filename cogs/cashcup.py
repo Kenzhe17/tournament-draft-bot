@@ -379,6 +379,10 @@ class CashCupCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.cashcup.add_command(self.info)
+        self._board_locks: dict[int, asyncio.Lock] = {}
+
+    def _board_lock(self, guild_id: int) -> asyncio.Lock:
+        return self._board_locks.setdefault(guild_id, asyncio.Lock())
 
     async def cog_load(self) -> None:
         self.bot.add_view(compose(_panel({"status": "registration", "prize": "", "teams": []}), CashCupView(True)))
@@ -407,6 +411,11 @@ class CashCupCog(commands.Cog):
         """Публичная карточка текущего раунда: одно сообщение, обновляется на месте."""
         if state.get("status") != "running" or not state.get("bracket"):
             return
+        # Блокировка на guild: параллельные _refresh не создадут дубликаты борда.
+        async with self._board_lock(state.get("guild_id") or 0):
+            await self._sync_board_locked(state, channel)
+
+    async def _sync_board_locked(self, state: dict, channel) -> None:
         try:
             active = ready_matches(state["bracket"])
             view = BoardSelectView(active)
