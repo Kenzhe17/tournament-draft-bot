@@ -33,7 +33,6 @@ FILTERS: dict[str, tuple[str, str | None]] = {
     "players": ("Участники", "tournament"),
     "matches": ("Матчи", "match"),
     "rooms": ("Комнаты", "room"),
-    "organizers": ("Организаторы", "organizer"),
     "system": ("Системные", "system"),
 }
 
@@ -50,12 +49,17 @@ def _allowed_sources(filter_key: str) -> set[str] | None:
     """None — без фильтра по source; иначе множество source."""
     if filter_key == "all":
         return None
-    if filter_key in ("rooms", "organizers", "system"):
+    if filter_key in ("rooms", "system"):
         return {filter_key}
     return None  # players/matches фильтруются по action/match_id
 
 
 def _event_matches(ev: dict[str, Any], filter_key: str) -> bool:
+    # organizer.* события скрыты из журнала во всех фильтрах
+    # (в PostgreSQL остаются для расследований).
+    if (ev.get("source") == "organizer"
+            or str(ev.get("action", "")).startswith("organizer.")):
+        return False
     if filter_key == "all":
         return True
     if filter_key == "players":
@@ -68,9 +72,6 @@ def _event_matches(ev: dict[str, Any], filter_key: str) -> bool:
     if filter_key == "rooms":
         return ev.get("source") == "room" or str(
             ev.get("action", "")).startswith("room.")
-    if filter_key == "organizers":
-        return ev.get("source") == "organizer" or str(
-            ev.get("action", "")).startswith("organizer.")
     if filter_key == "system":
         return ev.get("source") == "system"
     return True
@@ -213,6 +214,7 @@ class TournamentAuditView(discord.ui.View):
                     source=None,
                     limit=fetch_limit,
                     offset=0,
+                    exclude_organizer=True,
                 )
                 events = [e for e in events if _event_matches(e, self.filter_key)]
                 self._total = len(events)
@@ -226,6 +228,7 @@ class TournamentAuditView(discord.ui.View):
                     channel_id=self.channel_id,
                     tournament_id=self.tournament_id,
                     source=source,
+                    exclude_organizer=True,
                 )
                 self._events = await audit_store.list_events(
                     guild_id=self.guild_id,
@@ -234,6 +237,7 @@ class TournamentAuditView(discord.ui.View):
                     source=source,
                     limit=PAGE_SIZE,
                     offset=self.page * PAGE_SIZE,
+                    exclude_organizer=True,
                 )
         except Exception as exc:
             logger.error("audit view: не удалось загрузить журнал: %s", exc)
