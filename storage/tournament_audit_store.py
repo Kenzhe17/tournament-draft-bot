@@ -200,11 +200,14 @@ async def list_events(
     actor_user_id: int | None = None,
     limit: int = 10,
     offset: int = 0,
+    exclude_organizer: bool = False,
 ) -> list[dict[str, Any]]:
     """Последние события (id DESC), с фильтрами.
 
     ``channel_id=None`` — без фильтра по каналу (нужно журналу
     для архивных турниров, где исходный канал неизвестен).
+    ``exclude_organizer=True`` — скрыть organizer.* события
+    (в PostgreSQL они остаются, из Discord-журнала убраны).
     """
     from storage.db import get_pool
 
@@ -225,6 +228,9 @@ async def list_events(
     if source is not None:
         params.append(source)
         clauses.append(f"source = ${len(params)}")
+    if exclude_organizer:
+        clauses.append(
+            "(source <> 'organizer' AND action NOT LIKE 'organizer.%')")
     params.extend([limit, offset])
     lim_i, off_i = len(params) - 1, len(params)
 
@@ -251,6 +257,7 @@ async def count_events(
     source: str | None = None,
     match_id: str | None = None,
     actor_user_id: int | None = None,
+    exclude_organizer: bool = False,
 ) -> int:
     """Количество событий под текущий фильтр (для пагинации)."""
     from storage.db import get_pool
@@ -269,6 +276,9 @@ async def count_events(
     if source is not None:
         params.append(source)
         clauses.append(f"source = ${len(params)}")
+    if exclude_organizer:
+        clauses.append(
+            "(source <> 'organizer' AND action NOT LIKE 'organizer.%')")
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -319,11 +329,12 @@ async def mark_discord_posted(
 async def unpublished_events(limit: int = 50) -> list[dict[str, Any]]:
     """События, для которых ещё не отправлена карточка в канал.
 
-    События турнира/комнаты/организатора с tournament_id
+    События турнира/комнаты с tournament_id
     исключены: они публикуются группированно карточками журнала
     (services/tournament_journal), отдельный discord_message_id
     им не нужен — иначе republish_unpublished крутил бы их
-    по кругу при каждом рестарте.
+    по кругу при каждом рестарте. organizer.* события не
+    публикуются в Discord вообще — только PostgreSQL.
     """
     from storage.db import get_pool
 
@@ -335,9 +346,11 @@ async def unpublished_events(limit: int = 50) -> list[dict[str, Any]]:
             SELECT * FROM tournament_audit_log
             WHERE discord_message_id IS NULL
               AND status IN ('success', 'pending')
+              AND source <> 'organizer'
+              AND action NOT LIKE 'organizer.%'
               AND NOT (
                   tournament_id IS NOT NULL
-                  AND source IN ('tournament', 'room', 'organizer')
+                  AND source IN ('tournament', 'room')
               )
             ORDER BY id ASC LIMIT $1
             """,
