@@ -264,11 +264,27 @@ class CashCupView(discord.ui.View):
     def __init__(self, registration: bool = True):
         super().__init__(timeout=None)
 
+    async def _fresh(self, interaction: discord.Interaction) -> bool:
+        """Кнопка действует только с актуальной карточкой текущего турнира:
+        message_id сообщения обязан совпадать с state['message_id']."""
+        cog = interaction.client.get_cog("CashCupCog")
+        state = await cog._current_state(interaction.guild_id)
+        mid = getattr(getattr(interaction, "message", None), "id", None)
+        expected = (state or {}).get("message_id")
+        if state and expected and mid and int(mid) != int(expected):
+            await interaction.response.send_message(
+                "Эта карточка устарела — используйте актуальную карточку турнира.",
+                ephemeral=True)
+            return False
+        return True
+
     @discord.ui.button(label="Зарегистрировать команду",
                        style=discord.ButtonStyle.success,
                        custom_id="cashcup:register_br")
     async def register_br(self, interaction: discord.Interaction,
                           button: discord.ui.Button):
+        if not await self._fresh(interaction):
+            return
         cog = interaction.client.get_cog("CashCupCog")
         await cog.register_br_team(interaction)
 
@@ -276,12 +292,16 @@ class CashCupView(discord.ui.View):
                        custom_id="cashcup:my_data")
     async def my_data(self, interaction: discord.Interaction,
                       button: discord.ui.Button):
+        if not await self._fresh(interaction):
+            return
         await interaction.response.send_modal(FFDataModal())
 
     @discord.ui.button(label="Запасной", style=discord.ButtonStyle.primary,
                        custom_id="cashcup:sub_join")
     async def sub_join(self, interaction: discord.Interaction,
                        button: discord.ui.Button):
+        if not await self._fresh(interaction):
+            return
         cog = interaction.client.get_cog("CashCupCog")
         await cog.sub_offer_teams(interaction)
 
@@ -289,6 +309,8 @@ class CashCupView(discord.ui.View):
                        custom_id="cashcup:my_team")
     async def roster(self, interaction: discord.Interaction,
                      button: discord.ui.Button):
+        if not await self._fresh(interaction):
+            return
         cog = interaction.client.get_cog("CashCupCog")
         await cog.show_roster(interaction)
 
@@ -296,6 +318,8 @@ class CashCupView(discord.ui.View):
                        custom_id="cashcup:teams")
     async def teams(self, interaction: discord.Interaction,
                     button: discord.ui.Button):
+        if not await self._fresh(interaction):
+            return
         cog = interaction.client.get_cog("CashCupCog")
         await cog.show_teams(interaction)
 
@@ -303,6 +327,8 @@ class CashCupView(discord.ui.View):
                        custom_id="cashcup:matches")
     async def matches(self, interaction: discord.Interaction,
                       button: discord.ui.Button):
+        if not await self._fresh(interaction):
+            return
         cog = interaction.client.get_cog("CashCupCog")
         await cog.show_active_matches(interaction)
 
@@ -310,6 +336,8 @@ class CashCupView(discord.ui.View):
                        custom_id="cashcup:bracket")
     async def bracket(self, interaction: discord.Interaction,
                       button: discord.ui.Button):
+        if not await self._fresh(interaction):
+            return
         cog = interaction.client.get_cog("CashCupCog")
         await cog.show_bracket(interaction)
 
@@ -317,8 +345,15 @@ class CashCupView(discord.ui.View):
                        custom_id="cashcup:admin")
     async def admin(self, interaction: discord.Interaction,
                     button: discord.ui.Button):
+        if not await self._fresh(interaction):
+            return
         cog = interaction.client.get_cog("CashCupCog")
         await cog.admin_menu(interaction)
+
+
+def _tid(state) -> str:
+    """ID конкретного турнира — привязка ephemeral/persistent компонентов."""
+    return str((state or {}).get("tournament_id") or "")
 
 
 def _match_card_text(state: dict, m: dict) -> str:
@@ -424,7 +459,22 @@ class BoardSelectView(discord.ui.View):
         self.add_item(prev_b)
         self.add_item(next_b)
 
+    async def _fresh(self, interaction: discord.Interaction):
+        """None — сообщение не актуальная доска текущего турнира."""
+        cog = interaction.client.get_cog("CashCupCog")
+        state = await cog._current_state(interaction.guild_id)
+        mid = getattr(getattr(interaction, "message", None), "id", None)
+        expected = (state or {}).get("board_message_id")
+        if state and expected and mid and int(mid) != int(expected):
+            await interaction.response.send_message(
+                "Эта доска устарела — используйте актуальную.", ephemeral=True)
+            return None
+        return state
+
     async def _pick(self, interaction: discord.Interaction) -> None:
+        state = await self._fresh(interaction)
+        if state is None:
+            return
         mid = self._sel.values[0]
         if mid == "none":
             await interaction.response.send_message("Активных матчей нет.", ephemeral=True)
@@ -433,9 +483,15 @@ class BoardSelectView(discord.ui.View):
         await cog.show_match_card(interaction, mid)
 
     async def _nav(self, interaction: discord.Interaction, delta: int) -> None:
-        await interaction.response.defer()
         cog = interaction.client.get_cog("CashCupCog")
-        state = await cashcup_store.active(interaction.guild_id)             or await cashcup_store.latest(interaction.guild_id)
+        state = await cog._current_state(interaction.guild_id)
+        mid = getattr(getattr(interaction, "message", None), "id", None)
+        expected = (state or {}).get("board_message_id")
+        if state and expected and mid and int(mid) != int(expected):
+            await interaction.response.send_message(
+                "Эта доска устарела — используйте актуальную.", ephemeral=True)
+            return
+        await interaction.response.defer()
         if not state or not state.get("bracket"):
             await interaction.followup.send("Состояние турнира не найдено.", ephemeral=True)
             return
@@ -588,10 +644,20 @@ class CashCupCog(commands.Cog):
                 st["board_message_id"] = msg.id
             # tournament_id + include_finished: completed-турнир тоже
             # получает новый board_message_id адресной транзакцией.
-            await cashcup_store.mutate(
-                state["guild_id"], 0, "board_sync", change,
-                include_finished=True,
-                tournament_id=state.get("tournament_id"))
+            try:
+                await cashcup_store.mutate(
+                    state["guild_id"], 0, "board_sync", change,
+                    include_finished=True,
+                    tournament_id=state.get("tournament_id"))
+            except Exception:
+                # Discord-сообщение создано, но id не сохранён в PG:
+                # удаляем сироту, иначе следующий sync создаст дубль.
+                try:
+                    await msg.delete()
+                except Exception:
+                    logger.warning("CASH CUP orphan board %s not deleted",
+                                   getattr(msg, "id", "?"))
+                raise
             return True
         except Exception:
             logger.exception("CASH CUP board sync failed")
@@ -646,7 +712,7 @@ class CashCupCog(commands.Cog):
 
     async def confirm_ff(self, interaction: discord.Interaction,
                          team_id: str | None, uid: str, region: str,
-                         device: str) -> None:
+                         device: str, *, tid: str | None = None) -> None:
         """Игрок сам подтверждает свой FF UID; запасной присоединяется
         только по приглашению капитана (sub_invites)."""
         await interaction.response.defer(ephemeral=True)
@@ -697,7 +763,7 @@ class CashCupCog(commands.Cog):
                     raise CashCupError("Максимум 2 ПК/эмулятора на весь состав")
 
             await self._post(interaction, "confirm_ff", change,
-                             {"team_id": team_id})
+                             {"team_id": team_id}, tid=tid)
             await self._reply(
                 interaction,
                 f"Free Fire подтверждён: **{safe_text(ff['nick'])}** "
@@ -708,7 +774,7 @@ class CashCupCog(commands.Cog):
             await self._reply(interaction, f"Free Fire API: {exc}")
 
     async def invite_sub(self, interaction: discord.Interaction,
-                         raw_id: str) -> None:
+                         raw_id: str, *, tid: str | None = None) -> None:
         """Капитан приглашает запасного (Discord ID) в свою команду."""
         await interaction.response.defer(ephemeral=True)
         try:
@@ -733,7 +799,7 @@ class CashCupCog(commands.Cog):
                 inv = t.setdefault("sub_invites", [])
                 if uid not in inv:
                     inv.append(uid)
-            await self._post(interaction, "invite_sub", change)
+            await self._post(interaction, "invite_sub", change, tid=tid)
             member = interaction.guild.get_member(uid)
             if member:
                 try:
@@ -775,7 +841,8 @@ class CashCupCog(commands.Cog):
             ephemeral=True)
 
     async def _swap_by_ids(self, interaction: discord.Interaction,
-                           out_raw: str, in_raw: str) -> None:
+                           out_raw: str, in_raw: str,
+                           *, tid: str | None = None) -> None:
         try:
             out_id = int(str(out_raw).strip().strip("<@!>"))
             in_id = int(str(in_raw).strip().strip("<@!>"))
@@ -787,7 +854,7 @@ class CashCupCog(commands.Cog):
         if not out_m or not in_m:
             await self._reply(interaction, "Оба игрока должны быть на сервере")
             return
-        await self.swap(interaction, out_m, in_m)
+        await self.swap(interaction, out_m, in_m, tid=tid)
 
     # ---------- ADMIN-меню ----------
 
@@ -802,41 +869,45 @@ class CashCupCog(commands.Cog):
             view=AdminMenuView(state), ephemeral=True)
 
     async def _admin_action(self, interaction: discord.Interaction,
-                            action: str) -> None:
+                            action: str, *, tid: str | None = None) -> None:
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Только ADMIN")
             return
         if action in ("verify", "remove", "dq"):
-            return await self._pick_team(interaction, action)
+            return await self._pick_team(interaction, action, tid=tid)
         if action in ("result", "room", "forfeit", "resolve"):
-            return await self._pick_match(interaction, action)
+            return await self._pick_match(interaction, action, tid=tid)
+        mutating = {"start", "resume", "revert"}
         direct = {"start": self.start, "resume": self.resume,
                   "revert": self.revert, "matches": self.show_active_matches,
                   "bracket": self.show_bracket, "bracket_final": self.show_bracket,
                   "forecast": self.forecast, "history": self.history,
                   "growth": self.growth}
         if action in direct:
-            return await direct[action](interaction)
+            fn = direct[action]
+            if action in mutating:
+                return await fn(interaction, tid=tid)
+            return await fn(interaction)
         if action == "game":
-            return await self._open_game_side(interaction)
+            return await self._open_game_side(interaction, tid=tid)
         modals = {
             "prize": ("Приз за 1 место",
                       [("Сумма", "например 100000", True, 12),
                        ("Валюта", "KZT", False, 10)],
-                      self._mi_prize),
+                      lambda i, v: self._mi_prize(i, v, tid)),
             "payout": ("Отметить выплату (ручную, вне бота)",
                        [("Discord ID игрока чемпиона", "123456789012345678", True, 25),
                         ("Сумма (как в призе)", "100000", True, 12),
                         ("Валюта", "KZT", False, 10),
                         ("Подтверждение ручной выплаты",
                          "https://discord.com/channels/…", True, 200)],
-                       self._mi_payout),
+                       lambda i, v: self._mi_payout(i, v, tid)),
             "cancel": ("Отмена CASH CUP",
                        [("Причина", "", True, 200)],
-                       self._mi_cancel),
+                       lambda i, v: self._mi_cancel(i, v, tid)),
             "pause": ("Пауза турнира",
                       [("Причина (необязательно)", "", False, 200)],
-                      self._mi_pause),
+                      lambda i, v: self._mi_pause(i, v, tid)),
         }
         if action in modals:
             title, fields, handler = modals[action]
@@ -846,7 +917,7 @@ class CashCupCog(commands.Cog):
         await self._reply(interaction, "Неизвестное действие")
 
     async def _pick_team(self, interaction: discord.Interaction,
-                         action: str) -> None:
+                         action: str, *, tid: str | None = None) -> None:
         state = (await cashcup_store.active(interaction.guild_id)
                  or await cashcup_store.latest(interaction.guild_id))
         teams = (state or {}).get("teams") or []
@@ -860,11 +931,12 @@ class CashCupCog(commands.Cog):
         await interaction.response.send_message(
             f"**{titles.get(action, 'Команда')}** — выберите:",
             view=PickView("Команда…", opts,
-                          lambda i, v: self._team_pick(i, action, v)),
+                          lambda i, v: self._team_pick(i, action, v, tid)),
             ephemeral=True)
 
     async def _team_pick(self, interaction: discord.Interaction,
-                         action: str, team_id: str) -> None:
+                         action: str, team_id: str,
+                         tid: str | None = None) -> None:
         state = (await cashcup_store.active(interaction.guild_id)
                  or await cashcup_store.latest(interaction.guild_id))
         t = next((x for x in (state or {}).get("teams", [])
@@ -874,17 +946,17 @@ class CashCupCog(commands.Cog):
             return
         name = t["name"]
         if action == "verify":
-            await self.verify(interaction, name)
+            await self.verify(interaction, name, tid=tid)
         elif action == "remove":
-            await self.remove(interaction, name)
+            await self.remove(interaction, name, tid=tid)
         elif action == "dq":
             await interaction.response.send_modal(_CbModal(
                 "Дисквалификация",
                 [("Причина", "", True, 200)],
-                lambda i, v: self._mi_dq(i, name, v)))
+                lambda i, v: self._mi_dq(i, name, v, tid)))
 
     async def _pick_match(self, interaction: discord.Interaction,
-                          action: str) -> None:
+                          action: str, *, tid: str | None = None) -> None:
         state = (await cashcup_store.active(interaction.guild_id)
                  or await cashcup_store.latest(interaction.guild_id))
         b = (state or {}).get("bracket") or {}
@@ -901,11 +973,12 @@ class CashCupCog(commands.Cog):
         await interaction.response.send_message(
             f"**{titles.get(action, 'Матч')}** — выберите:",
             view=PickView("Матч…", opts,
-                          lambda i, v: self._match_pick(i, action, v)),
+                          lambda i, v: self._match_pick(i, action, v, tid)),
             ephemeral=True)
 
     async def _match_pick(self, interaction: discord.Interaction,
-                          action: str, match_id: str) -> None:
+                          action: str, match_id: str,
+                          tid: str | None = None) -> None:
         mid = match_id.upper()
         state = (await cashcup_store.active(interaction.guild_id)
                  or await cashcup_store.latest(interaction.guild_id))
@@ -921,18 +994,18 @@ class CashCupCog(commands.Cog):
                  ("Счёт B", "например 1", True, 5),
                  ("Ссылка на доказательство",
                   "https://discord.com/channels/…", True, 200)],
-                lambda i, v: self._mi_result(i, mid, v)))
+                lambda i, v: self._mi_result(i, mid, v, tid)))
         elif action == "room":
             await interaction.response.send_modal(_CbModal(
                 "Комната матча",
                 [("ID комнаты", "", True, 60), ("Пароль", "", True, 60)],
-                lambda i, v: self._mi_room(i, mid, v)))
+                lambda i, v: self._mi_room(i, mid, v, tid)))
         elif action == "forfeit":
             await interaction.response.send_modal(_CbModal(
                 "Техническая победа",
                 [("Победитель (a/b)", "a", True, 5),
                  ("Причина", "", True, 200)],
-                lambda i, v: self._mi_forfeit(i, mid, v)))
+                lambda i, v: self._mi_forfeit(i, mid, v, tid)))
         elif action == "resolve":
             if m.get("status") != "disputed":
                 await self._reply(interaction, "Матч не в статусе СПОР")
@@ -942,7 +1015,7 @@ class CashCupCog(commands.Cog):
                 [("Победитель (a/b)", "a", True, 5),
                  ("Ссылка на подтверждение",
                   "https://discord.com/channels/…", True, 200)],
-                lambda i, v: self._mi_resolve(i, mid, v)))
+                lambda i, v: self._mi_resolve(i, mid, v, tid)))
 
     # ---------- обработчики Modal submit ----------
 
@@ -951,7 +1024,8 @@ class CashCupCog(commands.Cog):
         s = (v or "").strip().lower()
         return s if s in ("a", "b") else None
 
-    async def _mi_result(self, interaction, match_id, v) -> None:
+    async def _mi_result(self, interaction, match_id, v,
+                         tid: str | None = None) -> None:
         try:
             sa, sb = int(v[0]), int(v[1])
         except (TypeError, ValueError):
@@ -966,31 +1040,35 @@ class CashCupCog(commands.Cog):
                               "BO1: допустимы только результаты 1:0 или 0:1")
             return
         await self.result(interaction, match_id, sa, sb,
-                          (v[2] or "").strip())
+                          (v[2] or "").strip(), tid=tid)
 
-    async def _mi_room(self, interaction, match_id, v) -> None:
+    async def _mi_room(self, interaction, match_id, v,
+                       tid: str | None = None) -> None:
         await self.room(interaction, match_id, (v[0] or "").strip(),
-                        (v[1] or "").strip())
+                        (v[1] or "").strip(), tid=tid)
 
-    async def _mi_forfeit(self, interaction, match_id, v) -> None:
+    async def _mi_forfeit(self, interaction, match_id, v,
+                          tid: str | None = None) -> None:
         side = self._side(v[0])
         if side is None:
             await self._reply(interaction, "Победитель: только `a` или `b`")
             return
         await self.forfeit(interaction, match_id,
                            app_commands.Choice(name=side.upper(), value=side),
-                           (v[1] or "").strip())
+                           (v[1] or "").strip(), tid=tid)
 
-    async def _mi_resolve(self, interaction, match_id, v) -> None:
+    async def _mi_resolve(self, interaction, match_id, v,
+                          tid: str | None = None) -> None:
         side = self._side(v[0])
         if side is None:
             await self._reply(interaction, "Победитель: только `a` или `b`")
             return
         await self.resolve(interaction, match_id,
                            app_commands.Choice(name=side.upper(), value=side),
-                           (v[1] or "").strip())
+                           (v[1] or "").strip(), tid=tid)
 
-    async def _open_game_side(self, interaction: discord.Interaction) -> None:
+    async def _open_game_side(self, interaction: discord.Interaction,
+                              *, tid: str | None = None) -> None:
         """GF: победитель игры выбирается кнопками, не ручным вводом a/b."""
         state = (await cashcup_store.active(interaction.guild_id)
                  or await cashcup_store.latest(interaction.guild_id))
@@ -1007,26 +1085,30 @@ class CashCupCog(commands.Cog):
             f"**GF · счёт серии {m['score'][0]}:{m['score'][1]}** — "
             "кто выиграл эту игру?",
             view=GameSideView(self, m["id"], names.get(m["a"], "A"),
-                              names.get(m["b"], "B")), ephemeral=True)
+                              names.get(m["b"], "B"), tid=tid), ephemeral=True)
 
     async def _mi_game_side(self, interaction, side: str,
-                            evidence: str) -> None:
+                            evidence: str, tid: str | None = None) -> None:
         await self.game(interaction,
                         app_commands.Choice(name=side.upper(), value=side),
-                        evidence)
+                        evidence, tid=tid)
 
-    async def _mi_dq(self, interaction, team_name, v) -> None:
-        await self.dq(interaction, team_name, (v[0] or "").strip())
+    async def _mi_dq(self, interaction, team_name, v,
+                     tid: str | None = None) -> None:
+        await self.dq(interaction, team_name, (v[0] or "").strip(), tid=tid)
 
-    async def _mi_prize(self, interaction, v) -> None:
+    async def _mi_prize(self, interaction, v,
+                        tid: str | None = None) -> None:
         try:
             amount = int(v[0])
         except (TypeError, ValueError):
             await self._reply(interaction, "Сумма — число")
             return
-        await self.prizes(interaction, amount, (v[1] or "KZT").strip() or "KZT")
+        await self.prizes(interaction, amount, (v[1] or "KZT").strip() or "KZT",
+                          tid=tid)
 
-    async def _mi_payout(self, interaction, v) -> None:
+    async def _mi_payout(self, interaction, v,
+                         tid: str | None = None) -> None:
         try:
             uid = int(str(v[0]).strip().strip("<@!>"))
             amount = int(v[1])
@@ -1038,13 +1120,17 @@ class CashCupCog(commands.Cog):
             await self._reply(interaction, "Игрок не найден на сервере")
             return
         await self.payout(interaction, member, amount, (v[3] or "").strip(),
+                          tournament_id=tid,
                           currency=(v[2] or "").strip() or None)
 
-    async def _mi_cancel(self, interaction, v) -> None:
-        await self.cancel(interaction, (v[0] or "").strip() or "отменено ADMIN")
+    async def _mi_cancel(self, interaction, v,
+                         tid: str | None = None) -> None:
+        await self.cancel(interaction, (v[0] or "").strip() or "отменено ADMIN",
+                          tid=tid)
 
-    async def _mi_pause(self, interaction, v) -> None:
-        await self.pause(interaction, (v[0] or "").strip())
+    async def _mi_pause(self, interaction, v,
+                        tid: str | None = None) -> None:
+        await self.pause(interaction, (v[0] or "").strip(), tid=tid)
 
     async def show_match_card(self, interaction: discord.Interaction, match_id: str) -> None:
         state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
@@ -1080,10 +1166,19 @@ class CashCupCog(commands.Cog):
             raise CashCupError("Устройство: mobile или pc")
         return await _member_check(self.bot, interaction.guild, interaction.user.id)
 
+    async def _current_state(self, guild_id: int) -> dict | None:
+        return (await cashcup_store.active(guild_id)
+                or await cashcup_store.latest(guild_id))
+
     async def _post(self, interaction: discord.Interaction, action: str,
-                    change, details: dict | None = None) -> tuple[dict, Any]:
-        result = await cashcup_store.mutate(interaction.guild_id, interaction.user.id,
-                                            action, change, details)
+                    change, details: dict | None = None, *,
+                    tid: str | None = None) -> tuple[dict, Any]:
+        # tid — из ephemeral/persistent view: mutate адресует конкретную
+        # строку турнира, а не «последний активный». Без tid — прежнее
+        # поведение (slash-команды всегда работают с текущим).
+        result = await cashcup_store.mutate(
+            interaction.guild_id, interaction.user.id, action, change, details,
+            tournament_id=tid)
         await self._refresh(interaction.guild_id, result[0])
         return result
 
@@ -1121,7 +1216,8 @@ class CashCupCog(commands.Cog):
         await cashcup_store.set_message(interaction.guild_id, msg.id)
         await self._reply(interaction, "Карточка турнира опубликована повторно")
 
-    async def leave(self, interaction: discord.Interaction):
+    async def leave(self, interaction: discord.Interaction, *,
+                    tid: str | None = None):
         try:
             def change(state):
                 _assert_registration(state)
@@ -1136,12 +1232,13 @@ class CashCupCog(commands.Cog):
                                 t["lineup"].remove(interaction.user.id)
                             return t["id"]
                 raise CashCupError("Вы не зарегистрированы в CASH CUP")
-            await self._post(interaction, "leave_team", change)
+            await self._post(interaction, "leave_team", change, tid=tid)
             await self._reply(interaction, "Вы покинули заявку/команду")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
-    async def verify(self, interaction: discord.Interaction, team_name: str) -> None:
+    async def verify(self, interaction: discord.Interaction, team_name: str,
+                     *, tid: str | None = None) -> None:
         if not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Доступно только организатору")
             return
@@ -1163,7 +1260,7 @@ class CashCupCog(commands.Cog):
                     player["verified"] = True
                 return len(t["members"])
             _, n = await self._post(interaction, "verify_roster", change,
-                                     {"team": team_name, "manual": True})
+                                     {"team": team_name, "manual": True}, tid=tid)
             await self._reply(interaction, f"Подтверждено игроков: {n}. Используйте это только после проверки принадлежности аккаунтов.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
@@ -1187,7 +1284,8 @@ class CashCupCog(commands.Cog):
         subs = len(t["members"]) - len(t["lineup"])
         rows.append(f"\n**Итого:** {len(t['members'])}/5 · основа: {len(t['lineup'])} · запас: {subs}")
         text = "\n".join(rows)[:1900]
-        view = RosterView(is_captain=(t["captain"] == interaction.user.id))
+        view = RosterView(is_captain=(t["captain"] == interaction.user.id),
+                          tid=_tid(state))
         if interaction.response.is_done():
             await interaction.followup.send(text, view=view, ephemeral=True,
                                             allowed_mentions=discord.AllowedMentions.none())
@@ -1248,7 +1346,8 @@ class CashCupCog(commands.Cog):
         lines.append(f"Сыграно серий: {len(done)}/{len(b['matches'])}")
         await self._reply(interaction, "\n".join(lines)[:1900])
 
-    async def withdraw(self, interaction: discord.Interaction):
+    async def withdraw(self, interaction: discord.Interaction, *,
+                       tid: str | None = None):
         try:
             def change(state):
                 _assert_registration(state)
@@ -1256,12 +1355,13 @@ class CashCupCog(commands.Cog):
                 if team["captain"] != interaction.user.id:
                     raise CashCupError("Снять команду может только капитан")
                 state["teams"].remove(team)
-            await self._post(interaction, "withdraw_team", change)
+            await self._post(interaction, "withdraw_team", change, tid=tid)
             await self._reply(interaction, "Команда снята с регистрации")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
-    async def remove(self, interaction: discord.Interaction, name: str):
+    async def remove(self, interaction: discord.Interaction, name: str,
+                     *, tid: str | None = None):
         if not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
@@ -1269,12 +1369,14 @@ class CashCupCog(commands.Cog):
             def change(state):
                 _assert_registration(state)
                 state["teams"].remove(_team(state, name))
-            await self._post(interaction, "remove_team", change, {"name": name})
+            await self._post(interaction, "remove_team", change,
+                             {"name": name}, tid=tid)
             await self._reply(interaction, "Команда удалена")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
-    async def start(self, interaction: discord.Interaction):
+    async def start(self, interaction: discord.Interaction, *,
+                    tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
@@ -1300,7 +1402,7 @@ class CashCupCog(commands.Cog):
                 state["status"] = "running"
                 return len(state["teams"])
             _, count = await self._post(interaction, "start", change,
-                                        {"teams": len(snapshot["teams"])})
+                                        {"teams": len(snapshot["teams"])}, tid=tid)
             await self._reply(interaction, f"CASH CUP запущен! Команд: {count}. Сетка Double Elimination сформирована.")
         except (CashCupError, BracketError) as exc:
             await self._reply(interaction, str(exc))
@@ -1323,7 +1425,8 @@ class CashCupCog(commands.Cog):
             lines.append(f"… ещё {len(items)-24}; список выводится частично")
         await self._reply(interaction, "\n".join(lines)[:1900])
 
-    async def checkin(self, interaction: discord.Interaction, match_id: str):
+    async def checkin(self, interaction: discord.Interaction, match_id: str,
+                      *, tid: str | None = None):
         if not interaction.guild:
             await self._reply(interaction, "Нужен сервер r!z3")
             return
@@ -1332,6 +1435,8 @@ class CashCupCog(commands.Cog):
             snapshot = await cashcup_store.active(interaction.guild_id)
             if not snapshot or snapshot["status"] != "running":
                 raise CashCupError("Нет активного турнира")
+            if tid and _tid(snapshot) != tid:
+                raise CashCupError("Состояние турнира изменилось — откройте карточку заново")
             if snapshot.get("paused"):
                 raise CashCupError("Турнир приостановлен организатором")
             current = next((m for m in ready_matches(snapshot["bracket"])
@@ -1356,13 +1461,15 @@ class CashCupCog(commands.Cog):
                 m["checkins"].append(interaction.user.id)
                 return len(m["checkins"])
             _, count = await self._post(interaction, "checkin", change,
-                                        {"match": match_id, "captain": interaction.user.id})
+                                        {"match": match_id, "captain": interaction.user.id},
+                                        tid=tid)
             await self._reply(interaction, f"Готовность подтверждена ({count}/2 капитана).")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
     async def result(self, interaction: discord.Interaction, match_id: str,
-                     score_a: int, score_b: int, evidence: str):
+                     score_a: int, score_b: int, evidence: str,
+                     *, tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
@@ -1391,14 +1498,15 @@ class CashCupCog(commands.Cog):
                 return m["winner"]
             state, winner_id = await self._post(interaction, "result", change,
                                                 {"match": match_id, "score": [score_a, score_b],
-                                                 "evidence": evidence})
+                                                 "evidence": evidence}, tid=tid)
             await self._reply(interaction, f"Результат сохранён. Победитель: **{_team_name(state,winner_id)}**." +
                               (" CASH CUP завершён!" if state["status"] == "completed" else ""))
         except (CashCupError, BracketError) as exc:
             await self._reply(interaction, str(exc))
 
     async def game(self, interaction: discord.Interaction,
-                   winner: app_commands.Choice[str], evidence: str):
+                   winner: app_commands.Choice[str], evidence: str,
+                   *, tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Доступно только организатору")
             return
@@ -1414,7 +1522,8 @@ class CashCupCog(commands.Cog):
                     state["status"] = "completed"
                 return m["score"]
             state, scores = await self._post(interaction, "final_game", change,
-                                              {"winner_side": winner.value, "evidence": evidence})
+                                              {"winner_side": winner.value, "evidence": evidence},
+                                              tid=tid)
             await self._reply(interaction, f"Grand Final: **{scores[0]}:{scores[1]}**. " +
                               ("Победитель турнира определён!" if state["status"] == "completed"
                                else "Серия продолжается до двух побед."))
@@ -1422,7 +1531,7 @@ class CashCupCog(commands.Cog):
             await self._reply(interaction, str(exc))
 
     async def room(self, interaction: discord.Interaction, match_id: str,
-                   room_id: str, password: str):
+                   room_id: str, password: str, *, tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
@@ -1441,7 +1550,7 @@ class CashCupCog(commands.Cog):
                 m["room_set_at"] = datetime.now(timezone.utc).isoformat()
                 return m["a"], m["b"]
             state, teams = await self._post(interaction, "set_room", change,
-                                           {"match": match_id})
+                                           {"match": match_id}, tid=tid)
             captains = [t["captain"] for t in state["teams"] if t["id"] in teams]
             failures = []
             delivered = []
@@ -1464,7 +1573,8 @@ class CashCupCog(commands.Cog):
             try:
                 await cashcup_store.mutate(interaction.guild_id, interaction.user.id,
                                            "room_delivery", audit,
-                                           {"match": match_id, "delivered": delivered})
+                                           {"match": match_id, "delivered": delivered},
+                                           tournament_id=tid)
             except Exception:
                 logger.exception("CASH CUP room delivery audit failed")
             await self._reply(interaction,
@@ -1476,8 +1586,13 @@ class CashCupCog(commands.Cog):
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
-    async def roominfo(self, interaction: discord.Interaction, match_id: str):
+    async def roominfo(self, interaction: discord.Interaction, match_id: str,
+                       *, tid: str | None = None):
         state = await cashcup_store.active(interaction.guild_id)
+        if tid and state and _tid(state) != tid:
+            await self._reply(interaction,
+                              "Состояние турнира изменилось — откройте карточку заново")
+            return
         if not state or state["status"] != "running":
             await self._reply(interaction, "Турнир не запущен")
             return
@@ -1495,7 +1610,7 @@ class CashCupCog(commands.Cog):
         await self._reply(interaction, f"Матч `{m['id']}` · ID `{m['room_id']}` · пароль `{m['room_password']}`")
 
     async def swap(self, interaction: discord.Interaction, out_player: discord.Member,
-                   in_player: discord.Member):
+                   in_player: discord.Member, *, tid: str | None = None):
         try:
             await _member_check(self.bot, interaction.guild, in_player.id)
             def change(state):
@@ -1514,7 +1629,7 @@ class CashCupCog(commands.Cog):
                 t["lineup"].remove(out_player.id)
                 t["lineup"].append(in_player.id)
             await self._post(interaction, "substitute", change,
-                             {"out": out_player.id,"in": in_player.id})
+                             {"out": out_player.id,"in": in_player.id}, tid=tid)
             await self._reply(interaction, "Замена зарегистрирована")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
@@ -1616,20 +1731,23 @@ class CashCupCog(commands.Cog):
             f"Загрузка по шагам (матчей/комнат): {load}\n"
             f"Пиковая параллельность: {max(steps)} матчей одновременно.{gf_extra}")
 
-    async def cancel(self, interaction: discord.Interaction, reason: str):
+    async def cancel(self, interaction: discord.Interaction, reason: str,
+                     *, tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
         try:
             def change(state):
                 state["status"] = "cancelled"
-            await self._post(interaction, "cancel", change, {"reason": reason[:300]})
+            await self._post(interaction, "cancel", change,
+                             {"reason": reason[:300]}, tid=tid)
             await self._reply(interaction, "CASH CUP отменён; запись сохранена в аудите")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
 
-    async def revert(self, interaction: discord.Interaction):
+    async def revert(self, interaction: discord.Interaction, *,
+                     tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
@@ -1650,13 +1768,14 @@ class CashCupCog(commands.Cog):
                     {"at": datetime.now(timezone.utc).isoformat()})
                 state["status"] = ("completed" if state["bracket"].get("champion")
                                    else "running")
-            await self._post(interaction, "revert_result", change)
+            await self._post(interaction, "revert_result", change, tid=tid)
             await self._reply(interaction, "Последнее изменение результата отменено. Сетка восстановлена из снимка.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
     async def forfeit(self, interaction: discord.Interaction, match_id: str,
-                      winner: app_commands.Choice[str], reason: str):
+                      winner: app_commands.Choice[str], reason: str,
+                      *, tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
@@ -1676,12 +1795,14 @@ class CashCupCog(commands.Cog):
                     state["status"] = "completed"
                 return m["id"]
             await self._post(interaction, "forfeit", change,
-                             {"match": match_id, "winner": winner.value, "reason": reason[:200]})
+                             {"match": match_id, "winner": winner.value, "reason": reason[:200]},
+                             tid=tid)
             await self._reply(interaction, "Техническая победа записана.")
         except (CashCupError, BracketError) as exc:
             await self._reply(interaction, str(exc))
 
-    async def dq(self, interaction: discord.Interaction, team_name: str, reason: str):
+    async def dq(self, interaction: discord.Interaction, team_name: str, reason: str,
+                 *, tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
@@ -1694,16 +1815,17 @@ class CashCupCog(commands.Cog):
                 if state["bracket"]["champion"]:
                     state["status"] = "completed"
                 return t["id"]
-            state, tid = await self._post(interaction, "disqualify", change,
-                                          {"team": team_name, "reason": reason[:200]})
+            state, dq_team = await self._post(interaction, "disqualify", change,
+                                          {"team": team_name, "reason": reason[:200]}, tid=tid)
             b = state["bracket"]
             note = " CASH CUP завершён!" if state["status"] == "completed" else ""
             await self._reply(interaction,
-                              f"Команда **{_team_name(state, tid)}** дисквалифицирована.{note}")
+                              f"Команда **{_team_name(state, dq_team)}** дисквалифицирована.{note}")
         except (CashCupError, BracketError) as exc:
             await self._reply(interaction, str(exc))
 
-    async def pause(self, interaction: discord.Interaction, reason: str = ""):
+    async def pause(self, interaction: discord.Interaction, reason: str = "",
+                    *, tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
@@ -1712,12 +1834,14 @@ class CashCupCog(commands.Cog):
                 _assert_running(state)
                 state["paused"] = True
                 state["pause_reason"] = reason[:200]
-            await self._post(interaction, "pause", change, {"reason": reason[:200]})
+            await self._post(interaction, "pause", change,
+                             {"reason": reason[:200]}, tid=tid)
             await self._reply(interaction, "CASH CUP приостановлен: результаты, комнаты и замены заблокированы.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
-    async def resume(self, interaction: discord.Interaction):
+    async def resume(self, interaction: discord.Interaction, *,
+                     tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
             return
@@ -1728,7 +1852,7 @@ class CashCupCog(commands.Cog):
                     raise CashCupError("Турнир не приостановлен")
                 state["paused"] = False
                 state.pop("pause_reason", None)
-            await self._post(interaction, "resume", change)
+            await self._post(interaction, "resume", change, tid=tid)
             await self._reply(interaction, "CASH CUP возобновлён.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
@@ -1758,13 +1882,16 @@ class CashCupCog(commands.Cog):
             lines.append("\n**Чемпионы:** " + "; ".join(champions[:10]))
         await self._reply(interaction, "\n".join(lines)[:1900])
 
-    async def dispute(self, interaction: discord.Interaction, match_id: str, reason: str):
+    async def dispute(self, interaction: discord.Interaction, match_id: str, reason: str,
+                      *, tid: str | None = None):
         if not interaction.guild:
             await self._reply(interaction, "Нужен сервер r!z3")
             return
         await interaction.response.defer(ephemeral=True)
         try:
             state = await cashcup_store.active(interaction.guild_id)
+            if tid and state and _tid(state) != tid:
+                raise CashCupError("Состояние турнира изменилось — откройте карточку заново")
             if not state or state["status"] != "running":
                 raise CashCupError("Нет активного турнира")
             b = state["bracket"]
@@ -1788,14 +1915,15 @@ class CashCupCog(commands.Cog):
                                  "at": datetime.now(timezone.utc).isoformat(),
                                  "evidence": []}
             await self._post(interaction, "dispute_open", change,
-                             {"match": m["id"], "reason": reason[:200]})
+                             {"match": m["id"], "reason": reason[:200]}, tid=tid)
             await self._reply(interaction,
                               f"Спор по матчу `{m['id']}` открыт. Продвижение результата заблокировано. "
                               "Участники могут передать доказательства через /cashcup info evidence.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
-    async def evidence(self, interaction: discord.Interaction, match_id: str, url: str):
+    async def evidence(self, interaction: discord.Interaction, match_id: str, url: str,
+                       *, tid: str | None = None):
         if not interaction.guild:
             await self._reply(interaction, "Нужен сервер r!z3")
             return
@@ -1805,6 +1933,8 @@ class CashCupCog(commands.Cog):
             return
         try:
             state = await cashcup_store.active(interaction.guild_id)
+            if tid and state and _tid(state) != tid:
+                raise CashCupError("Состояние турнира изменилось — откройте карточку заново")
             if not state:
                 raise CashCupError("Нет активного турнира")
             b = state["bracket"]
@@ -1825,13 +1955,14 @@ class CashCupCog(commands.Cog):
                 if len(mm["dispute"]["evidence"]) > 10:
                     raise CashCupError("Лимит доказательств исчерпан")
             await self._post(interaction, "dispute_evidence", change,
-                             {"match": m["id"]})
+                             {"match": m["id"]}, tid=tid)
             await self._reply(interaction, "Доказательство добавлено в спор.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
     async def resolve(self, interaction: discord.Interaction, match_id: str,
-                      winner: app_commands.Choice[str], evidence: str):
+                      winner: app_commands.Choice[str], evidence: str,
+                      *, tid: str | None = None):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Только ADMIN")
             return
@@ -1855,14 +1986,15 @@ class CashCupCog(commands.Cog):
                     state["status"] = "completed"
                 return m["id"]
             await self._post(interaction, "dispute_resolve", change,
-                             {"match": match_id, "winner": winner.value})
+                             {"match": match_id, "winner": winner.value}, tid=tid)
             await self._reply(interaction, "Спор разрешён, результат записан.")
         except (CashCupError, BracketError) as exc:
             await self._reply(interaction, str(exc))
 
 
     async def prizes(self, interaction: discord.Interaction,
-                     amount: int, currency: str = "KZT"):
+                     amount: int, currency: str = "KZT",
+                     *, tid: str | None = None):
         """Приз за 1 место (вызывается из админ-меню)."""
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Только ADMIN")
@@ -1872,7 +2004,7 @@ class CashCupCog(commands.Cog):
                 _assert_registration(state)
                 return _apply_prizes(state, amount, currency)
             _, prizes_data = await self._post(interaction, "set_prize", change,
-                                              {"amount": amount})
+                                              {"amount": amount}, tid=tid)
             await self._reply(interaction,
                               f"Приз за 1 место: {prizes_data['places']['1']} "
                               f"{prizes_data['currency']}. Выплата ручная — "
@@ -1982,9 +2114,10 @@ class _CbModal(discord.ui.Modal):
 class FFDataModal(discord.ui.Modal):
     """Игрок сам подтверждает свой Free Fire UID/регион/устройство."""
 
-    def __init__(self, team_id: str | None = None):
+    def __init__(self, team_id: str | None = None, tid: str | None = None):
         super().__init__(title="Free Fire — мои данные", timeout=600)
         self.team_id = team_id
+        self.tid = tid
         self.ff_uid = discord.ui.TextInput(label="Free Fire UID",
                                            placeholder="123456789",
                                            min_length=5, max_length=20)
@@ -2001,33 +2134,34 @@ class FFDataModal(discord.ui.Modal):
         await cog.confirm_ff(
             interaction, self.team_id, self.ff_uid.value.strip(),
             self.region.value.strip().lower() or "ru",
-            self.device.value.strip().lower())
+            self.device.value.strip().lower(), tid=self.tid)
 
 
 class InviteSubModal(_CbModal):
-    def __init__(self, cog_getter):
+    def __init__(self, cog_getter, tid: str | None = None):
         super().__init__(
             "Пригласить запасного",
             [("Discord ID игрока", "123456789012345678", True, 25)],
-            lambda i, v: cog_getter(i).invite_sub(i, v[0]))
+            lambda i, v: cog_getter(i).invite_sub(i, v[0], tid=tid))
 
 
 class SwapModal(_CbModal):
-    def __init__(self, cog_getter):
+    def __init__(self, cog_getter, tid: str | None = None):
         super().__init__(
             "Замена в составе",
             [("Кого убрать (Discord ID)", "123456789012345678", True, 25),
              ("Кого добавить (Discord ID)", "123456789012345678", True, 25)],
-            lambda i, v: cog_getter(i)._swap_by_ids(i, v[0], v[1]))
+            lambda i, v: cog_getter(i)._swap_by_ids(i, v[0], v[1], tid=tid))
 
 
 class RosterView(discord.ui.View):
     """Эфемерные действия со своим составом. Привилегированные кнопки
     добавляются только капитану; серверные проверки — в методах cog."""
 
-    def __init__(self, is_captain: bool = False):
+    def __init__(self, is_captain: bool = False, tid: str | None = None):
         super().__init__(timeout=300)
         self.is_captain = is_captain
+        self.tid = tid
         self.add_item(_ActButton("Мои данные", discord.ButtonStyle.primary,
                                  self._my_data))
         if is_captain:
@@ -2042,23 +2176,24 @@ class RosterView(discord.ui.View):
                                  self._leave))
 
     async def _my_data(self, interaction):
-        await interaction.response.send_modal(FFDataModal())
+        await interaction.response.send_modal(FFDataModal(tid=self.tid))
 
     async def _invite_sub(self, interaction):
         await interaction.response.send_modal(
-            InviteSubModal(lambda i: i.client.get_cog("CashCupCog")))
+            InviteSubModal(lambda i: i.client.get_cog("CashCupCog"),
+                           tid=self.tid))
 
     async def _swap(self, interaction):
         await interaction.response.send_modal(
-            SwapModal(lambda i: i.client.get_cog("CashCupCog")))
+            SwapModal(lambda i: i.client.get_cog("CashCupCog"), tid=self.tid))
 
     async def _withdraw(self, interaction):
         cog = interaction.client.get_cog("CashCupCog")
-        await cog.withdraw(interaction)
+        await cog.withdraw(interaction, tid=self.tid)
 
     async def _leave(self, interaction):
         cog = interaction.client.get_cog("CashCupCog")
-        await cog.leave(interaction)
+        await cog.leave(interaction, tid=self.tid)
 
 
 class MatchCardView(discord.ui.View):
@@ -2067,6 +2202,7 @@ class MatchCardView(discord.ui.View):
     def __init__(self, cog, state, m, user):
         super().__init__(timeout=300)
         mid = m["id"]
+        tid = _tid(state)
         teams = {t["id"]: t for t in state.get("teams", [])}
         participant = any(
             t["id"] in (m.get("a"), m.get("b")) and t.get("captain") == user.id
@@ -2080,45 +2216,45 @@ class MatchCardView(discord.ui.View):
         if participant:
             self.add_item(_ActButton("Подтвердить готовность",
                                      discord.ButtonStyle.success,
-                                     lambda i: cog.checkin(i, mid)))
+                                     lambda i: cog.checkin(i, mid, tid=tid)))
             self.add_item(_ActButton("Комната",
                                      discord.ButtonStyle.secondary,
-                                     lambda i: cog.roominfo(i, mid)))
+                                     lambda i: cog.roominfo(i, mid, tid=tid)))
             self.add_item(modal_btn(
                 "Открыть спор", discord.ButtonStyle.danger, "Спор по матчу",
                 [("Причина", "", True, 200)],
-                lambda i, v: cog.dispute(i, mid, (v[0] or "").strip())))
+                lambda i, v: cog.dispute(i, mid, (v[0] or "").strip(), tid=tid)))
             self.add_item(modal_btn(
                 "Доказательство", discord.ButtonStyle.secondary,
                 "Доказательство",
                 [("Ссылка", "https://discord.com/channels/…", True, 200)],
-                lambda i, v: cog.evidence(i, mid, (v[0] or "").strip())))
+                lambda i, v: cog.evidence(i, mid, (v[0] or "").strip(), tid=tid)))
         if is_admin:
             self.add_item(modal_btn(
                 "Выдать комнату", discord.ButtonStyle.primary, "Комната матча",
                 [("ID комнаты", "", True, 60), ("Пароль", "", True, 60)],
-                lambda i, v: cog._mi_room(i, mid, v)))
+                lambda i, v: cog._mi_room(i, mid, v, tid)))
             self.add_item(modal_btn(
                 "Результат", discord.ButtonStyle.success, "Результат матча",
                 [("Счёт A", "например 3", True, 5),
                  ("Счёт B", "например 1", True, 5),
                  ("Ссылка на доказательство", "https://discord.com/channels/…", True, 200)],
-                lambda i, v: cog._mi_result(i, mid, v)))
+                lambda i, v: cog._mi_result(i, mid, v, tid)))
             if m.get("bracket") == "GF":
                 self.add_item(_ActButton(
                     "Игра GF", discord.ButtonStyle.primary,
-                    lambda i: cog._open_game_side(i)))
+                    lambda i: cog._open_game_side(i, tid=tid)))
             self.add_item(modal_btn(
                 "Тех. победа", discord.ButtonStyle.danger, "Техническая победа",
                 [("Победитель (a/b)", "a", True, 5),
                  ("Причина", "", True, 200)],
-                lambda i, v: cog._mi_forfeit(i, mid, v)))
+                lambda i, v: cog._mi_forfeit(i, mid, v, tid)))
             if m.get("status") == "disputed":
                 self.add_item(modal_btn(
                     "Решить спор", discord.ButtonStyle.success, "Решение спора",
                     [("Победитель (a/b)", "a", True, 5),
                      ("Ссылка на подтверждение", "https://discord.com/channels/…", True, 200)],
-                    lambda i, v: cog._mi_resolve(i, mid, v)))
+                    lambda i, v: cog._mi_resolve(i, mid, v, tid)))
 
 
 class AdminMenuView(discord.ui.View):
@@ -2126,6 +2262,7 @@ class AdminMenuView(discord.ui.View):
 
     def __init__(self, state):
         super().__init__(timeout=300)
+        self.tid = _tid(state)
         status = (state or {}).get("status")
         bracket = (state or {}).get("bracket") or {}
         disputed = any(mm.get("status") == "disputed"
@@ -2158,20 +2295,23 @@ class AdminMenuView(discord.ui.View):
 
         async def on_pick(interaction, value):
             cog = interaction.client.get_cog("CashCupCog")
-            await cog._admin_action(interaction, value)
+            await cog._admin_action(interaction, value, tid=self.tid)
 
         self.add_item(_PickSelect("Управление CASH CUP…", opts, on_pick))
 
 class GameSideView(discord.ui.View):
     """Выбор победителя одной игры Grand Final — кнопками, не вводом a/b."""
 
-    def __init__(self, cog, match_id: str, name_a: str, name_b: str):
+    def __init__(self, cog, match_id: str, name_a: str, name_b: str,
+                 tid: str | None = None):
         super().__init__(timeout=300)
+        self.tid = tid
         for side, name in (("a", name_a), ("b", name_b)):
             async def pick(interaction, _side=side):
                 await interaction.response.send_modal(_CbModal(
                     "Игра GF — доказательство",
                     [("Ссылка", "https://discord.com/channels/…", True, 200)],
-                    lambda i, v: cog._mi_game_side(i, _side, (v[0] or "").strip())))
+                    lambda i, v: cog._mi_game_side(i, _side, (v[0] or "").strip(),
+                                                 tid=self.tid)))
             self.add_item(_ActButton(f"Победа: {name}"[:80],
                                      discord.ButtonStyle.success, pick))

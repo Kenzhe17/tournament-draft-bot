@@ -116,6 +116,10 @@ class FakeStore:
 
     async def mutate(self, guild_id, actor_id, action, change, details=None,
                      include_finished=False, tournament_id=None, **kw):
+        # Адресация по tournament_id: строка обязана совпадать,
+        # как FOR UPDATE ... WHERE id=$2 в PostgreSQL.
+        if tournament_id is not None and self.state is not None                 and str(self.state.get("tournament_id") or "") != str(tournament_id):
+            raise cashcup.CashCupError("Активный CASH CUP не найден")
         res = change(self.state)
         self.audits.append({"action": action, "actor": actor_id,
                             "details": details})
@@ -639,9 +643,13 @@ class FakeMsg:
     def __init__(self, mid=777):
         self.id = mid
         self.edits = []
+        self.deleted = False
 
     async def edit(self, **kw):
         self.edits.append(kw)
+
+    async def delete(self):
+        self.deleted = True
 
 
 class FakeChannel:
@@ -976,3 +984,109 @@ async def test_concurrent_nav_clamps_at_bounds(cog):
              + cashcup.BOARD_PER_PAGE - 1) // cashcup.BOARD_PER_PAGE
     assert 0 <= cog._board_pages[1] <= pages - 1
     assert not ch.sent
+
+
+# ================= §12: привязка interactions к tournament_id / message_id =================
+
+@pytest.mark.asyncio
+async def test_post_tid_addresses_exact_tournament(cog):
+    """_post(tid=...) пишет в конкретный tournament_id, не в «последний»."""
+    st = _reg_state()
+    st["tournament_id"] = "tidA"
+    cog._store.state = st
+    calls = []
+
+    async def fake_mutate(gid, actor, action, change, details=None,
+                          include_finished=False, tournament_id=None, **kw):
+        calls.append(tournament_id)
+        return st, change(st)
+    import cogs.cashcup as cc
+    orig = cc.cashcup_store.mutate
+    cc.cashcup_store.mutate = fake_mutate
+    try:
+        i = make_interaction(_member(1))
+        await cog._post(i, "noop", lambda s: None, tid="tidA")
+        assert calls == ["tidA"]
+    finally:
+        cc.cashcup_store.mutate = orig
+
+
+@pytest.mark.asyncio
+async def test_stale_tid_rejected_by_store(cog):
+    """Modal от старого турнира: mutate по чужому tournament_id -> отказ."""
+    st = _reg_state()
+    st["tournament_id"] = "tidNEW"
+    cog._store.state = st
+    i = make_interaction(_member(1))
+    # tids не совпадают -> CashCupError до change()
+    with pytest.raises(cashcup.CashCupError):
+        await cog._store.mutate(1, 1, "x", lambda s: None, tournament_id="tidOLD")
+
+
+@pytest.mark.asyncio
+async def test_panel_button_stale_message_rejected(cog):
+    """Persistent кнопка панели с message_id чужого/старого сообщения -> отказ."""
+    st = _reg_state()
+    st["tournament_id"] = "tidA"
+    st["message_id"] = 555
+    cog._store.state = st
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=999)  # старая карточка
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+    # teams — read-only кнопка; guard должен отсечь до вызова cog
+    called = []
+    async def fake_teams(inter):
+        called.append(1)
+    cog.show_teams = fake_teams
+    await v.teams.callback(i)
+    assert not called
+    assert "устарел" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_board_select_stale_message_rejected(cog):
+    """Select на устаревшей доске (другой board_message_id) -> отказ."""
+    st = _running_state(4)
+    st["tournament_id"] = "tidA"
+    st["board_message_id"] = 555
+    cog._store.state = st
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=999)
+    i.client = FakeClient(cog)
+    v = cashcup.BoardSelectView()
+    v._sel._values = ["M1"]
+    await v._pick(i)
+    assert "устарел" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_board_nav_stale_message_rejected(cog):
+    st = _running_state(4)
+    st["tournament_id"] = "tidA"
+    st["board_message_id"] = 555
+    cog._store.state = st
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=999)
+    i.client = FakeClient(cog)
+    v = cashcup.BoardSelectView()
+    await v._nav(i, +1)
+    assert "устарел" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_orphan_board_deleted_when_pg_write_fails(cog, monkeypatch):
+    """send успешен, mutate упал -> сообщение-сирота удаляется, дубля нет."""
+    st = _running_state(4)
+    st["board_message_id"] = None
+    cog._store.state = st
+    ch = FakeChannel()
+
+    async def boom(*a, **k):
+        raise RuntimeError("pg down")
+    monkeypatch.setattr(cashcup.cashcup_store, "mutate", boom)
+    ok = await cog._sync_board(st, ch)
+    assert ok is False
+    assert len(ch.sent) == 1
+    m, _ = ch.sent[0]
+    assert m.deleted is True
