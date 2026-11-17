@@ -10,10 +10,19 @@ from discord import app_commands
 from discord.ext import commands
 
 from cogs.groups import bind_commands, server_group
-from config import guild_allowed
+from config import BOT_OWNER_ID, guild_allowed
 from services import server_layout
 from storage.server_layout_store import server_layout_store
 from utils.permissions import is_admin
+
+
+def _is_owner(interaction: discord.Interaction) -> bool:
+    """OWNER = владелец сервера или BOT_OWNER_ID. Apply/rollback — только он."""
+    uid = interaction.user.id
+    if BOT_OWNER_ID and uid == BOT_OWNER_ID:
+        return True
+    guild = interaction.guild
+    return bool(guild and getattr(guild, 'owner_id', 0) == uid)
 
 
 class ServerReconstructionCog(commands.Cog):
@@ -37,6 +46,8 @@ class ServerReconstructionCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         try:
+            if action in ('apply', 'rollback') and not _is_owner(interaction):
+                raise ValueError('Применение и откат реконструкции — только OWNER.')
             if action in ('apply', 'rollback') and not interaction.guild.me.guild_permissions.manage_channels:
                 raise ValueError('Боту необходимо право управления каналами.')
             if archive_ids and action != 'plan':

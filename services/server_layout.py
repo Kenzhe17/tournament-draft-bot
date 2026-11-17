@@ -60,6 +60,14 @@ def channel_snapshot(channel) -> dict:
             'overwrites': sorted(overwrites, key=lambda r: (r['type'], r['id']))}
 
 
+def role_snapshot(role) -> dict:
+    p = role.permissions
+    return {'id': role.id, 'name': role.name, 'position': role.position,
+            'managed': role.managed, 'mentionable': role.mentionable,
+            'hoist': role.hoist, 'color': role.color.value,
+            'permissions': p.value}
+
+
 def fingerprint(snapshot: list[dict]) -> str:
     return hashlib.sha256(json.dumps(sorted(snapshot, key=lambda x: x['id']),
                                     sort_keys=True).encode()).hexdigest()
@@ -80,6 +88,43 @@ async def busy_channels(guild_id: int) -> set[int]:
         ids.update(t.channel_id for t in await ultimatum_store.list_active_all() if t.guild_id == guild_id)
         ids.update(int(s['channel_id']) for s in await list_slots()
                    if int(s.get('guild_id') or 0) == guild_id and s['state'] != 'free')
+    # Служебные/конфигурационные каналы — из актуального runtime-конфига
+    # (env → config → settings_service через discord_cfg).
+    try:
+        from services.discord_cfg import channel_id, channel_ids
+        ids.update(int(x) for x in getattr(config, 'MM_MATCH_CHANNEL_POOL', []) or [])
+        ids.update(channel_ids(guild_id, 'discord.tournament_channels',
+                               list(getattr(config, 'TOURNAMENT_CHANNELS', []) or [])))
+        for key, cfg_attr in (
+                ('discord.notification_channel_id', 'NOTIFICATION_CHANNEL_ID'),
+                ('discord.log_channel_id', 'LOG_CHANNEL_ID'),
+                ('discord.rep_log_channel_id', 'REP_LOG_CHANNEL_ID'),
+                ('discord.welcome_channel_id', 'WELCOME_CHANNEL_ID'),
+                ('discord.tournament_audit_channel_id', 'TOURNAMENT_AUDIT_CHANNEL_ID')):
+            cid = channel_id(guild_id, key, int(getattr(config, cfg_attr, 0) or 0))
+            if cid:
+                ids.add(cid)
+        # env-only служебные каналы (BR/Ultimatum/мод-лог/HUB/инфо).
+        for cfg_attr in ('ROOM_DATA_CHANNEL_ID', 'ROOM_OPEN_NOTIFY_CHANNEL_ID',
+                         'BR_ROOM_CHANNEL_ID', 'BR_DATA_CHANNEL_ID', 'BR_TEAM_CHANNEL_ID',
+                         'ULT_ROOM_CHANNEL_ID', 'MOD_LOG_CHANNEL_ID',
+                         'GAMES_CHANNEL_ID', 'INFO_CHANNEL_ID', 'PET_HUNGER_CHANNEL_ID'):
+            cid = int(getattr(config, cfg_attr, 0) or 0)
+            if cid:
+                ids.add(cid)
+    except Exception:  # noqa: BLE001
+        pass
+    # Активный Cash Cup: его канал не архивируем во время регистрации/игры.
+    try:
+        if config.DATABASE_URL:
+            from services.cashcup_store import cashcup_store
+            st = await cashcup_store.latest(guild_id)
+            if st and st.get('status') in ('registration', 'running'):
+                cid = int(st.get('channel_id') or 0)
+                if cid:
+                    ids.add(cid)
+    except Exception:  # noqa: BLE001
+        pass
     return ids
 
 
@@ -181,6 +226,8 @@ async def prepare(guild, archive: set[int]) -> dict:
         snapshot = [channel_snapshot(c) for c in await guild.fetch_channels()]
         plan = plan_layout(guild.id, snapshot, configured_bindings(guild.id),
                            await busy_channels(guild.id), archive)
+        # §14: снимок ролей и позиций для backup/аудита (apply ролей не меняет).
+        plan['roles_before'] = [role_snapshot(r) for r in guild.roles]
         plan['bindings_before'] = dict(state.get('bindings', {}))
         state_store.archive_plan(guild.id, plan)
         state['plan'] = plan
