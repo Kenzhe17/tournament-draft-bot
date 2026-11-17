@@ -149,7 +149,8 @@ def configured_bindings(guild_id: int) -> dict[str, int]:
 
 
 def plan_layout(guild_id: int, snapshot: list[dict], bindings: dict[str, int],
-                busy: set[int], archive: set[int]) -> dict:
+                busy: set[int], archive: set[int],
+                moves: dict[int, str] | None = None) -> dict:
     by_id = {c['id']: c for c in snapshot}
     categories = {name: [c for c in snapshot if c['type'] == 'category' and c['name'] == name]
                   for name in CATEGORIES}
@@ -206,6 +207,26 @@ def plan_layout(guild_id: int, snapshot: list[dict], bindings: dict[str, int],
         if cid in used or cid in busy or cid in configured_channels:
             raise ValueError(f'Канал {cid} используется действующей функцией/турниром и не может быть архивирован.')
         ops.append({'action': 'archive', 'id': cid, 'category': 'лишние-каналы'})
+    # Явные перемещения ранее неназначенных каналов по решению
+    # владельца: {channel_id: 'ИМЯ КАТЕГОРИИ'}. Только text/news/forum,
+    # не занятые привязками/busy/configured, не в 'лишние-каналы'
+    # (для архива используется archive).
+    for cid, cat_name in sorted((moves or {}).items()):
+        item = by_id.get(cid)
+        if not item or item['type'] not in ('text', 'news', 'forum'):
+            raise ValueError(f'Перенос {cid}: канал не найден или неподдерживаемый тип.')
+        if cat_name not in CATEGORIES or cat_name == 'лишние-каналы':
+            raise ValueError(f'Перенос {cid}: недопустимая категория {cat_name!r}.')
+        if cid in used or cid in busy or cid in configured_channels:
+            raise ValueError(f'Перенос {cid}: канал используется функцией/турниром.')
+        if cid in archive:
+            raise ValueError(f'Перенос {cid}: канал уже выбран в архив.')
+        target_id = categories[cat_name][0]['id'] if categories[cat_name] else None
+        # Целевая категория ещё не существует (будет создана) —
+        # channel_id=None не доказывает совпадение, op нужен всегда.
+        if not categories[cat_name] or item['category_id'] != target_id:
+            ops.append({'action': 'move_channel', 'id': cid,
+                        'category': cat_name})
     for i, name in enumerate(CATEGORIES):
         ops.append({'action': 'order_category', 'name': name, 'position': i})
     return {'id': uuid.uuid4().hex[:12], 'guild_id': guild_id, 'created_at': int(time.time()),
@@ -215,7 +236,7 @@ def plan_layout(guild_id: int, snapshot: list[dict], bindings: dict[str, int],
             'unassigned': [c for c in snapshot if c['id'] not in used and c['type'] != 'category']}
 
 
-async def prepare(guild, archive: set[int]) -> dict:
+async def prepare(guild, archive: set[int], moves: dict[int, str] | None = None) -> dict:
     async with lock(guild.id):
         state = state_store.read(guild.id)
         old = state.get('plan', {})
@@ -225,7 +246,7 @@ async def prepare(guild, archive: set[int]) -> dict:
             state_store.archive_plan(guild.id, old)
         snapshot = [channel_snapshot(c) for c in await guild.fetch_channels()]
         plan = plan_layout(guild.id, snapshot, configured_bindings(guild.id),
-                           await busy_channels(guild.id), archive)
+                           await busy_channels(guild.id), archive, moves)
         # §14: снимок ролей и позиций для backup/аудита (apply ролей не меняет).
         plan['roles_before'] = [role_snapshot(r) for r in guild.roles]
         plan['bindings_before'] = dict(state.get('bindings', {}))
@@ -252,7 +273,7 @@ async def apply(guild, plan_id: str) -> dict:
         if plan['status'] == 'planned' and fingerprint([channel_snapshot(c) for c in channels.values()]) != plan['fingerprint']:
             raise ValueError('Структура или права изменились после планирования. Сформируйте новый план.')
         busy = await busy_channels(guild.id)
-        if any(o.get('id') in busy for o in plan['operations'] if o['action'] in ('edit_channel', 'archive')):
+        if any(o.get('id') in busy for o in plan['operations'] if o['action'] in ('edit_channel', 'archive', 'move_channel')):
             raise ValueError('Один из каналов теперь занят турниром. Применение остановлено.')
         if any(o.get('state') == 'pending' for o in plan['operations']):
             plan['status'] = 'uncertain'; _save(state)
@@ -283,7 +304,7 @@ async def apply(guild, plan_id: str) -> dict:
                     created = await guild.create_text_channel(op['name'], category=categories[op['category']],
                                                              overwrites=overwrites, reason=f'r!z3 layout {plan_id}')
                     op['created_id'] = created.id; plan['bindings'][op['binding']] = created.id
-                elif action in ('edit_channel', 'archive'):
+                elif action in ('edit_channel', 'archive', 'move_channel'):
                     channel = channels[op['id']]
                     kwargs = {'category': categories[op['category']], 'sync_permissions': False,
                               'reason': f'r!z3 layout {plan_id}'}

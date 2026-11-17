@@ -37,10 +37,12 @@ class ServerReconstructionCog(commands.Cog):
     @is_admin()
     @app_commands.describe(action='Сначала plan, затем apply с ID проверенного плана',
                            plan_id='ID ранее сформированного плана',
-                           archive_ids='ID лишних каналов через запятую; только для plan')
+                           archive_ids='ID лишних каналов через запятую; только для plan',
+                           moves='Переносы "id:категория" через запятую; только для plan')
     async def reconstruction(self, interaction: discord.Interaction,
                              action: Literal['plan', 'status', 'apply', 'rollback'],
-                             plan_id: str = '', archive_ids: str = ''):
+                             plan_id: str = '', archive_ids: str = '',
+                             moves: str = ''):
         if not guild_allowed(interaction.guild_id):
             await interaction.response.send_message('Этот сервер не обслуживается.', ephemeral=True)
             return
@@ -52,11 +54,28 @@ class ServerReconstructionCog(commands.Cog):
                 raise ValueError('Боту необходимо право управления каналами.')
             if archive_ids and action != 'plan':
                 raise ValueError('archive_ids задаётся только при планировании.')
+            if moves and action != 'plan':
+                raise ValueError('moves задаётся только при планировании.')
             if action == 'plan':
                 tokens = [v.strip() for v in archive_ids.split(',') if v.strip()]
                 if any(not v.isdecimal() or int(v) <= 0 for v in tokens):
                     raise ValueError('Нужны положительные числовые ID каналов через запятую.')
-                result = await server_layout.prepare(interaction.guild, {int(v) for v in tokens})
+                move_map: dict[int, str] = {}
+                for pair in moves.split(','):
+                    pair = pair.strip()
+                    if not pair:
+                        continue
+                    if ':' not in pair:
+                        raise ValueError('moves: формат "id:категория" через запятую.')
+                    cid_s, cat = pair.split(':', 1)
+                    if not cid_s.strip().isdecimal() or int(cid_s) <= 0:
+                        raise ValueError('moves: нужен положительный числовой ID канала.')
+                    cat = cat.strip()
+                    if cat not in server_layout.CATEGORIES or cat == 'лишние-каналы':
+                        raise ValueError(f'moves: недопустимая категория {cat!r}.')
+                    move_map[int(cid_s)] = cat
+                result = await server_layout.prepare(
+                    interaction.guild, {int(v) for v in tokens}, move_map)
             elif action == 'status':
                 result = server_layout_store.read(interaction.guild_id)
             elif action == 'apply':

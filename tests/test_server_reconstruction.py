@@ -201,3 +201,39 @@ async def test_new_plan_preserves_previous_snapshot_in_history(layout):
     assert second['id'] != first['id']
     saved=store.root/'history'/str(guild.id)/f"{first['id']}.json"
     assert saved.exists()
+
+
+def test_plan_moves_unassigned_channel_to_target_category():
+    """moves={id: категория} → move_channel op без смены имени/ID."""
+    plan = sl.plan_layout(
+        123, [snap(1001, 'чат'), snap(2001, 'старые-скрины')],
+        {}, set(), set(), moves={2001: 'КОМАНДА'})
+    mv = [o for o in plan['operations'] if o['action'] == 'move_channel']
+    assert mv == [{'action': 'move_channel', 'id': 2001, 'category': 'КОМАНДА'}]
+
+
+def test_plan_moves_rejects_busy_bound_voice_and_bad_category():
+    base = [snap(1001, 'чат'), snap(2001, 'логи'), snap(2002, 'voice', 'voice')]
+    with pytest.raises(ValueError):
+        sl.plan_layout(123, base, {}, {2001}, set(), moves={2001: 'КОМАНДА'})
+    with pytest.raises(ValueError):
+        sl.plan_layout(123, base, {'chat': 1001}, set(), set(),
+                       moves={1001: 'КОМАНДА'})
+    with pytest.raises(ValueError):
+        sl.plan_layout(123, base, {}, set(), set(), moves={2002: 'КОМАНДА'})
+    with pytest.raises(ValueError):
+        sl.plan_layout(123, base, {}, set(), set(), moves={2001: 'нет-такой'})
+    with pytest.raises(ValueError):
+        sl.plan_layout(123, base, {}, set(), set(), moves={2001: 'лишние-каналы'})
+    with pytest.raises(ValueError):
+        sl.plan_layout(123, base, {}, set(), {2001}, moves={2001: 'КОМАНДА'})
+
+
+def test_plan_move_is_noop_when_already_in_category():
+    item = snap(2001, 'старые-скрины')
+    # категория КОМАНДА уже существует с этим id
+    item['category_id'] = 900
+    cats = [snap(900, 'КОМАНДА', 'category')]
+    plan = sl.plan_layout(123, [item] + cats, {}, set(), set(),
+                          moves={2001: 'КОМАНДА'})
+    assert not any(o['action'] == 'move_channel' for o in plan['operations'])
