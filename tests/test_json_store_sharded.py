@@ -627,3 +627,25 @@ class TestPartialLossProtection:
         from storage.json_store import StoreUnavailableError
         with pytest.raises(StoreUnavailableError):
             s2.set(_t(1, 2))
+
+    def test_equal_mtime_shards_block_single_writes(
+        self, shard_env, monkeypatch
+    ):
+        """Shard и legacy с одинаковым mtime: порядок не определить —
+        single-режим обязан заблокировать запись (fail-closed)."""
+        import os
+        monkeypatch.delenv("JSON_STORE_MODE")
+        s = js.JsonStore()
+        s.set(_t(1, 2, "Legacy"))
+        monkeypatch.setenv("JSON_STORE_MODE", "sharded")
+        s2 = js.JsonStore()
+        s2.set(_t(5, 6, "Shard"))
+        # Выровнять mtime shard и legacy — имитация совпадения тика.
+        legacy = shard_env / "tournaments.json"
+        shard = next((shard_env / "tournaments").glob("*.json"))
+        mt = legacy.stat().st_mtime
+        os.utime(shard, (mt, mt))
+        monkeypatch.setenv("JSON_STORE_MODE", "single")
+        s3 = js.JsonStore()
+        assert s3._mode == "single"
+        assert s3.is_healthy() is False
