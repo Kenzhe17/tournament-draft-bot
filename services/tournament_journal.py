@@ -45,6 +45,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _JOURNAL_SOURCES = {"tournament", "room", "organizer"}
+# §15: действия с полномочиями организаторов — только закрытый
+# аудит (БД), не публичный журнал турниров.
+_PRIVATE_ACTIONS = {
+    audit_svc.A.ORG_ASSIGN, audit_svc.A.ORG_REMOVE, audit_svc.A.ORG_TRANSFER,
+    audit_svc.A.ORG_ROLE_GRANT, audit_svc.A.ORG_ROLE_REVOKE, audit_svc.A.ORG_RESET,
+}
 _DEBOUNCE_SEC = 3.0
 _MIN_EDIT_INTERVAL = 2.0
 _VERIFY_TTL = 3600.0  # реже проверять существование неизменённых карточек
@@ -215,6 +221,8 @@ def _group_events(
     by_match: dict[str, list[dict[str, Any]]] = {}
     general: list[dict[str, Any]] = []
     for ev in events:
+        if ev.get("action") in _PRIVATE_ACTIONS:
+            continue
         mk = normalize_match_key(tournament_id, ev.get("match_id"))
         if mk:
             by_match.setdefault(mk, []).append(ev)
