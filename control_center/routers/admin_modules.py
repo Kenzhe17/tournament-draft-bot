@@ -224,3 +224,87 @@ async def preview_template(
         return preview_payload(body.payload)
     except TemplateError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+# ---------------- server map: каналы/роли + предупреждения ACL ----------------
+
+# Discord permission bits (официальные значения).
+_DANGEROUS_PERMS = {
+    "administrator": 1 << 3,
+    "ban_members": 1 << 2,
+    "kick_members": 1 << 1,
+    "manage_channels": 1 << 4,
+    "manage_guild": 1 << 5,
+    "view_audit_log": 1 << 7,
+    "manage_messages": 1 << 13,
+    "mention_everyone": 1 << 17,
+    "manage_nicknames": 1 << 27,
+    "manage_roles": 1 << 28,
+    "manage_webhooks": 1 << 29,
+    "manage_emojis_and_stickers": 1 << 30,
+    "moderate_members": 1 << 40,
+    "move_members": 1 << 24,
+    "mute_members": 1 << 22,
+    "deafen_members": 1 << 23,
+}
+
+
+def _perm_flags(value: int) -> list[str]:
+    return [name for name, bit in _DANGEROUS_PERMS.items() if value & bit]
+
+
+def _server_map_warnings(roles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Предупреждения по ролям из bot snapshot (без Discord API)."""
+    out: list[dict[str, Any]] = []
+    for r in roles:
+        perms = int(r.get("permissions") or 0)
+        flags = _perm_flags(perms)
+        if not flags:
+            continue
+        severity = "critical" if "administrator" in flags else "warning"
+        out.append({
+            "role_id": r.get("id"), "role_name": r.get("name"),
+            "position": r.get("position"),
+            "managed": bool(r.get("managed")),
+            "mentionable": bool(r.get("mentionable")),
+            "permissions": flags,
+            "severity": severity,
+        })
+    out.sort(key=lambda w: (w["severity"] != "critical",
+                            -(w.get("position") or 0)))
+    return out
+
+
+@router.get("/server-map")
+async def server_map(
+    user: PanelUser = Depends(require_perm(rbac.PERM_PANEL_VIEW)),
+) -> dict[str, Any]:
+    """Карта каналов/ролей гильдии из снимка бота + ACL-предупреждения.
+
+    Данные read-only: bot публикует snapshot в admin_service_status.
+    """
+    rows = await store.list_service_status()
+    row = next((r for r in rows if r["service"] == "bot_state"), None)
+    if not row:
+        return {"available": False,
+                "reason": "bot snapshot not published yet"}
+    extra = row.get("extra") or {}
+    if isinstance(extra, str):
+        import json
+        extra = json.loads(extra)
+    guilds = extra.get("guilds") or {}
+    gid = str(user.guild_id) if user.guild_id else None
+    if user.role != "owner" and gid and gid not in guilds:
+        return {"available": False, "reason": "guild snapshot unavailable"}
+    selected = ({gid: guilds[gid]} if gid and gid in guilds
+                else guilds if user.role == "owner" else {})
+    result: dict[str, Any] = {"available": True, "last_seen": row.get("last_seen")}
+    for g_id, g in selected.items():
+        roles = g.get("roles") or []
+        result[g_id] = {
+            "name": g.get("name"),
+            "channels": g.get("channels") or [],
+            "roles": roles,
+            "warnings": _server_map_warnings(roles),
+        }
+    return result
