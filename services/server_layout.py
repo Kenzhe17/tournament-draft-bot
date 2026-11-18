@@ -150,16 +150,39 @@ def configured_bindings(guild_id: int) -> dict[str, int]:
 
 def plan_layout(guild_id: int, snapshot: list[dict], bindings: dict[str, int],
                 busy: set[int], archive: set[int],
-                moves: dict[int, str] | None = None) -> dict:
+                moves: dict[int, str] | None = None,
+                move_names: dict[int, str] | None = None,
+                cat_map: dict[str, str] | None = None) -> dict:
     by_id = {c['id']: c for c in snapshot}
-    categories = {name: [c for c in snapshot if c['type'] == 'category' and c['name'] == name]
-                  for name in CATEGORIES}
-    if any(len(items) > 1 for items in categories.values()):
-        raise ValueError('Найдены категории с одинаковыми целевыми именами. Сначала устраните неоднозначность.')
+    cats_by_name: dict[str, list[dict]] = {}
+    for c in snapshot:
+        if c['type'] == 'category':
+            cats_by_name.setdefault(c['name'], []).append(c)
+    # Целевые категории: явный cat_map {target: existing_name}
+    # переиспользует существующую категорию (переименование через
+    # reuse_category), пустые новые категории не создаются.
+    resolved_cat: dict[str, dict | None] = {}
     ops, used, resolved = [], set(), {}
-    for name, items in categories.items():
-        if not items:
+    cat_map = cat_map or {}
+    unknown_map = set(cat_map) - set(CATEGORIES)
+    if unknown_map:
+        raise ValueError(f'cat_map: неизвестные целевые категории {sorted(unknown_map)}.')
+    for name in CATEGORIES:
+        existing = cats_by_name.get(name, [])
+        mapped_name = cat_map.get(name)
+        mapped = cats_by_name.get(mapped_name, []) if mapped_name else []
+        if mapped_name and not mapped:
+            raise ValueError(f'cat_map[{name}]: категория {mapped_name!r} не найдена.')
+        if len(mapped) > 1 or len(existing) > 1:
+            raise ValueError('Найдены категории с одинаковыми именами. Сначала устраните неоднозначность.')
+        if existing and mapped and existing[0]['id'] != mapped[0]['id']:
+            raise ValueError(f'{name}: и целевая, и переиспользуемая категории существуют — конфликт.')
+        resolved_cat[name] = (mapped or existing or [None])[0]
+        if resolved_cat[name] is None:
             ops.append({'action': 'create_category', 'name': name})
+        elif resolved_cat[name]['name'] != name:
+            ops.append({'action': 'reuse_category', 'id': resolved_cat[name]['id'],
+                        'name': name, 'from_name': resolved_cat[name]['name']})
     for key, name, category, aliases in CHANNELS:
         cid = int(bindings.get(key) or 0)
         if cid:
@@ -180,7 +203,8 @@ def plan_layout(guild_id: int, snapshot: list[dict], bindings: dict[str, int],
             used.add(item['id']); resolved[key] = item['id']
             if item['id'] in busy:
                 continue
-            target_id = categories[category][0]['id'] if categories[category] else None
+            rc = resolved_cat[category]
+            target_id = rc['id'] if rc else None
             if item['name'] != name or item['category_id'] != target_id:
                 ops.append({'action': 'edit_channel', 'id': item['id'], 'name': name,
                             'category': category, 'binding': key})
@@ -221,12 +245,20 @@ def plan_layout(guild_id: int, snapshot: list[dict], bindings: dict[str, int],
             raise ValueError(f'Перенос {cid}: канал используется функцией/турниром.')
         if cid in archive:
             raise ValueError(f'Перенос {cid}: канал уже выбран в архив.')
-        target_id = categories[cat_name][0]['id'] if categories[cat_name] else None
+        rc = resolved_cat[cat_name]
+        target_id = rc['id'] if rc else None
+        new_name = (move_names or {}).get(cid)
+        needs_move = rc is None or item['category_id'] != target_id
+        needs_rename = bool(new_name) and item['name'] != new_name
         # Целевая категория ещё не существует (будет создана) —
         # channel_id=None не доказывает совпадение, op нужен всегда.
-        if not categories[cat_name] or item['category_id'] != target_id:
-            ops.append({'action': 'move_channel', 'id': cid,
-                        'category': cat_name})
+        # Канал уже в целевой категории, но требует переименования —
+        # op тоже нужен (rename-only move).
+        if needs_move or needs_rename:
+            op = {'action': 'move_channel', 'id': cid, 'category': cat_name}
+            if new_name:
+                op['name'] = new_name
+            ops.append(op)
     for i, name in enumerate(CATEGORIES):
         ops.append({'action': 'order_category', 'name': name, 'position': i})
     return {'id': uuid.uuid4().hex[:12], 'guild_id': guild_id, 'created_at': int(time.time()),
@@ -236,7 +268,9 @@ def plan_layout(guild_id: int, snapshot: list[dict], bindings: dict[str, int],
             'unassigned': [c for c in snapshot if c['id'] not in used and c['type'] != 'category']}
 
 
-async def prepare(guild, archive: set[int], moves: dict[int, str] | None = None) -> dict:
+async def prepare(guild, archive: set[int], moves: dict[int, str] | None = None,
+                    move_names: dict[int, str] | None = None,
+                    cat_map: dict[str, str] | None = None) -> dict:
     async with lock(guild.id):
         state = state_store.read(guild.id)
         old = state.get('plan', {})
@@ -246,7 +280,7 @@ async def prepare(guild, archive: set[int], moves: dict[int, str] | None = None)
             state_store.archive_plan(guild.id, old)
         snapshot = [channel_snapshot(c) for c in await guild.fetch_channels()]
         plan = plan_layout(guild.id, snapshot, configured_bindings(guild.id),
-                           await busy_channels(guild.id), archive, moves)
+                           await busy_channels(guild.id), archive, moves, move_names, cat_map)
         # §14: снимок ролей и позиций для backup/аудита (apply ролей не меняет).
         plan['roles_before'] = [role_snapshot(r) for r in guild.roles]
         plan['bindings_before'] = dict(state.get('bindings', {}))
@@ -280,13 +314,24 @@ async def apply(guild, plan_id: str) -> dict:
             raise ValueError('Есть операция с неопределённым исходом. Сверьте Discord и сохранённый план.')
         plan['status'] = 'applying'; _save(state)
         categories = {c.name: c for c in channels.values() if str(c.type) == 'category' and c.name in CATEGORIES}
+        # Переиспользуемые категории регистрируются под целевым именем
+        # заранее — последующие edit/move резолвят categories[target].
+        for op in plan['operations']:
+            if op['action'] == 'reuse_category' and op.get('id') in channels:
+                categories[op['name']] = channels[op['id']]
         for op in plan['operations']:
             if op.get('state') == 'done':
                 continue
             op['state'] = 'pending'; _save(state)
             try:
                 action = op['action']
-                if action == 'create_category':
+                if action == 'reuse_category':
+                    channel = channels[op['id']]
+                    await channel.edit(name=op['name'],
+                                       reason=f'r!z3 layout {plan_id}')
+                    categories[op['name']] = channel
+                    categories.pop(op.get('from_name'), None)
+                elif action == 'create_category':
                     overwrites = None
                     if op['name'] in ('КОМАНДА', 'лишние-каналы'):
                         overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -308,7 +353,7 @@ async def apply(guild, plan_id: str) -> dict:
                     channel = channels[op['id']]
                     kwargs = {'category': categories[op['category']], 'sync_permissions': False,
                               'reason': f'r!z3 layout {plan_id}'}
-                    if action == 'edit_channel':
+                    if action == 'edit_channel' or op.get('name'):
                         kwargs['name'] = op['name']
                     await channel.edit(**kwargs)
                 elif action == 'order_category':
@@ -349,6 +394,12 @@ async def rollback(guild, plan_id: str) -> dict:
             # Never undo independent ACL changes; migration itself preserves those ACLs.
             if channel_snapshot(channel)['overwrites'] != old['overwrites']:
                 raise ValueError(f'Права канала {cid} изменились. Нужна ручная проверка.')
+            if old['type'] == 'category':
+                # Переиспользованная категория: возвращаем имя и позицию,
+                # параметр category к категориям не применяется.
+                await channel.edit(name=old['name'], position=old['position'],
+                                   reason=f'r!z3 rollback {plan_id}')
+                continue
             category = channels.get(old['category_id']) if old['category_id'] else None
             if old['category_id'] and category is None:
                 raise ValueError('Исходная категория отсутствует.')

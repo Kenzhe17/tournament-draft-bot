@@ -38,11 +38,12 @@ class ServerReconstructionCog(commands.Cog):
     @app_commands.describe(action='Сначала plan, затем apply с ID проверенного плана',
                            plan_id='ID ранее сформированного плана',
                            archive_ids='ID лишних каналов через запятую; только для plan',
-                           moves='Переносы "id:категория" через запятую; только для plan')
+                           moves='Переносы "id:категория[=новое имя]" через запятую; только для plan',
+                           categories='Переиспользование категорий "ЦЕЛЕВАЯ=СУЩЕСТВУЮЩАЯ" через запятую')
     async def reconstruction(self, interaction: discord.Interaction,
                              action: Literal['plan', 'status', 'apply', 'rollback'],
                              plan_id: str = '', archive_ids: str = '',
-                             moves: str = ''):
+                             moves: str = '', categories: str = ''):
         if not guild_allowed(interaction.guild_id):
             await interaction.response.send_message('Этот сервер не обслуживается.', ephemeral=True)
             return
@@ -56,26 +57,48 @@ class ServerReconstructionCog(commands.Cog):
                 raise ValueError('archive_ids задаётся только при планировании.')
             if moves and action != 'plan':
                 raise ValueError('moves задаётся только при планировании.')
+            if categories and action != 'plan':
+                raise ValueError('categories задаётся только при планировании.')
             if action == 'plan':
                 tokens = [v.strip() for v in archive_ids.split(',') if v.strip()]
                 if any(not v.isdecimal() or int(v) <= 0 for v in tokens):
                     raise ValueError('Нужны положительные числовые ID каналов через запятую.')
                 move_map: dict[int, str] = {}
+                move_names: dict[int, str] = {}
                 for pair in moves.split(','):
                     pair = pair.strip()
                     if not pair:
                         continue
                     if ':' not in pair:
-                        raise ValueError('moves: формат "id:категория" через запятую.')
-                    cid_s, cat = pair.split(':', 1)
+                        raise ValueError('moves: формат "id:категория[=имя]" через запятую.')
+                    cid_s, rest = pair.split(':', 1)
                     if not cid_s.strip().isdecimal() or int(cid_s) <= 0:
                         raise ValueError('moves: нужен положительный числовой ID канала.')
+                    cat, _, new_name = rest.partition('=')
                     cat = cat.strip()
                     if cat not in server_layout.CATEGORIES or cat == 'лишние-каналы':
                         raise ValueError(f'moves: недопустимая категория {cat!r}.')
                     move_map[int(cid_s)] = cat
+                    if new_name.strip():
+                        if len(new_name.strip()) > 100:
+                            raise ValueError('moves: имя канала длиннее 100 символов.')
+                        move_names[int(cid_s)] = new_name.strip()
+                cat_map: dict[str, str] = {}
+                for pair in categories.split(','):
+                    pair = pair.strip()
+                    if not pair:
+                        continue
+                    if '=' not in pair:
+                        raise ValueError('categories: формат "ЦЕЛЕВАЯ=СУЩЕСТВУЮЩАЯ" через запятую.')
+                    target, existing = (v.strip() for v in pair.split('=', 1))
+                    if target not in server_layout.CATEGORIES:
+                        raise ValueError(f'categories: недопустимая целевая категория {target!r}.')
+                    if not existing:
+                        raise ValueError('categories: укажите имя существующей категории.')
+                    cat_map[target] = existing
                 result = await server_layout.prepare(
-                    interaction.guild, {int(v) for v in tokens}, move_map)
+                    interaction.guild, {int(v) for v in tokens},
+                    move_map, move_names, cat_map)
             elif action == 'status':
                 result = server_layout_store.read(interaction.guild_id)
             elif action == 'apply':

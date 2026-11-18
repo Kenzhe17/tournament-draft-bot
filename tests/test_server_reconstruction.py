@@ -237,3 +237,48 @@ def test_plan_move_is_noop_when_already_in_category():
     plan = sl.plan_layout(123, [item] + cats, {}, set(), set(),
                           moves={2001: 'КОМАНДА'})
     assert not any(o['action'] == 'move_channel' for o in plan['operations'])
+
+
+def test_plan_reuses_existing_category_instead_of_creating():
+    """cat_map: целевая категория переиспользует существующую —
+    reuse_category op, create_category не эмитится."""
+    old_cat = snap(900, '╭──・👋 𝐖𝐄𝐋𝐂𝐎𝐌𝐄', 'category')
+    plan = sl.plan_layout(123, [old_cat], {}, set(), set(),
+                          cat_map={'ИНФОРМАЦИЯ': '╭──・👋 𝐖𝐄𝐋𝐂𝐎𝐌𝐄'})
+    assert not any(o['action'] == 'create_category' and o['name'] == 'ИНФОРМАЦИЯ'
+                   for o in plan['operations'])
+    ru = [o for o in plan['operations'] if o['action'] == 'reuse_category']
+    assert ru == [{'action': 'reuse_category', 'id': 900, 'name': 'ИНФОРМАЦИЯ',
+                   'from_name': '╭──・👋 𝐖𝐄𝐋𝐂𝐎𝐌𝐄'}]
+
+
+def test_plan_cat_map_rejects_missing_and_conflicting():
+    with pytest.raises(ValueError):
+        sl.plan_layout(123, [], {}, set(), set(),
+                       cat_map={'ИНФОРМАЦИЯ': 'несуществует'})
+    both = [snap(900, '╭──・👋 X', 'category'),
+            snap(901, 'ИНФОРМАЦИЯ', 'category')]
+    with pytest.raises(ValueError):
+        sl.plan_layout(123, both, {}, set(), set(),
+                       cat_map={'ИНФОРМАЦИЯ': '╭──・👋 X'})
+
+
+def test_plan_move_rename_only_emits_op():
+    """Канал уже в целевой категории, но имя требует стиля — op есть."""
+    cat = snap(900, 'ИНФОРМАЦИЯ', 'category')
+    item = snap(2001, '├🌟・репутация', category_id=900)
+    plan = sl.plan_layout(123, [cat, item], {}, set(), set(),
+                          moves={2001: 'ИНФОРМАЦИЯ'},
+                          move_names={2001: '🌟・репутация'})
+    mv = [o for o in plan['operations'] if o['action'] == 'move_channel']
+    assert mv == [{'action': 'move_channel', 'id': 2001,
+                   'category': 'ИНФОРМАЦИЯ', 'name': '🌟・репутация'}]
+
+
+def test_plan_move_noop_when_name_and_category_match():
+    cat = snap(900, 'ИНФОРМАЦИЯ', 'category')
+    item = snap(2001, '🌟・репутация', category_id=900)
+    plan = sl.plan_layout(123, [cat, item], {}, set(), set(),
+                          moves={2001: 'ИНФОРМАЦИЯ'},
+                          move_names={2001: '🌟・репутация'})
+    assert not any(o['action'] == 'move_channel' for o in plan['operations'])
