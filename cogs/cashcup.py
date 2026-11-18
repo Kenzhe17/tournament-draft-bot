@@ -294,7 +294,12 @@ class CashCupView(discord.ui.View):
                       button: discord.ui.Button):
         if not await self._fresh(interaction):
             return
-        await interaction.response.send_modal(FFDataModal())
+        cog = interaction.client.get_cog("CashCupCog")
+        # Привязка к конкретному турниру: устаревшая кнопка/форма
+        # не должна изменять данные НОВОГО турнира.
+        state = await cog._current_state(interaction.guild_id)
+        await interaction.response.send_modal(
+            FFDataModal(tid=_tid(state) or None))
 
     @discord.ui.button(label="Запасной", style=discord.ButtonStyle.primary,
                        custom_id="cashcup:sub_join")
@@ -826,13 +831,14 @@ class CashCupCog(commands.Cog):
                 "Нет приглашений в запасные. Капитан приглашает кнопкой "
                 "«Пригласить запасного» в «Моя команда».")
             return
+        tid = _tid(state) or None
         if len(offers) == 1:
             await interaction.response.send_modal(
-                FFDataModal(offers[0]["id"]))
+                FFDataModal(offers[0]["id"], tid=tid))
             return
 
         async def on_pick(i, v):
-            await i.response.send_modal(FFDataModal(v))
+            await i.response.send_modal(FFDataModal(v, tid=tid))
 
         await interaction.response.send_message(
             "**Запасной в CASH CUP** — выберите команду:",
