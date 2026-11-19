@@ -3,35 +3,16 @@
 import discord
 from discord import app_commands
 
-from config import ADMIN_USER_IDS, BOT_OWNER_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
+from config import ADMIN_USER_IDS, BOT_OWNER_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID, ORG_ROLE_ID
 from storage.organizer_store import organizer_store
 
 
 def is_admin() -> app_commands.check:
-    """Декоратор: только администратор сервера, роль 'org', ORG-1/2/3 или создатель бота."""
-
+    """Только администратор сервера или явно настроенный администратор бота."""
     async def predicate(interaction: discord.Interaction) -> bool:
-        # Проверяем права админа ИЛИ ваш конкретный Discord ID
-        if interaction.user.guild_permissions.administrator or interaction.user.id == BOT_OWNER_ID or interaction.user.id in ADMIN_USER_IDS:
+        if is_admin_check(interaction.user, interaction.guild):
             return True
-
-        # Check for 'org' role
-        if interaction.guild:
-            org_role = discord.utils.get(interaction.guild.roles, name="org")
-            if org_role and org_role in interaction.user.roles:
-                return True
-
-            # Check for ORG-1, ORG-2, ORG-3 roles
-            org_role_ids = [ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID]
-            for role_id in org_role_ids:
-                role = interaction.guild.get_role(role_id)
-                if role and role in interaction.user.roles:
-                    return True
-
-        raise app_commands.CheckFailure(
-            "Эта команда доступна только администраторам или организаторам (роль 'org', ORG-1/2/3)."
-        )
-
+        raise app_commands.CheckFailure("Эта команда доступна только администраторам.")
     return app_commands.check(predicate)
 
 
@@ -40,12 +21,12 @@ def is_org() -> app_commands.check:
 
     async def predicate(interaction: discord.Interaction) -> bool:
         # Проверяем права админа ИЛИ ваш конкретный Discord ID
-        if interaction.user.guild_permissions.administrator or interaction.user.id == BOT_OWNER_ID or interaction.user.id in ADMIN_USER_IDS:
+        if is_admin_check(interaction.user, interaction.guild):
             return True
 
         # Check for 'org' role
         if interaction.guild:
-            org_role = discord.utils.get(interaction.guild.roles, name="org")
+            org_role = interaction.guild.get_role(ORG_ROLE_ID) if ORG_ROLE_ID else None
             if org_role and org_role in interaction.user.roles:
                 return True
 
@@ -64,32 +45,35 @@ def is_org() -> app_commands.check:
 
 
 def is_admin_check(user: discord.Member, guild: discord.Guild) -> bool:
-    """Проверка: является ли пользователь администратором или имеет роль 'org', ORG-1/2/3."""
-    if user.guild_permissions.administrator or user.id == BOT_OWNER_ID or user.id in ADMIN_USER_IDS:
-        return True
+    """Организаторские и косметические роли не дают административных прав."""
+    if user is None or guild is None:
+        return False
+    uid = getattr(user, "id", 0)
+    return bool(uid and (
+        getattr(getattr(user, "guild_permissions", None), "administrator", False)
+        or (BOT_OWNER_ID and uid == BOT_OWNER_ID)
+        or uid in ADMIN_USER_IDS
+    ))
 
-    # Check for 'org' role
-    org_role = discord.utils.get(guild.roles, name="org")
-    if org_role and org_role in user.roles:
-        return True
 
-    # Check for ORG-1, ORG-2, ORG-3 roles
-    org_role_ids = [ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID]
-    for role_id in org_role_ids:
-        role = guild.get_role(role_id)
-        if role and role in user.roles:
-            return True
-
-    return False
+def _is_manager(user, guild) -> bool:
+    from config import MANAGER_ROLE_ID
+    return is_admin_check(user, guild) or bool(
+        MANAGER_ROLE_ID and any(
+            r.id == MANAGER_ROLE_ID for r in getattr(user, "roles", [])
+        )
+    )
 
 
 def is_org_check(user: discord.Member, guild: discord.Guild) -> bool:
     """Проверка: является ли пользователь организатором (роль 'org', ORG-1/2/3) или администратором."""
-    if user.guild_permissions.administrator or user.id == BOT_OWNER_ID or user.id in ADMIN_USER_IDS:
+    if is_admin_check(user, guild):
         return True
 
-    # Check for 'org' role
-    org_role = discord.utils.get(guild.roles, name="org")
+    if user is None or guild is None:
+        return False
+    # Configured ID only; a shop role named 'org' is never a credential.
+    org_role = guild.get_role(ORG_ROLE_ID) if ORG_ROLE_ID else None
     if org_role and org_role in user.roles:
         return True
 
@@ -108,7 +92,7 @@ def can_manage_tournament(user, guild: discord.Guild, tournament) -> bool:
 
     Разрешено:
     - владельцу бота, администраторам сервера, ADMIN_USER_IDS;
-    - глобальной роли 'org' и ролям ORG-1/2/3 (is_org_check);
+    - настроенной роли менеджера организаторов (MANAGER_ROLE_ID);
     - создателю турнира (tournament.organizer_id);
     - основному и дополнительным организаторам канала этого
       турнира (organizer_store), при этом organizer_store.tournament_id
@@ -124,8 +108,10 @@ def can_manage_tournament(user, guild: discord.Guild, tournament) -> bool:
     """
     if user is None or tournament is None or guild is None:
         return False
+    if getattr(tournament, "guild_id", None) != guild.id:
+        return False
     try:
-        if is_org_check(user, guild):
+        if _is_manager(user, guild):
             return True
     except Exception:
         pass
@@ -188,8 +174,13 @@ can_manage_tournament_results = can_manage_tournament
 
 def is_channel_organizer(user: discord.Member, guild: discord.Guild, channel_id: int) -> bool:
     """Проверка: является ли пользователь организатором канала."""
-    # Check if user is global org/admin
-    if is_org_check(user, guild):
+    if user is None or guild is None:
+        return False
+    if _is_manager(user, guild):
+        return True
+    from config import ORG_ROLE_MAP
+    role_id = ORG_ROLE_MAP.get(channel_id)
+    if role_id and any(r.id == role_id for r in getattr(user, "roles", [])):
         return True
 
     # Check channel organizers

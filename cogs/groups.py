@@ -7,9 +7,9 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
-from discord import app_commands
+from discord import Permissions, app_commands
 
 player_group = app_commands.Group(
     name="player", description="Профиль, история, ранг и рейтинг"
@@ -28,10 +28,12 @@ crime_group = app_commands.Group(
     name="crime", description="Криминальные действия"
 )
 admin_group = app_commands.Group(
-    name="admin", description="Административные операции"
+    name="admin", description="Административные операции",
+    default_permissions=Permissions(administrator=True)
 )
 server_group = app_commands.Group(
-    name="server", description="Настройки сервера"
+    name="server", description="Настройки сервера",
+    default_permissions=Permissions(administrator=True)
 )
 reputation_group = app_commands.Group(
     name="reputation", description="Репутация: профиль, история, статистика"
@@ -40,10 +42,12 @@ tag_group = app_commands.Group(
     name="tag", description="Награды за серверный тег"
 )
 info_group = app_commands.Group(
-    name="info", description="Информационный центр сервера (только для админов)"
+    name="info", description="Информационный центр сервера (только для админов)",
+    default_permissions=Permissions(administrator=True)
 )
 banner_group = app_commands.Group(
-    name="banner", description="Дневной баннер сервера (только для админов)"
+    name="banner", description="Дневной баннер сервера (только для админов)",
+    default_permissions=Permissions(administrator=True)
 )
 
 # Группы, регистрируемые в корне дерева (bot.py)

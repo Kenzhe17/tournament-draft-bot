@@ -59,11 +59,18 @@ def _mm_row(s) -> dict[str, Any]:
 def _guild_resources(guild) -> dict[str, Any]:
     channels = [
         {"id": str(c.id), "name": getattr(c, "name", ""),
-         "type": str(getattr(c, "type", ""))}
+         "type": str(getattr(c, "type", "")),
+         "category_id": str(getattr(c, "category_id", 0) or 0),
+         "position": getattr(c, "position", 0)}
         for c in getattr(guild, "text_channels", [])
     ]
     roles = [
-        {"id": str(r.id), "name": r.name}
+        {"id": str(r.id), "name": r.name,
+         "position": getattr(r, "position", 0),
+         "managed": bool(getattr(r, "managed", False)),
+         "mentionable": bool(getattr(r, "mentionable", False)),
+         "permissions": int(getattr(
+             getattr(r, "permissions", None), "value", 0) or 0)}
         for r in (getattr(guild, "roles", []) if guild else [])
         if r.name != "@everyone"
     ]

@@ -237,6 +237,21 @@ class RoomStore:
                 stored.pop("notify_required", None)
         self._save()
 
+    def published_cards(self, guild_id: int) -> list[dict[str, Any]]:
+        """Message references only, including historical records; no credentials."""
+        result = []
+        seen = set()
+        for scope, entry in self._data.items():
+            gid, cid, key = scope.split(":", 2)
+            if int(gid) != guild_id:
+                continue
+            for room in entry.get("rooms", []):
+                mid = int(room.get("data_message_id") or 0)
+                if mid and mid not in seen:
+                    seen.add(mid)
+                    result.append({"channel_id": int(cid), "key": key, "message_id": mid})
+        return result
+
     def pending_rooms(self) -> list[dict[str, Any]]:
         """Все записи с card_pending — для recovery после рестарта.
 

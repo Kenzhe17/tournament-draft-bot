@@ -287,7 +287,10 @@ class JsonStore:
             newest = max(p.stat().st_mtime for p in shards)
         except OSError:
             return
-        if newest > legacy_mtime:
+        # «Не старше» недостаточно: равные mtime не доказывают,
+        # что legacy актуален — порядок записей не определить.
+        # Неопределённость = блокировка записи (fail-closed).
+        if newest >= legacy_mtime:
             self._unhealthy = True
             logger.critical(
                 "КРИТИЧНО: shard-файлы (%s) новее %s — single-режим "

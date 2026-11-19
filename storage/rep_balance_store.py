@@ -217,7 +217,11 @@ class RepBalanceStore:
             guild_id, user_id,
         )
         if row is None:
-            await conn.execute(
+            # Гонка с миграцией get_balance: строка может появиться
+            # между SELECT и INSERT — тогда ON CONFLICT DO NOTHING
+            # оставил бы устаревший баланс. В этом случае применяем
+            # обычную дельту, как для существующей строки.
+            inserted = await conn.execute(
                 """
                 INSERT INTO rep_balance
                     (guild_id, user_id, balance, earned_total, spent_total)
@@ -225,6 +229,17 @@ class RepBalanceStore:
                 ON CONFLICT (guild_id, user_id) DO NOTHING
                 """,
                 guild_id, user_id, int(rep_after),
+            )
+            if str(inserted).endswith(" 1"):
+                return
+            await conn.execute(
+                """
+                UPDATE rep_balance
+                SET balance = GREATEST(balance + $3, 0),
+                    earned_total = earned_total + GREATEST($3, 0)
+                WHERE guild_id=$1 AND user_id=$2
+                """,
+                guild_id, user_id, int(delta),
             )
             return
         await conn.execute(

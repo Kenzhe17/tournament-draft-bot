@@ -56,21 +56,16 @@ class InfoStore:
         self._save_fallback()
 
     def _save_fallback(self) -> None:
-        try:
-            FALLBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(FALLBACK_PATH, json.dumps(self._mem))
-        except Exception:
-            logger.warning("info_center fallback save failed", exc_info=True)
+        FALLBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(FALLBACK_PATH, json.dumps(self._mem))
 
     def _load_fallback(self) -> None:
-        try:
-            if FALLBACK_PATH.exists():
-                self._mem = {
-                    int(g): v for g, v in
-                    json.loads(FALLBACK_PATH.read_text(encoding="utf-8")).items()
-                }
-        except Exception:
-            logger.warning("info_center fallback load failed", exc_info=True)
+        if not FALLBACK_PATH.exists():
+            return
+        raw = json.loads(FALLBACK_PATH.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict) or any(not isinstance(value, dict) for value in raw.values()):
+            raise ValueError("Некорректное состояние информационного центра.")
+        self._mem = {int(g): v for g, v in raw.items()}
 
     # ---------------- public API ----------------
 
@@ -83,7 +78,8 @@ class InfoStore:
                 pass
         if not DATABASE_URL:
             self._load_fallback()
-            return self._mem.get(guild_id, {}).get("info_channel_id")
+            value = self._mem.get(guild_id, {}).get("info_channel_id")
+            return int(value) if value else None
         return None
 
     async def set_channel_id(self, guild_id: int, channel_id: int) -> None:
@@ -102,6 +98,11 @@ class InfoStore:
             msgs = self._mem.get(guild_id, {}).get("info_messages")
             return msgs if isinstance(msgs, dict) else {}
         return {}
+
+    async def set_pending(self, guild_id: int, key: str) -> None:
+        msgs = await self.get_messages(guild_id)
+        msgs[key] = {**(msgs.get(key) or {}), "pending": True}
+        await self._set_setting(guild_id, "info_messages", json.dumps(msgs))
 
     async def set_message(
         self, guild_id: int, key: str, message_id: int, version: str

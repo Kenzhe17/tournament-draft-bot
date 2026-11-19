@@ -126,7 +126,7 @@ class MMCog(commands.Cog):
         поиски и вход в очередь; активные матчи доигрываются."""
         try:
             from config import MM_ENABLED
-            if not MM_ENABLED:
+            if not MM_ENABLED or not _cfg.MATCHMAKING_ENABLED:
                 return False
         except Exception:
             pass
@@ -147,6 +147,11 @@ class MMCog(commands.Cog):
             await mm_search_store.load()
         except Exception as exc:
             logger.error("MMSearchStore load failed: %s", exc)
+        if not _cfg.MATCHMAKING_ENABLED:
+            # Keep completion/recovery for matches that predate retirement.
+            # Do not initialize slots, modify ACLs, or restart queued matches.
+            self._match_sweeper_task = asyncio.create_task(self._retired_recovery())
+            return
         try:
             from services import match_channel_pool
             await match_channel_pool.ensure_slots()
@@ -156,6 +161,24 @@ class MMCog(commands.Cog):
             logger.error("match channel pool init failed: %s", exc)
         self._match_sweeper_task = asyncio.create_task(self._match_sweeper())
         self._queue_recovery_task = asyncio.create_task(self._recover_queues())
+
+    async def _retired_recovery(self) -> None:
+        await self.bot.wait_until_ready()
+        for search in mm_search_store.all():
+            if search.message_id:
+                self.bot.add_view(build_queue_controls(search.guild_id, search.channel_id),
+                                  message_id=search.message_id)
+                try:
+                    await self._update_queue_panel(search)
+                except Exception:
+                    logger.warning("Cannot retire queue panel %s", search.channel_id, exc_info=True)
+        while True:
+            try:
+                await self._retry_pending_channel_releases()
+                await self._reconcile_mm_finalizations()
+            except Exception:
+                logger.exception("Legacy match recovery failed")
+            await asyncio.sleep(30)
 
     mm_group = app_commands.Group(name="mm", description="Matchmaking поиск")
 
@@ -382,10 +405,8 @@ class MMCog(commands.Cog):
 
     async def _create_search(self, interaction: discord.Interaction, format: MMFormat) -> None:
         """Создать новый поиск."""
-        if not self._mm_enabled(interaction.guild_id):
-            await interaction.response.send_message(
-                "Matchmaking сейчас отключён.", ephemeral=True
-            )
+        if not _cfg.MATCHMAKING_ENABLED or not self._mm_enabled(interaction.guild_id):
+            await self._ephemeral(interaction, "Автоматический поиск закрыт. Откройте /hub → Играть.")
             return
         existing = mm_search_store.get(interaction.guild_id, interaction.channel_id)
         if existing:
@@ -591,6 +612,8 @@ class MMCog(commands.Cog):
                 pass
 
     async def _maybe_send_notifications(self, search: MMSearch) -> None:
+        if not _cfg.MATCHMAKING_ENABLED:
+            return
         now = time.time()
         for kind in ("first", "second"):
             attr = f"{kind}_notification_status"
@@ -603,6 +626,8 @@ class MMCog(commands.Cog):
             await self._send_queue_notification(search, kind)
 
     def _start_search_timer(self, guild_id: int, channel_id: int) -> None:
+        if not _cfg.MATCHMAKING_ENABLED:
+            return
         """Динамический таймер поиска (как раньше)."""
         async def timer_task():
             try:
@@ -872,6 +897,8 @@ class MMCog(commands.Cog):
         При полном пуле очередь уходит в WAITING_FOR_CHANNEL —
         sweeper запустит матч при освобождении слота.
         """
+        if not _cfg.MATCHMAKING_ENABLED:
+            return None, "Автоматический поиск закрыт. Турниры доступны в /hub."
         guild = interaction.guild
         if guild is None:
             return None, "Команда только на сервере."
@@ -1280,6 +1307,9 @@ class MMCog(commands.Cog):
         self, interaction: discord.Interaction, guild_id: int, channel_id: int
     ) -> None:
         """Кнопка «Войти в очередь» на V2-панели."""
+        if not _cfg.MATCHMAKING_ENABLED:
+            await self._ephemeral(interaction, "Автоматический поиск закрыт. Откройте /hub → Играть.")
+            return
         try:
             await interaction.response.defer(ephemeral=True, thinking=True)
         except Exception:
@@ -1655,6 +1685,8 @@ class MMCog(commands.Cog):
 
     async def reset_search_limit(self, guild_id: int) -> None:
         """Сбросить выбранный канал поиска если освободился турнир."""
+        if not _cfg.MATCHMAKING_ENABLED:
+            return
         all_searches = mm_search_store.get_by_guild(guild_id)
         for search in all_searches:
             if search.tournament_channel_id:

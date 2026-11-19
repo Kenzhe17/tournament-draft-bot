@@ -1031,3 +1031,19 @@ async def test_journal_no_uses_max_not_count(monkeypatch):
 
 async def _ret_pool(pool):
     return pool
+
+
+def test_group_events_hides_organizer_authority_actions():
+    """§15: назначение/снятие/передача ORG и ORG-ролей — не публичный журнал."""
+    events = [
+        {"match_id": None, "action": "organizer.assign"},
+        {"match_id": None, "action": "organizer.transfer"},
+        {"match_id": None, "action": "organizer.role_grant"},
+        {"match_id": None, "action": "organizer.role_revoke"},
+        {"match_id": None, "action": "organizer.reset"},
+        {"match_id": None, "action": "tournament.start"},
+        {"match_id": "1_1000:final:0", "action": "match.result"},
+    ]
+    by_match, general = jn._group_events(events, "1_1000")
+    assert [e["action"] for e in general] == ["tournament.start"]
+    assert set(by_match) == {"final:0"}

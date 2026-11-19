@@ -454,3 +454,25 @@ async def test_executor_injects_action_id(monkeypatch):
     await admin_actions.execute_pending_actions()
     assert seen.get("_action_id") == "uuid-123"
     assert seen.get("x") == 1
+
+
+def test_server_map_warnings_flags_dangerous_roles():
+    """§13: роли с dangerous permissions попадают в warnings."""
+    from control_center.routers.admin_modules import _server_map_warnings
+    ADMIN = 1 << 3
+    roles = [
+        {"id": "1", "name": "User", "position": 1, "permissions": 0,
+         "managed": False, "mentionable": False},
+        {"id": "2", "name": "Staff", "position": 5, "permissions": ADMIN,
+         "managed": False, "mentionable": False},
+        {"id": "3", "name": "BotRole", "position": 9,
+         "permissions": ADMIN | (1 << 28), "managed": True,
+         "mentionable": False},
+    ]
+    w = _server_map_warnings(roles)
+    assert len(w) == 2
+    assert {x["role_name"] for x in w} == {"Staff", "BotRole"}
+    assert all(x["severity"] == "critical" for x in w)
+    assert all("administrator" in x["permissions"] for x in w)
+    # выше по позиции — первой
+    assert w[0]["role_name"] == "BotRole"

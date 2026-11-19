@@ -244,13 +244,13 @@ class TournamentCog(commands.Cog):
     tournament_group = app_commands.Group(name="tournament", description="Управление турнирами")
 
     @tournament_group.command(name="create", description="Создать новый турнир")
-    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока", formation="Режим: draft (драфт капитанами), balanced-sr (балансировка по SR) или random (случайно)")
+    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока", formation="Режим: draft (драфт капитанами), balanced-sr (балансировка по SR)")
     @is_org()
     async def tournament_create(
         self,
         interaction: discord.Interaction,
         size: str,
-        formation: Literal["draft", "balanced-sr", "random"] = "draft",
+        formation: Literal["draft", "balanced-sr"] = "draft",
     ) -> None:
         """Создать турнир с указанным размером."""
         try:
@@ -845,7 +845,7 @@ class TournamentCog(commands.Cog):
         """Показать интерактивную справку."""
         embed = discord.Embed(
             title=f"СПРАВКА ПО КОМАНДАМ",
-            description=f" **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n **Выберите категорию в меню ниже:**\nТурниры — Топ, Battle Royale, Ультиматум и Ranked Matchmaking\nПрофиль — Карточка игрока, ранг и история матчей\nСоциальное — Репутация, брак и дни рождения\nЭкономика — Баланс, сейф, переводы и криминал\nМагазин — Покупка предметов и инвентарь\nПитомцы — RPG-питомцы сами\nМини-игры — Казино-игры на монеты\nСистема рангов — Ранги, уровни и ELO\nОрганизаторам — Турниры, инфо-центр и баннер\nПравила сервера — Свод правил и регламент",
+            description=f" **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n **Выберите категорию в меню ниже:**\nТурниры — CS 4×4, Battle Royale, Ультиматум и рейтинги\nПрофиль — Карточка игрока, ранг и история матчей\nСоциальное — Репутация, брак и дни рождения\nЭкономика — Баланс, сейф, переводы и криминал\nМагазин — Покупка предметов и инвентарь\nПитомцы — RPG-питомцы сами\nМини-игры — Казино-игры на монеты\nСистема рангов — Ранги, уровни и ELO\nОрганизаторам — Турниры, инфо-центр и баннер\nПравила сервера — Свод правил и регламент",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         view = HelpGuideView(current=None)
@@ -3018,57 +3018,10 @@ def get_rank_emoji(level: int) -> str:
 
 
 async def send_tournament_notification(tournament, guild, action: str) -> None:
-    """Send tournament notification to notification channel."""
-    try:
-        from services.discord_cfg import channel_id as _dcid, role_ids as _drid
-        _gid = getattr(tournament, "guild_id", None) or (
-            guild.id if guild else 0)
-        _nch = _dcid(_gid, "discord.notification_channel_id",
-                     NOTIFICATION_CHANNEL_ID)
-        _nroles = [_dcid(_gid, "discord.notification_role_id", 0)]
-        channel = guild.get_channel(_nch)
-        if not channel:
-            logger.warning(f"Notification channel {_nch} not found")
-            return
+    from services.tournament_notifications import announce_safe
+    await announce_safe(guild, 'cs', str(tournament.id), tournament.channel_id,
+                        tournament.message_id, is_test=tournament.is_test)
 
-        _nrid = _nroles[0] if _nroles else 0
-        role = guild.get_role(_nrid)
-        role_mention = role.mention if role else ""
-
-        # Control Center template override: tournament.announcement
-        # (guild → global). Fallback — стандартный embed.
-        custom_view = None
-        try:
-            from storage import admin_config_store as _cfg_store
-            from services.cv2_templates import render_template
-            _gid = getattr(tournament, "guild_id", None) or guild.id
-            tpl = await _cfg_store.get_template(
-                _gid, "tournament.announcement") or \
-                await _cfg_store.get_template(0, "tournament.announcement")
-            if tpl:
-                custom_view = render_template(tpl["payload"])
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                f"tournament.announcement template failed: {exc}")
-            custom_view = None
-
-        if custom_view is not None:
-            await channel.send(view=custom_view,
-                               allowed_mentions=discord.AllowedMentions(
-                                   roles=True))
-        else:
-            embed = discord.Embed(
-                title="Турнир Создан",
-                description=(
-                    f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
-                    f"**Регистрация** <#{tournament.channel_id}>"
-                ),
-                color=discord.Color.blue()
-            )
-            await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
-        logger.info(f"Tournament notification sent: {action} in guild {guild.id}")
-    except Exception as e:
-        logger.error(f"Failed to send tournament notification: {e}")
 
 
 def _help_category_embed(value: str) -> discord.Embed | None:
@@ -3102,10 +3055,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f" **Доступные команды:**\n"
                 f"{dot}  `/top` — Таблица лидеров `(уровень / монеты / ELO / репутация)`\n"
                 f"{dot}  `/booyah` — Зал славы, рекорды и история турниров\n"
-                + (f"{dot}  `/mm squad` — Поиск матча 4×4 (Ranked Matchmaking)\n"
-                   f"{dot}  `/mm delete` — Удалить поиски на сервере (орг)\n"
-                   if _cfg.MM_ENABLED else "")
-                + f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
+                f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
                 f"{dot}  `/br create|delete` — Battle Royale (орг)\n"
                 f"{dot}  `/tournament ультиматум создать|удалить` — Ультиматум (орг)\n"
                 f"{dot}  `/team create|status|delete` — Команды для BR\n"
@@ -3254,9 +3204,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f"{dot}  `/tournament create|delete|deleteall|test` — Сетка турнира\n"
                 f"{dot}  `/br create|delete|test_fill|test_teams|test_stats` — Battle Royale\n"
                 f"{dot}  `/tournament ультиматум создать|удалить|сетка|статус|история|исправить` — Ультиматум\n"
-                + (f"{dot}  `/mm squad|delete|test` — Matchmaking 4×4\n"
-                   if _cfg.MM_ENABLED else "")
-                + f"{dot}  `/team create|delete|status` — Команды BR\n\n"
+                f"{dot}  `/team create|delete|status` — Команды BR\n\n"
                 f" **Сервер и контент:**\n"
                 f"{dot}  `/server role|welcome|check2fa|off` — Настройки сервера\n"
                 f"{dot}  `/info publish|update|status|validate` — Информационный центр\n"
@@ -3297,7 +3245,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
 _HELP_OPTIONS = [
     discord.SelectOption(label="Правила сервера", description="Свод правил и регламент турниров", value="rules"),
-    discord.SelectOption(label="Турниры", description="Топ, BR, Ультиматум и Ranked MM", value="tournaments"),
+    discord.SelectOption(label="Турниры", description="CS 4×4, BR, Ультиматум и рейтинги", value="tournaments"),
     discord.SelectOption(label="Профиль", description="Карточка игрока, ранг и история матчей", value="profile"),
     discord.SelectOption(label="Социальное", description="Репутация, брак и дни рождения", value="social"),
     discord.SelectOption(label="Экономика", description="Баланс, сейф, переводы и криминал", value="economy"),

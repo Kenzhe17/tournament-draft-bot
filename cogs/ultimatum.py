@@ -250,6 +250,9 @@ class UltimatumCog(commands.Cog):
             f"Турнир **{name}** создан! Карточка регистрации ниже.",
             ephemeral=True,
         )
+        from services.tournament_notifications import announce_safe
+        await announce_safe(interaction.guild, 'ult', t.id, interaction.channel_id,
+                            msg.id, is_test=t.is_test)
         logger.info("Ult2 %s created by %s", t.id, interaction.user.id)
 
     @ultimatum_group.command(name="удалить", description="Удалить активный турнир Ультиматум")

@@ -33,7 +33,7 @@ class InfoSection:
 SECTIONS: tuple[InfoSection, ...] = (
     InfoSection("info", "Информация", "info.png", "info.md"),
     InfoSection("osnovnoe", "Основное", "osnovnoe.png", "osnovnoe.md"),
-    InfoSection("ranked", "Ranked Matchmaking", "ranked.png", "ranked.md"),
+    InfoSection("ranked", "Рейтинги и карьера", "turniry.png", "ranked.md"),
     InfoSection("turniry", "Турниры", "turniry.png", "turniry.md"),
     InfoSection("mekhaniki", "Механики", "mekhaniki.png", "mekhaniki.md"),
     InfoSection("reputatsiya", "Репутация", "reputatsiya.png", "reputatsiya.md"),
@@ -63,7 +63,7 @@ def content_version(section: InfoSection) -> str:
         raw = _md_path(section).read_bytes()
     except OSError:
         return "missing"
-    return hashlib.sha1(raw).hexdigest()[:10]
+    return hashlib.sha1(b"text-layout-v2:" + raw).hexdigest()[:10]
 
 
 def parse_blocks(section: InfoSection) -> list[tuple[str, str]]:

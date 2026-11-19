@@ -308,9 +308,10 @@ def test_id_button_returns_room_id():
     class _IC:
         data = {"custom_id": "rcard:id:1:2:t1:semifinal:0"}
         response = _Resp()
+        guild = None
 
     import asyncio
     btn = RoomIdBtn("rcard:id:1:2:t1:semifinal:0")
     # Без записи в store — «не найдены».
     asyncio.run(btn.callback(_IC()))
-    assert "не найдены" in sent["content"]
+    assert "только участникам" in sent["content"]

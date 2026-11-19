@@ -425,6 +425,9 @@ async def activate_color_role(
         target_role = guild.get_role(item.role_id)
         if target_role is None:
             return False, "Роль цвета не найдена на сервере."
+        from services.shop_role_policy import can_sell_role
+        if not await can_sell_role(guild, target_role):
+            return False, "Эта роль не может выдаваться через магазин."
         bot_member = guild.me
         if bot_member is None:
             return False, "Бот ещё не готов."
@@ -879,6 +882,10 @@ async def _restore_sell_role(guild, user_id: int, role_id: int) -> bool:
             return True  # пользователя нет на сервере — роль отсутствует
         if any(r.id == role_id for r in member.roles):
             return True
+        from services.shop_role_policy import can_sell_role
+        if not await can_sell_role(guild, role):
+            logger.warning("sell recovery: role %s is no longer eligible for shop assignment", role_id)
+            return False
         await member.add_roles(role)
         member = await guild.fetch_member(user_id)
         return any(r.id == role_id for r in member.roles)

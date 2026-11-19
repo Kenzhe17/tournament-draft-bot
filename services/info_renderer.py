@@ -1,10 +1,4 @@
-"""Рендер карточек информационного центра (Components V2).
-
-Структура сообщения: MediaGallery(баннер) → сепаратор → по каждому
-блоку контента «> ## Заголовок» + текст. Отправка:
-channel.send(view=view, file=discord.File(banner)) — banner
-подставляется через attachment://.
-"""
+"""Compact text-only informational cards; no stale artwork or external attachments."""
 
 from __future__ import annotations
 
@@ -20,17 +14,8 @@ def banner_filename(section: InfoSection) -> str:
 
 
 def build_info_view(section: InfoSection) -> discord.ui.LayoutView:
-    """Собрать V2-карточку раздела (без файла — он крепится к сообщению)."""
+    """Собрать компактную текстовую карточку раздела."""
     view = DesignView(timeout=None)
-    view.component(
-        discord.ui.MediaGallery(
-            discord.MediaGalleryItem(
-                media=f"attachment://{banner_filename(section)}"
-            )
-        )
-    )
-    view.container.add_item(separator(large=True))
-
     for heading, body in parse_blocks(section):
         view.text(f"> ## {heading[:80]}")
         view.text(body)

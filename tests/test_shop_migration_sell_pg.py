@@ -624,6 +624,12 @@ async def test_sell_lost_set_status_response(env):
 class _FakeRole:
     def __init__(self, rid):
         self.id = rid
+        self.managed = False
+        # permissions-подобный объект: getattr(..., False) для всех
+        # флагов — роль без опасных полномочий (shop_role_policy).
+        from types import SimpleNamespace
+        self.permissions = SimpleNamespace()
+        self.guild = None
 
 
 class _FakeMember:
@@ -637,8 +643,12 @@ class _FakeMember:
 
 class _FakeGuild:
     def __init__(self, member=None, role_id=None, fail_fetch=False):
+        self.id = 987654321
+        self.channels = []
+        self.default_role = None
         self._member = member
         self._role = _FakeRole(role_id) if role_id else None
+        self._role.guild = self if self._role else None
         self._fail = fail_fetch
 
     async def fetch_member(self, uid):

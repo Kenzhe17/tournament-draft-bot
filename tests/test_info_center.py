@@ -56,9 +56,9 @@ def test_build_info_view_structure():
     for s in SECTIONS:
         view = build_info_view(s)
         assert isinstance(view, discord.ui.LayoutView)
-        # MediaGallery с баннером внутри контейнера
+        # Compact text layout: no obsolete image banners
         kinds = [type(c).__name__ for c in view.container.children]
-        assert "MediaGallery" in kinds
+        assert "MediaGallery" not in kinds
         assert "TextDisplay" in kinds
         # ни одного ActionRow с кнопками — инфо-центр без кнопок
         assert "ActionRow" not in kinds

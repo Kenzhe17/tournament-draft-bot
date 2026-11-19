@@ -282,3 +282,13 @@ def test_pending_mm_tournament_generation(e2e):
 
     s.match_num = 77
     assert e2e.cog._pending_mm_tournament(s) is None
+
+
+# This module verifies the explicit rollback mode, not the retired default.
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _legacy_matchmaking_mode(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "MATCHMAKING_ENABLED", True)

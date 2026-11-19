@@ -1,13 +1,14 @@
 """Информационный центр сервера: /info publish|update|status|validate.
 
-Публикует 8 разделов (content/info/*.md + assets/info/*.png) как
-Components V2 карточки с баннерами в один канал. ID сообщений и
+Публикует 8 текстовых разделов content/info/*.md как
+компактные Components V2 карточки в один канал. ID сообщений и
 версии хранятся в bot_settings (PostgreSQL) — обновление правит
 существующие сообщения, дублей не создаёт.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 
@@ -15,11 +16,17 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import INFO_CHANNEL_ID, replace_emojis
 from cogs.groups import bind_commands, info_group
+from config import INFO_CHANNEL_ID, replace_emojis
 from services.info_content import (
-    BANNERS_DIR, SECTIONS, InfoSection, content_version,
-    parse_blocks, section_by_key, validate as validate_content,
+    SECTIONS,
+    InfoSection,
+    content_version,
+    parse_blocks,
+    section_by_key,
+)
+from services.info_content import (
+    validate as validate_content,
 )
 from services.info_renderer import build_info_view
 from storage.info_store import info_store
@@ -34,6 +41,7 @@ _CHANNEL_NAME_CANDIDATES = ("info", "информация", "инфо", "📌・
 class InfoCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._locks = {}
 
     async def cog_load(self) -> None:
         bind_commands(
@@ -52,18 +60,19 @@ class InfoCog(commands.Cog):
         if channel is not None:
             return channel
         guild = interaction.guild
-        cid = INFO_CHANNEL_ID or await info_store.get_channel_id(guild.id)
+        from storage.server_layout_store import server_layout_store
+        cid = server_layout_store.binding(guild.id, "info") or await info_store.get_channel_id(guild.id) or INFO_CHANNEL_ID
         if cid:
             ch = guild.get_channel(cid)
             if ch is None:
                 try:
                     ch = await guild.fetch_channel(cid)
-                except Exception:
+                except discord.HTTPException:
                     ch = None
             if isinstance(ch, discord.TextChannel):
                 return ch
         for ch in guild.text_channels:
-            if ch.name.lower() in _CHANNEL_NAME_CANDIDATES:
+            if ch.name.lower() in _CHANNEL_NAME_CANDIDATES or ch.name == "📖・информация":
                 return ch
         return None
 
@@ -80,12 +89,10 @@ class InfoCog(commands.Cog):
         if version == "missing" or not parse_blocks(section):
             return f"{section.key}: нет контента — пропущен"
 
-        banner_path = BANNERS_DIR / section.banner
-        if not banner_path.exists():
-            return f"{section.key}: нет баннера {section.banner} — пропущен"
-
         msgs = await info_store.get_messages(guild.id)
         rec = msgs.get(section.key) or {}
+        if rec.get("pending"):
+            return f"{section.key}: публикация не подтверждена — проверьте канал и состояние перед повтором"
         mid = rec.get("message_id")
 
         view = build_info_view(section)
@@ -94,7 +101,7 @@ class InfoCog(commands.Cog):
         if mid and (force or rec.get("version") != version):
             try:
                 msg = await channel.fetch_message(int(mid))
-                await msg.edit(view=view)
+                await msg.edit(view=view, attachments=[], allowed_mentions=discord.AllowedMentions.none())
                 await info_store.set_message(
                     guild.id, section.key, int(mid), version
                 )
@@ -102,16 +109,16 @@ class InfoCog(commands.Cog):
             except discord.NotFound:
                 logger.info("info %s: message %s deleted, resending",
                             section.key, mid)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — fail closed on any uncertain edit
                 logger.warning("info %s edit failed: %s", section.key, exc)
+                return f"{section.key}: ошибка редактирования; новое сообщение не создано"
         elif mid and not force:
             return f"{section.key}: актуально (#{mid})"
 
         # 2) Нет сообщения или edit не удался — отправляем новое
-        file = discord.File(banner_path, filename=section.banner)
+        await info_store.set_pending(guild.id, section.key)
         msg = await channel.send(
             view=view,
-            file=file,
             allowed_mentions=discord.AllowedMentions.none(),
         )
         await info_store.set_message(guild.id, section.key, msg.id, version)
@@ -125,6 +132,10 @@ class InfoCog(commands.Cog):
         force: bool = False,
         only: str | None = None,
     ) -> list[str]:
+        async with self._locks.setdefault(guild.id, asyncio.Lock()):
+            return await self._sync_all_locked(guild, channel, force=force, only=only)
+
+    async def _sync_all_locked(self, guild, channel, *, force=False, only=None):
         results = []
         for section in SECTIONS:
             if only and section.key != only:
@@ -167,6 +178,10 @@ class InfoCog(commands.Cog):
                 ),
                 ephemeral=True,
             )
+            return
+        previous = await info_store.get_channel_id(interaction.guild.id)
+        if previous and previous != ch.id and await info_store.get_messages(interaction.guild.id):
+            await interaction.followup.send("Информация уже опубликована в другом канале. Перенесите существующий канал, сохранив ID.", ephemeral=True)
             return
         await info_store.set_channel_id(interaction.guild.id, ch.id)
         results = await self._sync_all(

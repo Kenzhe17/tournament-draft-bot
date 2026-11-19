@@ -95,6 +95,11 @@ def build_queue_panel(
 ) -> discord.ui.LayoutView:
     """Построить V2-панель очереди (open/locked)."""
     view = DesignView(timeout=None)
+    import config
+    if not config.MATCHMAKING_ENABLED:
+        view.text("## ТУРНИРЫ r!z3")
+        view.text("Играем в турнирах организаторов: CS 4×4, Battle Royale и Ultimatum. Откройте /hub → Играть.")
+        return view
 
     # PNG-баннер сверху карточки (attachment:// — файл прикреплён
     # к сообщению при отправке; при edit вложение сохраняется).

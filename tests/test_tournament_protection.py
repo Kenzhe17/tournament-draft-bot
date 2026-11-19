@@ -86,7 +86,8 @@ def orgs(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_can_manage_bot_owner(orgs):
+def test_can_manage_bot_owner(orgs, monkeypatch):
+    monkeypatch.setattr(permissions, "BOT_OWNER_ID", 582145013358657549)
     table, _ = orgs
     t = _tournament(organizer_id=999)
     guild = _guild()
@@ -109,7 +110,7 @@ def test_can_manage_global_org_role(orgs):
     guild = _guild(roles=[org_role])
     t = _tournament(organizer_id=999)
     user = _member(42, roles=[org_role])
-    assert permissions.can_manage_tournament(user, guild, t)
+    assert not permissions.can_manage_tournament(user, guild, t)
 
 
 @pytest.mark.parametrize("role_name", ["ORG-1", "ORG-2", "ORG-3"])
@@ -122,7 +123,7 @@ def test_can_manage_org_numbered_roles(orgs, monkeypatch, role_name):
     guild = _guild(roles=[role])
     t = _tournament(organizer_id=999)
     user = _member(42, roles=[role])
-    assert permissions.can_manage_tournament(user, guild, t)
+    assert not permissions.can_manage_tournament(user, guild, t)
 
 
 def test_can_manage_tournament_creator(orgs):
