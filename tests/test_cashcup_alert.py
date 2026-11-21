@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import asyncio
 
+import discord
 import pytest
 
 from cogs import cashcup
@@ -122,7 +123,6 @@ def env(monkeypatch):
     store = FakeStore()
     cog = cashcup.CashCupCog.__new__(cashcup.CashCupCog)
     cog._alert_locks = {}
-    cog._alert_last = {}
     cog._state_cache = {}
     monkeypatch.setattr(cashcup, "cashcup_store", store)
     return SimpleNamespace(cog=cog, store=store, channel=channel)
@@ -440,8 +440,9 @@ async def test_preview_publishes_nothing(env):
     await env.cog.alert.callback(env.cog, i, preview=True)
     assert not env.channel.sent
     assert "ПРОВЕРКА СОСТАВОВ" in _last(i)
-    # preview не расходует cooldown
-    assert 1 not in env.cog._alert_last
+    # preview не меняет состояние рассылки и не публикует ничего
+    assert not env.channel.sent
+    assert not getattr(env.cog, "_alert_sent", {})
 
 
 @pytest.mark.asyncio
@@ -611,45 +612,51 @@ async def test_failed_send_no_cooldown(env, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_partial_send_dedup_no_duplicates(env, monkeypatch):
-    """Частичная отправка: повтор не дублирует уже ушедшие чанки."""
+    """Реальный сценарий: часть чанков ушла, вторая отправка
+    падает → ручной повтор досылает только остаток."""
     teams = [_team(f"t{i}", f"TEAM{i}", 100 + i,
                    [_player(300 + i * 10 + j) for j in range(4)])
              for i in range(18)]
     env.store.state = _reg_state(teams)
-    calls = []
-    orig = env.channel.send
-    state = {"fail_after": None}
+    sent_texts = []
+    orig_send = env.channel.send
+    fail = {"on": 2, "n": 0}
     async def _send(text, **kw):
-        calls.append(text)
-        if state["fail_after"] is not None \
-                and len(calls) > state["fail_after"]:
-            raise discord.HTTPException(_FakeResp(), "x")
+        fail["n"] += 1
+        if fail["on"] and fail["n"] == fail["on"]:
+            raise discord.HTTPException(_FakeResp(), "boom")
+        sent_texts.append(text)
         env.channel.sent.append((text, kw))
-    monkeypatch.setattr(env.channel, "send", _send)
+    env.channel.send = _send
     admin = _member(99, admin=True)
-    # Полный первый прогон → запоминаем число чанков.
     i1 = make_interaction(admin, channel=env.channel)
     await env.cog.alert.callback(env.cog, i1, preview=False)
-    total = len(calls)
-    assert total >= 1
-    # «Частичный» сценарий: сбрасываем dedup/cooldown, имитируем
-    # что часть чанков уже ушла.
-    env.cog._alert_last.clear()
-    env.cog._alert_sent.clear()
-    sent_map = env.cog._alert_sent
-    # Имитируем: первый чанк «уже отправлен».
-    import hashlib
-    lines, mids, rep = cashcup._alert_payload(env.store.state, 1)
-    chunks = cashcup._pack_lines(lines)
-    h = hashlib.sha1(chunks[0].encode()).hexdigest()
-    sent_map[1] = (hashlib.sha1("\n".join(lines).encode()).hexdigest(),
-                   {h}, False)
-    calls.clear()
+    partial = len(sent_texts)
+    assert partial >= 1  # хотя бы первый чанк ушёл
+    # Состояние частичной отправки сохранено.
+    assert env.cog._alert_sent.get(1) is not None
+    assert env.cog._alert_sent[1][2] is False
+    # Восстанавливаем send и повторяем вручную.
+    env.channel.send = orig_send
+    sent_before = len(env.channel.sent)
+    fail["on"] = 0
     i2 = make_interaction(admin, channel=env.channel)
     await env.cog.alert.callback(env.cog, i2, preview=False)
-    # Первый чанк не переотправлен.
-    assert chunks[0] not in calls
-    assert len(calls) == len(chunks) - 1
+    resent = [t for t, _kw in env.channel.sent[sent_before:]]
+    # Полный список чанков отчёта:
+    lines, _m, _r = cashcup._alert_payload(env.store.state, 1)
+    all_chunks = cashcup._pack_lines(lines)
+    # Досланы только недостающие части, уже доставленные не повторены.
+    assert 0 < len(resent) < len(all_chunks)
+    assert len(resent) == len(all_chunks) - partial
+    for c in resent:
+        assert c in all_chunks
+        assert c not in sent_texts
+    # Ещё один ручной вызов — полная новая рассылка.
+    n_before = len(env.channel.sent)
+    i3 = make_interaction(admin, channel=env.channel)
+    await env.cog.alert.callback(env.cog, i3, preview=False)
+    assert len(env.channel.sent) > n_before
 
 
 @pytest.mark.asyncio
@@ -693,3 +700,93 @@ async def test_status_label_no_guaranteed_admission(env):
 class _FakeResp:
     status = 500
     reason = "x"
+
+
+# ---------------- Mention safety: санитизация и AllowedMentions ----------------
+
+def _mention_ids_in(text):
+    import re as _re
+    return [int(m) for m in _re.findall(r"<@(\d+)>", text)]
+
+
+@pytest.mark.asyncio
+async def test_user_text_cannot_inject_mentions(env):
+    """Ники/имена команд с @everyone, @here, <@id>, <@&role>, <#chan>
+    не создают активных упоминаний в публичном отчёте."""
+    evil_nick = "<@999001> <@&888> <#5> @everyone @here"
+    env.store.state = _reg_state([
+        _team("t1", "@here TEAM", 10,
+              [_player(10, nick=evil_nick, device=""),
+               _player(11, nick="ok11", device=""),
+               _player(12, verified=True), _player(13, verified=True)]),
+        _ready_team("t2", "BETA", 20, [40, 41, 42, 43]),
+    ])
+    i = make_interaction(_member(99, admin=True), channel=env.channel)
+    await env.cog.alert.callback(env.cog, i, preview=False)
+    assert env.channel.sent
+    all_text = _public_text(env.channel)
+    # Враждебные ID не упомянуты активными <@...>.
+    assert "<@999001>" not in all_text
+    assert "<@&888>" not in all_text
+    assert "<#5>" not in all_text
+    # @everyone/@here не встречаются в «чистом» виде.
+    assert "@everyone" not in all_text.replace("@​everyone", "")
+    assert "@here" not in all_text.replace("@​here", "")
+    # allowed_mentions каждого сообщения: только реальные ping_ids.
+    ping_ids = {10, 11, 20}  # капитаны 10,20 + actors 10,11
+    for text, kw in env.channel.sent:
+        am = kw.get("allowed_mentions")
+        assert am is not None
+        assert am.everyone is False
+        assert am.roles is False
+        assert am.replied_user is False
+        allowed = {o.id for o in am.users}
+        in_text = set(_mention_ids_in(text))
+        assert allowed == in_text & ping_ids or allowed <= ping_ids
+        assert allowed <= in_text
+
+
+@pytest.mark.asyncio
+async def test_every_ping_id_exactly_once_across_chunks(env):
+    """Каждый получатель roll-call упомянут ровно один раз за рассылку,
+    включая границы чанков; в detail-блоках <@id> нет."""
+    teams = [_team(f"t{i}", f"TEAM{i}", 100 + i,
+                   [_player(300 + i * 10 + j, device="")
+                    for j in range(4)])
+             for i in range(18)]
+    env.store.state = _reg_state(teams)
+    i = make_interaction(_member(99, admin=True), channel=env.channel)
+    await env.cog.alert.callback(env.cog, i, preview=False)
+    chunks = [t for t, _ in env.channel.sent]
+    assert len(chunks) >= 2  # точно есть разбиение
+    report = cashcup._alert_report(env.store.state)
+    ping_ids = set(report["captains"]) | set(report["actors"])
+    seen: dict[int, int] = {}
+    for text in chunks:
+        assert len(text) <= 1900
+        for uid in _mention_ids_in(text):
+            seen[uid] = seen.get(uid, 0) + 1
+            assert uid in ping_ids, f"лишний пинг {uid}"
+    for uid in ping_ids:
+        assert seen.get(uid) == 1, f"получатель {uid} пинганут {seen.get(uid)} раз"
+    # Ни один чанк не превышает 100 активных пользователей.
+    for text, kw in env.channel.sent:
+        am = kw["allowed_mentions"]
+        assert len(am.users) <= 100
+
+
+@pytest.mark.asyncio
+async def test_captain_who_is_actor_pinged_once(env):
+    """Капитан с незаполненными данными — один активный пинг."""
+    env.store.state = _reg_state([
+        _team("t1", "ALPHA", 10,
+              [_player(10, device=""),  # капитан сам actor
+               _player(11, device=""), _player(12, verified=True),
+               _player(13, verified=True)]),
+        _ready_team("t2", "BETA", 20, [40, 41, 42, 43]),
+    ])
+    i = make_interaction(_member(99, admin=True), channel=env.channel)
+    await env.cog.alert.callback(env.cog, i, preview=False)
+    ids = [u for t, _ in env.channel.sent for u in _mention_ids_in(t)]
+    assert ids.count(10) == 1
+    assert sorted(set(ids)) == sorted({10, 11, 20})

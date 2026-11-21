@@ -335,9 +335,16 @@ _ALERT_FOOTER = (
 )
 
 
+_MENTION_MARKUP_RE = re.compile(r"<(?=[#@!:])")
+
+
 def _esc(text: str) -> str:
-    """Escape Discord markdown/упоминаний в пользовательских строках."""
-    return discord.utils.escape_markdown(str(text))
+    """Escape пользовательского текста: markdown + ВСЕ виды
+    упоминаний (@everyone/@here/<@id>/<@!id>/<@&role>/<#chan>/<:emoji:>)."""
+    out = discord.utils.escape_markdown(str(text))
+    out = discord.utils.escape_mentions(out)
+    # Ломаем mention/emoji-разметку zero-width пробелом после '<'.
+    return _MENTION_MARKUP_RE.sub("<" + chr(0x200b), out)
 
 
 def _alert_member_issue(p: dict) -> tuple[str, bool]:
@@ -370,20 +377,24 @@ def _alert_report(state: dict) -> dict:
         cap = t.get("captain")
         if cap:
             captains.append(int(cap))
-        lines = [f"**{_esc(_label(t))}** — капитан <@{cap}>", ""]
+        # Активные <@id> в блоках НЕТ — все пинги идут только из
+        # roll-call вверху отчёта (ровно один на получателя).
+        cap_nick = next(
+            (str(p.get("nick") or "") for p in t.get("members") or []
+             if int(p.get("discord_id") or 0) == int(cap or 0)), "")
+        cap_label = _esc(cap_nick) if cap_nick else f"#{cap}"
+        lines = [f"**{_esc(_label(t))}** — капитан {cap_label}", ""]
         issues: list[str] = []
         for p in t.get("members") or []:
             text, needs = _alert_member_issue(p)
             if text:
+                # И игрокам, и ожидающим ADMIN — безопасный текст
+                # без <@id>: пинг уже дан в roll-call (actors) или
+                # не положен (admin-pending).
+                who = _esc(str(p.get("nick") or "участник"))
+                issues.append(f"- {who} — {text}")
                 if needs:
-                    # Активный пинг: игрок должен заполнить данные.
-                    issues.append(
-                        f"- <@{p.get('discord_id')}> — {text}")
                     actors.append(int(p["discord_id"]))
-                else:
-                    # Только ожидает ADMIN — БЕЗ активного пинга.
-                    who = _esc(str(p.get("nick") or "участник"))
-                    issues.append(f"- {who} — {text}")
         # Структурные проблемы (дубли UID/Discord, состав, >2 ПК,
         # cross-team) — из существующей диагностики, без изменений.
         issues += [f"- {sp}" for sp in diag["structural"]]
@@ -428,8 +439,12 @@ def _alert_payload(state: dict, guild_id: int
     report = _alert_report(state)
     lines = [_ALERT_HEADER, ""]
     lines += _alert_roll_lines("Капитаны", report["captains"])
+    # Капитан, которому также нужно заполнить данные, уже
+    # упомянут в roll-call капитанов — второй пинг не создаём.
+    actors_only = [a for a in report["actors"]
+                   if a not in set(report["captains"])]
     lines += _alert_roll_lines(
-        "Требуется заполнить данные", report["actors"])
+        "Требуется заполнить данные", actors_only)
     lines.append("")
     for block in report["blocks"]:
         lines += block.split("\n") + [""]
@@ -2082,6 +2097,7 @@ class CashCupCog(commands.Cog):
                             "cashcup alert chunk %s has %s pings",
                             idx, len(ids))
                     mentions = discord.AllowedMentions(
+                        everyone=False, roles=False, replied_user=False,
                         users=[discord.Object(id=u) for u in ids])
                     try:
                         await channel.send(
