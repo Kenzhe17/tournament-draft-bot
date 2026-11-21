@@ -157,9 +157,16 @@ def configured_bindings(guild_id: int) -> dict[str, int]:
             candidates['org_panel'] = int(_os.channel_id)
     except Exception:  # noqa: BLE001
         pass
-    # Persisted bindings take precedence after an explicit layout migration.
+    # Persisted bindings take precedence after an explicit layout migration,
+    # кроме 'access': закреплённый ACCESS_ROTATION_CHANNEL_ID важнее
+    # сохранённой привязки — plan определяет канал панели строго по ID.
+    pinned_access = int(getattr(config, 'ACCESS_ROTATION_CHANNEL_ID', 0) or 0)
     for key, cid in candidates.items():
-        if cid and not result.get(key):
+        if not cid:
+            continue
+        if key == 'access' and pinned_access:
+            result[key] = pinned_access
+        elif not result.get(key):
             result[key] = int(cid)
     return result
 
@@ -199,8 +206,14 @@ def plan_layout(guild_id: int, snapshot: list[dict], bindings: dict[str, int],
         elif resolved_cat[name]['name'] != name:
             ops.append({'action': 'reuse_category', 'id': resolved_cat[name]['id'],
                         'name': name, 'from_name': resolved_cat[name]['name']})
+    # Закреплённый канал панели ротации доступа: plan определяет его
+    # строго по ID, независимо от названия. При настроенном ID канал
+    # не создаётся и не подменяется тёзкой — расхождение = ошибка плана.
+    pinned_access = int(getattr(config, 'ACCESS_ROTATION_CHANNEL_ID', 0) or 0)
     for key, name, category, aliases in CHANNELS:
         cid = int(bindings.get(key) or 0)
+        if key == 'access' and pinned_access:
+            cid = pinned_access
         if cid:
             item = by_id.get(cid)
             if item is None:
@@ -228,6 +241,10 @@ def plan_layout(guild_id: int, snapshot: list[dict], bindings: dict[str, int],
             # Missing tournament slots and integration channels must not be invented.
             if key in ('tournament_1', 'tournament_2', 'tournament_3', 'br', 'journal', 'rooms'):
                 continue
+            # 'access': при закреплённом ACCESS_ROTATION_CHANNEL_ID канал
+            # уже резолвится строго по ID выше — создание дубля
+            # невозможно. Без ID — только первичное создание, когда
+            # канал отсутствует вовсе (имя-тёзка не считается).
             ops.append({'action': 'create_channel', 'name': name, 'category': category, 'binding': key})
     configured_channels = {int(value) for name, value in vars(config).items()
                            if name.endswith("_CHANNEL_ID") and isinstance(value, int) and value > 0}

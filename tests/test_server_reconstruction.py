@@ -282,3 +282,46 @@ def test_plan_move_noop_when_name_and_category_match():
                           moves={2001: 'ИНФОРМАЦИЯ'},
                           move_names={2001: '🌟・репутация'})
     assert not any(o['action'] == 'move_channel' for o in plan['operations'])
+
+
+def test_access_binding_pinned_channel_id_wins(monkeypatch):
+    """Закреплённый ACCESS_ROTATION_CHANNEL_ID: plan резолвит
+    'access' строго по ID, имя не важно, дубль по имени-тёзке
+    не создаётся и не занимается."""
+    import config
+    monkeypatch.setattr(config, 'ACCESS_ROTATION_CHANNEL_ID', 424242)
+    snapshot = [
+        snap(424242, 'совсем-другое-имя'),
+        snap(5001, 'доступ-ротация'),
+        snap(5002, '🎟・доступ-ротация'),
+    ]
+    plan = sl.plan_layout(123, snapshot, {}, set(), set())
+    assert plan['bindings']['access'] == 424242
+    assert not any(o['action'] == 'create_channel'
+                   and o.get('binding') == 'access'
+                   for o in plan['operations'])
+
+
+def test_access_binding_pinned_overrides_stale_binding(monkeypatch):
+    """Сохранённая привязка на канал-дубликат не перекрывает
+    закреплённый ID."""
+    import config
+    monkeypatch.setattr(config, 'ACCESS_ROTATION_CHANNEL_ID', 424242)
+    snapshot = [
+        snap(424242, 'custom-name'),
+        snap(5001, 'доступ-ротация'),
+    ]
+    plan = sl.plan_layout(
+        123, snapshot, {'access': 5001}, set(), set())
+    assert plan['bindings']['access'] == 424242
+
+
+def test_access_binding_pinned_missing_blocks_plan(monkeypatch):
+    """ID закреплён, но канал отсутствует → диагностическая
+    ошибка; create_channel для access не предлагается даже при
+    наличии канала-тёзки."""
+    import config
+    monkeypatch.setattr(config, 'ACCESS_ROTATION_CHANNEL_ID', 424242)
+    with pytest.raises(ValueError, match='access'):
+        sl.plan_layout(
+            123, [snap(5001, 'доступ-ротация')], {}, set(), set())
