@@ -31,9 +31,11 @@ from typing import Any
 import discord
 
 from config import (
+    ACCESS_CHANNEL_NAMES,
     ACCESS_MAX_HOLDERS,
     ACCESS_NEW_HOLDER_PROTECT_HOURS,
     ACCESS_ROLE_ID,
+    ACCESS_ROTATION_CHANNEL_ID,
     ACCESS_ROTATION_HOUR,
     ADMIN_USER_IDS,
     BOT_OWNER_ID,
@@ -829,21 +831,183 @@ async def panel_context(guild: discord.Guild) -> dict[str, Any]:
     }
 
 
-async def refresh_panel(guild: discord.Guild) -> bool:
-    """Перерисовать постоянную панель в её канале (in-place edit)."""
+# ---------------------------------------------------------------------------
+# Канал и сообщение панели: только закреплённый ID, без автосоздания
+# ---------------------------------------------------------------------------
+
+_PANEL_CUSTOM_IDS = (
+    "access:join", "access:leave", "access:guide", "access:orgpanel",
+)
+
+
+def _is_text_like(channel) -> bool:
+    """Text/news канал. Форум и прочие типы отклоняем."""
+    t = getattr(channel, "type", None)
+    if t is None:
+        return True  # duck-typed фейки в тестах
     try:
-        from views.access_panel import render_panel_view
-        state = await access_store.get_state(guild.id)
-        cid, mid = state.get("channel_id"), state.get("message_id")
-        if not (cid and mid):
-            return False
-        channel = guild.get_channel(int(cid))
+        return t in (
+            discord.ChannelType.text,
+            discord.ChannelType.news,
+        )
+    except Exception:
+        return False
+
+
+def _bot_user_id(guild) -> int | None:
+    me = getattr(guild, "me", None)
+    if me is not None:
+        return getattr(me, "id", None)
+    state = getattr(guild, "_state", None)
+    return getattr(state, "self_id", None) if state is not None else None
+
+
+def _channel_accessible(guild, channel) -> bool:
+    """Бот может читать канал и отправлять сообщения с файлами."""
+    me = getattr(guild, "me", None)
+    if me is None:
+        return True
+    try:
+        perms = channel.permissions_for(me)
+    except Exception:
+        return True
+    needed = (
+        "view_channel", "send_messages",
+        "read_message_history", "attach_files",
+    )
+    return all(getattr(perms, name, True) for name in needed)
+
+
+async def resolve_panel_channel(guild: discord.Guild):
+    """Канал панели: ТОЛЬКО закреплённый ACCESS_ROTATION_CHANNEL_ID.
+
+    Никогда не создаёт канал и не выбирает дубликат по имени,
+    когда ID задан. Возвращает None при любой проблеме —
+    вызывающий код логирует ошибку и прекращает обновление.
+    """
+    pinned = int(ACCESS_ROTATION_CHANNEL_ID or 0)
+    if pinned:
+        channel = guild.get_channel(pinned)
         if channel is None:
             try:
-                channel = await guild.fetch_channel(int(cid))
-            except Exception:
+                channel = await guild.fetch_channel(pinned)
+            except discord.NotFound:
+                logger.error(
+                    "access: pinned panel channel %s not found "
+                    "in guild %s", pinned, guild.id)
+                return None
+            except discord.Forbidden:
+                logger.error(
+                    "access: bot cannot access pinned panel channel %s",
+                    pinned)
+                return None
+            except Exception as exc:
+                logger.warning(
+                    "access: fetch pinned channel %s failed: %s",
+                    pinned, exc)
+                return None
+        if not _is_text_like(channel):
+            logger.error(
+                "access: pinned channel %s is not a text channel",
+                pinned)
+            return None
+        if not _channel_accessible(guild, channel):
+            logger.error(
+                "access: bot lacks permissions in pinned channel %s",
+                pinned)
+            return None
+        return channel
+    # ID не задан (dev-окружение): только точное имя, БЕЗ создания.
+    wanted = {n.lower() for n in ACCESS_CHANNEL_NAMES}
+    for ch in getattr(guild, "text_channels", []) or []:
+        if str(getattr(ch, "name", "")).lower() in wanted:
+            return ch
+    logger.error(
+        "access: ACCESS_ROTATION_CHANNEL_ID is not set and no "
+        "named panel channel found in guild %s", guild.id)
+    return None
+
+
+def _component_custom_ids(component) -> list[str]:
+    ids = []
+    cid = getattr(component, "custom_id", None)
+    if cid:
+        ids.append(cid)
+    for child in getattr(component, "children", None) or []:
+        ids.extend(_component_custom_ids(child))
+    return ids
+
+
+async def find_panel_message(channel, *, limit: int = 100):
+    """Найти уже опубликованную панель в канале.
+
+    Признаки: автор — этот бот, среди компонентов есть custom_id
+    кнопок панели (``access:*``). None — панели нет или канал
+    не поддерживает историю (ошибки логируются, не пробрасываются).
+    """
+    history = getattr(channel, "history", None)
+    if history is None:
+        return None
+    guild = getattr(channel, "guild", None)
+    bot_id = _bot_user_id(guild) if guild is not None else None
+    try:
+        async for message in history(limit=limit):
+            if bot_id is not None:
+                author = getattr(message, "author", None)
+                if getattr(author, "id", None) != bot_id:
+                    continue
+            ids: list[str] = []
+            for comp in getattr(message, "components", None) or []:
+                ids.extend(_component_custom_ids(comp))
+            if any(cid in _PANEL_CUSTOM_IDS for cid in ids):
+                return message
+    except discord.HTTPException as exc:
+        logger.warning(
+            "access: panel search failed channel=%s: %s",
+            getattr(channel, "id", "?"), exc)
+    except Exception as exc:
+        logger.warning(
+            "access: panel search error channel=%s: %s",
+            getattr(channel, "id", "?"), exc)
+    return None
+
+
+async def refresh_panel(guild: discord.Guild) -> bool:
+    """Перерисовать постоянную панель в её канале (in-place edit).
+
+    Канал — только закреплённый ID. Если state указывает на
+    другой (дублирующий) канал, message_id оттуда не
+    используется: ищем панель внутри закреплённого канала и
+    синхронизируем access_state. Новых каналов/сообщений
+    при ошибках не создаём.
+    """
+    try:
+        from views.access_panel import render_panel_view
+        channel = await resolve_panel_channel(guild)
+        if channel is None:
+            return False
+        state = await access_store.get_state(guild.id)
+        cid, mid = state.get("channel_id"), state.get("message_id")
+        message = None
+        if mid and (not cid or int(cid) == int(channel.id)):
+            try:
+                message = await channel.fetch_message(int(mid))
+            except discord.NotFound:
+                message = None
+            except discord.HTTPException as exc:
+                logger.warning(
+                    "access panel refresh fetch failed: %s", exc)
                 return False
-        message = await channel.fetch_message(int(mid))
+        if message is None:
+            message = await find_panel_message(channel)
+            if message is None:
+                return False
+            try:
+                await access_store.set_panel(
+                    guild.id, channel.id, message.id)
+            except Exception as exc:
+                logger.warning(
+                    "access panel state sync failed: %s", exc)
         edit_kwargs = {}
         att = edit_attachments(message)
         if att is not None:
