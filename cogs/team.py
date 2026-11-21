@@ -25,10 +25,13 @@ class TeamCog(commands.Cog):
     @app_commands.describe(password="Пароль команды (обязательно)")
     async def create(self, interaction: discord.Interaction, password: str):
         """Создать новую команду."""
+        # Defer ДО team_store.create — PG-запись может превысить
+        # 3-секундное окно ответа (10062).
+        await interaction.response.defer(ephemeral=True)
         # Check if user already in a team
         existing_team = team_store.get_by_member(interaction.user.id)
         if existing_team:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 replace_emojis("Вы уже состоите в команде!"),
                 ephemeral=True
             )
@@ -66,7 +69,7 @@ class TeamCog(commands.Cog):
             color=discord.Color.from_rgb(114, 137, 218)  # Pastel blue
         )
 
-        await interaction.response.send_message( view=compose(embed), ephemeral=True)
+        await interaction.followup.send( view=compose(embed), ephemeral=True)
 
     @team.command(name="delete", description="Удалить команду")
     async def delete(self, interaction: discord.Interaction):
@@ -107,11 +110,15 @@ class TeamCog(commands.Cog):
     @app_commands.describe(team_name="Название команды (опционально)")
     async def status(self, interaction: discord.Interaction, team_name: str = None):
         """Показать статус команды."""
+        # Defer ДО fetch_message/edit/send/update_team — эти Discord
+        # и store-вызовы могут превысить 3-секундное окно ответа
+        # (production 10062 Unknown interaction).
+        await interaction.response.defer(ephemeral=True)
         # If team_name is provided, search for that team
         if team_name:
             team = team_store.get_by_name(interaction.guild_id, team_name)
             if not team:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("Команда с таким названием не найдена!"),
                     ephemeral=True
                 )
@@ -120,7 +127,7 @@ class TeamCog(commands.Cog):
             # Otherwise, get user's team
             team = team_store.get_by_member(interaction.user.id)
             if not team:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("Вы не состоите в команде! Укажите название команды или создайте свою."),
                     ephemeral=True
                 )
@@ -194,8 +201,8 @@ class TeamCog(commands.Cog):
         if not view.message:
             view.message = message
 
-        # Send ephemeral confirmation
-        await interaction.response.send_message(
+        # Send ephemeral confirmation (response уже отложен defer'ом)
+        await interaction.followup.send(
             replace_emojis("Статус команды обновлен"),
             ephemeral=True
         )

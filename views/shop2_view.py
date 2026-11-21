@@ -318,9 +318,9 @@ async def build_main_view(guild_id: int, user_id: int) -> DesignView:
 
 
 async def open_shop(interaction: discord.Interaction) -> None:
-    """Точка входа /shop."""
+    """Точка входа /shop. Вызывается после defer — отвечаем followup'ом."""
     view = await build_main_view(interaction.guild_id, interaction.user.id)
-    await interaction.response.send_message(view=view, ephemeral=True)
+    await interaction.followup.send(view=view, ephemeral=True)
 
 
 # ---------------------------------------------------------------- browse
