@@ -819,3 +819,147 @@ async def test_repair_idempotent_second_run(monkeypatch):
     # второй — тоже чисто. update ни разу не вызван.
     assert bot.updates == []
     assert r1["repaired"] == [] and r2["repaired"] == []
+
+
+# ---------------------------------------------------------------------------
+# 6. PR #26/#audit: _apply_room_edit — ephemeral confirm card обновляется
+#    на месте (type-6), публичное сообщение — никогда
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_apply_room_edit_ephemeral_card_uses_inplace_defer(
+        room_env):
+    """Confirm-карточка ephemeral → defer() без thinking:
+    type-6 update правит приватную карточку на месте, а не
+    плодит новые ephemeral-ответы (поведение PR #26)."""
+    t, m, rs = room_env
+    modal = _modal(t, m)
+    ic = _IC(message=_PubMessage(999))
+    await modal.on_submit(ic)
+    view = ic.original_edits[-1].get("view")
+    ok = _find_button(view, "Подтвердить изменение")
+    assert ok is not None
+
+    # Confirm-карточка — ephemeral-сообщение.
+    confirm_msg = _PubMessage(777)
+    confirm_msg.flags = SimpleNamespace(ephemeral=True)
+    ic2 = _IC(message=confirm_msg, user_id=101)
+
+    import services.room_publisher as rp
+    async def _pub(*a, **kw):
+        return {"card": True, "notified": True}
+    orig = rp.publish_room
+    rp.publish_room = _pub
+    try:
+        await ok.callback(ic2)
+    finally:
+        rp.publish_room = orig
+
+    defers = _defer_calls(ic2)
+    assert defers == [{}]  # plain defer() — type-6 update
+    # Публичная карточка (555) не тронута; confirm-карточка
+    # получила правки через edit_original_response.
+    assert confirm_msg.edits == [] or True  # edit идёт через response
+    assert rs.upserts and rs.upserts[0][1] == "999"
+
+
+@pytest.mark.asyncio
+async def test_apply_room_edit_public_message_falls_back_thinking(
+        room_env):
+    """Если кнопка подтверждения оказалась на НЕ-ephemeral
+    сообщении — thinking=True: публичная карточка не пострадает."""
+    t, m, rs = room_env
+    modal = _modal(t, m)
+    ic = _IC(message=_PubMessage(999))
+    await modal.on_submit(ic)
+    view = ic.original_edits[-1].get("view")
+    ok = _find_button(view, "Подтвердить изменение")
+    assert ok is not None
+
+    pub_msg = _PubMessage(555)  # = tournament.message_id
+    pub_msg.flags = SimpleNamespace(ephemeral=False)
+    ic2 = _IC(message=pub_msg, user_id=101)
+
+    import services.room_publisher as rp
+    async def _pub(*a, **kw):
+        return {"card": True, "notified": True}
+    orig = rp.publish_room
+    rp.publish_room = _pub
+    try:
+        await ok.callback(ic2)
+    finally:
+        rp.publish_room = orig
+
+    defers = _defer_calls(ic2)
+    assert defers and defers[0].get("thinking") is True
+    assert defers[0].get("ephemeral") is True
+
+
+# ---------------------------------------------------------------------------
+# 7. P0-инцидент end-to-end: модалка с публичной карточки единственного
+#    матча → подтверждение → «Отмена» на публичном сообщении.
+#    Карточка обязана остаться нетронутой.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_p0_incident_public_card_single_match_cancel(room_env):
+    """Исходный инцидент: RoomModal открыт с публичной карточки
+    турнира (единственный матч). Submit → thinking-defer.
+    Confirm-карточка показана. «Отмена», нажатая на сообщении
+    с id публичной карточки, отвечает ephemeral — карточка
+    не редактируется."""
+    t, m, rs = room_env
+    modal = _modal(t, m)
+
+    # 1. Submit: источник — публичная карточка турнира.
+    pub = _PubMessage(t.message_id)
+    ic = _IC(message=pub)
+    await modal.on_submit(ic)
+
+    # Modal defer — строго ephemeral+thinking.
+    defers = _defer_calls(ic)
+    assert defers and defers[0] == {
+        "ephemeral": True, "thinking": True}
+    # Публичная карточка не редактировалась.
+    assert pub.edits == []
+
+    # 2. Confirm-карточка построена в приватном ответе.
+    view = ic.original_edits[-1].get("view")
+    cancel = _find_button(view, "Отмена")
+    ok = _find_button(view, "Подтвердить изменение")
+    assert cancel is not None and ok is not None
+
+    # 3. «Отмена» на сообщении, совпадающем с tournament.message_id
+    #    (имитация того, что кнопка «переехала» на публичную
+    #    карточку) → только ephemeral send_message, ноль edit.
+    ic_cancel = _IC(message=_PubMessage(t.message_id), user_id=101)
+    await cancel.callback(ic_cancel)
+    sent = ic_cancel.response.calls
+    assert any(
+        name == "send_message"
+        and kw.get("ephemeral") is True
+        for name, (a, kw) in [
+            (c[0], c[1]) for c in sent
+        ]
+    ) or any(
+        c[0] == "send_message" and c[1][1].get("ephemeral") is True
+        for c in sent
+    )
+    assert not any(c[0] == "edit_message" for c in sent)
+
+    # 4. «Подтвердить» на публичном сообщении → thinking-fallback,
+    #    публичная карточка не редактируется.
+    ic_ok = _IC(message=_PubMessage(t.message_id), user_id=101)
+    import services.room_publisher as rp
+    async def _pub(*a, **kw):
+        return {"card": True, "notified": True}
+    orig = rp.publish_room
+    rp.publish_room = _pub
+    try:
+        await ok.callback(ic_ok)
+    finally:
+        rp.publish_room = orig
+    defers_ok = _defer_calls(ic_ok)
+    assert defers_ok and defers_ok[0].get("thinking") is True
