@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from typing import Any
 from datetime import datetime, timezone
@@ -320,12 +321,23 @@ class CashCupView(discord.ui.View):
                        custom_id="cashcup:my_data")
     async def my_data(self, interaction: discord.Interaction,
                       button: discord.ui.Button):
-        if not await self._fresh(interaction):
-            return
+        # Modal — первый и единственный ответ: defer перед send_modal
+        # недопустим, поэтому свежесть карточки проверяется через
+        # кэш/ограниченное ожидание PG (_state_for_card), а не defer.
         cog = interaction.client.get_cog("CashCupCog")
+        outcome, state = await cog._state_for_card(interaction)
+        if outcome == "timeout":
+            await interaction.response.send_message(
+                "База данных занята — нажмите «Мои данные» ещё раз "
+                "через несколько секунд.", ephemeral=True)
+            return
+        if outcome == "stale":
+            await interaction.response.send_message(
+                "Эта карточка устарела — используйте актуальную "
+                "карточку турнира.", ephemeral=True)
+            return
         # Привязка к конкретному турниру: устаревшая кнопка/форма
         # не должна изменять данные НОВОГО турнира.
-        state = await cog._current_state(interaction.guild_id)
         await interaction.response.send_modal(
             FFDataModal(tid=_tid(state) or None))
 
@@ -333,10 +345,19 @@ class CashCupView(discord.ui.View):
                        custom_id="cashcup:sub_join")
     async def sub_join(self, interaction: discord.Interaction,
                        button: discord.ui.Button):
-        if not await self._fresh(interaction):
-            return
         cog = interaction.client.get_cog("CashCupCog")
-        await cog.sub_offer_teams(interaction)
+        outcome, state = await cog._state_for_card(interaction)
+        if outcome == "timeout":
+            await interaction.response.send_message(
+                "База данных занята — нажмите «Запасной» ещё раз "
+                "через несколько секунд.", ephemeral=True)
+            return
+        if outcome == "stale":
+            await interaction.response.send_message(
+                "Эта карточка устарела — используйте актуальную "
+                "карточку турнира.", ephemeral=True)
+            return
+        await cog.sub_offer_teams(interaction, state=state)
 
     @discord.ui.button(label="Моя команда", style=discord.ButtonStyle.secondary,
                        custom_id="cashcup:my_team")
@@ -553,6 +574,10 @@ class CashCupCog(commands.Cog):
         self._board_pages: dict[int, int] = {}
         self._boards_lock = asyncio.Lock()
         self._boards_ok = False
+        # Кэш последнего прочитанного состояния по guild: кнопки,
+        # открывающие Modal (send_modal нельзя после defer),
+        # проверяют свежесть карточки без ожидания PostgreSQL.
+        self._state_cache: dict[int, tuple[float, dict | None]] = {}
 
     def _board_lock(self, guild_id: int) -> asyncio.Lock:
         return self._board_locks.setdefault(guild_id, asyncio.Lock())
@@ -610,7 +635,7 @@ class CashCupCog(commands.Cog):
 
     async def _refresh(self, guild_id: int, state: dict | None = None) -> None:
         if state is None:
-            state = await cashcup_store.active(guild_id) or await cashcup_store.latest(guild_id)
+            state = await self._current_state(guild_id)
         if not state or not state["message_id"]:
             return
         guild = self.bot.get_guild(guild_id)
@@ -853,10 +878,13 @@ class CashCupCog(commands.Cog):
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
-    async def sub_offer_teams(self, interaction: discord.Interaction) -> None:
-        """Игрок принимает приглашение в запасные и подтверждает данные."""
-        state = (await cashcup_store.active(interaction.guild_id)
-                 or await cashcup_store.latest(interaction.guild_id))
+    async def sub_offer_teams(self, interaction: discord.Interaction,
+                              *, state: dict | None = None) -> None:
+        """Игрок принимает приглашение в запасные и подтверждает данные.
+        state может быть передан кнопкой (уже проверена свежесть
+        карточки) — тогда повторное чтение PG не выполняется."""
+        if state is None:
+            state = await self._current_state(interaction.guild_id)
         offers = [t for t in (state or {}).get("teams", [])
                   if interaction.user.id in t.get("sub_invites", [])
                   and len(t["members"]) < 5]
@@ -1212,8 +1240,42 @@ class CashCupCog(commands.Cog):
         return await _member_check(self.bot, interaction.guild, interaction.user.id)
 
     async def _current_state(self, guild_id: int) -> dict | None:
-        return (await cashcup_store.active(guild_id)
-                or await cashcup_store.latest(guild_id))
+        state = (await cashcup_store.active(guild_id)
+                 or await cashcup_store.latest(guild_id))
+        self._state_cache[guild_id] = (time.monotonic(), state)
+        return state
+
+    async def _state_for_card(self, interaction: discord.Interaction
+                              ) -> tuple[str, dict | None]:
+        """Состояние для кнопки, открывающей Modal/Select как ПЕРВЫЙ
+        ответ Interaction (defer перед send_modal невозможен).
+
+        Порядок: тёплый кэш (мгновенно) → ограниченное ожидание
+        PostgreSQL (~2 c). При недоступной БД возвращаем "timeout" —
+        view отвечает ephemeral-сообщением до истечения 3-секундного
+        окна Discord, поэтому 10062 Unknown interaction исключён.
+        Возвращает ("ok", state) | ("stale", state) | ("timeout", None).
+        """
+        guild_id = interaction.guild_id
+        mid = getattr(getattr(interaction, "message", None), "id", None)
+        cached = self._state_cache.get(guild_id)
+        if cached and time.monotonic() - cached[0] < 10.0:
+            state = cached[1]
+            expected = (state or {}).get("message_id")
+            if expected and mid and int(expected) == int(mid):
+                return "ok", state
+            # Кэш не подтверждает именно эту карточку (возможна
+            # новая карточка после /cashcup panel) — читаем PG.
+        try:
+            state = await asyncio.wait_for(
+                self._current_state(guild_id), timeout=2.0)
+        except Exception:
+            return "timeout", None
+        expected = (state or {}).get("message_id")
+        if (state and expected and mid
+                and int(mid) != int(expected)):
+            return "stale", state
+        return "ok", state
 
     async def _post(self, interaction: discord.Interaction, action: str,
                     change, details: dict | None = None, *,
@@ -1224,6 +1286,8 @@ class CashCupCog(commands.Cog):
         result = await cashcup_store.mutate(
             interaction.guild_id, interaction.user.id, action, change, details,
             tournament_id=tid)
+        self._state_cache[interaction.guild_id] = (
+            time.monotonic(), result[0])
         await self._refresh(interaction.guild_id, result[0])
         return result
 

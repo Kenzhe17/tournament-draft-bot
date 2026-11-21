@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import asyncio
+import time
 
 import pytest
 
@@ -155,6 +156,7 @@ def cog(monkeypatch):
     c._board_locks = {}
     c._boards_lock = asyncio.Lock()
     c._boards_ok = False
+    c._state_cache = {}
     return c
 
 
@@ -1097,3 +1099,149 @@ async def test_orphan_board_deleted_when_pg_write_fails(cog, monkeypatch):
     assert len(ch.sent) == 1
     m, _ = ch.sent[0]
     assert m.deleted is True
+
+
+# ---------------- Modal-кнопки: нет 10062 при медленном PG ----------------
+
+def _card_state(mid=555, tid="tidA"):
+    st = _reg_state()
+    st["tournament_id"] = tid
+    st["message_id"] = mid
+    return st
+
+
+@pytest.mark.asyncio
+async def test_my_data_modal_opens_with_tid(cog):
+    """«Мои данные» открывает FFDataModal с tid конкретного турнира."""
+    cog._state_cache[1] = (time.monotonic(), _card_state())
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+    await v.my_data.callback(i)
+    assert i.response.modal is not None
+    assert i.response.modal.tid == "tidA"
+
+
+@pytest.mark.asyncio
+async def test_my_data_slow_pg_no_10062(cog, monkeypatch):
+    """PG отвечает >3 c: кнопка обязана ответить до дедлайна Discord
+    (3 c) — ephemeral «занята», без modal и без Unknown interaction."""
+    async def slow_active(gid):
+        await asyncio.sleep(3.5)
+        return _card_state()
+    async def slow_latest(gid):
+        return None
+    monkeypatch.setattr(cashcup.cashcup_store, "active", slow_active)
+    monkeypatch.setattr(cashcup.cashcup_store, "latest", slow_latest)
+    cog._state_cache.clear()
+
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+
+    t0 = time.monotonic()
+    await v.my_data.callback(i)
+    elapsed = time.monotonic() - t0
+
+    assert elapsed < 3.0            # ответ до дедлайна Discord
+    assert i.response.is_done()     # interaction подтверждён -> не 10062
+    assert i.response.modal is None
+    assert "занята" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_my_data_warm_cache_skips_pg(cog, monkeypatch):
+    """Тёплый кэш: modal открывается мгновенно, PG не вызывается."""
+    async def boom(gid):
+        raise AssertionError("PG не должен вызываться при тёплом кэше")
+    monkeypatch.setattr(cashcup.cashcup_store, "active", boom)
+    monkeypatch.setattr(cashcup.cashcup_store, "latest", boom)
+    cog._state_cache[1] = (time.monotonic(), _card_state())
+
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+
+    t0 = time.monotonic()
+    await v.my_data.callback(i)
+    assert time.monotonic() - t0 < 0.5
+    assert i.response.modal is not None
+    assert i.response.modal.tid == "tidA"
+
+
+@pytest.mark.asyncio
+async def test_my_data_stale_card_rejected(cog):
+    """Клик по устаревшей карточке (другой message_id) -> отказ,
+    modal не открывается."""
+    cog._state_cache.clear()
+    cog._store.state = _card_state(mid=555)
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=999)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+    await v.my_data.callback(i)
+    assert i.response.modal is None
+    assert "устарел" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_sub_join_slow_pg_no_10062(cog, monkeypatch):
+    """«Запасной» при PG >3 c: ответ до дедлайна, без 10062."""
+    async def slow_active(gid):
+        await asyncio.sleep(3.5)
+        return _card_state()
+    async def slow_latest(gid):
+        return None
+    monkeypatch.setattr(cashcup.cashcup_store, "active", slow_active)
+    monkeypatch.setattr(cashcup.cashcup_store, "latest", slow_latest)
+    cog._state_cache.clear()
+
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+
+    t0 = time.monotonic()
+    await v.sub_join.callback(i)
+    elapsed = time.monotonic() - t0
+
+    assert elapsed < 3.0
+    assert i.response.is_done()
+    assert "занята" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_sub_join_modal_keeps_tid(cog):
+    """«Запасной» с одним приглашением открывает FFDataModal
+    с tid турнира и team_id команды."""
+    st = _card_state()
+    t = _team("T1", "Alpha", 1, [_player(1)])
+    t["sub_invites"] = [42]
+    st["teams"] = [t]
+    cog._state_cache[1] = (time.monotonic(), st)
+
+    i = make_interaction(_member(42))
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+    await v.sub_join.callback(i)
+
+    assert i.response.modal is not None
+    assert i.response.modal.tid == "tidA"
+    assert i.response.modal.team_id == "T1"
+
+
+@pytest.mark.asyncio
+async def test_sub_join_stale_card_rejected(cog):
+    cog._state_cache.clear()
+    cog._store.state = _card_state(mid=555)
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=999)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+    await v.sub_join.callback(i)
+    assert i.response.modal is None
+    assert "устарел" in _last(i)

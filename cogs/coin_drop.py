@@ -1,6 +1,7 @@
 """Lucky Coins Event Module - Spontaneous coin drops in chat."""
 
 import asyncio
+import logging
 import random
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Set
@@ -16,6 +17,8 @@ from storage.user_balance_store import user_balance_store
 
 if TYPE_CHECKING:
     from bot import TournamentBot
+
+logger = logging.getLogger(__name__)
 
 
 # Custom check for bot owner
@@ -41,6 +44,54 @@ async def add_balance(guild_id: int, user_id: int, amount: int) -> None:
     if amount <= 0:
         return
     await user_balance_store.add_balance(guild_id, user_id, amount)
+
+
+_DROP_GRANT_RETRY_DELAYS = (5.0, 30.0, 120.0)
+
+
+async def grant_drop_reward(guild_id: int, user_id: int,
+                            amount: int, grant_key: str) -> bool:
+    """Идемпотентное начисление награды ивента + фоновый retry.
+
+    add_balance_once атомарен (grant + balance в одной транзакции):
+    повторный вызов с тем же grant_key никогда не начислит дважды,
+    даже если первый ответ PG потерялся после commit. При сбое
+    запускается retry-цепочка; если PG лежит дольше — пишется
+    ERROR в лог (награждение не теряется молча).
+    Возвращает True, если грант подтверждён (сейчас или в retry).
+    """
+    if amount <= 0:
+        return True
+
+    async def _once() -> bool:
+        try:
+            await user_balance_store.add_balance_once(
+                guild_id, user_id, amount, grant_key)
+            return True
+        except Exception:
+            logger.exception("coin_drop grant failed key=%s", grant_key)
+            return False
+
+    if await _once():
+        return True
+
+    async def _retry() -> None:
+        for delay in _DROP_GRANT_RETRY_DELAYS:
+            await asyncio.sleep(delay)
+            try:
+                await user_balance_store.add_balance_once(
+                    guild_id, user_id, amount, grant_key)
+                logger.info("coin_drop grant retry ok key=%s", grant_key)
+                return
+            except Exception:
+                logger.exception(
+                    "coin_drop grant retry failed key=%s", grant_key)
+        logger.error(
+            "coin_drop grant LOST key=%s guild=%s user=%s amount=%s",
+            grant_key, guild_id, user_id, amount)
+
+    asyncio.get_running_loop().create_task(_retry())
+    return False
 
 
 # ==========================================
@@ -74,20 +125,34 @@ class SpeedDropView(discord.ui.View):
         self.stop()
         await interaction.response.defer()
 
-        # Выплата победителю
-        await add_balance(interaction.guild_id, interaction.user.id, self.reward_amount)
+        # Идемпотентная выплата: grant_key = событие, поэтому
+        # повторный клик/потерянный ответ PG не даст двойного
+        # начисления, а при сбое PG сработает фоновый retry.
+        granted = await grant_drop_reward(
+            interaction.guild_id, interaction.user.id,
+            self.reward_amount, f"speeddrop:{self.event_id}")
 
         result_embed = discord.Embed(
             title=f"**ИВЕНТ ЗАВЕРШЁН | НАГРАДА ЗАБРАНА**",
             description=(
                 f" **Счастливчик:** {interaction.user.mention}\n"
                 f" **Выигрыш:** **`{self.reward_amount:,}`** {get_emoji('money')}\n\n"
-                f" *Монеты зачислены на ваш баланс. Проверить: `/balance`*"
+                + ("*Монеты зачислены на ваш баланс. Проверить: `/balance`*"
+                   if granted else
+                   "*Зачисление подтверждается — при задержке монеты "
+                   "появятся автоматически, повторное начисление "
+                   "исключено.*")
             ),
             color=0x2ECC71
         )
-        await interaction.edit_original_response(view=smart_view(await interaction.original_response(), None))
-        await interaction.followup.send( view=compose(result_embed))
+        try:
+            await interaction.edit_original_response(view=smart_view(await interaction.original_response(), None))
+            await interaction.followup.send( view=compose(result_embed))
+        except discord.HTTPException:
+            # Ответ Discord потерян — монеты уже зачислены
+            # идемпотентно, пользователь не пострадает.
+            logger.warning("speed drop notify failed user=%s",
+                           interaction.user.id)
 
 
 # 2. Режим «Розыгрыш / 60 секунд» (Raffle Drop)
@@ -262,7 +327,9 @@ class CoinDropCog(commands.Cog):
                     winner = channel.guild.get_member(winner_id)
 
             if winner:
-                await add_balance(channel.guild.id, winner.id, reward)
+                granted = await grant_drop_reward(
+                    channel.guild.id, winner.id, reward,
+                    f"raffledrop:{view.event_id}")
 
                 result_embed = discord.Embed(
                     title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
@@ -270,7 +337,10 @@ class CoinDropCog(commands.Cog):
                         f" **Победитель:** {winner.mention}\n"
                         f" **Выигрыш:** **`{reward:,}`** {get_emoji('money')}\n"
                         f" **Всего участников:** `{len(view.participants)}`\n\n"
-                        f" *Монеты зачислены на ваш баланс. Проверить: `/balance`*"
+                        + ("*Монеты зачислены на ваш баланс. Проверить: `/balance`*"
+                           if granted else
+                           "*Зачисление подтверждается — при задержке монеты "
+                           "появятся автоматически.*")
                     ),
                     color=0x2ECC71
                 )
