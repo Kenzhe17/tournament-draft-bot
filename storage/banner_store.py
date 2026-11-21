@@ -122,7 +122,7 @@ class BannerStore:
     async def get_voice_day_map(
         self, guild_id: int, day: date
     ) -> dict[int, int]:
-        """user_id -> capped voice seconds for the day."""
+        """user_id -> voice seconds for the day."""
         await self._ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -131,7 +131,7 @@ class BannerStore:
                 "WHERE guild_id=$1 AND day=$2",
                 guild_id, day,
             )
-        return {int(r["user_id"]): min(int(r["seconds"]), 21600) for r in rows}
+        return {int(r["user_id"]): int(r["seconds"]) for r in rows}
 
     # ---------------- tournament matches ----------------
 

@@ -81,7 +81,7 @@ class FakeBannerStore:
     # voice
     async def get_voice_day_map(self, guild_id, day):
         return {
-            uid: min(sec, act.MAX_VOICE_SECONDS)
+            uid: sec
             for (g, uid, d), sec in self.voice.items()
             if g == guild_id and d == day
         }
@@ -369,10 +369,10 @@ async def test_voice_scan_no_double_after_restart(store, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_voice_scan_caps_at_six_hours(store, monkeypatch):
+async def test_voice_scan_no_daily_cap(store, monkeypatch):
+    """После 6 часов начисление продолжается без дневного лимита."""
     import cogs.banner as banner_mod
     from cogs.banner import BannerCog
-    from services.banner import activity as act
 
     monkeypatch.setattr(banner_mod, "banner_store", store)
     monkeypatch.setattr(banner_mod.act, "today_almaty",
@@ -380,12 +380,11 @@ async def test_voice_scan_caps_at_six_hours(store, monkeypatch):
 
     ch = _Channel(members=[_Member(1), _Member(2)])
     guild = _Guild(5, [ch])
-    # уже почти всё выбрали за день
-    store.voice[(5, 1, DAY)] = act.MAX_VOICE_SECONDS - 30
-    store.voice[(5, 2, DAY)] = act.MAX_VOICE_SECONDS
+    # уже за 6 часов и за 6ч+30с
+    store.voice[(5, 1, DAY)] = 6 * 3600
+    store.voice[(5, 2, DAY)] = 6 * 3600 + 30
 
     cog = BannerCog(_Bot([guild]))
     await cog.scan_voice_once()
-    # у 1: +30 до капа; у 2: 0 (delta не пишется)
-    assert store.voice[(5, 1, DAY)] == act.MAX_VOICE_SECONDS
-    assert store.voice[(5, 2, DAY)] == act.MAX_VOICE_SECONDS
+    assert store.voice[(5, 1, DAY)] == 6 * 3600 + 60
+    assert store.voice[(5, 2, DAY)] == 6 * 3600 + 90
