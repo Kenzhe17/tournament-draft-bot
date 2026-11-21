@@ -14,7 +14,7 @@ from typing import Any
 
 import discord
 
-from config import ACCESS_ROLE_ID
+from config import ACCESS_ROLE_ID, ACCESS_ROTATION_CHANNEL_ID
 from storage import access_store
 from services import access_rotation as rot
 from utils.access_banner import (
@@ -34,6 +34,57 @@ def _name(guild: discord.Guild | None, user_id: int) -> str:
         if m is not None:
             return getattr(m, "display_name", None) or m.name
     return f"@{user_id}"
+
+
+async def _panel_binding_current(interaction: discord.Interaction) -> bool:
+    """Кнопки публичной панели действуют только на актуальной
+    панели: канал — закреплённый ACCESS_ROTATION_CHANNEL_ID
+    (или channel_id из access_state, если env не задан),
+    сообщение — access_state.message_id. Устаревшие панели
+    в дублирующихся каналах получают приватный отказ со
+    ссылкой на актуальную панель и ничего не меняют.
+    """
+    guild = interaction.guild
+    if guild is None:
+        try:
+            await interaction.response.send_message(
+                "Панель работает только на сервере.", ephemeral=True)
+        except Exception:
+            pass
+        return False
+    try:
+        state = await access_store.get_state(guild.id)
+    except Exception:
+        state = {}
+    state = state or {}
+    pinned = int(ACCESS_ROTATION_CHANNEL_ID or 0) or state.get(
+        "channel_id")
+    mid = state.get("message_id")
+    message = getattr(interaction, "message", None)
+    ok = True
+    if pinned and interaction.channel_id != int(pinned):
+        ok = False
+    if ok and mid and message is not None \
+            and message.id != int(mid):
+        ok = False
+    if ok:
+        return True
+    url = None
+    if state.get("channel_id") and state.get("message_id"):
+        url = (
+            f"https://discord.com/channels/{guild.id}/"
+            f"{state['channel_id']}/{state['message_id']}"
+        )
+    text = ("Эта панель устарела — заявки и ротация выполняются "
+            "только на актуальной панели доступа.")
+    if url:
+        text += f"\nАктуальная панель: {url}"
+    try:
+        await interaction.response.send_message(
+            text, ephemeral=True, allowed_mentions=_NO_MENTIONS)
+    except Exception:
+        pass
+    return False
 
 
 def render_panel_view(
@@ -129,6 +180,8 @@ class _GuideButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if not await _panel_binding_current(interaction):
+            return
         from services.access_academy import build_guide_view
         await interaction.response.send_message(
             view=build_guide_view(),
@@ -148,6 +201,8 @@ class _OrgPanelButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if not await _panel_binding_current(interaction):
+            return
         from services.access_academy import org_panel_url
         guild = interaction.guild
         url = org_panel_url(guild.id) if guild is not None else None
@@ -171,6 +226,8 @@ class _JoinButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if not await _panel_binding_current(interaction):
+            return
         guild = interaction.guild
         if guild is None:
             await interaction.response.send_message(
@@ -223,6 +280,8 @@ class _LeaveButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if not await _panel_binding_current(interaction):
+            return
         guild = interaction.guild
         if guild is None:
             await interaction.response.send_message(
