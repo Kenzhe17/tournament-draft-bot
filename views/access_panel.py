@@ -52,21 +52,40 @@ async def _panel_binding_current(interaction: discord.Interaction) -> bool:
         except Exception:
             pass
         return False
+    # Fail-closed: без положительно подтверждённой привязки
+    # (channel_id + message_id из access_state) действия
+    # запрещены — очередь и роли не меняются «вслепую».
     try:
         state = await access_store.get_state(guild.id)
-    except Exception:
-        state = {}
-    state = state or {}
-    pinned = int(ACCESS_ROTATION_CHANNEL_ID or 0) or state.get(
-        "channel_id")
+    except Exception as exc:
+        logger.warning("access panel: get_state failed: %s", exc)
+        state = None
+    if not state:
+        try:
+            await interaction.response.send_message(
+                "Не удалось проверить актуальность панели — "
+                "повторите позже.", ephemeral=True,
+                allowed_mentions=_NO_MENTIONS)
+        except Exception:
+            pass
+        return False
+    pinned = int(ACCESS_ROTATION_CHANNEL_ID or 0) or int(
+        state.get("channel_id") or 0)
     mid = state.get("message_id")
+    cid = state.get("channel_id")
     message = getattr(interaction, "message", None)
-    ok = True
-    if pinned and interaction.channel_id != int(pinned):
-        ok = False
-    if ok and mid and message is not None \
-            and message.id != int(mid):
-        ok = False
+    ok = bool(pinned) and interaction.channel_id == int(pinned)
+    ok = ok and bool(mid) and message is not None \
+        and int(message.id) == int(mid)
+    # Закреплённый канал: сохранённая привязка state.channel_id
+    # обязана совпадать с ним — при расхождении панель ещё
+    # не синхронизирована, действия отклоняются до resync.
+    if ACCESS_ROTATION_CHANNEL_ID:
+        ok = ok and bool(cid) and int(cid) == int(pinned)
+    elif cid:
+        # Если env-ID не задан — channel_id из state тоже
+        # обязан совпадать с каналом нажатия.
+        ok = ok and interaction.channel_id == int(cid)
     if ok:
         return True
     url = None

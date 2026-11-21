@@ -608,3 +608,144 @@ async def test_dm_academy_buttons_unaffected(pinned, store):
     await guide_btn.callback(ix)
     assert ix.response.messages
     assert ix.response.messages[0].get("view") is not None
+
+
+# ---------------------------------------------------------------------------
+# Final hardening: fail-closed binding, find_panel_message, retry_429
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_binding_fail_closed_on_pg_error(pinned, store):
+    """PG недоступен → get_state падает → кнопка отклонена,
+    очередь/роли не трогаются (fail-closed)."""
+    guild, _, _ = _guild_with_pinned()
+    store.fail_get = True
+    await store.set_panel(1, PINNED, 5555)
+    btn = access_panel._JoinButton()
+    ix = FakeInteraction(guild, channel_id=PINNED, message_id=5555)
+    await btn.callback(ix)
+    assert "проверить" in ix.response.messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_binding_rejected_without_message_id(pinned, store):
+    """state есть, но message_id отсутствует → действие запрещено."""
+    guild, _, _ = _guild_with_pinned()
+    await store.set_panel(1, PINNED, None)
+    btn = access_panel._JoinButton()
+    ix = FakeInteraction(guild, channel_id=PINNED, message_id=5555)
+    await btn.callback(ix)
+    assert "устарела" in ix.response.messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_binding_rejected_on_message_mismatch(pinned, store):
+    """message_id не совпадает → кнопка отклонена."""
+    guild, _, _ = _guild_with_pinned()
+    await store.set_panel(1, PINNED, 5555)
+    btn = access_panel._JoinButton()
+    ix = FakeInteraction(guild, channel_id=PINNED, message_id=9999)
+    await btn.callback(ix)
+    assert "устарела" in ix.response.messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_find_panel_message_incomplete_blocks_send(
+        pinned, store, monkeypatch):
+    """Неполный поиск панели (история недоступна) → ensure_panel
+    НЕ отправляет новую панель (защита от дубля)."""
+    import cogs.access as access_cog
+    guild, pinned_ch, _ = _guild_with_pinned()
+
+    async def _no_history(*a, **kw):
+        return None, False
+    monkeypatch.setattr(rot, "find_panel_message", _no_history)
+    # Все fetch/edit/send должны отсутствовать: канал без
+    # сохранённого mid → find → incomplete → return False.
+    sent = []
+
+    async def _send(*a, **kw):
+        sent.append(1)
+        return NS(id=1)
+    pinned_ch.send = _send
+    ok = await access_cog.ensure_panel(guild)
+    assert ok is False
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_find_panel_message_complete_empty_sends(
+        pinned, store, monkeypatch):
+    """Полный поиск без находки → панель отправляется один раз."""
+    import cogs.access as access_cog
+    guild, pinned_ch, _ = _guild_with_pinned()
+
+    async def _empty(*a, **kw):
+        return None, True
+    monkeypatch.setattr(rot, "find_panel_message", _empty)
+    sent = []
+
+    async def _send(*a, **kw):
+        sent.append(1)
+        return NS(id=777)
+    pinned_ch.send = _send
+    monkeypatch.setattr(access_cog, "banner_file",
+                        lambda: None, raising=False)
+    ok = await access_cog.ensure_panel(guild)
+    assert ok is True
+    assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_429_honors_full_retry_after(monkeypatch):
+    """_retry_429 ждёт полный retry_after, а не обрезает до 5с."""
+    import cogs.access as access_cog
+    import discord as _d
+    calls = []
+    slept = []
+
+    class _429(_d.HTTPException):
+        def __init__(self):
+            resp = NS(status=429, reason="rate limited")
+            super().__init__(resp, {"code": 0, "message": "slow"})
+            self.retry_after = 42.0
+
+    async def _factory():
+        calls.append(1)
+        if len(calls) == 1:
+            raise _429()
+        return "ok"
+
+    async def _sleep(sec):
+        slept.append(sec)
+    monkeypatch.setattr(access_cog.asyncio, "sleep", _sleep)
+    result = await access_cog._retry_429(_factory)
+    assert result == "ok"
+    assert slept and slept[0] >= 42.0   # НЕ min(...,5)
+
+
+@pytest.mark.asyncio
+async def test_binding_rejected_when_state_channel_differs_from_pinned(
+        pinned, store):
+    """ACCESS_ROTATION_CHANNEL_ID задан, но сохранённый
+    access_state.channel_id указывает на другой канал —
+    привязка ещё не синхронизирована → кнопки отклоняются,
+    даже если message_id и канал нажатия «совпадают»."""
+    guild, _, _ = _guild_with_pinned()
+    # state.channel_id = другой канал, message_id = 5555.
+    await store.set_panel(1, OLD_DUP, 5555)
+    joined = []
+
+    async def _qj(gid, uid):
+        joined.append(uid)
+        return True
+    store.queue_join = _qj  # type: ignore[attr-defined]
+
+    btn = access_panel._JoinButton()
+    # Нажатие в pinned-канале на «правильное» message_id —
+    # всё равно отклоняется: state.channel_id != pinned.
+    ix = FakeInteraction(guild, channel_id=PINNED, message_id=5555)
+    await btn.callback(ix)
+    assert joined == []
+    assert "устарела" in ix.response.messages[0]["content"]
