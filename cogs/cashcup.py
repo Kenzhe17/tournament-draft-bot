@@ -138,6 +138,190 @@ def _team_name(state: dict, team_id: str) -> str:
     return next((_label(t) for t in state["teams"] if t["id"] == team_id), "Неизвестная команда")
 
 
+# ---------- диагностика состава (read-only) ----------
+
+_STATUS_ERROR = "Ошибка состава"
+_STATUS_NOT_READY = "Не готова"
+_STATUS_WAIT_ADMIN = "Ожидает ADMIN"
+_STATUS_READY = "Готова"
+
+
+def _member_problems(p: dict, *, include_admin: bool = True) -> list[str]:
+    """Обязательные данные одного участника. include_admin=False —
+    для verify(): отсутствие ADMIN-подтверждения — это и есть
+    действие verify, а не ошибка."""
+    probs = []
+    uid = str(p.get("ff_uid") or "").strip()
+    if not (uid.isdigit() and 5 <= len(uid) <= 20):
+        probs.append("не заполнен Free Fire UID")
+    if not p.get("nick"):
+        probs.append("нет игрового ника")
+    if not p.get("region"):
+        probs.append("не указан регион")
+    if p.get("device") not in ("pc", "mobile"):
+        probs.append("не указано устройство")
+    if not p.get("ff_ok"):
+        probs.append("FF API не подтверждён")
+    if include_admin and not p.get("verified"):
+        probs.append("ожидает подтверждения ADMIN")
+    return probs
+
+
+def _team_diag(state: dict, team: dict, *,
+               include_admin: bool = True) -> dict:
+    """Полная read-only диагностика команды: ВСЕ проблемы, счётчики
+    готовности и статус. Не изменяет состояние."""
+    members = team.get("members") or []
+    structural: list[str] = []
+    dids = [p.get("discord_id") for p in members]
+    if len(dids) != len(set(dids)):
+        structural.append("дублирующийся Discord ID в составе")
+    ff_uids = [str(p.get("ff_uid") or "") for p in members if p.get("ff_uid")]
+    if len(ff_uids) != len(set(ff_uids)):
+        structural.append("дублирующийся Free Fire UID в составе")
+    lineup = team.get("lineup") or []
+    member_ids = set(dids)
+    if len(lineup) != 4:
+        structural.append("основа должна содержать 4 игроков")
+    elif len(set(lineup)) != 4:
+        structural.append("повторяющийся игрок в основе")
+    elif any(x not in member_ids for x in lineup):
+        structural.append("в основе игрок вне состава")
+    pcs = sum(1 for p in members if p.get("device") == "pc")
+    if pcs > 2:
+        structural.append("более двух ПК")
+    # Дубли между командами (Discord ID / FF UID).
+    cross = False
+    for other in state.get("teams", []):
+        if other is team or other.get("id") == team.get("id"):
+            continue
+        om = {p.get("discord_id") for p in other.get("members", [])}
+        of = {str(p.get("ff_uid") or "") for p in other.get("members", [])
+              if p.get("ff_uid")}
+        for p in members:
+            if p.get("discord_id") in om or \
+                    (p.get("ff_uid") and str(p["ff_uid"]) in of):
+                cross = True
+                break
+        if cross:
+            break
+    if cross:
+        structural.append("игрок или Free Fire UID занят в другой команде")
+
+    member_lines: list[str] = []
+    has_missing = False
+    all_verified = bool(members)
+    for p in members:
+        probs = _member_problems(p, include_admin=include_admin)
+        if probs:
+            member_lines.append(
+                f"<@{p.get('discord_id')}> — " + "; ".join(probs))
+            if any(pr != "ожидает подтверждения ADMIN" for pr in probs):
+                has_missing = True
+        if include_admin and not p.get("verified"):
+            all_verified = False
+
+    ff_api = sum(1 for p in members if p.get("ff_ok"))
+    admin_n = sum(1 for p in members if p.get("verified"))
+    no_device = sum(1 for p in members
+                    if p.get("device") not in ("pc", "mobile"))
+
+    if structural:
+        status = _STATUS_ERROR
+    elif len(members) < 4 or has_missing:
+        status = _STATUS_NOT_READY
+    elif not all_verified:
+        status = _STATUS_WAIT_ADMIN
+    else:
+        status = _STATUS_READY
+    return {
+        "problems": structural + member_lines,
+        "structural": structural,
+        "status": status,
+        "members": len(members),
+        "ff_api": ff_api,
+        "admin": admin_n,
+        "pcs": pcs,
+        "no_device": no_device,
+    }
+
+
+def _diag_reply_text(team: dict, diag: dict) -> str:
+    """Текст полной проверки команды (read-only отчёт)."""
+    lines = ["**CASH CUP · ПРОВЕРКА КОМАНДЫ**", "",
+             f"**{_label(team)}**", ""]
+    if diag["problems"]:
+        lines.append("**Проблемы:**")
+        lines += [f"- {p}" for p in diag["problems"][:20]]
+        if len(diag["problems"]) > 20:
+            lines.append(f"… ещё {len(diag['problems'])-20}")
+    else:
+        lines.append("Проблем не найдено.")
+    lines += ["",
+              f"FF API: {diag['ff_api']}/{diag['members']} · "
+              f"ADMIN: {diag['admin']}/{diag['members']} · "
+              f"ПК: {diag['pcs']} · без устройства: {diag['no_device']}",
+              f"**Статус:** {diag['status']}",
+              "Итог: команда " + ("допущена." if diag["status"] == _STATUS_READY
+                                  else "не допущена.")]
+    return "\n".join(lines)[:1900]
+
+
+def _teams_render(state: dict, page: int) -> tuple[str, int, int]:
+    """Страница списка команд. Возвращает (text, page, pages).
+    Каждая команда — неделимый блок: страница никогда не
+    обрезает команду посередине (фиксировано 5 команд/стр)."""
+    teams = state.get("teams") or []
+    per_page = 5
+    pages = max(1, (len(teams) + per_page - 1) // per_page)
+    page = max(0, min(page, pages - 1))
+    chunk = teams[page * per_page:(page + 1) * per_page]
+    lines = [f"**CASH CUP · команды ({len(teams)})** — "
+             f"стр. {page + 1}/{pages}"]
+    for t in chunk:
+        d = _team_diag(state, t)
+        cap = t.get("captain")
+        lines += [
+            "",
+            f"**{_label(t)}**",
+            f"- Капитан: <@{cap}>",
+            f"- Участники: {d['members']}/5",
+            f"- FF API: {d['ff_api']}/{d['members']}",
+            f"- ADMIN: {d['admin']}/{d['members']}",
+            f"- ПК: {d['pcs']}",
+            f"- Устройство не указано: {d['no_device']}",
+            f"- Статус: {d['status']}",
+        ]
+    return "\n".join(lines)[:1950], page, pages
+
+
+class TeamsView(discord.ui.View):
+    """Пагинация списка команд (эфемерно, правит то же сообщение)."""
+
+    def __init__(self, cog, page: int, pages: int):
+        super().__init__(timeout=300)
+        if page > 0:
+            self.add_item(_ActButton(
+                "◀", discord.ButtonStyle.secondary,
+                lambda i: cog._teams_goto(i, page - 1)))
+        if page < pages - 1:
+            self.add_item(_ActButton(
+                "▶", discord.ButtonStyle.secondary,
+                lambda i: cog._teams_goto(i, page + 1)))
+
+
+class _MyDataView(discord.ui.View):
+    """Эфемерный статус «Мои данные» + кнопка обновления (modal —
+    первый ответ этого interaction, defer перед send_modal нет)."""
+
+    def __init__(self, cog, team_id: str | None, tid: str | None):
+        super().__init__(timeout=300)
+        self.add_item(_ActButton(
+            "Обновить данные", discord.ButtonStyle.primary,
+            lambda i: i.response.send_modal(
+                FFDataModal(team_id=team_id, tid=tid))))
+
+
 def _panel(state: dict) -> discord.Embed:
     running = state["status"] == "running"
     completed = state["status"] == "completed"
@@ -214,51 +398,61 @@ async def _ff_profile(uid: str, region: str) -> dict:
 
 
 async def _validate_teams(bot: commands.Bot, guild: discord.Guild, state: dict) -> None:
+    """Финальный gate перед стартом. Собирает ВСЕ ошибки по всем
+    командам (а не только первую) и поднимает сводку разом."""
+    errors: list[str] = []
     if len(state["teams"]) < 2:
         raise CashCupError("Необходимо минимум две команды")
     ids = set()
     ff_ids = set()
     for team in state["teams"]:
         if len(team["members"]) not in (4, 5):
-            raise CashCupError(f"{_label(team)}: необходимо 4–5 подтверждённых игроков")
+            errors.append(f"{_label(team)}: необходимо 4–5 подтверждённых игроков")
+            continue
         if len(team["lineup"]) != 4:
-            raise CashCupError(f"{_label(team)}: основной состав должен содержать 4 игроков")
-        if len(set(team["lineup"])) != 4:
-            raise CashCupError(f"{_label(team)}: повторяющийся игрок в основе")
+            errors.append(f"{_label(team)}: основной состав должен содержать 4 игроков")
+        elif len(set(team["lineup"])) != 4:
+            errors.append(f"{_label(team)}: повторяющийся игрок в основе")
         for p in team["members"]:
             uid_s = str(p.get("ff_uid") or "")
             if not (uid_s.isdigit() and 5 <= len(uid_s) <= 20):
-                raise CashCupError(
+                errors.append(
                     f"{_label(team)}: у <@{p['discord_id']}> нет корректного Free Fire UID")
             if not p.get("nick"):
-                raise CashCupError(
+                errors.append(
                     f"{_label(team)}: у <@{p['discord_id']}> нет игрового ника")
             if not p.get("region"):
-                raise CashCupError(
+                errors.append(
                     f"{_label(team)}: у <@{p['discord_id']}> не указан регион")
             if p.get("device") not in ("pc", "mobile"):
-                raise CashCupError(
+                errors.append(
                     f"{_label(team)}: у <@{p['discord_id']}> тип устройства mobile/pc")
             if not p.get("ff_ok"):
-                raise CashCupError(
+                errors.append(
                     f"{_label(team)}: Free Fire API не подтвердил аккаунт <@{p['discord_id']}>")
             if not p.get("verified"):
-                raise CashCupError(
+                errors.append(
                     f"{_label(team)}: ADMIN не подтвердил аккаунт <@{p['discord_id']}>")
         if any(not p["verified"] for p in team["members"]):
-            raise CashCupError(f"{_label(team)}: организатор не подтвердил игровые аккаунты")
+            errors.append(f"{_label(team)}: организатор не подтвердил игровые аккаунты")
         if sum(p["device"] == "pc" for p in team["members"]) > 2:
-            raise CashCupError(f"{_label(team)}: более двух ПК")
+            errors.append(f"{_label(team)}: более двух ПК")
         for p in team["members"]:
             if p["discord_id"] in ids or p["ff_uid"] in ff_ids:
-                raise CashCupError("Один аккаунт участвует в нескольких командах")
+                errors.append("Один аккаунт участвует в нескольких командах")
             ids.add(p["discord_id"])
             ff_ids.add(p["ff_uid"])
     semaphore = asyncio.Semaphore(5)
-    async def check(uid: int) -> None:
+    async def check(uid: int) -> str | None:
         async with semaphore:
-            await _member_check(bot, guild, uid)
-    await asyncio.gather(*(check(uid) for uid in ids))
+            try:
+                await _member_check(bot, guild, uid)
+            except CashCupError as exc:
+                return f"<@{uid}>: {exc}"
+            return None
+    errors += [e for e in await asyncio.gather(*(check(uid) for uid in ids)) if e]
+    if errors:
+        raise CashCupError("\n".join(errors)[:1900])
 
 
 async def _defer(interaction: discord.Interaction, *,
@@ -321,9 +515,9 @@ class CashCupView(discord.ui.View):
                        custom_id="cashcup:my_data")
     async def my_data(self, interaction: discord.Interaction,
                       button: discord.ui.Button):
-        # Modal — первый и единственный ответ: defer перед send_modal
-        # недопустим, поэтому свежесть карточки проверяется через
-        # кэш/ограниченное ожидание PG (_state_for_card), а не defer.
+        # Статус «Мои данные» — ephemeral answer (modal открывается
+        # отдельной кнопкой внутри view, т.к. send_modal нельзя
+        # после defer/response).
         cog = interaction.client.get_cog("CashCupCog")
         outcome, state = await cog._state_for_card(interaction)
         if outcome == "timeout":
@@ -336,10 +530,7 @@ class CashCupView(discord.ui.View):
                 "Эта карточка устарела — используйте актуальную "
                 "карточку турнира.", ephemeral=True)
             return
-        # Привязка к конкретному турниру: устаревшая кнопка/форма
-        # не должна изменять данные НОВОГО турнира.
-        await interaction.response.send_modal(
-            FFDataModal(tid=_tid(state) or None))
+        await cog.show_my_data(interaction, state=state)
 
     @discord.ui.button(label="Запасной", style=discord.ButtonStyle.primary,
                        custom_id="cashcup:sub_join")
@@ -895,8 +1086,17 @@ class CashCupCog(commands.Cog):
                             raise CashCupError("Этот Free Fire UID уже используется")
                 t["sub_invites"] = [x for x in t.get("sub_invites", [])
                                     if x != uid_]
+                # ADMIN-подтверждение сбрасывается только при реальном
+                # изменении UID/региона/устройства — повторная отправка
+                # тех же данных не снимает verified.
+                identity_changed = (
+                    str(player.get("ff_uid") or "") != ff["ff_uid"]
+                    or player.get("region") != region
+                    or player.get("device") != device)
                 player.update({"device": device, "region": region,
-                               "verified": False, "ff_ok": True,
+                               "verified": (False if identity_changed
+                                            else bool(player.get("verified"))),
+                               "ff_ok": True,
                                "joined_at": joined_at, **ff})
                 if sum(1 for p in t["members"]
                        if p.get("device") == "pc") > 2:
@@ -952,6 +1152,58 @@ class CashCupCog(commands.Cog):
                               f"Приглашение отправлено <@{uid}>.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
+
+    async def show_my_data(self, interaction: discord.Interaction,
+                           *, state: dict | None = None) -> None:
+        """«FREE FIRE · МОИ ДАННЫЕ» — статус заполнения профиля
+        игрока в текущем турнире + кнопка безопасного обновления.
+        Read-only: состояние не меняется."""
+        if state is None:
+            state = await self._current_state(interaction.guild_id)
+        if not state:
+            await self._reply(interaction, "CASH CUP не найден")
+            return
+        uid = interaction.user.id
+        team = _find_cc_team(state, uid)
+        invite_team = None
+        if team is None:
+            invite_team = next(
+                (x for x in state.get("teams", [])
+                 if uid in x.get("sub_invites", [])), None)
+        target = team or invite_team
+        player = None
+        if target is not None:
+            player = next(
+                (p for p in target.get("members", [])
+                 + target.get("pending", [])
+                 if p.get("discord_id") == uid), None)
+        lines = ["**FREE FIRE · МОИ ДАННЫЕ**"]
+        if player is None:
+            lines.append("Вы не состоите в команде"
+                         + (" — есть приглашение в запасные."
+                            if invite_team else "."))
+        else:
+            ff_uid = str(player.get("ff_uid") or "")
+            device = player.get("device")
+            lines += [
+                f"UID: {'`' + ff_uid + '`' if ff_uid else 'не заполнен'}",
+                f"Ник: {safe_text(player.get('nick') or '—', limit=40)}",
+                f"Регион: {player.get('region') or 'не выбран'}",
+                f"Устройство: {device if device in ('pc', 'mobile') else 'не указано'}",
+                f"FF API: {'подтверждён' if player.get('ff_ok') else 'не подтверждён'}",
+                f"ADMIN: {'подтверждён' if player.get('verified') else 'ожидает'}",
+            ]
+        view = (_MyDataView(self, target.get("id") if target else None,
+                            _tid(state) or None)
+                if target is not None else None)
+        if interaction.response.is_done():
+            await interaction.followup.send(
+                "\n".join(lines)[:1900], view=view, ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none())
+        else:
+            await interaction.response.send_message(
+                "\n".join(lines)[:1900], view=view, ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none())
 
     async def sub_offer_teams(self, interaction: discord.Interaction,
                               *, state: dict | None = None) -> None:
@@ -1018,7 +1270,7 @@ class CashCupCog(commands.Cog):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Только ADMIN")
             return
-        if action in ("verify", "remove", "dq"):
+        if action in ("verify", "remove", "dq", "check"):
             return await self._pick_team(interaction, action, tid=tid)
         if action in ("result", "room", "forfeit", "resolve"):
             return await self._pick_match(interaction, action, tid=tid)
@@ -1071,7 +1323,8 @@ class CashCupCog(commands.Cog):
             await self._reply(interaction, "Команд нет")
             return
         titles = {"verify": "Проверить UID команд", "remove": "Удалить команду",
-                  "dq": "Дисквалифицировать команду"}
+                  "dq": "Дисквалифицировать команду",
+                  "check": "Проверить состав"}
         opts = [(_label(t), t["id"], f"капитан <@{t['captain']}>")
                 for t in teams]
         await _send(interaction,
@@ -1101,6 +1354,8 @@ class CashCupCog(commands.Cog):
         name = t["name"]
         if action == "verify":
             await self.verify(interaction, name, tid=tid)
+        elif action == "check":
+            await self.check_team(interaction, name, tid=tid)
         elif action == "remove":
             await self.remove(interaction, name, tid=tid)
         elif action == "dq":
@@ -1463,22 +1718,41 @@ class CashCupCog(commands.Cog):
             def change(state):
                 _assert_registration(state)
                 t = _team(state, team_name)
-                if len(t["members"]) < 4:
-                    raise CashCupError("Сначала соберите минимум 4 игроков")
-                for player in t["members"]:
-                    if not (player.get("ff_uid") and player.get("nick")
-                            and player.get("region")
-                            and player.get("device") in ("pc", "mobile")
-                            and player.get("ff_ok")):
-                        raise CashCupError(
-                            f"У <@{player['discord_id']}> не заполнен Free Fire "
-                            "профиль (UID, ник, регион, устройство, API-проверка)")
+                # Полная диагностика ДО подтверждения: показываем ВСЕ
+                # проблемы, не только первую. include_admin=False —
+                # отсутствие ADMIN-подтверждения и есть предмет verify.
+                diag = _team_diag(state, t, include_admin=False)
+                if diag["status"] != _STATUS_READY:
+                    probs = diag["problems"] or [
+                        f"состав {len(t['members'])}/5 — минимум 4 игрока"]
+                    raise CashCupError(
+                        f"**{_label(t)}** — проверка не пройдена:\n"
+                        + "\n".join(f"- {p}" for p in probs[:20])[:1800])
                 for player in t["members"]:
                     player["verified"] = True
                 return len(t["members"])
             _, n = await self._post(interaction, "verify_roster", change,
                                      {"team": team_name, "manual": True}, tid=tid)
             await self._reply(interaction, f"Подтверждено игроков: {n}. Используйте это только после проверки принадлежности аккаунтов.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+
+    async def check_team(self, interaction: discord.Interaction,
+                         team_name: str, *, tid: str | None = None) -> None:
+        """ADMIN read-only полная диагностика состава: ВСЕ проблемы
+        за один запрос, состояние турнира не меняется."""
+        await _defer(interaction)
+        if not _is_cashcup_admin(interaction.user):
+            await self._reply(interaction, "Доступно только организатору")
+            return
+        try:
+            state = (await cashcup_store.active(interaction.guild_id)
+                     or await cashcup_store.latest(interaction.guild_id))
+            if not state:
+                raise CashCupError("CASH CUP не найден")
+            t = _team(state, team_name)
+            diag = _team_diag(state, t)
+            await self._reply(interaction, _diag_reply_text(t, diag))
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
 
@@ -1517,15 +1791,36 @@ class CashCupCog(commands.Cog):
         if not state or not state.get("teams"):
             await self._reply(interaction, "Команд пока нет")
             return
-        lines = [f"**CASH CUP · команды ({len(state['teams'])})**"]
-        for t in state["teams"][:25]:
-            verified = sum(1 for p in t["members"] if p.get("verified"))
-            pcs = sum(1 for p in t["members"] if p.get("device") == "pc")
-            lines.append(f"**{_label(t)}** — капитан <@{t['captain']}> · "
-                         f"{len(t['members'])}/5 · ПК: {pcs} · verified: {verified}/5")
-        if len(state["teams"]) > 25:
-            lines.append(f"… ещё {len(state['teams'])-25}")
-        await self._reply(interaction, "\n".join(lines)[:1900])
+        text, page, pages = _teams_render(state, 0)
+        if interaction.response.is_done():
+            await interaction.followup.send(
+                text, view=TeamsView(self, page, pages), ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none())
+        else:
+            await interaction.response.send_message(
+                text, view=TeamsView(self, page, pages), ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none())
+
+    async def _teams_goto(self, interaction: discord.Interaction,
+                          page: int) -> None:
+        """Пагинация списка команд: правит то же ephemeral-сообщение.
+        PG-чтение ограничено 2с — component Interaction тоже имеет
+        3-секундное окно Discord."""
+        try:
+            state = await asyncio.wait_for(
+                self._current_state(interaction.guild_id), timeout=2.0)
+        except Exception:
+            await interaction.response.send_message(
+                "База данных занята — нажмите «Команды» ещё раз "
+                "через несколько секунд.", ephemeral=True)
+            return
+        if not state or not state.get("teams"):
+            await interaction.response.send_message(
+                "Команд пока нет.", ephemeral=True)
+            return
+        text, page, pages = _teams_render(state, page)
+        await interaction.response.edit_message(
+            content=text, view=TeamsView(self, page, pages))
 
     async def show_active_matches(self, interaction: discord.Interaction) -> None:
         await _defer(interaction)
@@ -1609,6 +1904,22 @@ class CashCupCog(commands.Cog):
             if not snapshot or snapshot["status"] != "registration":
                 raise CashCupError("Регистрация закрыта")
             _check_prize_state(snapshot)
+            # Сводка ВСЕХ проблем команд до запуска — read-only,
+            # сетка не создаётся, пока проверки не пройдены.
+            bad = []
+            for t in snapshot["teams"]:
+                d = _team_diag(snapshot, t)
+                if d["status"] != _STATUS_READY:
+                    bad.append((t, d))
+            if bad:
+                lines = ["**CASH CUP · старт невозможен — проблемы команд:**"]
+                for t, d in bad[:8]:
+                    lines.append(f"\n**{_label(t)}** — {d['status']}")
+                    lines += [f"- {p}" for p in d["problems"][:6]]
+                if len(bad) > 8:
+                    lines.append(f"\n… ещё {len(bad)-8} команд")
+                await self._reply(interaction, "\n".join(lines)[:1900])
+                return
             await _validate_teams(self.bot, interaction.guild, snapshot)
             signature = json.dumps(snapshot["teams"], sort_keys=True)
             prize_sig = json.dumps(snapshot.get("prizes") or {}, sort_keys=True)
@@ -2514,6 +2825,7 @@ class AdminMenuView(discord.ui.View):
                 ("История", "history", "")]
         if status == "registration":
             opts += [("Проверить команду", "verify", ""),
+                     ("Проверить состав", "check", ""),
                      ("Удалить команду", "remove", ""),
                      ("Приз за 1 место", "prize", ""),
                      ("Запустить турнир", "start", ""),
