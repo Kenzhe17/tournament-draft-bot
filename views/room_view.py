@@ -225,17 +225,23 @@ class RoomModal(discord.ui.Modal):
         self.add_item(self.pass_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        # Defer ДО любых запросов к store/БД/Discord: публикация карточки
+        # и уведомления может занять секунды — без defer Discord отвечает
+        # 10062 Unknown interaction.
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+
         room_id = (self.room_input.value or "").strip()
         password = (self.pass_input.value or "").strip()
         if not room_id or not password:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Укажите ID и пароль комнаты.", ephemeral=True)
             return
 
         # Серверная проверка прав: участник матча или организатор.
         tournament = store.get(self.guild_id, self.channel_id)
         if tournament is None or str(tournament.id) != str(self.tournament.id):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Турнир не найден.", ephemeral=True)
             return
         # Актуальный список матчей — состояние могло измениться.
@@ -245,21 +251,21 @@ class RoomModal(discord.ui.Modal):
             None,
         )
         if fresh is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Матч не найден в текущей фазе турнира.",
                 ephemeral=True,
             )
             return
         org = _is_org(interaction.user, interaction.guild, tournament)
         if not fresh["active"] and not org:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Матч уже завершён — данные комнаты изменить нельзя.",
                 ephemeral=True,
             )
             return
         team_idx = tournament.get_player_team_index(interaction.user.id)
         if not org and team_idx not in fresh["teams"]:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Вы не участвуете в этом матче.", ephemeral=True)
             return
 
@@ -298,7 +304,9 @@ class RoomModal(discord.ui.Modal):
             cancel.callback = _cancel
             confirm.add_item(ok)
             confirm.add_item(cancel)
-            await interaction.response.send_message(
+            # Ответ уже отложен (defer) — редактируем исходное
+            # ephemeral-сообщение вместо повторного response.
+            await interaction.edit_original_response(
                 view=compose(
                     embed=None,
                     view=confirm,
@@ -308,7 +316,6 @@ class RoomModal(discord.ui.Modal):
                         "Заменить ID и пароль?"
                     ),
                 ),
-                ephemeral=True,
             )
             return
 
@@ -320,16 +327,21 @@ async def _apply_room_edit(
     interaction: discord.Interaction,
     token: tuple[int, int, int],
 ) -> None:
+    # Defer ДО чтения store и публикации — иначе Discord 10062.
+    # Confirm-карточка ephemeral — ответ должен остаться ephemeral.
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+
     pending = _PENDING_EDITS.pop(token, None)
     if pending is None or time.time() - pending["ts"] > _PENDING_TTL:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "Сессия подтверждения истекла — отправьте данные снова.",
             ephemeral=True,
         )
         return
     tournament = store.get(token[0], token[1])
     if tournament is None or str(tournament.id) != pending["tournament_id"]:
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             view=text_card("Турнир больше не активен."))
         return
     m = pending["match"]
@@ -342,7 +354,7 @@ async def _apply_room_edit(
     if fresh is None or (not fresh["active"] and not org) or (
         not org and team_idx not in fresh["teams"]
     ):
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             view=text_card("Нет прав на изменение этой комнаты."))
         return
     await _save_room(
@@ -406,11 +418,17 @@ async def _save_room(
         logger.warning("room publish failed key=%s: %s", m["key"], exc)
 
     if publish["card"]:
-        detail = (
-            "Карточка комнаты опубликована в канале данных."
-            if publish["notified"] or not result["created"]
-            else "Карточка комнаты опубликована, уведомление отправлено."
-        )
+        if not result["created"]:
+            # Обновление карточки: повторное уведомление не отправляется
+            # by design — не утверждаем обратного.
+            detail = "Карточка комнаты обновлена в канале данных."
+        elif publish["notified"]:
+            detail = ("Карточка комнаты опубликована в канале данных, "
+                      "уведомление отправлено.")
+        else:
+            detail = ("Карточка комнаты опубликована в канале данных. "
+                      "Уведомление не отправлено — будет повторено "
+                      "автоматически.")
     else:
         detail = (
             "Данные сохранены, но публикация карточки не удалась — "
@@ -419,7 +437,11 @@ async def _save_room(
     text = (
         f"Данные комнаты сохранены для **{m['label']}**.\n{detail}"
     )
-    if edit_reply:
+    if interaction.response.is_done():
+        # Defer уже выполнен (on_submit / confirm-кнопка) —
+        # редактируем исходный ответ, не вызывая response повторно.
+        await interaction.edit_original_response(view=text_card(text))
+    elif edit_reply:
         await interaction.response.edit_message(view=text_card(text))
     else:
         await interaction.response.send_message(

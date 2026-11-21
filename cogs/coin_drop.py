@@ -61,10 +61,10 @@ class SpeedDropView(discord.ui.View):
         custom_id="speed_coin_drop_btn"  # Will be dynamically updated
     )
     async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-
+        # Флаг занимаем ДО ответа: два быстрых клика не должны
+        # оба пройти проверку claimed и получить двойную выплату.
         if self.claimed:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f" Кто-то оказался быстрее вас!",
                 ephemeral=True
             )
@@ -72,6 +72,7 @@ class SpeedDropView(discord.ui.View):
 
         self.claimed = True
         self.stop()
+        await interaction.response.defer()
 
         # Выплата победителю
         await add_balance(interaction.guild_id, interaction.user.id, self.reward_amount)
@@ -139,6 +140,7 @@ class CoinDropCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
         self._default_channel_id = NOTIFICATION_CHANNEL_ID
+        self._drop_lock = asyncio.Lock()
 
     def _target_channel_id(self, guild) -> int:
         from services.discord_cfg import channel_id as _dc
@@ -178,18 +180,26 @@ class CoinDropCog(commands.Cog):
         # Check if coin drops are enabled: Control Center (PG) →
         # legacy settings.json fallback внутри peek.
         from services.settings_service import settings_service
-        if not settings_service.peek(message.guild.id if message.guild else None,
+        if not settings_service.peek(channel.guild.id if channel.guild else None,
                                       "feature.coin_drop_enabled"):
             return
 
-        # Записываем время ивента
-        LAST_EVENT_TIME[channel.id] = datetime.now()
+        # Защита от параллельного запуска (естественный ивент + forcedrop).
+        async with self._drop_lock:
+            # Повторная проверка кулдауна под локом.
+            last_event = LAST_EVENT_TIME.get(channel.id)
+            if last_event and (datetime.now() - last_event) < timedelta(minutes=30):
+                return
 
-        reward = random.randint(100, 500)
-        is_speed_mode = random.choice([True, False])
+            # Записываем время ивента до отправки — повторный триггер
+            # в окне отправки не создаст второй дроп.
+            LAST_EVENT_TIME[channel.id] = datetime.now()
 
-        # Генерируем уникальный ID для ивента (чтобы избежать конфликтов кнопок)
-        event_id = str(datetime.now().timestamp())
+            reward = random.randint(100, 500)
+            is_speed_mode = random.choice([True, False])
+
+            # Генерируем уникальный ID для ивента (чтобы избежать конфликтов кнопок)
+            event_id = str(datetime.now().timestamp())
 
         if is_speed_mode:
             # === РЕЖИМ 1: НА СКОРОСТЬ ===
@@ -219,9 +229,16 @@ class CoinDropCog(commands.Cog):
             embed = view.build_embed()
             msg = await channel.send( view=compose(embed, view))
 
-            # Ожидание 60 секунд для сбора участников
-            await asyncio.sleep(60.0)
+            # Ожидание 60 секунд для сбора участников — в фоне,
+            # чтобы не держать обработчик сообщения.
+            self.bot.loop.create_task(
+                self._raffle_finish(msg, view, reward, channel))
 
+    async def _raffle_finish(self, msg: discord.Message, view: "RaffleDropView",
+                             reward: int, channel: discord.TextChannel) -> None:
+        """Финализация розыгрыша через 60 секунд (фоновая задача)."""
+        try:
+            await asyncio.sleep(60.0)
             if not view.participants:
                 no_p_embed = discord.Embed(
                     title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | НИКОГО**",
@@ -233,34 +250,38 @@ class CoinDropCog(commands.Cog):
                     await msg.reply( view=compose(no_p_embed))
                 except discord.HTTPException:
                     pass
-            else:
-                winner_id = random.choice(list(view.participants))
-                winner = channel.guild.get_member(winner_id)
-                if not winner:
-                    # Если пользователь не найден, выбираем другого
-                    view.participants.remove(winner_id)
-                    if view.participants:
-                        winner_id = random.choice(list(view.participants))
-                        winner = channel.guild.get_member(winner_id)
+                return
 
-                if winner:
-                    await add_balance(channel.guild.id, winner.id, reward)
+            winner_id = random.choice(list(view.participants))
+            winner = channel.guild.get_member(winner_id)
+            if not winner:
+                # Если пользователь не найден, выбираем другого
+                view.participants.discard(winner_id)
+                if view.participants:
+                    winner_id = random.choice(list(view.participants))
+                    winner = channel.guild.get_member(winner_id)
 
-                    result_embed = discord.Embed(
-                        title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
-                        description=(
-                            f" **Победитель:** {winner.mention}\n"
-                            f" **Выигрыш:** **`{reward:,}`** {get_emoji('money')}\n"
-                            f" **Всего участников:** `{len(view.participants)}`\n\n"
-                            f" *Монеты зачислены на ваш баланс. Проверить: `/balance`*"
-                        ),
-                        color=0x2ECC71
-                    )
-                    try:
-                        await msg.edit(view=smart_view(msg, None))
-                        await msg.reply( view=compose(result_embed))
-                    except discord.HTTPException:
-                        pass
+            if winner:
+                await add_balance(channel.guild.id, winner.id, reward)
+
+                result_embed = discord.Embed(
+                    title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
+                    description=(
+                        f" **Победитель:** {winner.mention}\n"
+                        f" **Выигрыш:** **`{reward:,}`** {get_emoji('money')}\n"
+                        f" **Всего участников:** `{len(view.participants)}`\n\n"
+                        f" *Монеты зачислены на ваш баланс. Проверить: `/balance`*"
+                    ),
+                    color=0x2ECC71
+                )
+                try:
+                    await msg.edit(view=smart_view(msg, None))
+                    await msg.reply( view=compose(result_embed))
+                except discord.HTTPException:
+                    pass
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("coin_drop raffle finish failed")
 
     # Админ-команда для принудительного вызова ивента
     async def cog_load(self) -> None:

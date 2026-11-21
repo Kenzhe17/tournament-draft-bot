@@ -15,6 +15,13 @@ def _last(i):
     if i.response.sent:
         return i.response.sent[-1][0]
     return ""
+
+
+def _sent(i):
+    """(msg, kw) последнего ответа — followup после defer, иначе response."""
+    if i.followup.sent:
+        return i.followup.sent[-1]
+    return i.response.sent[-1]
 from services import cashcup_bracket as cb
 
 
@@ -334,7 +341,7 @@ async def test_show_roster_sends_view(cog):
     cog._store.state = st
     i = make_interaction(_member(10))
     await cog.show_roster(i)
-    msg, kw = i.response.sent[-1]
+    msg, kw = _sent(i)
     assert isinstance(kw.get("view"), cashcup.RosterView)
     assert kw["view"].is_captain is True
     labels = [getattr(c, "label", "") for c in kw["view"].children]
@@ -350,7 +357,7 @@ async def test_show_roster_member_no_privileged(cog):
     cog._store.state = st
     i = make_interaction(_member(11))
     await cog.show_roster(i)
-    view = i.response.sent[-1][1]["view"]
+    view = _sent(i)[1]["view"]
     assert view.is_captain is False
     labels = [getattr(c, "label", "") for c in view.children]
     assert "Пригласить запасного" not in labels
