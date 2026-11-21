@@ -186,13 +186,15 @@ class OrganizerManagementButton(Button):
                 return
             # Open directly to their channel
             view = OrganizerMenuView(self.guild_id, user_channel_id)
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(
+                ephemeral=True, thinking=True)
             await interaction.followup.send("Сообщение для управления ролью организатора создано", ephemeral=True)
             await interaction.followup.send(view=compose(view=view), ephemeral=True)
         else:
             # Open channel selection view for MANAGER_ROLE or admin
             view = ChannelSelectView(self.guild_id, self.guild)
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(
+                ephemeral=True, thinking=True)
             await interaction.followup.send("Сообщение для управления ролью организатора создано", ephemeral=True)
             await interaction.followup.send(view=compose(view=view), ephemeral=True)
 

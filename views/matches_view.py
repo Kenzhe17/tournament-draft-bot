@@ -810,8 +810,12 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
     async def on_submit(self, interaction: discord.Interaction) -> None:
         from storage.json_store import store
 
-        # Defer to avoid timeout
-        await interaction.response.defer(ephemeral=True)
+        # Defer to avoid timeout. thinking=True: приватный ответ —
+        # иначе defer() на modal_submit — DEFERRED_MESSAGE_UPDATE
+        # в сообщение-источник модалки (может быть публичной
+        # карточкой матча).
+        await interaction.response.defer(
+            ephemeral=True, thinking=True)
 
         # Parse and validate statistics
         match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
@@ -1103,8 +1107,10 @@ class GenerateMatchesButton(discord.ui.Button):
         try:
             tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
-                await interaction.edit_original_response( view=text_card(replace_emojis("Турнир не найден.")),
-                )
+                # Ошибки — только ephemeral followup: публичная
+                # карточка не должна заменяться текстом ошибки.
+                await interaction.followup.send(
+                    replace_emojis("Турнир не найден."), ephemeral=True)
                 return
 
             # Auto-fix phase mismatch: if phase is not TEAMS but we have teams, reset to TEAMS
@@ -1119,8 +1125,11 @@ class GenerateMatchesButton(discord.ui.Button):
                 store.set(tournament)
 
             if tournament.phase != TournamentPhase.TEAMS:
-                await interaction.edit_original_response( view=text_card(replace_emojis(f"Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}")),
-                )
+                await interaction.followup.send(
+                    replace_emojis(
+                        f"Турнир не в фазе команд. "
+                        f"Текущая фаза: {tournament.phase.value}"),
+                    ephemeral=True)
                 return
 
             logger.info(f"Generating bracket for tournament size: {tournament.size.value}, teams: {len(tournament.teams)}")
@@ -1203,8 +1212,9 @@ class GenerateMatchesButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
         except Exception as e:
             logger.error(f"Error generating matches: {e}", exc_info=True)
-            await interaction.edit_original_response( view=text_card(replace_emojis(f"Ошибка при генерации матчей: {str(e)}"))
-            )
+            await interaction.followup.send(
+                replace_emojis(f"Ошибка при генерации матчей: {str(e)}"),
+                ephemeral=True)
 
 
 class TeamNameButton(discord.ui.Button):
@@ -1245,7 +1255,9 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
         self.add_item(self.name_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
+        # thinking=True: приватный ответ, не сообщение-источник.
+        await interaction.response.defer(
+            ephemeral=True, thinking=True)
 
         name = self.name_input.value.strip()
         if not name:

@@ -160,7 +160,8 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
         from storage.json_store import store
         from utils import kd_stat
 
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(
+            ephemeral=True, thinking=True)
 
         try:
             # Parse statistics — только строгий формат K/D
@@ -501,7 +502,8 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         from storage.json_store import store
         from utils import kd_stat
 
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(
+            ephemeral=True, thinking=True)
 
         logging.info(f"AdminStatsModal on_submit called: match_type={self.match_type}, match_index={self.match_index}, team_index={self.team_index}")
 
@@ -862,7 +864,8 @@ class AdminConfirmView(View):
         logging.info(f"========== confirm_callback START ==========")
         logging.info(f"match_type={self.match_type}, match_index={self.match_index}, winning_team_index={winning_team_index}")
 
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(
+            ephemeral=True, thinking=True)
 
         try:
             # Актуальный турнир + повторная проверка прав/фазы
