@@ -44,20 +44,24 @@ class CardRepairCog(commands.Cog):
             await interaction.followup.send(
                 f"Scan failed: {exc}", ephemeral=True)
             return
-        damaged = [e for e in report if e["status"] == "DAMAGED"]
-        missing = [e for e in report
-                   if e["status"] == "MESSAGE_MISSING"]
-        errors = [e for e in report if e["status"] == "ERROR"]
+        bad = [e for e in report
+               if e["status"] not in (card_repair.HEALTHY,)]
         lines = [
-            f"**Scan: {len(report)} турниров**",
-            f"OK: {len(report) - len(damaged) - len(missing) - len(errors)}"
-            f" · Повреждено: {len(damaged)}"
-            f" · MESSAGE_MISSING: {len(missing)}"
-            f" · Ошибки: {len(errors)}",
+            f"**Scan: {len(report)} карточек**",
+            "HEALTHY: "
+            f"{sum(1 for e in report if e['status'] == card_repair.HEALTHY)}"
+            f" · Повреждено: "
+            f"{sum(1 for e in report if e['status'] == card_repair.DAMAGED)}"
+            f" · MESSAGE_MISSING: "
+            f"{sum(1 for e in report if e['status'] == card_repair.MESSAGE_MISSING)}"
+            f" · FORBIDDEN: "
+            f"{sum(1 for e in report if e['status'] == card_repair.FORBIDDEN)}"
+            f" · UNKNOWN/ERROR: "
+            f"{sum(1 for e in report if e['status'] in (card_repair.UNKNOWN, card_repair.ERROR))}",
         ]
-        for e in damaged + missing + errors:
+        for e in bad:
             lines.append(
-                f"- `{e['tournament_id']}` ({e['phase']}): "
+                f"- `{e['tournament_id']}` ({e['kind']}/{e['phase']}): "
                 f"{e['detail']}")
         await interaction.followup.send(
             "\n".join(lines)[:1900], ephemeral=True)
