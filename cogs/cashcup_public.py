@@ -148,11 +148,9 @@ class CashCupPublicCog(commands.Cog):
         if me is None:
             return None
         perms = channel.permissions_for(me)
-        needed = (discord.Permissions.view_channel,
-                  discord.Permissions.send_messages,
-                  discord.Permissions.embed_links,
-                  discord.Permissions.read_message_history)
-        if not all(perms.has(p) for p in needed):
+        needed = ("view_channel", "send_messages", "embed_links",
+                  "read_message_history")
+        if not all(getattr(perms, name, False) for name in needed):
             self._warn_once(f"{tag}:{channel_id}:perms",
                             "CASHCUP public channel %s lacks required "
                             "permissions", channel_id)

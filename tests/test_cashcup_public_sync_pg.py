@@ -64,8 +64,10 @@ class _Resp:
 
 
 class _Perms:
-    def has(self, perm):
-        return True
+    view_channel = True
+    send_messages = True
+    embed_links = True
+    read_message_history = True
 
 
 class FakeMessage:
