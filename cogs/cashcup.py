@@ -378,8 +378,15 @@ def _alert_report(state: dict) -> dict:
         issues += [f"- {sp}" for sp in diag["structural"]]
         lines += issues or [
             "Все обязательные данные заполнены и проверены."]
+        # «Готова» здесь означает только заполненность данных —
+        # финальные проверки (_validate_teams: теги, VAC) делаются
+        # при /cashcup start, поэтому гарантированный допуск не
+        # заявляем.
+        status_label = (
+            "Данные заполнены" if diag["status"] == _STATUS_READY
+            else diag["status"])
         lines += ["",
-                  f"Статус: **{diag['status']} — "
+                  f"Статус: **{status_label} — "
                   f"{diag['admin']}/{diag['members']} подтверждено**"]
         blocks.append("\n".join(lines))
         if diag["status"] == _STATUS_READY:
@@ -447,7 +454,30 @@ def _pack_lines(lines: list[str], limit: int = 1900) -> list[str]:
             cur = cur[limit:]
     if cur:
         msgs.append(cur)
-    return msgs
+    # Discord: ≤100 уникальных user mentions на сообщение —
+    # разбиваем слишком плотные чанки по границам строк.
+    out: list[str] = []
+    for msg in msgs:
+        parts = msg.split("\n")
+        buf = ""
+        for part in parts:
+            cand = (buf + "\n" + part) if buf else part
+            if _mention_ids(cand) > 100 and buf:
+                out.append(buf)
+                buf = part
+            else:
+                buf = cand
+        if buf:
+            out.append(buf)
+    return out
+
+
+_MENTION_RE = re.compile(r"<@(!?)(\d+)>")
+
+
+def _mention_ids(text: str) -> int:
+    """Число уникальных user ID в тексте (без @everyone/@here/roles)."""
+    return len({m.group(2) for m in _MENTION_RE.finditer(text)})
 
 
 class TeamsView(discord.ui.View):
@@ -927,6 +957,10 @@ class CashCupCog(commands.Cog):
         # /alert: per-guild lock + cooldown публичных уведомлений.
         self._alert_locks: dict[int, asyncio.Lock] = {}
         self._alert_last: dict[int, float] = {}
+        # (signature отчёта, {sha1 отправленных чанков}) — защита
+        # от дублей при частичной публикации; в памяти, при рестарте
+        # сбрасывается (cooldown 15 мин ограничивает спам).
+        self._alert_sent: dict[int, tuple[str, set]] = {}
 
     def _board_lock(self, guild_id: int) -> asyncio.Lock:
         return self._board_locks.setdefault(guild_id, asyncio.Lock())
@@ -1970,12 +2004,29 @@ class CashCupCog(commands.Cog):
                         "Состояние турнира изменилось — "
                         "уведомление отменено.")
                     return
+                # Актуальность: отчёт и упоминания пересобираются
+                # из СВЕЖЕГО состояния — за время проверок игроки
+                # могли заполнить данные или ADMIN подтвердить состав.
+                lines, mention_ids, report = _alert_payload(
+                    fresh, guild_id)
+                chunks = _pack_lines(lines)
+                if report["total"] == 0:
+                    await self._reply(
+                        interaction, "Нет команд — отменено.")
+                    return
+                if report["ready"] == report["total"]:
+                    await self._reply(
+                        interaction,
+                        f"Все команды готовы ({report['ready']}/"
+                        f"{report['total']}) — публикация отменена, "
+                        "cooldown не израсходован.")
+                    return
                 channel = interaction.guild.get_channel(
-                    state.get("channel_id"))
+                    fresh.get("channel_id"))
                 if channel is None:
                     try:
                         channel = await interaction.guild.fetch_channel(
-                            state["channel_id"])
+                            fresh["channel_id"])
                     except Exception:
                         channel = None
                 if channel is None:
@@ -1984,20 +2035,55 @@ class CashCupCog(commands.Cog):
                         "Канал карточки CASH CUP недоступен — "
                         "уведомление не опубликовано.")
                     return
-                mentions = discord.AllowedMentions(
-                    users=[discord.Object(id=u) for u in mention_ids])
-                self._alert_last[guild_id] = time.monotonic()
+                # Dedup частичной публикации: храним подпись отчёта
+                # и хэши уже отправленных чанков — повторный вызов
+                # не дублирует доставленные сообщения.
+                import hashlib
+                sig = hashlib.sha1(
+                    "\n".join(lines).encode()).hexdigest()
+                sent_map = getattr(self, "_alert_sent", None)
+                if sent_map is None:
+                    sent_map = self._alert_sent = {}
+                dedup = sent_map.get(guild_id)
+                # Дедуп действует только для НЕЗАВЕРШЁННОЙ
+                # публикации того же отчёта: после полного
+                # уведомления или при изменении отчёта — свежая
+                # рассылка без пропусков.
+                if dedup and (dedup[0] != sig or dedup[2]):
+                    dedup = None
+                sent_hashes = set(dedup[1]) if dedup else set()
                 sent = 0
-                for chunk in chunks:
+                failed_at = None
+                for idx, chunk in enumerate(chunks):
+                    chash = hashlib.sha1(chunk.encode()).hexdigest()
+                    if chash in sent_hashes:
+                        sent += 1
+                        continue
+                    # allowed_mentions — ТОЛЬКО реально упомянутые
+                    # в этом сообщении пользователи, ≤100, без
+                    # roles/@everyone/@here.
+                    ids = sorted({int(u) for u in
+                                  re.findall(r"<@(\d+)>", chunk)})[:100]
+                    mentions = discord.AllowedMentions(
+                        users=[discord.Object(id=u) for u in ids])
                     try:
                         await channel.send(
                             chunk, allowed_mentions=mentions)
+                        sent_hashes.add(chash)
                         sent += 1
                     except discord.HTTPException as exc:
+                        failed_at = idx
                         logger.warning(
-                            "cashcup alert send failed guild=%s: %s",
-                            guild_id, exc)
+                            "cashcup alert send failed guild=%s "
+                            "chunk=%s/%s: %s",
+                            guild_id, idx + 1, len(chunks), exc)
                         break
+                sent_map[guild_id] = (
+                    sig, sent_hashes, sent >= len(chunks))
+                # Cooldown — только если хоть одно сообщение ушло;
+                # полная ошибка не блокирует повторную попытку.
+                if sent:
+                    self._alert_last[guild_id] = time.monotonic()
                 logger.info(
                     "cashcup alert guild=%s admin=%s tournament=%s "
                     "teams=%s ready=%s mentions=%s messages=%s",
@@ -2025,7 +2111,20 @@ class CashCupCog(commands.Cog):
                     await self._reply(
                         interaction,
                         "Не удалось опубликовать уведомление — "
-                        "проверьте права бота в канале карточки.")
+                        "проверьте права бота в канале карточки. "
+                        "Cooldown не установлен, можно повторить.")
+                    return
+                total_chunks = len(chunks)
+                if failed_at is not None or sent < total_chunks:
+                    await self._reply(
+                        interaction,
+                        f"Уведомление опубликовано ЧАСТИЧНО: "
+                        f"сообщений {sent}/{total_chunks}, "
+                        f"команд {report['total']}, "
+                        f"готово {report['ready']}. "
+                        f"Повторный вызов не продублирует "
+                        f"отправленные части (в пределах перезапуска "
+                        f"и неизменного отчёта).")
                     return
                 await self._reply(
                     interaction,

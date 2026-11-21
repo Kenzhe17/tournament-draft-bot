@@ -300,7 +300,7 @@ async def test_ready_team_marked_ready(env):
     await env.cog.alert.callback(env.cog, i, preview=False)
     text = _public_text(env.channel)
     assert "Все обязательные данные заполнены и проверены" in text
-    assert "Готова — 4/4 подтверждено" in text
+    assert "Данные заполнены — 4/4 подтверждено" in text
 
 
 @pytest.mark.asyncio
@@ -313,7 +313,7 @@ async def test_four_player_team_status(env):
     ])
     i = make_interaction(_member(99, admin=True), channel=env.channel)
     await env.cog.alert.callback(env.cog, i, preview=False)
-    assert "Готова — 4/4 подтверждено" in _public_text(env.channel)
+    assert "Данные заполнены — 4/4 подтверждено" in _public_text(env.channel)
 
 
 @pytest.mark.asyncio
@@ -328,7 +328,7 @@ async def test_pending_sub_invite_not_counted(env):
     i = make_interaction(_member(99, admin=True), channel=env.channel)
     await env.cog.alert.callback(env.cog, i, preview=False)
     text = _public_text(env.channel)
-    assert "Готова — 4/4 подтверждено" in text
+    assert "Данные заполнены — 4/4 подтверждено" in text
     assert "<@77>" not in text
 
 
@@ -562,3 +562,129 @@ def test_alert_is_top_level_command_not_in_cashcup_group():
     assert names == {"create", "panel"}
     cog_cmds = getattr(cashcup.CashCupCog, "__cog_app_commands__", [])
     assert any(getattr(c, "name", "") == "alert" for c in cog_cmds)
+
+
+# ---------------- hardening: mentions ≤100, cooldown, dedup, fresh ----------------
+
+
+@pytest.mark.asyncio
+async def test_per_chunk_mentions_capped_and_scoped(env):
+    """allowed_mentions каждого сообщения — только ID из него, ≤100."""
+    import re as _re
+    teams = []
+    for i in range(18):
+        teams.append(_team(f"t{i}", f"TEAM{i}", 1000 + i,
+                           [_player(2000 + i * 10 + j, verified=False)
+                            for j in range(4)]))
+    env.store.state = _reg_state(teams)
+    i = make_interaction(_member(99, admin=True), channel=env.channel)
+    await env.cog.alert.callback(env.cog, i, preview=False)
+    assert env.channel.sent
+    for text, kw in env.channel.sent:
+        ids = {int(u) for u in _re.findall(r"<@(\d+)>", text)}
+        am = kw["allowed_mentions"].users
+        am_ids = {getattr(u, "id", u) for u in am}
+        assert len(am_ids) <= 100
+        assert am_ids <= ids or am_ids == ids
+        assert len(am_ids) == len(ids) or len(ids) <= 100
+
+
+@pytest.mark.asyncio
+async def test_failed_send_no_cooldown(env, monkeypatch):
+    """Ошибка первой отправки → cooldown НЕ установлен."""
+    env.store.state = _reg_state([
+        _team("t1", "ALPHA", 10, [_player(u) for u in (10, 11, 12, 33)]),
+    ])
+    async def _boom(*a, **kw):
+        raise discord.HTTPException(_FakeResp(), "boom")
+    monkeypatch.setattr(env.channel, "send", _boom)
+    admin = _member(99, admin=True)
+    i1 = make_interaction(admin, channel=env.channel)
+    await env.cog.alert.callback(env.cog, i1, preview=False)
+    assert not env.cog._alert_last.get(1)
+
+
+@pytest.mark.asyncio
+async def test_partial_send_dedup_no_duplicates(env, monkeypatch):
+    """Частичная отправка: повтор не дублирует уже ушедшие чанки."""
+    teams = [_team(f"t{i}", f"TEAM{i}", 100 + i,
+                   [_player(300 + i * 10 + j) for j in range(4)])
+             for i in range(18)]
+    env.store.state = _reg_state(teams)
+    calls = []
+    orig = env.channel.send
+    state = {"fail_after": None}
+    async def _send(text, **kw):
+        calls.append(text)
+        if state["fail_after"] is not None \
+                and len(calls) > state["fail_after"]:
+            raise discord.HTTPException(_FakeResp(), "x")
+        env.channel.sent.append((text, kw))
+    monkeypatch.setattr(env.channel, "send", _send)
+    admin = _member(99, admin=True)
+    # Полный первый прогон → запоминаем число чанков.
+    i1 = make_interaction(admin, channel=env.channel)
+    await env.cog.alert.callback(env.cog, i1, preview=False)
+    total = len(calls)
+    assert total >= 1
+    # «Частичный» сценарий: сбрасываем dedup/cooldown, имитируем
+    # что часть чанков уже ушла.
+    env.cog._alert_last.clear()
+    env.cog._alert_sent.clear()
+    sent_map = env.cog._alert_sent
+    # Имитируем: первый чанк «уже отправлен».
+    import hashlib
+    lines, mids, rep = cashcup._alert_payload(env.store.state, 1)
+    chunks = cashcup._pack_lines(lines)
+    h = hashlib.sha1(chunks[0].encode()).hexdigest()
+    sent_map[1] = (hashlib.sha1("\n".join(lines).encode()).hexdigest(),
+                   {h}, False)
+    calls.clear()
+    i2 = make_interaction(admin, channel=env.channel)
+    await env.cog.alert.callback(env.cog, i2, preview=False)
+    # Первый чанк не переотправлен.
+    assert chunks[0] not in calls
+    assert len(calls) == len(chunks) - 1
+
+
+@pytest.mark.asyncio
+async def test_fresh_state_rebuild_aborts_when_all_ready(env):
+    """Между снимками все команды стали готовы → публикация отменена."""
+    env.store.state = _reg_state([
+        _team("t1", "ALPHA", 10, [_player(u) for u in (10, 11, 12, 33)]),
+        _ready_team("t2", "BETA", 20, [40, 41, 42, 43]),
+    ])
+    admin = _member(99, admin=True)
+    # Первый снимок видит ALPHA неготовой; fresh() вернёт всех готовых.
+    orig_active = env.store.active
+    calls = {"n": 0}
+    async def _active(gid):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            return _reg_state([_ready_team("t1", "ALPHA", 10, [10, 11, 12, 13]),
+                               _ready_team("t2", "BETA", 20, [40, 41, 42, 43])])
+        return await orig_active(gid)
+    env.store.active = _active
+    i = make_interaction(admin, channel=env.channel)
+    await env.cog.alert.callback(env.cog, i, preview=False)
+    assert not env.channel.sent
+    assert "готовы" in _last(i).lower()
+
+
+@pytest.mark.asyncio
+async def test_status_label_no_guaranteed_admission(env):
+    """В отчёте нет «Готова» — только «Данные заполнены»."""
+    env.store.state = _reg_state([
+        _ready_team("t1", "ALPHA", 10, [10, 11, 12, 13]),
+        _team("t2", "BETA", 20, [_player(u) for u in (20, 21, 22, 33)]),
+    ])
+    i = make_interaction(_member(99, admin=True), channel=env.channel)
+    await env.cog.alert.callback(env.cog, i, preview=False)
+    text = _public_text(env.channel)
+    assert "Данные заполнены" in text
+    assert "Готова —" not in text
+
+
+class _FakeResp:
+    status = 500
+    reason = "x"
