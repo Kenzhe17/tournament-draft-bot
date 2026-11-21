@@ -82,6 +82,10 @@ class FakeGuild:
     async def fetch_member(self, uid):
         return self.get_member(uid)
 
+    async def fetch_members(self, limit=None):
+        for m in self.members:
+            yield m
+
 
 # ---------------------------------------------------------------------------
 # Фейк access_store (in-memory)
@@ -96,6 +100,8 @@ class FakeAccessStore:
         self.exemptions = {}     # uid -> until
         self.grants = {}         # uid -> datetime
         self.state = {}
+        self.run_details = {}
+        self.stale_keys = set()
         self._seq = 0
 
     async def queue_join(self, gid, uid):
@@ -118,10 +124,45 @@ class FakeAccessStore:
         if (gid, key) in self.runs:
             return False
         self.runs[(gid, key)] = "running"
+        self.run_details[(gid, key)] = None
         return True
 
     async def finish_run(self, gid, key, status, detail=None):
         self.runs[(gid, key)] = status
+
+    async def get_run(self, gid, key):
+        if (gid, key) not in self.runs:
+            return None
+        return {"run_key": key, "status": self.runs[(gid, key)],
+                "detail": self.run_details.get((gid, key)),
+                "kind": "auto", "day": None, "created_at": None}
+
+    async def stale_running_runs(self, gid, older_than):
+        # created_at не хранится — все 'running' считаем свежими,
+        # кроме явно помеченных через self.stale_keys
+        return [
+            {"run_key": k, "day": None, "kind": "auto",
+             "detail": self.run_details.get((gid, k)),
+             "created_at": None}
+            for (g, k), st in self.runs.items()
+            if g == gid and st == "running" and k in self.stale_keys
+        ]
+
+    async def set_run_plan(self, gid, key, plan):
+        import json as _json
+        self.run_details[(gid, key)] = _json.dumps(plan)
+
+    async def find_rotation(self, gid, run_key, *,
+                            old_user_id=None, new_user_id=None):
+        for r in self.rotations:
+            if r.get("run_key") != run_key:
+                continue
+            if (old_user_id is None
+                    or r.get("old_user_id") == old_user_id) and (
+                    new_user_id is None
+                    or r.get("new_user_id") == new_user_id):
+                return True
+        return False
 
     async def record_rotation(self, gid, run_key, day, **kw):
         self.rotations.append({"run_key": run_key, "day": day, **kw})
@@ -539,3 +580,167 @@ def test_org_gate_disabled_when_unconfigured(monkeypatch):
     import config
     monkeypatch.setattr(config, "ACCESS_ROLE_ID", 0)
     assert omv.has_access_role(FakeMember(1)) is True
+
+
+# ---------------------------------------------------------------------------
+# P0 regression: частичные отказы и восстановление после рестарта
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_swap_grant_returns_false_restores_old(
+        fake_store, scores_map, no_org):
+    """_grant → False (member недоступен): revoke уже снял роль —
+    старый владелец обязан быть восстановлен, замена не журналируется."""
+    guild = FakeGuild(members=_holders(10))
+    # 200 в очереди, но НЕ в guild.members → _member → None → _grant False
+    await fake_store.queue_join(1, 200)
+    scores_map["scores"] = {**{i: 1 for i in range(100, 110)}, 200: 99}
+    res = await rot.run_rotation(guild, kind="manual")
+    assert res["status"] == "discord_error"
+    assert "restored" in (res.get("skipped_reason") or "")
+    old = guild.members[0]
+    assert ACCESS_ROLE in {r.id for r in old.roles}
+    # журнал замены не записан
+    assert not any(r.get("old_user_id") == 100
+                   for r in fake_store.rotations)
+
+
+@pytest.mark.asyncio
+async def test_swap_revoke_false_aborts_before_grant(
+        fake_store, scores_map, no_org):
+    """_revoke → False: выдача новому не начинается вообще."""
+    guild = FakeGuild(members=_holders(10))
+    new_m = FakeMember(200)
+    guild.members.append(new_m)
+    await fake_store.queue_join(1, 200)
+    scores_map["scores"] = {**{i: 1 for i in range(100, 110)}, 200: 99}
+
+    async def _no_revoke(g, uid):
+        return False
+    import services.access_rotation as _rot
+    orig = _rot._revoke
+    _rot._revoke = _no_revoke
+    try:
+        res = await rot.run_rotation(guild, kind="manual")
+    finally:
+        _rot._revoke = orig
+    assert res["status"] == "discord_error"
+    # у нового роль не выдана
+    assert ACCESS_ROLE not in {r.id for r in new_m.roles}
+    # у старых все роли на месте
+    assert all(ACCESS_ROLE in {r.id for r in m.roles}
+               for m in guild.members[:10])
+
+
+@pytest.mark.asyncio
+async def test_recover_completed_swap_backfills_journal(
+        fake_store, scores_map, no_org):
+    """Краш после grant, до журнала: old без роли, new с ролью →
+    recovery закрывает run 'done' и дописывает журнал."""
+    holders = _holders(10)
+    # old=100 потерял роль, new=200 её имеет (swap фактически прошёл)
+    holders[0].roles = [r for r in holders[0].roles
+                        if r.id != ACCESS_ROLE]
+    new_m = FakeMember(200, role_ids=(ACCESS_ROLE,))
+    guild = FakeGuild(members=holders + [new_m])
+    import json as _json
+    run_key = "auto:2099-01-01"
+    fake_store.runs[(1, run_key)] = "running"
+    fake_store.run_details[(1, run_key)] = _json.dumps({
+        "stage": "swap",
+        "swap": {"old": 100, "new": 200, "phase": "grant"},
+    })
+    fake_store.stale_keys.add(run_key)
+    scores_map["scores"] = {100: 1, 200: 99}
+
+    out = await rot.recover_stale_runs(guild)
+    assert out and out[0]["status"] == "done"
+    assert fake_store.runs[(1, run_key)] == "done"
+    assert any(r.get("old_user_id") == 100
+               and r.get("new_user_id") == 200
+               for r in fake_store.rotations)
+
+
+@pytest.mark.asyncio
+async def test_recover_mid_swap_restores_old(
+        fake_store, scores_map, no_org):
+    """Краш между revoke и grant: ни у кого нет роли →
+    recovery возвращает роль старому владельцу."""
+    holders = _holders(10)
+    holders[0].roles = [r for r in holders[0].roles
+                        if r.id != ACCESS_ROLE]  # revoke прошёл
+    new_m = FakeMember(200)                        # grant не дошёл
+    guild = FakeGuild(members=holders + [new_m])
+    import json as _json
+    run_key = "auto:2099-01-02"
+    fake_store.runs[(1, run_key)] = "running"
+    fake_store.run_details[(1, run_key)] = _json.dumps({
+        "stage": "swap",
+        "swap": {"old": 100, "new": 200, "phase": "grant"},
+    })
+    fake_store.stale_keys.add(run_key)
+    scores_map["scores"] = {}
+
+    out = await rot.recover_stale_runs(guild)
+    assert out and out[0]["status"] == "interrupted"
+    assert ACCESS_ROLE in {r.id for r in holders[0].roles}
+    assert ACCESS_ROLE not in {r.id for r in new_m.roles}
+
+
+@pytest.mark.asyncio
+async def test_recover_fill_pending_grants(
+        fake_store, scores_map, no_org):
+    """Краш во время fill: pending-заявка довыдаётся и журналируется."""
+    guild = FakeGuild(members=_holders(3))
+    cand = FakeMember(200)
+    guild.members.append(cand)
+    import json as _json
+    run_key = "auto:2099-01-03"
+    fake_store.runs[(1, run_key)] = "running"
+    fake_store.run_details[(1, run_key)] = _json.dumps({
+        "stage": "fill", "pending": 200, "fills_done": [],
+    })
+    fake_store.stale_keys.add(run_key)
+    scores_map["scores"] = {200: 5}
+
+    out = await rot.recover_stale_runs(guild)
+    assert out and out[0]["status"] == "done"
+    assert ACCESS_ROLE in {r.id for r in cand.roles}
+    assert any(r.get("new_user_id") == 200
+               for r in fake_store.rotations)
+
+
+@pytest.mark.asyncio
+async def test_recover_no_plan_marks_interrupted(
+        fake_store, scores_map, no_org):
+    """Зависший run без плана — безопасно закрывается, роли не трогаются."""
+    guild = FakeGuild(members=_holders(10))
+    run_key = "auto:2099-01-04"
+    fake_store.runs[(1, run_key)] = "running"
+    fake_store.run_details[(1, run_key)] = None
+    fake_store.stale_keys.add(run_key)
+    out = await rot.recover_stale_runs(guild)
+    assert out and out[0]["status"] == "interrupted"
+    assert all(ACCESS_ROLE in {r.id for r in m.roles}
+               for m in guild.members)
+
+
+@pytest.mark.asyncio
+async def test_strict_holders_fetch_failure_aborts(
+        fake_store, scores_map, no_org, monkeypatch):
+    """Неполный/недоступный список участников → ротация пропускается,
+    роли не меняются."""
+    guild = FakeGuild(members=_holders(10))
+    guild.members.append(FakeMember(200))
+    await fake_store.queue_join(1, 200)
+    scores_map["scores"] = {**{i: 1 for i in range(100, 110)}, 200: 99}
+
+    async def _boom(limit=None):
+        raise RuntimeError("members intent unavailable")
+        yield  # pragma: no cover
+    monkeypatch.setattr(guild, "fetch_members", _boom)
+    res = await rot.run_rotation(guild, kind="manual")
+    assert res["status"] == "discord_error"
+    assert all(ACCESS_ROLE in {r.id for r in m.roles}
+               for m in guild.members[:10])

@@ -22,6 +22,7 @@ Discord-роли перепроверяются перед изменениям�
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import datetime, time, timedelta, timezone
@@ -146,8 +147,19 @@ def _role_ids(member) -> set[int]:
     return {r.id for r in getattr(member, "roles", []) or []}
 
 
-async def access_role_members(guild: discord.Guild) -> list:
-    """Фактические владельцы роли «Доступ» (кэш + fetch fallback)."""
+async def access_role_members(
+    guild: discord.Guild, *, strict: bool = False,
+) -> list:
+    """Фактические владельцы роли «Доступ».
+
+    ``strict=True`` (для решений ротации): всегда ``fetch_members`` —
+    неполный кэш ``guild.members`` не принимается за полный список
+    владельцев; при ошибке fetch — исключение наверх.
+    Обычный режим (панель/статус): кэш → fetch только если пуст.
+    """
+    if strict:
+        members = [m async for m in guild.fetch_members(limit=None)]
+        return [m for m in members if ACCESS_ROLE_ID in _role_ids(m)]
     members = list(getattr(guild, "members", []) or [])
     if not members:
         try:
@@ -266,7 +278,12 @@ async def _grant(guild: discord.Guild, user_id: int) -> bool:
         await member.add_roles(role)
     except discord.Forbidden:
         raise
-    await access_store.queue_remove(guild.id, user_id)
+    try:
+        await access_store.queue_remove(guild.id, user_id)
+    except Exception as exc:
+        # Роль выдана — заявка в очереди безвредна (holders
+        # отфильтровываются из кандидатов при следующем запуске).
+        logger.warning("access: queue_remove after grant failed: %s", exc)
     return True
 
 
@@ -337,14 +354,42 @@ async def run_rotation(
                 pass
         return result
 
+    # Журнал намерений: перед каждой Discord-мутацией план пишется
+    # в access_rotation_runs.detail — recover_stale_runs завершает
+    # прерванный рестартом запуск по фактическому состоянию ролей.
+    plan_state: dict[str, Any] = {
+        "stage": "idle", "fills_done": [], "pending": None,
+        "swap": None,
+    }
+
+    async def _save_plan() -> None:
+        if dry_run:
+            return
+        try:
+            await access_store.set_run_plan(
+                guild.id, run_key, dict(plan_state))
+        except Exception as exc:
+            logger.warning("access: set_run_plan failed: %s", exc)
+
     if ACCESS_ROLE_ID <= 0:
         return await _fail("disabled", "ACCESS_ROLE_ID не настроен")
 
-    # --- Фактические владельцы ---
+    # Восстановление запусков, зависших в 'running' после рестарта —
+    # до резервирования нового run_key.
+    if not dry_run:
+        try:
+            await recover_stale_runs(guild)
+        except Exception:
+            logger.exception("access: stale run recovery failed")
+
+    # --- Фактические владельцы (строго: без частичного кэша) ---
     try:
-        holders = await access_role_members(guild)
+        holders = await access_role_members(guild, strict=True)
     except Exception as exc:
-        return await _fail("discord_error", f"members: {exc}")
+        return await _fail(
+            "discord_error",
+            f"holders fetch failed: {exc} — ротация пропущена "
+            "(неполный кэш не считается полным списком)")
     holder_ids = [m.id for m in holders]
     result["holders"] = [
         {"user_id": m.id, "score": 0} for m in holders
@@ -397,6 +442,9 @@ async def run_rotation(
                 break
             if kind == "auto" and uid in exemptions:
                 continue
+            # Фиксируем намерение ДО мутации Discord.
+            plan_state.update(stage="fill", pending=uid)
+            await _save_plan()
             if dry_run:
                 ok = True  # только расчёт — роль не выдаём
             else:
@@ -408,23 +456,34 @@ async def run_rotation(
                 except discord.HTTPException as exc:
                     return await _fail(
                         "discord_error", f"grant {uid}: {exc}")
+                except Exception as exc:
+                    return await _fail(
+                        "discord_error", f"grant {uid}: {exc}")
             if not ok:
+                plan_state["pending"] = None
+                await _save_plan()
                 continue
             holder_ids.append(uid)
             holder_set.add(uid)
             result["filled"].append({"user_id": uid, "score": _score(uid)})
+            if not dry_run:
+                # Журнал ДО снятия pending: окно «роль выдана, журнал
+                # не записан» сводится к recovery-проверке find_rotation.
+                try:
+                    await access_store.record_rotation(
+                        guild.id, run_key, today,
+                        old_user_id=None, new_user_id=uid,
+                        new_score=_score(uid),
+                        actor="manual" if kind == "manual" else "auto",
+                        detail="fill_empty_slot",
+                    )
+                except Exception:
+                    pass
+            plan_state["pending"] = None
+            plan_state["fills_done"].append(uid)
+            await _save_plan()
             if dry_run:
                 continue
-            try:
-                await access_store.record_rotation(
-                    guild.id, run_key, today,
-                    old_user_id=None, new_user_id=uid,
-                    new_score=_score(uid),
-                    actor="manual" if kind == "manual" else "auto",
-                    detail="fill_empty_slot",
-                )
-            except Exception:
-                pass
         if len(holder_ids) < ACCESS_MAX_HOLDERS or not candidates:
             # Мест нет или очередь пуста — замены не будет.
             if not result["filled"]:
@@ -505,16 +564,29 @@ async def run_rotation(
         return result
 
     # --- Замена с восстановлением при сбое ---
+    # План фиксируется до каждой мутации: phase='revoke' → 'grant'.
+    plan_state.update(
+        stage="swap",
+        swap={"old": old_uid, "new": new_uid, "phase": "revoke"},
+    )
+    await _save_plan()
     try:
-        await _revoke(guild, old_uid)
+        revoked = await _revoke(guild, old_uid)
     except discord.Forbidden:
         return await _fail("discord_forbidden",
                            f"revoke {old_uid}: Forbidden")
     except discord.HTTPException as exc:
         return await _fail("discord_error", f"revoke {old_uid}: {exc}")
+    except Exception as exc:
+        return await _fail("discord_error", f"revoke {old_uid}: {exc}")
+    if not revoked:
+        return await _fail(
+            "discord_error", f"revoke {old_uid}: member/role missing")
 
+    plan_state["swap"]["phase"] = "grant"
+    await _save_plan()
     try:
-        await _grant(guild, new_uid)
+        granted = await _grant(guild, new_uid)
     except Exception as exc:
         # Восстановление прежнего владельца.
         try:
@@ -526,6 +598,17 @@ async def run_rotation(
         return await _fail(
             "discord_error",
             f"grant {new_uid} failed ({exc}); old restored")
+    if not granted:
+        # _grant вернул False (member/role недоступны) — откат.
+        try:
+            await _grant(guild, old_uid)
+        except Exception:
+            logger.error(
+                "access rotation: restore grant failed guild=%s "
+                "user=%s", guild.id, old_uid)
+        return await _fail(
+            "discord_error",
+            f"grant {new_uid}: member/role missing; old restored")
     try:
         await access_store.record_rotation(
             guild.id, run_key, today,
@@ -538,6 +621,156 @@ async def run_rotation(
     except Exception as exc:
         logger.warning("access rotation: journal failed: %s", exc)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Восстановление прерванных запусков
+# ---------------------------------------------------------------------------
+
+# Запуск, висящий в 'running' дольше этого срока, считается
+# прерванным (Discord-операции ротации занимают секунды).
+STALE_RUN_SECONDS = 600
+
+
+def _parse_run_plan(detail) -> dict[str, Any] | None:
+    try:
+        plan = json.loads(detail) if detail else None
+    except Exception:
+        return None
+    return plan if isinstance(plan, dict) else None
+
+
+async def _backfill_fill_journal(
+    guild: discord.Guild, run: dict, uid: int, scores: dict[int, int],
+) -> None:
+    """Дописать журнал выдачи, если роль выдана, а записи нет."""
+    try:
+        if await access_store.find_rotation(
+                guild.id, run["run_key"], new_user_id=uid):
+            return
+        await access_store.record_rotation(
+            guild.id, run["run_key"], run.get("day"),
+            old_user_id=None, new_user_id=uid,
+            new_score=scores.get(uid, 0),
+            actor=run.get("kind") or "auto",
+            detail="fill_empty_slot",
+        )
+    except Exception as exc:
+        logger.warning("access: backfill fill journal failed: %s", exc)
+
+
+async def _recover_run(guild: discord.Guild, run: dict) -> dict[str, Any]:
+    """Завершить один зависший запуск по фактическому состоянию
+    Discord-ролей и JSON-плану из detail."""
+    run_key = run["run_key"]
+    plan = _parse_run_plan(run.get("detail"))
+    stage = (plan or {}).get("stage")
+
+    async def _finish(status: str, detail: str) -> dict[str, Any]:
+        try:
+            await access_store.finish_run(
+                guild.id, run_key, status, detail[:500])
+        except Exception:
+            pass
+        return {"run_key": run_key, "status": status, "detail": detail}
+
+    # Строгий список владельцев — решение принимаем по факту.
+    try:
+        holders = await access_role_members(guild, strict=True)
+    except Exception as exc:
+        return await _finish(
+            "interrupted", f"holders fetch failed: {exc}")
+    holder_ids = {m.id for m in holders}
+
+    if stage == "fill":
+        pending = (plan or {}).get("pending")
+        if pending:
+            uid = int(pending)
+            if uid not in holder_ids:
+                # Грант не дошёл — довыдаём (идемпотентно).
+                try:
+                    await _grant(guild, uid)
+                except Exception as exc:
+                    return await _finish(
+                        "interrupted",
+                        f"re-grant pending {uid} failed: {exc}")
+            scores = await activity_scores(guild.id, [uid]) or {}
+            await _backfill_fill_journal(guild, run, uid, scores)
+        return await _finish(
+            "done", "recovered: fill stage completed/verified")
+
+    if stage == "swap":
+        sw = (plan or {}).get("swap") or {}
+        try:
+            old_uid = int(sw.get("old"))
+            new_uid = int(sw.get("new"))
+        except (TypeError, ValueError):
+            return await _finish("interrupted", "swap plan malformed")
+        old_has = old_uid in holder_ids
+        new_has = new_uid in holder_ids
+
+        if old_has and not new_has:
+            # Замена не началась/откачена — оставляем как есть.
+            return await _finish(
+                "interrupted", "swap not applied; holders unchanged")
+        if not old_has and new_has:
+            # Замена завершена — журнал мог не записаться.
+            try:
+                if not await access_store.find_rotation(
+                        guild.id, run_key,
+                        old_user_id=old_uid, new_user_id=new_uid):
+                    scores = await activity_scores(
+                        guild.id, [old_uid, new_uid]) or {}
+                    await access_store.record_rotation(
+                        guild.id, run_key, run.get("day"),
+                        old_user_id=old_uid, new_user_id=new_uid,
+                        old_score=scores.get(old_uid, 0),
+                        new_score=scores.get(new_uid, 0),
+                        actor=run.get("kind") or "auto",
+                        detail={"recovered": True},
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "access: swap journal backfill failed: %s", exc)
+            return await _finish(
+                "done", "recovered: swap already applied")
+        if not old_has and not new_has:
+            # revoke прошёл, grant упал — восстанавливаем старого.
+            try:
+                await _grant(guild, old_uid)
+            except Exception as exc:
+                return await _finish(
+                    "error", f"restore old {old_uid} failed: {exc}")
+            return await _finish(
+                "interrupted",
+                f"grant failed mid-swap; old {old_uid} restored")
+        # Обе роли есть — неоднозначное состояние, не трогаем.
+        return await _finish(
+            "interrupted", "ambiguous: both old and new hold role")
+
+    # idle/нет плана — мутаций не было, безопасно закрыть.
+    return await _finish("interrupted", "no plan recorded")
+
+
+async def recover_stale_runs(guild: discord.Guild) -> list[dict[str, Any]]:
+    """Найти и завершить запуски, зависшие в 'running' после
+    рестарта/падения процесса. Вызывать перед новым запуском."""
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=STALE_RUN_SECONDS)
+        runs = await access_store.stale_running_runs(guild.id, cutoff)
+    except Exception as exc:
+        logger.warning("access: stale runs query failed: %s", exc)
+        return []
+    results = []
+    for run in runs:
+        try:
+            results.append(await _recover_run(guild, run))
+        except Exception:
+            logger.exception(
+                "access: recover run failed guild=%s key=%s",
+                guild.id, run.get("run_key"))
+    return results
 
 
 # ---------------------------------------------------------------------------

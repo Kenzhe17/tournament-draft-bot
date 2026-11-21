@@ -205,6 +205,55 @@ async def finish_run(
         )
 
 
+async def get_run(guild_id: int, run_key: str) -> dict[str, Any] | None:
+    """Строка запуска: status, detail (JSON-план), created_at."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _ensure(conn)
+        row = await conn.fetchrow(
+            "SELECT run_key, day, kind, status, detail, created_at "
+            "FROM access_rotation_runs WHERE guild_id=$1 AND run_key=$2",
+            guild_id, run_key,
+        )
+    if not row:
+        return None
+    return dict(row)
+
+
+async def stale_running_runs(
+    guild_id: int, older_than: datetime,
+) -> list[dict[str, Any]]:
+    """Запуски, зависшие в status='running' старше older_than —
+    кандидат на восстановление после рестарта/падения процесса."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _ensure(conn)
+        rows = await conn.fetch(
+            "SELECT run_key, day, kind, detail, created_at "
+            "FROM access_rotation_runs "
+            "WHERE guild_id=$1 AND status='running' AND created_at < $2",
+            guild_id, older_than,
+        )
+    return [dict(r) for r in rows]
+
+
+async def set_run_plan(
+    guild_id: int, run_key: str, plan: dict[str, Any],
+) -> None:
+    """Записать JSON-план запуска в detail (status остаётся
+    'running'). Вызывается ПЕРЕД каждой Discord-мутацией —
+    точка восстановления после рестарта."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _ensure(conn)
+        await conn.execute(
+            "UPDATE access_rotation_runs SET detail=$3 "
+            "WHERE guild_id=$1 AND run_key=$2",
+            guild_id, run_key,
+            json.dumps(plan, ensure_ascii=False)[:4000],
+        )
+
+
 # ---------------------------------------------------------------------------
 # Журнал замен
 # ---------------------------------------------------------------------------
@@ -238,6 +287,31 @@ async def record_rotation(
             if isinstance(detail, (dict, list))
             else (str(detail)[:500] if detail else None),
         )
+
+
+async def find_rotation(
+    guild_id: int,
+    run_key: str,
+    *,
+    old_user_id: int | None = None,
+    new_user_id: int | None = None,
+) -> bool:
+    """Есть ли журнальная запись замены для запуска (дедупликация
+    при восстановлении после рестарта)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _ensure(conn)
+        row = await conn.fetchrow(
+            """
+            SELECT 1 FROM access_rotations
+            WHERE guild_id=$1 AND run_key=$2
+              AND ($3::bigint IS NULL OR old_user_id=$3)
+              AND ($4::bigint IS NULL OR new_user_id=$4)
+            LIMIT 1
+            """,
+            guild_id, run_key, old_user_id, new_user_id,
+        )
+    return row is not None
 
 
 async def last_rotation(guild_id: int) -> dict[str, Any] | None:
