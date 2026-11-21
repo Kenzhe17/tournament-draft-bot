@@ -230,7 +230,7 @@ async def list_events(
         clauses.append(f"source = ${len(params)}")
     if exclude_organizer:
         clauses.append(
-            "(source <> 'organizer' AND action NOT LIKE 'organizer.%')")
+            "(source IS DISTINCT FROM 'organizer' AND action NOT LIKE 'organizer.%')")
     params.extend([limit, offset])
     lim_i, off_i = len(params) - 1, len(params)
 
@@ -278,7 +278,7 @@ async def count_events(
         clauses.append(f"source = ${len(params)}")
     if exclude_organizer:
         clauses.append(
-            "(source <> 'organizer' AND action NOT LIKE 'organizer.%')")
+            "(source IS DISTINCT FROM 'organizer' AND action NOT LIKE 'organizer.%')")
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -346,7 +346,7 @@ async def unpublished_events(limit: int = 50) -> list[dict[str, Any]]:
             SELECT * FROM tournament_audit_log
             WHERE discord_message_id IS NULL
               AND status IN ('success', 'pending')
-              AND source <> 'organizer'
+              AND source IS DISTINCT FROM 'organizer'
               AND action NOT LIKE 'organizer.%'
               AND NOT (
                   tournament_id IS NOT NULL
