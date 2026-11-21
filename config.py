@@ -61,6 +61,17 @@ ORG_1_ROLE_ID = int(os.getenv("ORG_1_ROLE_ID", "0"))
 ORG_2_ROLE_ID = int(os.getenv("ORG_2_ROLE_ID", "0"))
 ORG_3_ROLE_ID = int(os.getenv("ORG_3_ROLE_ID", "0"))
 
+# Ежедневная ротация роли «Доступ» (daily access rotation).
+ACCESS_ROLE_ID = int(os.getenv("ACCESS_ROLE_ID", "1566949895078940672"))
+ACCESS_ROTATION_CHANNEL_ID = int(
+    os.getenv("ACCESS_ROTATION_CHANNEL_ID") or "0"
+)
+# Имена канала панели (fallback, если ID не задан в env).
+ACCESS_CHANNEL_NAMES = ("доступ-ротация", "access-rotation", "access_rotation")
+ACCESS_MAX_HOLDERS = 10
+ACCESS_ROTATION_HOUR = 21          # Asia/Almaty
+ACCESS_NEW_HOLDER_PROTECT_HOURS = 72
+
 
 def _parse_channel_role_map(raw: str) -> dict[int, int]:
     """'cid:rid,cid:rid,...' → {channel_id: role_id}."""

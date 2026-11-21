@@ -94,6 +94,11 @@ class A:
     MM_RESULT_CONFIRM = "mm.result_confirm"
     # Магазин
     SHOP_NICKNAME_CHANGE = "shop.nickname_change"
+    # Ротация доступа
+    ACCESS_ROTATE = "access.rotate"
+    ACCESS_JOIN = "access.join"
+    ACCESS_LEAVE = "access.leave"
+    ACCESS_EXEMPT = "access.exempt"
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +223,10 @@ _ACTION_TITLES = {
     A.MM_KD_SUBMIT: "MM K/D ОТПРАВЛЕН",
     A.MM_RESULT_CONFIRM: "MM РЕЗУЛЬТАТ ПОДТВЕРЖДЁН",
     A.SHOP_NICKNAME_CHANGE: "СМЕНА НИКА (МАГАЗИН)",
+    A.ACCESS_ROTATE: "РОТАЦИЯ ДОСТУПА",
+    A.ACCESS_JOIN: "ЗАЯВКА НА ДОСТУП",
+    A.ACCESS_LEAVE: "ОТЗЫВ ЗАЯВКИ НА ДОСТУП",
+    A.ACCESS_EXEMPT: "ACCESS EXEMPT",
 }
 
 _SOURCE_LABELS = {
