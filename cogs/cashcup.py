@@ -1209,14 +1209,20 @@ class CashCupCog(commands.Cog):
         view = (_MyDataView(self, target.get("id") if target else None,
                             _tid(state) or None)
                 if target is not None else None)
+        # view=None нельзя передавать в discord.py напрямую:
+        # send_message проверяет view.is_finished() → AttributeError
+        # (None не является MISSING). Передаём только реальный View.
+        _view_kw = {"view": view} if view is not None else {}
         if interaction.response.is_done():
             await interaction.followup.send(
-                "\n".join(lines)[:1900], view=view, ephemeral=True,
-                allowed_mentions=discord.AllowedMentions.none())
+                "\n".join(lines)[:1900], ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+                **_view_kw)
         else:
             await interaction.response.send_message(
-                "\n".join(lines)[:1900], view=view, ephemeral=True,
-                allowed_mentions=discord.AllowedMentions.none())
+                "\n".join(lines)[:1900], ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+                **_view_kw)
 
     async def sub_offer_teams(self, interaction: discord.Interaction,
                               *, state: dict | None = None) -> None:
