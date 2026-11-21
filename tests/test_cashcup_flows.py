@@ -1750,3 +1750,20 @@ async def test_start_report_includes_all_problems_no_truncation(cog):
     assert n_ff_uid == 4 and n_admin == 4
     assert "ещё" not in all_text  # нет «… ещё N» хвоста
     assert all(len(m) <= 2000 for m, _ in i.followup.sent)
+
+
+@pytest.mark.asyncio
+async def test_my_data_no_team_sends_without_view_kwarg(cog):
+    """Regression: игрок не в команде → view=None. Раньше
+    send_message(view=None) падал с AttributeError
+    ('NoneType'.is_finished) — кнопка «Мои данные» ломалась."""
+    cog._state_cache[1] = (time.monotonic(), _my_data_state())
+    i = make_interaction(_member(999))  # нет в teams
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+    await v.my_data.callback(i)
+    msg, kw = i.response.sent[-1]
+    assert "МОИ ДАННЫЕ" in msg or "не состоите" in msg.lower() \
+        or "команд" in msg.lower()
+    assert "view" not in kw or kw.get("view") is not None
