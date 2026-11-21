@@ -941,17 +941,29 @@ def _component_custom_ids(component) -> list[str]:
 async def find_panel_message(channel, *, limit: int = 100):
     """Найти уже опубликованную панель в канале.
 
+    Возвращает ``(message | None, complete: bool)``:
+    - ``complete=True`` — история просмотрена полностью,
+      отсутствие панели подтверждено;
+    - ``complete=False`` — поиск не удался или просмотрена
+      только часть истории (лимит исчерпан без находки) —
+      вызывающий код НЕ должен отправлять новую панель,
+      иначе возможен дубликат действующей.
+
     Признаки: автор — этот бот, среди компонентов есть custom_id
-    кнопок панели (``access:*``). None — панели нет или канал
-    не поддерживает историю (ошибки логируются, не пробрасываются).
+    кнопок панели (``access:*``).
     """
     history = getattr(channel, "history", None)
     if history is None:
-        return None
+        logger.warning(
+            "access: panel search impossible channel=%s — "
+            "no history()", getattr(channel, "id", "?"))
+        return None, False
     guild = getattr(channel, "guild", None)
     bot_id = _bot_user_id(guild) if guild is not None else None
+    scanned = 0
     try:
         async for message in history(limit=limit):
+            scanned += 1
             if bot_id is not None:
                 author = getattr(message, "author", None)
                 if getattr(author, "id", None) != bot_id:
@@ -960,16 +972,20 @@ async def find_panel_message(channel, *, limit: int = 100):
             for comp in getattr(message, "components", None) or []:
                 ids.extend(_component_custom_ids(comp))
             if any(cid in _PANEL_CUSTOM_IDS for cid in ids):
-                return message
+                return message, True
     except discord.HTTPException as exc:
         logger.warning(
             "access: panel search failed channel=%s: %s",
             getattr(channel, "id", "?"), exc)
+        return None, False
     except Exception as exc:
         logger.warning(
             "access: panel search error channel=%s: %s",
             getattr(channel, "id", "?"), exc)
-    return None
+        return None, False
+    # Просмотрели ровно limit сообщений и не нашли — возможно,
+    # панель старше окна истории: результат неполный.
+    return None, scanned < limit
 
 
 async def refresh_panel(guild: discord.Guild) -> bool:
@@ -999,8 +1015,15 @@ async def refresh_panel(guild: discord.Guild) -> bool:
                     "access panel refresh fetch failed: %s", exc)
                 return False
         if message is None:
-            message = await find_panel_message(channel)
+            message, search_complete = await find_panel_message(
+                channel)
             if message is None:
+                if not search_complete:
+                    # Неполный/неудачный поиск — не трогаем панель.
+                    logger.warning(
+                        "access: panel search incomplete "
+                        "channel=%s — refresh skipped",
+                        getattr(channel, "id", "?"))
                 return False
             try:
                 await access_store.set_panel(
