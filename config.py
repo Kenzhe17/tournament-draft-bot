@@ -188,6 +188,12 @@ REP_LOG_CHANNEL_NAME = os.getenv("REP_LOG_CHANNEL_NAME", "репутация-л�
 # (если 0 — ищется канал с именем info/информация или задаётся параметром)
 INFO_CHANNEL_ID = int(os.getenv("INFO_CHANNEL_ID", "0"))
 
+# Закреплённый канал панели ротации доступа (реконструкция
+# сервера привязывает binding 'access' строго по этому ID).
+ACCESS_ROTATION_CHANNEL_ID = int(
+    os.getenv("ACCESS_ROTATION_CHANNEL_ID") or "0"
+)
+
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
 MIN_BET = 10  # Минимальная ставка
