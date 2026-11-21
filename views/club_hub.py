@@ -150,7 +150,56 @@ async def build_page(interaction, key):
             if rid:
                 view.row(HubButton(f'notify_{format_key}', 'Отключить' if rid in member_roles else 'Подписаться', owner_id=uid))
     elif key == 'organizer':
+        from config import (ACCESS_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID,
+                            ORG_3_ROLE_ID, ORG_ROLE_MAP)
         from services.club_hub import managed_events
+        member = await interaction.guild.fetch_member(uid)
+        member_rids = {r.id for r in member.roles}
+        has_access = bool(ACCESS_ROLE_ID) and ACCESS_ROLE_ID in member_rids
+        org_pairs = [(ORG_1_ROLE_ID, 'ORG-1'), (ORG_2_ROLE_ID, 'ORG-2'),
+                     (ORG_3_ROLE_ID, 'ORG-3')]
+        held = [(rid, name) for rid, name in org_pairs
+                if rid and rid in member_rids]
+        # Состояние слотов ORG-панели и ссылки.
+        try:
+            from views.org_role_view import load_state as _org_load
+            _ost = _org_load()
+        except Exception:
+            _ost = None
+        occupied = set()
+        if _ost is not None:
+            for rid, _n in org_pairs:
+                occupied.update(_ost.get_holders(rid))
+        view.text('**Организатор**')
+        if not has_access:
+            view.text('Нет роли «Доступ». Подайте заявку в канале '
+                      'ротации доступа — после получения роли бот '
+                      'пришлёт инструкцию. Подробности: кнопка '
+                      '«Как стать организатором» на панели ротации.')
+        else:
+            free = [name for rid, name in org_pairs
+                    if rid and not _ost.get_holders(rid)] \
+                if _ost is not None else [n for _, n in org_pairs]
+            if held:
+                for rid, name in held:
+                    ch = next((c for c, r in ORG_ROLE_MAP.items()
+                               if r == rid), None)
+                    ch_name = ''
+                    if ch is not None:
+                        chan = interaction.guild.get_channel(ch)
+                        ch_name = f' · канал {chan.mention}' \
+                            if chan else f' · канал {ch}'
+                    view.text(f'Ваша роль: **{name}**{ch_name}')
+                view.text('Создание турнира: `/tournament create` '
+                          '(size 8/16/32, formation draft/'
+                          'balanced-sr/random) — в канале вашей роли. '
+                          'После завершения сдайте роль в ORG-панели.')
+            else:
+                slots = ', '.join(free) if free else 'нет свободных'
+                view.text(f'«Доступ» есть. Свободные ORG-слоты: '
+                          f'**{slots}**. Займите слот на панели '
+                          'организатора и откройте её кнопкой '
+                          '«Панель организатора» в ротации.')
         events, unavailable = await managed_events(interaction.guild, interaction.user)
         view.text('**Ваши турниры**')
         if not events:
