@@ -157,38 +157,62 @@ class DropRewardStore:
             )
             return [dict(r) for r in rows]
 
-    async def complete(self, grant_key: str) -> None:
-        """Отметить награду выданной. Идемпотентно."""
+    async def complete(self, grant_key: str,
+                       attempts: int | None = None) -> bool:
+        """Отметить награду выданной. Только из статуса processing
+        и только владельцем текущего lease (fencing по attempts):
+        устаревший worker после перехвата строки не сможет
+        «завершить» чужую обработку. completed→pending невозможен
+        по построению (retry требует processing)."""
         pool = await self._pool()
         async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE drop_coin_rewards
-                SET status = 'completed', completed_at = now(),
-                    locked_until = NULL, last_error = NULL
-                WHERE grant_key = $1
-                """,
-                grant_key,
-            )
+            if attempts is None:
+                res = await conn.execute(
+                    """
+                    UPDATE drop_coin_rewards
+                    SET status = 'completed', completed_at = now(),
+                        locked_until = NULL, last_error = NULL
+                    WHERE grant_key = $1 AND status = 'processing'
+                    """,
+                    grant_key,
+                )
+            else:
+                res = await conn.execute(
+                    """
+                    UPDATE drop_coin_rewards
+                    SET status = 'completed', completed_at = now(),
+                        locked_until = NULL, last_error = NULL
+                    WHERE grant_key = $1 AND status = 'processing'
+                      AND attempts = $2
+                    """,
+                    grant_key, attempts,
+                )
+            # asyncpg execute → "UPDATE n"
+            return res == "UPDATE 1"
 
-    async def retry(self, grant_key: str, error: str,
-                    delay_seconds: float) -> None:
-        """Вернуть награду в pending с backoff. Технический код
-        ошибки без секретов, обрезан до 200 символов."""
+    async def retry(self, grant_key: str, attempts: int,
+                    error: str, delay_seconds: float) -> bool:
+        """Вернуть награду в pending с backoff — только владельцу
+        текущего lease (status='processing' AND attempts=$2).
+        Переход completed→pending невозможен: completed-строки
+        не матчат WHERE. Технический код ошибки без секретов,
+        обрезан до 200 символов."""
         pool = await self._pool()
         async with pool.acquire() as conn:
-            await conn.execute(
+            res = await conn.execute(
                 """
                 UPDATE drop_coin_rewards
                 SET status = 'pending',
                     locked_until = NULL,
-                    next_attempt_at = now() + ($2 || ' seconds')::interval,
-                    last_error = $3
-                WHERE grant_key = $1
+                    next_attempt_at = now() + ($3 || ' seconds')::interval,
+                    last_error = $4
+                WHERE grant_key = $1 AND status = 'processing'
+                  AND attempts = $2
                 """,
-                grant_key, str(max(0.0, delay_seconds)),
+                grant_key, attempts, str(max(0.0, delay_seconds)),
                 (error or "")[:200],
             )
+            return res == "UPDATE 1"
 
     async def pending_count(self) -> int:
         pool = await self._pool()

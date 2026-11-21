@@ -206,3 +206,100 @@ async def test_repeat_processing_same_reward_once(pg_pool):
                 "UPDATE drop_coin_rewards SET locked_until = now() - interval '1s' "
                 "WHERE grant_key = 'raffledrop:e7' AND status != 'completed'")
     assert await _balance(1, 44) == 800  # 100 + 700, не 1600/2400
+
+
+@pytest.mark.asyncio
+async def test_record_different_user_keeps_first_owner(pg_pool):
+    """Повторный grant_key с ДРУГИМ user_id не перезаписывает
+    победителя — «other» определяется по row.user_id."""
+    s = drs.drop_reward_store
+    r1 = await s.record("speeddrop:own", "speed", 1, 42, 300)
+    r2 = await s.record("speeddrop:own", "speed", 1, 99, 300)
+    assert r2["user_id"] == 42  # первый владелец сохранён
+    assert int(r2["user_id"]) != 99  # → grant вернёт "other"
+
+
+@pytest.mark.asyncio
+async def test_stale_worker_cannot_complete_or_retry(pg_pool):
+    """Lease перехвачен другим worker (attempts вырос):
+    устаревший complete/retry со старым attempts → False,
+    строка не портится."""
+    s = drs.drop_reward_store
+    await s.record("speeddrop:f1", "speed", 1, 5, 100)
+    row1 = await s.claim_key("speeddrop:f1")       # attempts=1
+    assert row1["attempts"] == 1
+    # Lease «истёк», второй worker забрал строку.
+    async with pg_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE drop_coin_rewards SET locked_until = now() - interval '1s' "
+            "WHERE grant_key = 'speeddrop:f1'")
+    row2 = await s.claim_due()
+    row2 = [r for r in row2 if r["grant_key"] == "speeddrop:f1"][0]
+    assert row2["attempts"] == 2
+    # Устаревший worker пытается завершить/отложить чужую обработку.
+    assert await s.complete("speeddrop:f1", attempts=1) is False
+    assert await s.retry("speeddrop:f1", 1, "stale", 30) is False
+    # Актуальный владелец завершает успешно.
+    assert await s.complete("speeddrop:f1", attempts=2) is True
+    # completed → pending невозможен даже прямым retry.
+    assert await s.retry("speeddrop:f1", 2, "late", 30) is False
+    async with pg_pool.acquire() as conn:
+        st = await conn.fetchval(
+            "SELECT status FROM drop_coin_rewards WHERE grant_key='speeddrop:f1'")
+    assert st == "completed"
+
+
+@pytest.mark.asyncio
+async def test_lease_expiry_during_processing_single_credit(pg_pool):
+    """Lease истёк прямо во время обработки: второй worker
+    подхватывает строку, но add_balance_once дедуплицирует —
+    баланс увеличен ровно один раз, completed ставит новый
+    владелец lease."""
+    s = drs.drop_reward_store
+    await s.record("speeddrop:f2", "speed", 1, 6, 800)
+    row1 = await s.claim_key("speeddrop:f2")  # attempts=1, lease 120s
+    # Lease истекает до завершения обработки.
+    async with pg_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE drop_coin_rewards SET locked_until = now() - interval '1s' "
+            "WHERE grant_key = 'speeddrop:f2'")
+    # Worker B забирает и обрабатывает.
+    rows = await s.claim_due()
+    rowB = [r for r in rows if r["grant_key"] == "speeddrop:f2"][0]
+    assert rowB["attempts"] == 2
+    assert await _cog()._process_drop_reward(rowB) is True
+    # Устаревший worker A «догоняет» — его complete отклонён fencing'ом.
+    assert await s.complete("speeddrop:f2", attempts=1) is False
+    assert await _balance(1, 6) == 900  # 100 + 800, не 1700
+
+
+@pytest.mark.asyncio
+async def test_button_claim_and_worker_disjoint(pg_pool):
+    """Обработчик кнопки (claim_key) и worker (claim_due) не
+    получают одну и ту же награду параллельно."""
+    s = drs.drop_reward_store
+    for i in range(4):
+        await s.record(f"speeddrop:cc{i}", "speed", 1, 200 + i, 50)
+    # «Кнопка» забирает один ключ напрямую.
+    btn_row = await s.claim_key("speeddrop:cc0")
+    assert btn_row is not None
+    # Worker забирает партию — cc0 уже processing под lease,
+    # в выдачу не попадает.
+    rows = await s.claim_due(10)
+    keys = {r["grant_key"] for r in rows}
+    assert "speeddrop:cc0" not in keys
+    assert keys == {"speeddrop:cc1", "speeddrop:cc2", "speeddrop:cc3"}
+
+
+@pytest.mark.asyncio
+async def test_repeat_recovery_run_idempotent(pg_pool):
+    """Повторный запуск recovery (claim_due второй раз):
+    completed-строки не выдаются, pending — ровно один раз."""
+    s = drs.drop_reward_store
+    await s.record("raffledrop:rr", "raffle", 1, 15, 250)
+    cog = _cog()
+    await cog._process_drop_reward(await s.claim_key("raffledrop:rr"))
+    # «Повторный recovery» — claim_due не видит completed.
+    rows = await s.claim_due()
+    assert all(r["grant_key"] != "raffledrop:rr" for r in rows)
+    assert await _balance(1, 15) == 350
