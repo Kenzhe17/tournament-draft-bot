@@ -31,6 +31,7 @@ from services import cashcup_bracket as cb
 class FakeResponse:
     def __init__(self):
         self.sent = []
+        self.edits = []
         self.modal = None
         self._done = False
 
@@ -39,6 +40,10 @@ class FakeResponse:
 
     async def send_message(self, msg, **kw):
         self.sent.append((msg, kw))
+        self._done = True
+
+    async def edit_message(self, content=None, **kw):
+        self.edits.append((content, kw))
         self._done = True
 
     async def defer(self, **kw):
@@ -1610,3 +1615,110 @@ async def test_start_diag_gate_passes_ready(cog, monkeypatch):
     await cog.start(i)
     assert st["status"] == "running" or \
         any(a["action"] == "start" for a in cog._store.audits)
+
+
+# ---------------- Review fixes: >5 членов, chunked start, admin status ----
+
+def test_diag_over_5_members_structural_error(cog):
+    """Regression: состав >5 — структурная ошибка, verify не
+    подтверждает."""
+    members = [_full_player(10 + i, verified=True) for i in range(6)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    d = cashcup._team_diag(st, st["teams"][0])
+    assert d["status"] == "Ошибка состава"
+    assert any("максимум 5" in p for p in d["problems"])
+
+
+@pytest.mark.asyncio
+async def test_verify_rejects_over_5_members(cog):
+    members = [_full_player(10 + i, verified=False) for i in range(6)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    await cog.verify(i, "Alpha")
+    assert not any(p["verified"] for p in st["teams"][0]["members"])
+    assert "5" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_start_13_bad_teams_all_problems_visible(cog):
+    """13 проблемных команд: отчёт уходит несколькими
+    ephemeral-сообщениями, ни одна команда не потеряна."""
+    st = _reg_state()
+    st["prizes"] = {"places": {"1": 1000, "2": 0, "3": 0},
+                    "currency": "KZT", "total": 1000}
+    st["teams"] = [
+        _team(f"t{i}", f"Team{i:02d}", i * 10,
+              [_full_player(i * 10 + j, ff_ok=False) for j in range(4)])
+        for i in range(13)
+    ]
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    await cog.start(i)
+    # followup.sent — все chunked-сообщения (response уже deferred).
+    all_text = "\n".join(m for m, _ in i.followup.sent)
+    for n in range(13):
+        assert f"Team{n:02d}" in all_text, f"Team{n:02d} потеряна"
+    assert "старт невозможен" in all_text.lower()
+    assert st["status"] == "registration"
+
+
+@pytest.mark.asyncio
+async def test_confirm_ff_reports_real_admin_status(cog, monkeypatch):
+    """Ответ confirm_ff отражает реальный verified: ожидает /
+    подтверждён — в зависимости от сохранённого флага."""
+    st = _reg_state()
+    stored_uid = "7700001"
+    p = _full_player(1, verified=True, ff=stored_uid)
+    st["teams"] = [_team("t1", "Alpha", 1, [p])]
+    cog._store.state = st
+
+    async def fake_member_check(bot, guild, uid):
+        return "t"
+    async def fake_ff(uid, region):
+        return {"ff_uid": uid.strip(), "region": region,
+                "nick": "nick1"}
+    monkeypatch.setattr(cashcup, "_member_check", fake_member_check)
+    monkeypatch.setattr(cashcup, "_ff_profile", fake_ff)
+
+    # Повтор тех же данных при verified=True -> «ADMIN: подтверждён».
+    i = make_interaction(_member(1))
+    await cog.confirm_ff(i, "t1", stored_uid, "ru", "mobile")
+    assert "ADMIN: подтверждён" in _last(i)
+
+    # verified=False -> «ADMIN: ожидает проверки».
+    st["teams"][0]["members"][0]["verified"] = False
+    i2 = make_interaction(_member(1))
+    await cog.confirm_ff(i2, "t1", stored_uid, "ru", "mobile")
+    assert "ожидает проверки" in _last(i2)
+
+
+@pytest.mark.asyncio
+async def test_teams_pagination_buttons_edit_message(cog):
+    """Real discord.ui.View: «Команды» -> ▶ правит то же
+    сообщение на страницу 2 без новых send."""
+    teams = [_team(f"t{i}", f"Team{i:02d}", i,
+                   [_full_player(i * 10 + j) for j in range(1)])
+             for i in range(12)]
+    cog._store.state = _state_with_teams(teams)
+    i = make_interaction(_member(1))
+    i.client = FakeClient(cog)
+    await cog.show_teams(i)
+    # Deferred -> followup.send с view=TeamsView(page0 of 3).
+    assert i.followup.sent, "список не отправлен"
+    _, kw = i.followup.sent[-1]
+    view = kw["view"]
+    assert isinstance(view, cashcup.TeamsView)
+    assert "Team00" in i.followup.sent[-1][0]
+    # Клик ▶ — component interaction: edit_message, не send.
+    i2 = make_interaction(_member(1))
+    i2.client = FakeClient(cog)
+    nxt = [b for b in view.children
+           if getattr(b, "label", "") == "▶"]
+    assert nxt, "нет кнопки ▶"
+    await nxt[0].callback(i2)
+    assert i2.response.edits, "страница не отредактирована"
+    content, ekw = i2.response.edits[-1]
+    assert ekw.get("view") is not None
+    assert "Team05" in content and "Team00" not in content
+    assert "стр. 2/3" in content

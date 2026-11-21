@@ -173,6 +173,8 @@ def _team_diag(state: dict, team: dict, *,
     готовности и статус. Не изменяет состояние."""
     members = team.get("members") or []
     structural: list[str] = []
+    if len(members) > 5:
+        structural.append("состав превышает максимум 5 игроков")
     dids = [p.get("discord_id") for p in members]
     if len(dids) != len(set(dids)):
         structural.append("дублирующийся Discord ID в составе")
@@ -1102,12 +1104,23 @@ class CashCupCog(commands.Cog):
                        if p.get("device") == "pc") > 2:
                     raise CashCupError("Максимум 2 ПК/эмулятора на весь состав")
 
-            await self._post(interaction, "confirm_ff", change,
-                             {"team_id": team_id}, tid=tid)
+            new_state, _ = await self._post(
+                interaction, "confirm_ff", change,
+                {"team_id": team_id}, tid=tid)
+            # Реальный статус ADMIN после операции: verified
+            # сохраняется при повторе тех же данных, сбрасывается
+            # при смене UID/региона/устройства.
+            uid_ = interaction.user.id
+            verified_now = any(
+                p.get("discord_id") == uid_ and p.get("verified")
+                for t in (new_state or {}).get("teams", [])
+                for p in t.get("members", []) + t.get("pending", []))
+            admin_status = ("ADMIN: подтверждён" if verified_now
+                            else "ADMIN: ожидает проверки")
             await self._reply(
                 interaction,
                 f"Free Fire подтверждён: **{safe_text(ff['nick'])}** "
-                f"(`{ff['ff_uid']}`, {device}). Ожидает проверки ADMIN.")
+                f"(`{ff['ff_uid']}`, {device}). {admin_status}.")
         except CashCupError as exc:
             await self._reply(interaction, str(exc))
         except FreeFireError as exc:
@@ -1578,6 +1591,26 @@ class CashCupCog(commands.Cog):
             await interaction.response.send_message(message, ephemeral=True,
                                                     allowed_mentions=discord.AllowedMentions.none())
 
+    async def _reply_chunked(self, interaction: discord.Interaction,
+                             header: str, blocks: list[str]) -> None:
+        """Длинный отчёт несколькими ephemeral-сообщениями: каждый
+        блок команды попадает в одно из сообщений целиком — при
+        любом числе команд все проблемы доступны, ничего не
+        теряется за границей 1900 символов."""
+        chunks: list[str] = []
+        cur = header
+        for block in blocks:
+            if len(cur) + len(block) + 2 > 1900:
+                chunks.append(cur)
+                cur = ""
+            cur = (cur + "\n\n" + block) if cur else block
+        chunks.append(cur)
+        await self._reply(interaction, chunks[0][:1900])
+        for extra in chunks[1:]:
+            await interaction.followup.send(
+                extra[:1900], ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none())
+
     async def _guard(self, interaction: discord.Interaction, device: str = "mobile") -> str:
         if not interaction.guild or not interaction.guild_id:
             raise CashCupError("Команда доступна только на сервере r!z3")
@@ -1906,19 +1939,27 @@ class CashCupCog(commands.Cog):
             _check_prize_state(snapshot)
             # Сводка ВСЕХ проблем команд до запуска — read-only,
             # сетка не создаётся, пока проверки не пройдены.
+            # Отчёт разбивается на сообщения по ~1900 символов:
+            # при 13+ проблемных командах ни одна не обрезается —
+            # все проблемы доступны в отдельных ephemeral-ответах.
             bad = []
             for t in snapshot["teams"]:
                 d = _team_diag(snapshot, t)
                 if d["status"] != _STATUS_READY:
                     bad.append((t, d))
             if bad:
-                lines = ["**CASH CUP · старт невозможен — проблемы команд:**"]
-                for t, d in bad[:8]:
-                    lines.append(f"\n**{_label(t)}** — {d['status']}")
-                    lines += [f"- {p}" for p in d["problems"][:6]]
-                if len(bad) > 8:
-                    lines.append(f"\n… ещё {len(bad)-8} команд")
-                await self._reply(interaction, "\n".join(lines)[:1900])
+                blocks = []
+                for t, d in bad:
+                    probs = d["problems"][:12]
+                    tail = (f"\n- … ещё {len(d['problems'])-12}"
+                            if len(d["problems"]) > 12 else "")
+                    blocks.append(
+                        f"**{_label(t)}** — {d['status']}\n"
+                        + "\n".join(f"- {p}" for p in probs) + tail)
+                await self._reply_chunked(
+                    interaction,
+                    "**CASH CUP · старт невозможен — проблемы команд:**",
+                    blocks)
                 return
             await _validate_teams(self.bot, interaction.guild, snapshot)
             signature = json.dumps(snapshot["teams"], sort_keys=True)
