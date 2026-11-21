@@ -239,7 +239,7 @@ async def test_activity_score_formula(monkeypatch):
         voice_rows=[
             # 1800 сек = 30 мин → 6 очков
             {"user_id": 1, "day": today, "seconds": 1800},
-            # 30000 сек → cap 21600 → 72 очка
+            # 30000 сек → без лимита → 100 очков
             {"user_id": 2, "day": today, "seconds": 30000},
         ],
         match_rows=[
@@ -249,7 +249,7 @@ async def test_activity_score_formula(monkeypatch):
         uids=[1, 2, 3, 4],
         monkeypatch=monkeypatch,
     )
-    assert scores == {1: 26, 2: 72, 3: 10, 4: 0}
+    assert scores == {1: 26, 2: 100, 3: 10, 4: 0}
 
 
 @pytest.mark.asyncio

@@ -29,6 +29,7 @@ from cogs.groups import admin_group, bind_commands
 from services import access_rotation as rot
 from services.banner import activity as act
 from storage import access_store
+from utils.access_banner import banner_file, edit_attachments
 
 logger = logging.getLogger(__name__)
 
@@ -103,9 +104,14 @@ async def ensure_panel(guild: discord.Guild) -> bool:
         if mid:
             try:
                 message = await channel.fetch_message(int(mid))
+                edit_kwargs = {}
+                att = edit_attachments(message)
+                if att is not None:
+                    edit_kwargs["attachments"] = att
                 await message.edit(
                     view=view,
                     allowed_mentions=discord.AllowedMentions.none(),
+                    **edit_kwargs,
                 )
                 return True
             except discord.NotFound:
@@ -114,6 +120,7 @@ async def ensure_panel(guild: discord.Guild) -> bool:
                 return False
         message = await channel.send(
             view=view,
+            file=banner_file(),
             allowed_mentions=discord.AllowedMentions.none(),
         )
         await access_store.set_panel(guild.id, channel.id, message.id)

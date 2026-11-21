@@ -5,8 +5,9 @@
   access_rotate) один наименее активный владелец заменяется
   наиболее активным кандидатом из очереди — только если кандидат
   активнее;
-- активность за 7 дней: 1 очко / 5 мин голоса (cap 6 ч/сутки)
-  + 10 очков за подтверждённый матч (match_history);
+- активность за 7 дней: 1 очко / 5 мин подтверждённого голоса
+  (без дневного лимита) + 10 очков за подтверждённый матч
+  (match_history);
 - меньше 10 владельцев — свободные места заполняются из очереди
   без снятия чужих ролей;
 - защита: ORG-1/2/3, MANAGER, активные организаторские назначения,
@@ -43,11 +44,11 @@ from config import (
 )
 from services.banner import activity as act
 from storage import access_store
+from utils.access_banner import edit_attachments
 
 logger = logging.getLogger(__name__)
 
 WINDOW_DAYS = 7
-DAILY_VOICE_CAP = act.MAX_VOICE_SECONDS          # 6 ч/сутки
 VOICE_POINTS_PER_5MIN = act.POINTS_PER_5MIN      # 1 очко / 5 мин
 MATCH_POINTS = act.MATCH_POINTS                  # 10 очков / матч
 
@@ -84,7 +85,9 @@ async def activity_scores(
         from storage.db import get_pool
         pool = await get_pool()
         async with pool.acquire() as conn:
-            # Голос: cap 6 ч на КАЖДЫЕ сутки, затем сумма по дням.
+            # Голос: сырые секунды banner_voice_daily за 7 дней
+            # (дневной лимит снят — учитывается всё подтверждённое
+            # время; исторические часы не восстанавливаются).
             vrows = await conn.fetch(
                 """
                 SELECT user_id, day, seconds FROM banner_voice_daily
@@ -110,14 +113,14 @@ async def activity_scores(
         logger.warning("access rotation: activity unavailable: %s", exc)
         return None
 
-    # Очки голоса: min(seconds, 6ч) // 300 за каждый день.
+    # Очки голоса: seconds // 300 за каждый день, без cap.
     voice_pts: dict[int, int] = {}
     for r in vrows:
         uid = int(r["user_id"])
         if uid not in wanted:
             continue
         voice_pts[uid] = voice_pts.get(uid, 0) + (
-            min(int(r["seconds"]), DAILY_VOICE_CAP)
+            int(r["seconds"])
             // (VOICE_POINTS_PER_5MIN * 300)
         )
     match_cnt = {
@@ -601,9 +604,14 @@ async def refresh_panel(guild: discord.Guild) -> bool:
             except Exception:
                 return False
         message = await channel.fetch_message(int(mid))
+        edit_kwargs = {}
+        att = edit_attachments(message)
+        if att is not None:
+            edit_kwargs["attachments"] = att
         await message.edit(
             view=render_panel_view(guild, await panel_context(guild)),
             allowed_mentions=discord.AllowedMentions.none(),
+            **edit_kwargs,
         )
         return True
     except Exception as exc:

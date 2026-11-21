@@ -17,6 +17,11 @@ import discord
 from config import ACCESS_ROLE_ID
 from storage import access_store
 from services import access_rotation as rot
+from utils.access_banner import (
+    MEDIA as BANNER_MEDIA,
+    available as banner_available,
+    edit_attachments as banner_edit_attachments,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +82,14 @@ def render_panel_view(
 
     view = discord.ui.LayoutView(timeout=None)
     container = discord.ui.Container(accent_colour=discord.Colour.blurple())
+    if banner_available():
+        container.add_item(
+            discord.ui.MediaGallery(
+                discord.MediaGalleryItem(media=BANNER_MEDIA)
+            )
+        )
+        container.add_item(discord.ui.Separator(
+            spacing=discord.SeparatorSpacing.large))
     container.add_item(discord.ui.TextDisplay(content="\n".join(lines)[:4000]))
     row = discord.ui.ActionRow()
     row.add_item(_JoinButton())
