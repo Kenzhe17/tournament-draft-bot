@@ -672,3 +672,150 @@ async def test_repair_skips_forbidden_and_audits(monkeypatch):
 
 async def _coro(v):
     return v
+
+
+async def _nosleep(*a, **kw):
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 11-13. card_repair v2: recheck перед правкой, backup, идемпотентность
+# ---------------------------------------------------------------------------
+
+
+def _entry(tid="t1", mid=42, status="DAMAGED"):
+    return {
+        "kind": "tournament", "tournament_id": tid,
+        "guild_id": 1, "channel_id": 2, "message_id": mid,
+        "phase": "final", "status": status,
+        "detail": f"{status}:x",
+    }
+
+
+class _ChanV2:
+    def __init__(self, msg):
+        self._msg = msg
+
+    async def fetch_message(self, mid):
+        if self._msg is None:
+            import discord as _d
+            raise _d.NotFound(_FakeResp2(), "nf")
+        return self._msg
+
+
+class _GuildV2:
+    id = 1
+
+    def __init__(self, chan):
+        self._chan = chan
+
+    def get_channel(self, cid):
+        return self._chan
+
+
+class _BotV2:
+    def __init__(self, msg):
+        self._chan = _ChanV2(msg)
+        self.updates = []
+        self.guilds = []
+
+    def get_guild(self, gid):
+        return _GuildV2(self._chan)
+
+    async def fetch_guild(self, gid):
+        return _GuildV2(self._chan)
+
+    async def update_tournament_message(self, g, t, **kw):
+        self.updates.append((t.id, kw))
+        return True
+
+
+@pytest.mark.asyncio
+async def test_repair_recheck_skips_healthy(monkeypatch):
+    """Между scan и repair карточка стала HEALTHY → правки нет."""
+    from services import card_repair as cr
+
+    t = _FT(); t.id = "t1"; t.message_id = 42
+    monkeypatch.setattr(cr.tournament_store, "all",
+                        lambda: iter([t]))
+    monkeypatch.setattr(cr, "_scan_cashcup",
+                        lambda bot: _coro([]))
+    async def _audit(bot, result):
+        return None
+    monkeypatch.setattr(cr, "_audit_run", _audit)
+    # scan() вернёт DAMAGED, но _fetch_message (recheck) — HEALTHY.
+    monkeypatch.setattr(cr, "scan",
+                        lambda bot: _coro([_entry()]))
+    monkeypatch.setattr(cr, "_fetch_message",
+                        lambda *a: _coro((cr.HEALTHY, None)))
+    monkeypatch.setattr(cr.asyncio, "sleep", _nosleep)
+
+    bot = _BotV2(_ok_msg())
+    result = await cr.repair(bot)
+    assert bot.updates == []
+    assert result["repaired"] == []
+    assert result["skipped"][0]["detail"].startswith(
+        "recheck:not_damaged")
+
+
+@pytest.mark.asyncio
+async def test_repair_writes_backup_and_repairs(monkeypatch, tmp_path):
+    """При DAMAGED пишется JSON-бэкап состояния до правок."""
+    from services import card_repair as cr
+
+    t = _FT(); t.id = "t1"; t.message_id = 42
+    monkeypatch.setattr(cr.tournament_store, "all",
+                        lambda: iter([t]))
+    monkeypatch.setattr(cr, "_scan_cashcup",
+                        lambda bot: _coro([]))
+    async def _audit(bot, result):
+        return None
+    monkeypatch.setattr(cr, "_audit_run", _audit)
+    monkeypatch.setattr(cr, "scan",
+                        lambda bot: _coro([_entry()]))
+    monkeypatch.setattr(cr, "_fetch_message",
+                        lambda *a: _coro((cr.DAMAGED, _damaged_msg())))
+    monkeypatch.setattr(cr.asyncio, "sleep", _nosleep)
+    monkeypatch.setattr(cr, "DATA_DIR", tmp_path)
+
+    bot = _BotV2(_damaged_msg())
+    result = await cr.repair(bot)
+    assert result["repaired"] == ["t1"]
+    backups = list(tmp_path.glob("card_repair_backup_*.json"))
+    assert len(backups) == 1
+    import json as _json
+    data = _json.loads(backups[0].read_text(encoding="utf-8"))
+    assert data["tournaments"] and data["report"]
+
+
+@pytest.mark.asyncio
+async def test_repair_idempotent_second_run(monkeypatch):
+    """Повторный repair: scan видит HEALTHY → ноль правок."""
+    from services import card_repair as cr
+
+    monkeypatch.setattr(cr.tournament_store, "all",
+                        lambda: iter([]))
+    monkeypatch.setattr(cr, "_scan_cashcup",
+                        lambda bot: _coro([]))
+    async def _audit(bot, result):
+        return None
+    monkeypatch.setattr(cr, "_audit_run", _audit)
+    calls = {"n": 0}
+
+    async def _scan(bot):
+        calls["n"] += 1
+        # Первый запуск — DAMAGED, второй — HEALTHY.
+        st = cr.DAMAGED if calls["n"] == 1 else cr.HEALTHY
+        return [_entry(status=st)]
+    monkeypatch.setattr(cr, "scan", _scan)
+    monkeypatch.setattr(cr, "_fetch_message",
+                        lambda *a: _coro((cr.HEALTHY, _ok_msg())))
+    monkeypatch.setattr(cr.asyncio, "sleep", _nosleep)
+
+    bot = _BotV2(_ok_msg())
+    r1 = await cr.repair(bot)
+    r2 = await cr.repair(bot)
+    # В первом запуске recheck HEALTHY → правки не было;
+    # второй — тоже чисто. update ни разу не вызван.
+    assert bot.updates == []
+    assert r1["repaired"] == [] and r2["repaired"] == []

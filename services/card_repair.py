@@ -22,15 +22,22 @@ UNKNOWN | ERROR. Недоступное или непроверенное соо
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 import discord
 
+from config import DATA_DIR
 from storage.json_store import store as tournament_store
 
 logger = logging.getLogger(__name__)
+
+# Пауза между force-edit разных сообщений — не даём
+# Discord-правкам сложиться в rate-limit.
+_REPAIR_DELAY = 1.0
 
 # Служебные тексты, которые room_view мог записать в
 # публичную карточку (дефектный defer без thinking=True).
@@ -208,8 +215,26 @@ async def scan(bot: discord.Client) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+async def _still_damaged(
+    bot: discord.Client, entry: dict[str, Any],
+) -> bool:
+    """Повторная проверка карточки НЕПОСРЕДСТВЕННО перед правкой.
+
+    Scan→repair не атомарны: за это время карточку мог уже
+    восстановить другой процесс или она могла измениться.
+    Правим только если сообщение всё ещё DAMAGED.
+    """
+    status, _msg = await _fetch_message(
+        bot, entry["guild_id"], entry["channel_id"],
+        entry["message_id"])
+    return status.split(":")[0] == DAMAGED
+
+
 async def _repair_classic(bot: discord.Client, entry: dict) -> bool:
     tid = entry["tournament_id"]
+    if not await _still_damaged(bot, entry):
+        entry["detail"] = "recheck:not_damaged_anymore"
+        return False
     tournament = next(
         (t for t in tournament_store.all()
          if str(t.id) == tid), None)
@@ -234,6 +259,9 @@ async def _repair_classic(bot: discord.Client, entry: dict) -> bool:
 
 async def _repair_cashcup(bot: discord.Client, entry: dict) -> bool:
     """Cash Cup — штатный refresh панели через cog."""
+    if not await _still_damaged(bot, entry):
+        entry["detail"] = "recheck:not_damaged_anymore"
+        return False
     gid = entry["guild_id"]
     cog = bot.get_cog("CashCupCog")
     if cog is None:
@@ -285,6 +313,34 @@ async def _audit_run(bot: discord.Client, result: dict[str, Any]) -> None:
         logger.warning("cardrepair audit write failed: %s", exc)
 
 
+def _snapshot_before_repair(report: list[dict[str, Any]]) -> None:
+    """Резервная копия данных перед массовым восстановлением.
+
+    Repair не меняет состояние турниров, но на случай
+    форс-мажора пишем сериализованное состояние всех
+    classic-турниров и список затронутых карточек в
+    ``DATA_DIR/card_repair_backup_<ts>.json``.
+    """
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        path = DATA_DIR / f"card_repair_backup_{int(time.time())}.json"
+        tournaments = []
+        for t in tournament_store.all():
+            try:
+                tournaments.append(t.to_dict())
+            except Exception:
+                tournaments.append({"id": str(getattr(t, "id", "?"))})
+        path.write_text(json.dumps({
+            "created_at": time.time(),
+            "report": report,
+            "tournaments": tournaments,
+        }, ensure_ascii=False, default=str), encoding="utf-8")
+        logger.info("cardrepair: backup written to %s", path)
+    except Exception as exc:
+        # Бэкап не должен блокировать repair — только лог.
+        logger.warning("cardrepair backup failed: %s", exc)
+
+
 async def repair(bot: discord.Client) -> dict[str, Any]:
     """Восстановить подтверждённо повреждённые карточки.
 
@@ -295,10 +351,18 @@ async def repair(bot: discord.Client) -> dict[str, Any]:
     report = await scan(bot)
     repaired: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
+    damaged_entries = [e for e in report if e["status"] == DAMAGED]
+    if damaged_entries:
+        _snapshot_before_repair(report)
+    first = True
     for entry in report:
         if entry["status"] != DAMAGED:
             skipped.append(entry)
             continue
+        if not first:
+            # Rate-limit: не редактируем Discord-сообщения подряд.
+            await asyncio.sleep(_REPAIR_DELAY)
+        first = False
         if entry["kind"] == "cashcup":
             ok = await _repair_cashcup(bot, entry)
         else:
