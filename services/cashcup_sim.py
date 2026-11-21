@@ -68,6 +68,12 @@ def simulate_to_final(state: dict[str, Any], *,
     if len(teams) < 2:
         raise BracketError("В тестовой сессии меньше двух команд")
     effective_seed = seed if seed is not None else state.get("seed")
+    if effective_seed is None:
+        # Нет явного seed — выводим детерминированный из состава,
+        # чтобы симуляция всё равно была воспроизводимой.
+        import zlib
+        effective_seed = zlib.crc32(
+            "".join(sorted(t["id"] for t in teams)).encode())
     rng = random.Random(effective_seed)
 
     bracket = state.get("bracket")

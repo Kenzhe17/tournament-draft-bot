@@ -125,6 +125,11 @@ class CashCupTestStore:
         """
         await self.ensure_schema()
         sid = uuid.uuid4().hex[:12]
+        # Детерминированный seed на сессию: повторная симуляция
+        # воспроизводима. Явный seed из снимка имеет приоритет.
+        seed = snapshot_state.get("seed")
+        if seed is None:
+            seed = int(sid[:8], 16)
         state = {
             "status": "snapshot",
             "test": True,
@@ -135,7 +140,7 @@ class CashCupTestStore:
             "prizes": snapshot_state.get("prizes"),
             "bracket": None,
             "payouts": [],
-            "seed": snapshot_state.get("seed"),
+            "seed": seed,
             "base": {
                 "status": "snapshot",
                 "teams": snapshot_state.get("teams") or [],
