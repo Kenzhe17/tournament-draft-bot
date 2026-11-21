@@ -208,6 +208,7 @@ async def _tournament_events(
             channel_id=channel_id,
             tournament_id=str(tournament_id),
             limit=limit,
+            exclude_organizer=True,
         )
     except Exception as exc:
         logger.warning("journal: events load failed %s: %s",
@@ -215,6 +216,7 @@ async def _tournament_events(
         return []
     # organizer.* не показываем в карточках журнала (PG-записи
     # сохраняются для аудита, но в Discord не выводятся).
+    # Фильтр на уровне SQL — до LIMIT; здесь — дополнительная защита.
     return [e for e in events if not _is_organizer_event(e)]
 
 

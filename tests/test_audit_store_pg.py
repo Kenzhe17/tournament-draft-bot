@@ -122,6 +122,34 @@ async def test_unpublished_events_skips_organizer(pg_pool):
 
 
 @pytest.mark.asyncio
+async def test_list_events_limit_applies_after_organizer_filter(pg_pool):
+    """Регрессия P1: LIMIT должен применяться ПОСЛЕ исключения
+    organizer.* — иначе журнал теряет видимые события.
+
+    Среди последних 5 записей — 4 organizer.*; ниже лежат 6 обычных.
+    limit=5 с exclude_organizer=True обязан вернуть 5 обычных событий
+    (без SQL-фильтра вернулось бы только 1).
+    """
+    for i in range(6):
+        await _add(action=f"match.result_{i}")
+    # Последние 5 записей: 4 organizer.* + 1 обычное.
+    await _add(action="organizer.assign", source="organizer")
+    await _add(action="match.result_6")
+    await _add(action="organizer.role_grant", source="organizer")
+    await _add(action="organizer.role_revoke", source="organizer")
+    await _add(action="organizer.reset", source="organizer")
+
+    rows = await store.list_events(guild_id=1, channel_id=100,
+                                   tournament_id="1_1", limit=5,
+                                   exclude_organizer=True)
+    assert len(rows) == 5
+    assert all(not e["action"].startswith("organizer.")
+               and e["source"] != "organizer" for e in rows)
+    # Самое свежее обычное событие — match.result_6.
+    assert rows[0]["action"] == "match.result_6"
+
+
+@pytest.mark.asyncio
 async def test_organizer_events_still_written(pg_pool):
     """PG-запись organizer.* не меняется — аудит для расследований."""
     ok = await _add(action="organizer.assign", source="organizer",
