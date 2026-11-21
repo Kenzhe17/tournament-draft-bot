@@ -1007,8 +1007,17 @@ class CashCupCog(commands.Cog):
     async def _team_pick(self, interaction: discord.Interaction,
                          action: str, team_id: str,
                          tid: str | None = None) -> None:
-        state = (await cashcup_store.active(interaction.guild_id)
-                 or await cashcup_store.latest(interaction.guild_id))
+        # Select-callback — новое Interaction: PG-чтение до ответа
+        # ограничено 2с (modal-ветки не могут defer), иначе 10062.
+        try:
+            state = await asyncio.wait_for(
+                self._current_state(interaction.guild_id), timeout=2.0)
+        except Exception:
+            await self._reply(
+                interaction,
+                "База данных занята — выберите команду ещё раз "
+                "через несколько секунд.")
+            return
         t = next((x for x in (state or {}).get("teams", [])
                   if x["id"] == team_id), None)
         if not t:
@@ -1050,8 +1059,15 @@ class CashCupCog(commands.Cog):
                           action: str, match_id: str,
                           tid: str | None = None) -> None:
         mid = match_id.upper()
-        state = (await cashcup_store.active(interaction.guild_id)
-                 or await cashcup_store.latest(interaction.guild_id))
+        try:
+            state = await asyncio.wait_for(
+                self._current_state(interaction.guild_id), timeout=2.0)
+        except Exception:
+            await self._reply(
+                interaction,
+                "База данных занята — выберите матч ещё раз "
+                "через несколько секунд.")
+            return
         b = (state or {}).get("bracket") or {}
         m = next((x for x in _board_matches(b) if x["id"] == mid), None)
         if not m:
@@ -1258,23 +1274,38 @@ class CashCupCog(commands.Cog):
         """
         guild_id = interaction.guild_id
         mid = getattr(getattr(interaction, "message", None), "id", None)
+        t0 = time.monotonic()
+
+        def _log(outcome: str) -> None:
+            # Метрика времени до первого ответа + причина отказа.
+            # Без секретов: только guild/message ids и исход.
+            logger.info(
+                "cashcup card-check outcome=%s ms=%d guild=%s msg=%s",
+                outcome, int((time.monotonic() - t0) * 1000),
+                guild_id, mid)
+
         cached = self._state_cache.get(guild_id)
         if cached and time.monotonic() - cached[0] < 10.0:
             state = cached[1]
             expected = (state or {}).get("message_id")
             if expected and mid and int(expected) == int(mid):
+                _log("ok_cache")
                 return "ok", state
             # Кэш не подтверждает именно эту карточку (возможна
             # новая карточка после /cashcup panel) — читаем PG.
+            _log("cache_miss_fresh_read")
         try:
             state = await asyncio.wait_for(
                 self._current_state(guild_id), timeout=2.0)
-        except Exception:
+        except Exception as exc:
+            _log(f"timeout_pg_{type(exc).__name__}")
             return "timeout", None
         expected = (state or {}).get("message_id")
         if (state and expected and mid
                 and int(mid) != int(expected)):
+            _log("stale_card")
             return "stale", state
+        _log("ok_pg")
         return "ok", state
 
     async def _post(self, interaction: discord.Interaction, action: str,
@@ -2100,6 +2131,7 @@ class CashCupCog(commands.Cog):
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Только ADMIN")
             return
+        await _defer(interaction)
         if not evidence.startswith(("https://discord.com/channels/", "https://cdn.discordapp.com/",
                                     "https://media.discordapp.net/")):
             await self._reply(interaction, "Нужна ссылка на подтверждение решения")

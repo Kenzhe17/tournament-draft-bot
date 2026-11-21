@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+from collections import deque
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Set
 
@@ -14,6 +15,7 @@ from discord.ext import commands
 
 from config import get_emoji, BOT_OWNER_ID, NOTIFICATION_CHANNEL_ID
 from storage.user_balance_store import user_balance_store
+from storage.drop_reward_store import drop_reward_store
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -46,52 +48,54 @@ async def add_balance(guild_id: int, user_id: int, amount: int) -> None:
     await user_balance_store.add_balance(guild_id, user_id, amount)
 
 
-_DROP_GRANT_RETRY_DELAYS = (5.0, 30.0, 120.0)
+_DROP_BACKOFF_BASE = 30.0
+_DROP_BACKOFF_CAP = 1800.0
+_DROP_WORKER_INTERVAL = 15.0
 
 
-async def grant_drop_reward(guild_id: int, user_id: int,
-                            amount: int, grant_key: str) -> bool:
-    """Идемпотентное начисление награды ивента + фоновый retry.
+def _drop_backoff(attempts: int) -> float:
+    """Ограниченный экспоненциальный backoff: 30с, 60с, 120с, ...
+    максимум 30 минут. Без бесконечного быстрого повторения."""
+    return min(_DROP_BACKOFF_BASE * (2 ** max(0, attempts - 1)),
+               _DROP_BACKOFF_CAP)
 
-    add_balance_once атомарен (grant + balance в одной транзакции):
-    повторный вызов с тем же grant_key никогда не начислит дважды,
-    даже если первый ответ PG потерялся после commit. При сбое
-    запускается retry-цепочка; если PG лежит дольше — пишется
-    ERROR в лог (награждение не теряется молча).
-    Возвращает True, если грант подтверждён (сейчас или в retry).
+
+async def grant_drop_reward(cog, guild_id: int, user_id: int,
+                            amount: int, grant_key: str,
+                            kind: str) -> bool:
+    """Долговременное обязательство по награде + немедленная
+    попытка начисления.
+
+    1. drop_reward_store.record() фиксирует победителя и
+       обязательство АТОМАРНО в PostgreSQL (grant_key — PK,
+       повтор идемпотентен). Если PG недоступен ещё до фиксации —
+       обязательство уходит в in-memory очередь cog._mem_pending
+       и честно логируется CRITICAL: награда НЕ объявляется
+       гарантированно выданной, но и не теряется до рестарта.
+    2. Начисление — user_balance_store.add_balance_once с тем же
+       grant_key: повторная обработка (retry, рестарт, гонка
+       worker'ов) никогда не даст двойного кредита.
+    Возвращает True, если монеты уже на балансе.
     """
     if amount <= 0:
         return True
-
-    async def _once() -> bool:
-        try:
-            await user_balance_store.add_balance_once(
-                guild_id, user_id, amount, grant_key)
-            return True
-        except Exception:
-            logger.exception("coin_drop grant failed key=%s", grant_key)
-            return False
-
-    if await _once():
+    try:
+        row = await drop_reward_store.record(
+            grant_key, kind, guild_id, user_id, amount)
+    except Exception:
+        logger.critical(
+            "drop reward NOT persisted key=%s guild=%s user=%s "
+            "amount=%s kind=%s — queued in-memory until PG recovers",
+            grant_key, guild_id, user_id, amount, kind)
+        cog._mem_pending.append({
+            "grant_key": grant_key, "kind": kind,
+            "guild_id": guild_id, "user_id": user_id,
+            "amount": amount,
+        })
+        return False
+    if row.get("status") == "completed":
         return True
-
-    async def _retry() -> None:
-        for delay in _DROP_GRANT_RETRY_DELAYS:
-            await asyncio.sleep(delay)
-            try:
-                await user_balance_store.add_balance_once(
-                    guild_id, user_id, amount, grant_key)
-                logger.info("coin_drop grant retry ok key=%s", grant_key)
-                return
-            except Exception:
-                logger.exception(
-                    "coin_drop grant retry failed key=%s", grant_key)
-        logger.error(
-            "coin_drop grant LOST key=%s guild=%s user=%s amount=%s",
-            grant_key, guild_id, user_id, amount)
-
-    asyncio.get_running_loop().create_task(_retry())
-    return False
+    return await cog._process_drop_reward(row)
 
 
 # ==========================================
@@ -125,12 +129,13 @@ class SpeedDropView(discord.ui.View):
         self.stop()
         await interaction.response.defer()
 
-        # Идемпотентная выплата: grant_key = событие, поэтому
-        # повторный клик/потерянный ответ PG не даст двойного
-        # начисления, а при сбое PG сработает фоновый retry.
+        # Идемпотентная выплата через долговременное обязательство:
+        # grant_key = событие, поэтому повторный клик/потерянный
+        # ответ PG/рестарт не даст ни потери, ни двойного начисления.
+        cog = interaction.client.get_cog("CoinDropCog")
         granted = await grant_drop_reward(
-            interaction.guild_id, interaction.user.id,
-            self.reward_amount, f"speeddrop:{self.event_id}")
+            cog, interaction.guild_id, interaction.user.id,
+            self.reward_amount, f"speeddrop:{self.event_id}", "speed")
 
         result_embed = discord.Embed(
             title=f"**ИВЕНТ ЗАВЕРШЁН | НАГРАДА ЗАБРАНА**",
@@ -206,6 +211,11 @@ class CoinDropCog(commands.Cog):
         self.bot = bot
         self._default_channel_id = NOTIFICATION_CHANNEL_ID
         self._drop_lock = asyncio.Lock()
+        # Обязательства, не успевшие зафиксироваться в PG
+        # (БД была недоступна в момент определения победителя).
+        # Worker повторяет record при восстановлении PG.
+        self._mem_pending: deque = deque()
+        self._reward_task: asyncio.Task | None = None
 
     def _target_channel_id(self, guild) -> int:
         from services.discord_cfg import channel_id as _dc
@@ -328,8 +338,8 @@ class CoinDropCog(commands.Cog):
 
             if winner:
                 granted = await grant_drop_reward(
-                    channel.guild.id, winner.id, reward,
-                    f"raffledrop:{view.event_id}")
+                    self, channel.guild.id, winner.id, reward,
+                    f"raffledrop:{view.event_id}", "raffle")
 
                 result_embed = discord.Embed(
                     title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
@@ -356,6 +366,90 @@ class CoinDropCog(commands.Cog):
     # Админ-команда для принудительного вызова ивента
     async def cog_load(self) -> None:
         bind_commands(admin_group, self, ["forcedrop"])
+        # Восстановление долговременных наград: незавершённые
+        # обязательства из drop_coin_rewards подхватываются
+        # автоматически после рестарта/восстановления PG.
+        self._reward_task = asyncio.get_running_loop().create_task(
+            self._reward_worker())
+
+    async def cog_unload(self) -> None:
+        task = self._reward_task
+        self._reward_task = None
+        if task:
+            task.cancel()
+
+    async def _process_drop_reward(self, row: dict) -> bool:
+        """Одна попытка начисления по зафиксированному обязательству.
+        Идемпотентно: add_balance_once дедуплицирует по grant_key
+        даже при повторной обработке после потерянного ответа."""
+        key = row["grant_key"]
+        try:
+            if not user_balance_store._use_db:
+                raise RuntimeError(
+                    "drop rewards require PostgreSQL idempotency")
+            await user_balance_store.add_balance_once(
+                int(row["guild_id"]), int(row["user_id"]),
+                int(row["amount"]), key)
+        except Exception as exc:
+            delay = _drop_backoff(int(row.get("attempts") or 1))
+            try:
+                await drop_reward_store.retry(
+                    key, f"{type(exc).__name__}: {exc}", delay)
+            except Exception:
+                logger.critical(
+                    "drop reward retry-mark failed key=%s — "
+                    "row stays processing until lease expiry", key)
+            logger.warning(
+                "drop reward deferred key=%s attempts=%s next_in=%.0fs",
+                key, row.get("attempts"), delay)
+            return False
+        try:
+            await drop_reward_store.complete(key)
+        except Exception:
+            # Начисление закоммичено, но отметка потеряна:
+            # lease истечёт → worker повторит → add_balance_once
+            # вернёт существующий грант без двойного кредита.
+            logger.exception(
+                "drop reward complete failed key=%s", key)
+        logger.info("drop reward credited key=%s user=%s amount=%s",
+                    key, row.get("user_id"), row.get("amount"))
+        return True
+
+    async def _drain_mem_pending(self) -> None:
+        """Повторная фиксация обязательств, не записанных в PG
+        в момент определения победителя (БД была недоступна)."""
+        while self._mem_pending:
+            item = self._mem_pending[0]
+            try:
+                await drop_reward_store.record(
+                    item["grant_key"], item["kind"], item["guild_id"],
+                    item["user_id"], item["amount"])
+            except Exception:
+                logger.warning(
+                    "drop reward still unpersisted key=%s",
+                    item["grant_key"])
+                return
+            self._mem_pending.popleft()
+            logger.info("drop reward persisted from mem-queue key=%s",
+                        item["grant_key"])
+            row = await drop_reward_store.claim_key(item["grant_key"])
+            if row:
+                await self._process_drop_reward(row)
+
+    async def _reward_worker(self) -> None:
+        """Фоновый цикл восстановления наград. Тикает каждые
+        _DROP_WORKER_INTERVAL секунд; ошибки PG не роняют цикл —
+        backoff задаётся next_attempt_at на уровне строк."""
+        while True:
+            try:
+                await self._drain_mem_pending()
+                for row in await drop_reward_store.claim_due(limit=10):
+                    await self._process_drop_reward(row)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("drop reward worker tick failed")
+            await asyncio.sleep(_DROP_WORKER_INTERVAL)
 
     @admin_group.command(name="forcedrop", description="Принудительно запустить ивент 'Счастливые монеты' (Только владелец бота)")
     @is_bot_owner()

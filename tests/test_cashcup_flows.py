@@ -1245,3 +1245,77 @@ async def test_sub_join_stale_card_rejected(cog):
     await v.sub_join.callback(i)
     assert i.response.modal is None
     assert "устарел" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_team_pick_slow_pg_no_10062(cog, monkeypatch):
+    """PickView→_team_pick: PG >3с до ответа — ephemeral «занята»,
+    без 10062 (modal-ветки не могут defer)."""
+    st = _reg_state()
+    st["tournament_id"] = "tidA"
+    st["message_id"] = 555
+    st["teams"] = [_team("T1", "Alpha", 1, [_player(1)])]
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    i.client = FakeClient(cog)
+
+    async def slow_state(gid):
+        await asyncio.sleep(3.5)
+        return st
+    monkeypatch.setattr(cog, "_current_state", slow_state)
+
+    t0 = time.monotonic()
+    await cog._team_pick(i, "verify", "T1", tid="tidA")
+    assert time.monotonic() - t0 < 3.0
+    assert i.response.is_done()
+    assert "занята" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_match_pick_slow_pg_no_10062(cog, monkeypatch):
+    """PickView→_match_pick: то же ограничение 2с до send_modal."""
+    st = _running_state(2)
+    st["tournament_id"] = "tidA"
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    i.client = FakeClient(cog)
+    mid = st["bracket"]["matches"][0]["id"]
+
+    async def slow_state(gid):
+        await asyncio.sleep(3.5)
+        return st
+    monkeypatch.setattr(cog, "_current_state", slow_state)
+
+    t0 = time.monotonic()
+    await cog._match_pick(i, "room", mid, tid="tidA")
+    assert time.monotonic() - t0 < 3.0
+    assert i.response.is_done()
+    assert "занята" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_resolve_defers_before_slow_mutate(cog, monkeypatch):
+    """resolve() обязан defer ДО медленного PG mutate —
+    иначе 10062 при disput-потоке."""
+    st = _running_state(2)
+    st["tournament_id"] = "tidA"
+    m = st["bracket"]["matches"][0]
+    m["status"] = "disputed"
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    i.client = FakeClient(cog)
+
+    orig = cog._store.mutate
+
+    async def slow_mutate(*a, **k):
+        await asyncio.sleep(3.5)
+        return await orig(*a, **k)
+    monkeypatch.setattr(cog._store, "mutate", slow_mutate)
+
+    task = asyncio.create_task(cog.resolve(
+        i, m["id"], SimpleNamespace(value="a"),
+        "https://discord.com/channels/1/2/3", tid="tidA"))
+    await asyncio.sleep(0.3)
+    assert i.response.is_done()  # defer уже выполнен
+    await task
+    assert i.followup.sent or i.response.sent
