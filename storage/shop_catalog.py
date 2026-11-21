@@ -22,6 +22,9 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
+import time
+from pathlib import Path
 from typing import Any
 
 from storage.db import get_pool
@@ -37,7 +40,11 @@ ALTER TABLE shop_items
     ADD COLUMN IF NOT EXISTS required_level INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'default',
     ADD COLUMN IF NOT EXISTS updated_by BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ADD COLUMN IF NOT EXISTS available_from TEXT,
+    ADD COLUMN IF NOT EXISTS available_until TEXT,
+    ADD COLUMN IF NOT EXISTS bundle JSONB,
+    ADD COLUMN IF NOT EXISTS rep_price INTEGER;
 CREATE INDEX IF NOT EXISTS idx_shop_items_category
     ON shop_items(category);
 CREATE INDEX IF NOT EXISTS idx_shop_items_active
@@ -61,12 +68,19 @@ async def load_all() -> list[dict[str, Any]]:
             """
             SELECT item_id, name, description, price, category, rarity,
                    is_sellable, emoji, is_active, cosmetic_type, value,
-                   item_type, role_id, required_level
+                   item_type, role_id, required_level, source,
+                   available_from, available_until, bundle, rep_price
             FROM shop_items ORDER BY item_id
             """
         )
     out = []
     for r in rows:
+        bundle = r["bundle"]
+        if isinstance(bundle, str):
+            try:
+                bundle = json.loads(bundle)
+            except Exception:  # noqa: BLE001 — битый jsonb → None
+                bundle = None
         out.append({
             "id": r["item_id"],
             "name": r["name"],
@@ -81,8 +95,62 @@ async def load_all() -> list[dict[str, Any]]:
             "item_type": r["item_type"],
             "role_id": r["role_id"],
             "required_level": r["required_level"],
+            "source": r["source"],
+            "available_from": r["available_from"],
+            "available_until": r["available_until"],
+            "bundle": bundle,
+            "rep_price": r["rep_price"],
         })
     return out
+
+
+def _item_params(item: dict[str, Any]) -> tuple:
+    """Общий набор bind-параметров для upsert/seed."""
+    bundle = item.get("bundle")
+    return (
+        item["id"], item.get("name", ""), item.get("description", ""),
+        int(item.get("price", 0)), item.get("category", ""),
+        item.get("rarity", "basic"),
+        bool(item.get("is_sellable", True)),
+        bool(item.get("is_active", True)),
+        item.get("cosmetic_type", "icon"), item.get("value", ""),
+        item.get("item_type", "cosmetic"),
+        item.get("role_id"), int(item.get("required_level", 0)),
+        item.get("available_from"), item.get("available_until"),
+        json.dumps(bundle) if bundle is not None else None,
+        item.get("rep_price"),
+    )
+
+
+_UPSERT_SQL = """
+    INSERT INTO shop_items
+        (item_id, name, description, price, category, rarity,
+         is_sellable, is_active, cosmetic_type, value,
+         item_type, role_id, required_level,
+         available_from, available_until, bundle, rep_price,
+         source, updated_by, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now())
+    ON CONFLICT (item_id) DO UPDATE SET
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        price = EXCLUDED.price,
+        category = EXCLUDED.category,
+        rarity = EXCLUDED.rarity,
+        is_sellable = EXCLUDED.is_sellable,
+        is_active = EXCLUDED.is_active,
+        cosmetic_type = EXCLUDED.cosmetic_type,
+        value = EXCLUDED.value,
+        item_type = EXCLUDED.item_type,
+        role_id = EXCLUDED.role_id,
+        required_level = EXCLUDED.required_level,
+        available_from = EXCLUDED.available_from,
+        available_until = EXCLUDED.available_until,
+        bundle = EXCLUDED.bundle,
+        rep_price = EXCLUDED.rep_price,
+        source = EXCLUDED.source,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = now()
+"""
 
 
 async def upsert_item(item: dict[str, Any], *, actor_id: int = 0,
@@ -90,44 +158,129 @@ async def upsert_item(item: dict[str, Any], *, actor_id: int = 0,
     """Создать/обновить товар. Не трогает чужие поля."""
     pool = await get_pool()
     async with pool.acquire() as conn:
+        await conn.execute(SCHEMA)
         await conn.execute(
-            """
-            INSERT INTO shop_items
-                (item_id, name, description, price, category, rarity,
-                 is_sellable, is_active, cosmetic_type, value,
-                 item_type, role_id, required_level, source,
-                 updated_by, updated_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())
-            ON CONFLICT (item_id) DO UPDATE SET
-                name = EXCLUDED.name,
-                description = EXCLUDED.description,
-                price = EXCLUDED.price,
-                category = EXCLUDED.category,
-                rarity = EXCLUDED.rarity,
-                is_sellable = EXCLUDED.is_sellable,
-                is_active = EXCLUDED.is_active,
-                cosmetic_type = EXCLUDED.cosmetic_type,
-                value = EXCLUDED.value,
-                item_type = EXCLUDED.item_type,
-                role_id = EXCLUDED.role_id,
-                required_level = EXCLUDED.required_level,
-                source = EXCLUDED.source,
-                updated_by = EXCLUDED.updated_by,
-                updated_at = now()
-            """,
-            item["id"], item.get("name", ""), item.get("description", ""),
-            int(item.get("price", 0)), item.get("category", ""),
-            item.get("rarity", "basic"),
-            bool(item.get("is_sellable", True)),
-            bool(item.get("is_active", True)),
-            item.get("cosmetic_type", "icon"), item.get("value", ""),
-            item.get("item_type", "cosmetic"),
-            item.get("role_id"), int(item.get("required_level", 0)),
-            source, actor_id,
+            _UPSERT_SQL,
+            *_item_params(item), source, actor_id,
         )
 
 
-async def seed_defaults(items: list[dict[str, Any]]) -> int:
+_META_DDL = """
+CREATE TABLE IF NOT EXISTS shop_catalog_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+_META_KEY_MIGRATION = "json_migration_done"
+
+# Поля, которые старая миграция JSON→PG могла потерять.
+# Цены, видимость, названия и прочие пользовательские настройки
+# миграцией НЕ трогаются.
+_META_FIELDS = ("available_from", "available_until", "bundle", "rep_price")
+
+# Источники, означающие ручные правки каталога. Если такие строки
+# уже есть в PG — JSON считается устаревшим снимком и НЕ
+# используется для воскрешения удалённых товаров.
+_HUMAN_SOURCES = ("panel", "discord_admin")
+
+
+async def _meta_get(conn, key: str) -> str | None:
+    await conn.execute(_META_DDL)
+    row = await conn.fetchrow(
+        "SELECT value FROM shop_catalog_meta WHERE key=$1", key
+    )
+    return row["value"] if row else None
+
+
+async def _meta_set(conn, key: str, value: str) -> None:
+    await conn.execute(_META_DDL)
+    await conn.execute(
+        """
+        INSERT INTO shop_catalog_meta (key, value, updated_at)
+        VALUES ($1, $2, now())
+        ON CONFLICT (key) DO UPDATE SET
+            value = EXCLUDED.value, updated_at = now()
+        """,
+        key, value,
+    )
+
+
+async def json_migration_done() -> bool:
+    """Была ли уже выполнена миграция JSON→PG."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return await _meta_get(conn, _META_KEY_MIGRATION) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+async def _read_json_catalog() -> tuple[list[dict[str, Any]], int]:
+    """Прочитать data/shop_items.json напрямую (включая скрытые).
+
+    Возвращает (валидные item-дикты, число отброшенных битых записей).
+    """
+    from models.shop_item import ShopItem
+    from storage.shop_store import SHOP_FILE
+
+    if not SHOP_FILE.exists():
+        return [], 0
+    try:
+        raw = json.loads(SHOP_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.error("shop catalog: cannot read JSON %s: %s",
+                     SHOP_FILE, exc)
+        return [], 0
+    if not isinstance(raw, dict):
+        logger.error("shop catalog: JSON root is not an object")
+        return [], 0
+    items: list[dict[str, Any]] = []
+    bad = 0
+    for item_id, data in raw.items():
+        try:
+            if not isinstance(data, dict):
+                raise TypeError("not a dict")
+            data = dict(data)
+            data.setdefault("id", item_id)
+            item = ShopItem.from_dict(data)
+            if not item.id:
+                raise ValueError("empty id")
+            items.append(item.to_dict())
+        except Exception as exc:  # noqa: BLE001 — битая запись не роняет миграцию
+            bad += 1
+            logger.warning("shop catalog: bad JSON item %s: %s",
+                           item_id, exc)
+    return items, bad
+
+
+def _backup_json_catalog() -> Path | None:
+    """Резервная копия исходного JSON перед первой миграцией.
+
+    Файл не перезаписывается повторными миграциями — первый
+    снимок production-каталога сохраняется навсегда.
+    """
+    from storage.shop_store import SHOP_FILE
+
+    if not SHOP_FILE.exists():
+        return None
+    backup = SHOP_FILE.with_name(
+        f"{SHOP_FILE.stem}.pre-pg-migration{SHOP_FILE.suffix}"
+    )
+    try:
+        if not backup.exists():
+            shutil.copy2(SHOP_FILE, backup)
+            logger.info("shop catalog: JSON backup → %s", backup)
+        return backup
+    except OSError as exc:
+        logger.error("shop catalog: JSON backup failed: %s", exc)
+        return None
+
+
+async def seed_defaults(
+    items: list[dict[str, Any]], *, source: str = "default"
+) -> int:
     """Идемпотентный сидинг: вставляет только отсутствующие id.
 
     Существующие строки (в т.ч. отредактированные панелью)
@@ -142,25 +295,155 @@ async def seed_defaults(items: list[dict[str, Any]]) -> int:
                 INSERT INTO shop_items
                     (item_id, name, description, price, category, rarity,
                      is_sellable, is_active, cosmetic_type, value,
-                     item_type, role_id, required_level, source,
-                     updated_at)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-                        'default', now())
+                     item_type, role_id, required_level,
+                     available_from, available_until, bundle, rep_price,
+                     source, updated_at)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+                        $18, now())
                 ON CONFLICT (item_id) DO NOTHING
                 """,
-                it["id"], it.get("name", ""), it.get("description", ""),
-                int(it.get("price", 0)), it.get("category", ""),
-                it.get("rarity", "basic"),
-                bool(it.get("is_sellable", True)),
-                bool(it.get("is_active", True)),
-                it.get("cosmetic_type", "icon"), it.get("value", ""),
-                it.get("item_type", "cosmetic"),
-                it.get("role_id"), int(it.get("required_level", 0)),
+                *_item_params(it), source,
             )
             # INSERT 0 1 / INSERT 0 0
             if result.endswith("1"):
                 inserted += 1
     return inserted
+
+
+def _meta_equal(field: str, a: Any, b: Any) -> bool:
+    if field == "bundle":
+        return sorted(a or []) == sorted(b or [])
+    return a == b
+
+
+async def migrate_item_metadata(
+    rows: list[dict[str, Any]],
+    extra_sources: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Идемпотентно восстановить метаданные существующих строк.
+
+    Для каждого товара и каждого поля из _META_FIELDS:
+    - PG-значение задано → сохраняется; расхождение с источником
+      фиксируется как конфликт (PG считается авторитетным).
+    - PG NULL → восстанавливается из источника, если все
+      источники согласны; расхождение источников → конфликт.
+    - Все NULL → пропуск.
+
+    Никогда не трогает цену, видимость, название и прочие
+    пользовательские поля. Повторный запуск — no-op.
+
+    Возвращает отчёт {restored, skipped, conflicts}.
+    """
+    report: dict[str, Any] = {
+        "restored": [], "skipped": [], "conflicts": [],
+    }
+    if not rows:
+        return report
+
+    # Источники: JSON-каталог (production-данные) важнее дефолтов.
+    sources: list[dict[str, dict[str, Any]]] = []
+    if extra_sources:
+        sources.append({it["id"]: it for it in extra_sources})
+    try:
+        from storage.shop_items import default_shop_items
+        sources.append(
+            {it.id: it.to_dict() for it in default_shop_items()}
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("shop catalog: defaults source unavailable: %s", exc)
+
+    updates: list[tuple[str, str, Any]] = []  # (item_id, field, value)
+    for row in rows:
+        item_id = row.get("id")
+        if not item_id:
+            continue
+        srcs = [s[item_id] for s in sources if item_id in s]
+        for field in _META_FIELDS:
+            pg_val = row.get(field)
+            src_vals = [
+                s.get(field) for s in srcs
+                if s.get(field) is not None
+            ]
+            if pg_val is not None:
+                # Конфликт: PG задан, источник отличается.
+                for sv in src_vals:
+                    if not _meta_equal(field, pg_val, sv):
+                        report["conflicts"].append({
+                            "item_id": item_id, "field": field,
+                            "pg": pg_val, "source": sv,
+                            "resolution": "kept_pg",
+                        })
+                        break
+                continue
+            if not src_vals:
+                report["skipped"].append(
+                    {"item_id": item_id, "field": field,
+                     "reason": "all_null"}
+                )
+                continue
+            distinct = []
+            for sv in src_vals:
+                if not any(_meta_equal(field, sv, d) for d in distinct):
+                    distinct.append(sv)
+            if len(distinct) > 1:
+                report["conflicts"].append({
+                    "item_id": item_id, "field": field,
+                    "sources": distinct,
+                    "resolution": "skipped_ambiguous",
+                })
+                continue
+            updates.append((item_id, field, distinct[0]))
+            report["restored"].append(
+                {"item_id": item_id, "field": field,
+                 "value": distinct[0]}
+            )
+
+    if updates:
+        pool = await get_pool()
+        async with pool.acquire() as conn, conn.transaction():
+            for item_id, field, value in updates:
+                if field == "bundle":
+                    await conn.execute(
+                        "UPDATE shop_items SET bundle=$2::jsonb, "
+                        "updated_at=now() WHERE item_id=$1",
+                        item_id, json.dumps(value),
+                    )
+                else:
+                    await conn.execute(
+                        f"UPDATE shop_items SET {field}=$2, "
+                        "updated_at=now() WHERE item_id=$1",
+                        item_id, value,
+                    )
+    if report["restored"] or report["conflicts"]:
+        logger.info(
+            "shop catalog metadata migration: restored=%d skipped=%d "
+            "conflicts=%d",
+            len(report["restored"]), len(report["skipped"]),
+            len(report["conflicts"]),
+        )
+        for c in report["conflicts"][:20]:
+            logger.warning("shop catalog metadata conflict: %s", c)
+    return report
+
+
+async def save_item_confirmed(
+    item, *, actor_id: int = 0, source: str = "discord_admin"
+) -> bool:
+    """Сохранить товар в PG с подтверждением результата.
+
+    Для критических записей из Discord-админки: возвращает True
+    только если upsert реально выполнен в PostgreSQL. При ошибке
+    — False, вызывающий код обязан НЕ показывать успех и НЕ
+    считать изменение сохранённым.
+    """
+    try:
+        await upsert_item(item.to_dict(), actor_id=actor_id,
+                          source=source)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.error("shop catalog save_item failed id=%s: %s",
+                     getattr(item, "id", "?"), exc)
+        return False
 
 
 async def notify_catalog_changed() -> None:
@@ -174,18 +457,163 @@ async def notify_catalog_changed() -> None:
         )
 
 
+async def _maybe_migrate_json(rows: list[dict[str, Any]]) -> str | None:
+    """Миграция JSON → PG. Возвращает статус или None, если не нужна.
+
+    Безопасный порядок:
+    1. Маркер json_migration_done уже стоит → JSON не трогаем.
+    2. Читаем и валидируем ВЕСЬ JSON (включая скрытые товары).
+    3. Предварительный diff: id, отсутствующие в PG → кандидаты
+       на импорт; id, присутствующие в обоих → конфликт-журнал
+       при расхождении ключевых полей (перезаписи НЕТ —
+       ON CONFLICT DO NOTHING сохраняет ручные правки).
+    4. Бэкап JSON → импорт ТОЛЬКО отсутствующих id.
+    5. Маркер ставится только после полного импорта — аварийное
+       прерывание оставляет его снятым, миграция докатывается
+       при следующем старте без дублей.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if await _meta_get(conn, _META_KEY_MIGRATION) is not None:
+            return None
+
+    json_items, bad = await _read_json_catalog()
+    if not json_items:
+        logger.info("shop catalog: JSON empty/absent — nothing to migrate")
+        async with pool.acquire() as conn:
+            await _meta_set(conn, _META_KEY_MIGRATION,
+                            f"empty:{int(time.time())}")
+        return "json_empty"
+
+    backup = _backup_json_catalog()
+    if backup is None:
+        # Нет подтверждённой резервной копии — импорт запрещён,
+        # маркер НЕ ставим: повторим при следующем старте.
+        logger.error(
+            "shop catalog: JSON migration aborted — backup failed"
+        )
+        return "json_backup_failed"
+
+    # Diff: что будет импортировано, что пропущено, где конфликты.
+    pg_by_id = {r["id"]: r for r in rows}
+    json_by_id = {it["id"]: it for it in json_items}
+    to_import = [it for iid, it in json_by_id.items()
+                 if iid not in pg_by_id]
+    conflicts = []
+    for iid, jit in json_by_id.items():
+        prow = pg_by_id.get(iid)
+        if prow is None:
+            continue
+        for field in ("price", "name", "is_active", "category"):
+            jv = jit.get(field)
+            pv = prow.get(field)
+            if jv is not None and pv is not None and jv != pv:
+                conflicts.append({
+                    "item_id": iid, "field": field,
+                    "pg": pv, "json": jv,
+                    "resolution": "kept_pg",
+                })
+    human = [
+        r["id"] for r in rows
+        if (r.get("source") or "") in _HUMAN_SOURCES
+    ]
+    if human:
+        logger.warning(
+            "shop catalog: JSON migration alongside manual edits "
+            "(%d panel rows) — importing only missing ids",
+            len(human),
+        )
+    for c in conflicts[:50]:
+        logger.warning("shop catalog JSON/PG conflict: %s", c)
+    logger.info(
+        "shop catalog JSON diff: pg=%d json=%d import=%d "
+        "conflicts=%d invalid=%d backup=%s",
+        len(pg_by_id), len(json_by_id), len(to_import),
+        len(conflicts), bad, backup,
+    )
+
+    if not to_import:
+        async with pool.acquire() as conn:
+            await _meta_set(conn, _META_KEY_MIGRATION,
+                            f"no_missing:{int(time.time())}")
+        return "json_noop"
+
+    n = await seed_defaults(to_import, source="json")
+    logger.info(
+        "shop catalog: JSON→PG imported %d items (%d already "
+        "present, %d invalid dropped)",
+        n, len(to_import) - n, bad,
+    )
+    # Маркер — только после подтверждённого импорта всех
+    # отсутствующих id. Сбой выше → исключение → маркер не стоит.
+    async with pool.acquire() as conn:
+        await _meta_set(
+            conn, _META_KEY_MIGRATION,
+            f"done:{n}:{int(time.time())}",
+        )
+    return "json_migrated"
+
+
 async def sync_to_store(shop_store) -> str:
     """Синхронизировать in-memory shop_store с PG.
 
-    Возвращает 'pg' | 'json_migrated' | 'seeded' | 'empty'.
-    - PG непуст → PG авторитетен, перезаписываем кэш.
-    - PG пуст, JSON непуст → мигрируем JSON → PG (один раз).
-    - Оба пусты → сидим дефолты.
+    Возвращает 'pg' | 'json_migrated' | 'json_skipped' |
+    'json_empty' | 'seeded' | 'empty'.
+
+    Порядок:
+    - PG авторитетен; JSON→PG миграция выполняется только по
+      маркеру и только до появления ручных правок.
+    - Метаданные существующих строк (bundle/rep_price/сезон)
+      восстанавливаются идемпотентно из JSON+дефолтов.
+    - Дефолтные id, отсутствующие в PG, досеиваются —
+      скрытые и отредактированные строки не трогаются.
     """
     from models.shop_item import ShopItem
 
     await ensure_schema()
     rows = await load_all()
+
+    # 1. Миграция JSON→PG (только если ещё не выполнена и в PG
+    #    нет ручных правок). Идёт ДО досева дефолтов, чтобы
+    #    пользовательские товары не потерялись.
+    mig = None
+    try:
+        # Проверяем маркер даже при непустом PG — миграция могла
+        # быть прервана на середине (частичный импорт).
+        mig = await _maybe_migrate_json(rows)
+    except Exception as exc:  # noqa: BLE001 — не роняем синк
+        logger.error("shop catalog: JSON migration error: %s", exc)
+    if mig in ("json_migrated", "json_skipped", "json_empty"):
+        rows = await load_all()
+
+    # 2. Восстановление метаданных существующих строк
+    #    (bundle/rep_price/available_*), потерянных старой
+    #    миграцией. Идемпотентно, конфликты — в отчёт.
+    if rows:
+        try:
+            json_items, _ = await _read_json_catalog()
+            report = await migrate_item_metadata(rows, json_items)
+            if report["restored"]:
+                rows = await load_all()
+        except Exception as exc:  # noqa: BLE001 — не роняем синк
+            logger.error("shop catalog: metadata migration error: %s",
+                         exc)
+
+    # 3. Досев дефолтных id, отсутствующих в PG.
+    from storage.shop_items import default_shop_items
+    defaults = [it.to_dict() for it in default_shop_items()]
+    have = {r["id"] for r in rows}
+    missing = [d for d in defaults if d["id"] not in have]
+    if missing:
+        try:
+            n = await seed_defaults(missing)
+            if n:
+                logger.info(
+                    "shop catalog: restored %d missing default items", n
+                )
+                rows = await load_all()
+        except Exception as exc:  # noqa: BLE001 — не роняем синк
+            logger.warning("shop catalog: default reseed failed: %s", exc)
 
     if rows:
         items = []
@@ -196,25 +624,12 @@ async def sync_to_store(shop_store) -> str:
                 logger.warning("shop catalog: bad row %s: %s",
                                r.get("id"), exc)
         shop_store.replace_all(items)
-        return "pg"
+        # json_skipped/json_empty — миграция не выполнялась,
+        # каталог полностью из PG → обычный 'pg'.
+        return "json_migrated" if mig == "json_migrated" else "pg"
 
-    # PG пуст — проверить JSON-кэш/файл
-    existing = shop_store.get_all_items()
-    if existing:
-        payload = [it.to_dict() | {"is_active": True} for it in existing]
-        # to_dict не содержит is_active — добавляем вручную
-        for it, p in zip(existing, payload):
-            p["is_active"] = getattr(it, "is_active", True)
-        await seed_defaults(payload)
-        rows = await load_all()
-        shop_store.replace_all(
-            [ShopItem.from_dict(r) for r in rows]
-        )
-        return "json_migrated"
-
-    # Всё пусто — сидим дефолты из shop_items.py
-    from storage.shop_items import default_shop_items
-    payload = [it.to_dict() for it in default_shop_items()]
+    # PG пуст и JSON пуст/не смигрирован — сидим дефолты.
+    payload = defaults
     for it, p in zip(default_shop_items(), payload):
         p["is_active"] = True
     n = await seed_defaults(payload)

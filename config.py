@@ -217,6 +217,14 @@ MM_ENABLED = os.getenv("MM_ENABLED", "1").strip().lower() not in (
     "0", "false", "no", "off",
 )
 
+# CASHCUP_ENABLED=0 (по умолчанию) не регистрирует /cashcup и его
+# persistent views. Состояние турнира в PostgreSQL (cashcup_*) при этом
+# сохраняется — включение обратно не теряет данные. Управление —
+# только ADMIN (владелец/admin-perm/BOT_OWNER_ID/ADMIN_USER_IDS).
+CASHCUP_ENABLED = os.getenv("CASHCUP_ENABLED", "0").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+
 MM_BALANCE_WEIGHTS = {
     "sum": float(os.getenv("MM_BALANCE_W_SUM", "0.40")),
     "top": float(os.getenv("MM_BALANCE_W_TOP", "0.30")),

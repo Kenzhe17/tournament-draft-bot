@@ -12,7 +12,7 @@ import time
 import discord
 from discord.ext import commands
 
-from config import DATABASE_URL, DISCORD_TOKEN, GUILD_ID, guild_allowed, replace_emojis
+from config import DATABASE_URL, DISCORD_TOKEN, GUILD_ID, guild_allowed, replace_emojis, CASHCUP_ENABLED
 from models.tournament import Tournament, TournamentPhase
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
@@ -339,6 +339,8 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.moderation")
         await self.load_extension("cogs.mod")
         await self.load_extension("cogs.freefire")
+        if CASHCUP_ENABLED:
+            await self.load_extension("cogs.cashcup")
         await self.load_extension("cogs.wardrobe")
         await self.load_extension("cogs.emoji")
         await self.load_extension("cogs.reputation")
@@ -1012,9 +1014,14 @@ class TournamentBot(commands.Bot):
                 if not self.is_ready():
                     continue
                 from services.shop_purchase_service import (
+                    recover_sell_pending,
                     settle_refund_debts,
                 )
                 await settle_refund_debts()
+                # Sell-ops без маркера ready ждут повторной
+                # проверки Discord-роли — recover_pending
+                # отрабатывает только на старте.
+                await recover_sell_pending(self)
             except Exception as e:
                 logger.error(f"Error in shop refund sweeper: {e}", exc_info=True)
 

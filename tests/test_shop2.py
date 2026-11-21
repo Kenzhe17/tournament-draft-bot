@@ -372,3 +372,60 @@ async def test_inventory_view_builds(env):
     )
     view = await build_inventory_view(1, 42)
     assert view is not None
+
+
+def _walk_components(c):
+    yield c
+    for ch in getattr(c, "children", []):
+        yield from _walk_components(ch)
+
+
+@pytest.mark.asyncio
+async def test_collection_view_no_empty_action_rows(env):
+    """Regression: пустой ActionRow в Container → Discord 50035
+    Invalid Form Body (production error на кнопке «КОЛЛЕКЦИЯ»).
+    Возникает когда предметов ≤ PAGE_SIZE — кнопок пагинации нет."""
+    import discord as _d
+    from models.shop_item import PlayerCosmetic
+    from views.inventory2_view import build_collection_view
+
+    env["inv"].add_cosmetic(
+        PlayerCosmetic(guild_id=1, user_id=42,
+                       item_id="tag_test", equipped=True)
+    )
+    view = await build_collection_view(1, 42)
+
+    for comp in _walk_components(view):
+        if isinstance(comp, _d.ui.ActionRow):
+            assert 1 <= len(comp.children) <= 5, (
+                f"ActionRow с {len(comp.children)} компонентами — "
+                "Discord отклонит сообщение (50035)"
+            )
+
+
+@pytest.mark.asyncio
+async def test_collection_view_pagination_rows(env):
+    """Много предметов → пагинация, nav-ряд непустой."""
+    import discord as _d
+    from models.shop_item import (
+        CosmeticRarity, CosmeticType, PlayerCosmetic, ShopItem,
+    )
+    from views.inventory2_view import PAGE_SIZE, build_collection_view
+
+    for i in range(PAGE_SIZE + 1):
+        it = ShopItem(
+            id=f"tag_p{i}", name=f"[P{i}]", description="",
+            price=1, cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.BASIC, value=f"[P{i}]",
+            category="tags",
+        )
+        env["shop"].add_item(it)
+        env["inv"].add_cosmetic(
+            PlayerCosmetic(guild_id=1, user_id=42, item_id=it.id)
+        )
+    view = await build_collection_view(1, 42)
+    rows = [
+        c for c in _walk_components(view.container)
+        if isinstance(c, _d.ui.ActionRow)
+    ]
+    assert all(1 <= len(r.children) <= 5 for r in rows)

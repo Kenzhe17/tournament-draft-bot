@@ -10,6 +10,7 @@ refund, журнал shop_ops_store).
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import discord
@@ -58,6 +59,7 @@ KIND_LABEL = {
 MAIN_CATEGORIES = [
     ("personal", "ПЕРСОНАЛИЗАЦИЯ", "Значки, теги, рамки и наборы"),
     ("color_roles", "ЦВЕТНЫЕ РОЛИ", "Цвет вашего ника в Discord"),
+    ("roles", "DISCORD РОЛИ", "Роли и доступы за монеты"),
     ("wardrobe", "ГАРДЕРОБ FREE FIRE", "Образы и предметы FF"),
     ("pets", "ПИТОМЦЫ", "Компаньоны и яйцо загадки"),
     ("cases", "КЕЙСЫ", "Открытие кейсов с наградами"),
@@ -110,28 +112,77 @@ def _kind_of(item: ShopItem) -> str:
     return item.cosmetic_type.value  # icon/tag/frame/color
 
 
-def _is_admin(user) -> bool:
+def _owner_id() -> int:
     try:
-        from config import ADMIN_USER_IDS, BOT_OWNER_ID
-        uid = getattr(user, "id", 0)
-        if uid and (uid == BOT_OWNER_ID or uid in ADMIN_USER_IDS):
-            return True
+        from config import BOT_OWNER_ID
+        return int(BOT_OWNER_ID or 0)
     except Exception:
-        pass
-    perms = getattr(user, "guild_permissions", None)
-    return bool(perms and getattr(perms, "administrator", False))
+        return 0
 
 
-def _is_admin_uid(user_id: int) -> bool:
-    """Admin-флаг только по uid (владелец/ADMIN_USER_IDS) — для
-    перестроения главного меню без объекта user."""
+def _owner_guild_ok(guild_id: int | None) -> bool:
+    """Разрешённый guild для управления каталогом.
+
+    Если задан GUILD_ID — только он; иначе — любой guild из
+    ALLOWED_GUILD_IDS (пустой список = все)."""
     try:
-        from config import ADMIN_USER_IDS, BOT_OWNER_ID
-        return bool(
-            user_id and (user_id == BOT_OWNER_ID or user_id in ADMIN_USER_IDS)
-        )
+        from config import GUILD_ID, guild_allowed
+        gid = int(GUILD_ID or 0)
+        if gid:
+            return guild_id == gid
+        return guild_allowed(guild_id)
     except Exception:
         return False
+
+
+def _is_admin(user, guild_id: int | None = None) -> bool:
+    """Управление каталогом — ТОЛЬКО владелец бота на
+    разрешённом guild.
+
+    ADMIN_USER_IDS, Discord Administrator, организаторы и
+    модераторы прав не имеют."""
+    uid = getattr(user, "id", 0)
+    if not (uid and uid == _owner_id()):
+        return False
+    if guild_id is None:
+        guild_id = getattr(user, "guild_id", None)
+    return _owner_guild_ok(guild_id)
+
+
+def _is_admin_uid(user_id: int, guild_id: int | None = None) -> bool:
+    """Admin-флаг только по uid владельца — для перестроения
+    главного меню без объекта user."""
+    return bool(
+        user_id and user_id == _owner_id()
+        and _owner_guild_ok(guild_id)
+    )
+
+
+async def _require_owner(interaction: discord.Interaction) -> bool:
+    """Проверка прав владельца внутри callback/modal.
+
+    user_id из сохранённого состояния интерфейса не доверяем —
+    проверяем interaction.user.id и guild заново при каждом
+    действии.
+    """
+    if _is_admin(
+        interaction.user, getattr(interaction, "guild_id", None)
+    ):
+        return True
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "Управление каталогом доступно только владельцу бота.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.followup.send(
+                "Управление каталогом доступно только владельцу бота.",
+                ephemeral=True,
+            )
+    except Exception:
+        pass
+    return False
 
 
 async def _profile_lines(guild_id: int, user_id: int) -> list[str]:
@@ -194,7 +245,13 @@ class _CatSelect(discord.ui.Select):
             await _open_wardrobe(interaction)
             return
         if cat == "personal":
-            await edit_card(interaction, build_subcat_view(
+            await edit_card(interaction, await build_subcat_view(
+                self.guild_id, self.user_id
+            ))
+            return
+        builder = _CATEGORY_BUILDERS.get(cat)
+        if builder is not None:
+            await edit_card(interaction, await builder(
                 self.guild_id, self.user_id
             ))
             return
@@ -227,7 +284,9 @@ class _AdminButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not _is_admin(interaction.user):
+        if not _is_admin(
+            interaction.user, getattr(interaction, "guild_id", None)
+        ):
             await interaction.response.send_message(
                 "Нет прав.", ephemeral=True
             )
@@ -252,16 +311,16 @@ async def build_main_view(guild_id: int, user_id: int) -> DesignView:
     row2 = discord.ui.ActionRow()
     for key, label in EXTRA_BUTTONS:
         row2.add_item(_ExtraButton(key, label))
-    if _is_admin_uid(user_id):
+    if _is_admin_uid(user_id, guild_id):
         row2.add_item(_AdminButton())
     view.container.add_item(row2)
     return view
 
 
 async def open_shop(interaction: discord.Interaction) -> None:
-    """Точка входа /shop."""
+    """Точка входа /shop. Вызывается после defer — отвечаем followup'ом."""
     view = await build_main_view(interaction.guild_id, interaction.user.id)
-    await interaction.response.send_message(view=view, ephemeral=True)
+    await interaction.followup.send(view=view, ephemeral=True)
 
 
 # ---------------------------------------------------------------- browse
@@ -401,7 +460,7 @@ class _BrowseButton(discord.ui.Button):
             st["page"] = 0
         elif self.action == "back":
             if self.cat == "personal":
-                await edit_card(interaction, build_subcat_view(self.gid, self.uid))
+                await edit_card(interaction, await build_subcat_view(self.gid, self.uid))
             else:
                 await edit_card(interaction, await build_main_view(self.gid, self.uid))
             return
@@ -1436,17 +1495,28 @@ async def build_color_roles_view(guild_id: int, user_id: int) -> DesignView:
 # ---------------------------------------------------------------- admin
 
 
-async def build_admin_view(guild_id: int, user_id: int) -> DesignView:
+_ADMIN_PAGE = 25  # лимит опций Discord Select
+
+
+async def build_admin_view(
+    guild_id: int, user_id: int, page: int = 0
+) -> DesignView:
+    # Все товары включая скрытые — владелец должен видеть
+    # is_active=False и иметь возможность вернуть товар в продажу.
     items = sorted(
-        shop_store.get_all_items(), key=lambda i: i.id
+        shop_store.get_all_items_raw(), key=lambda i: i.id
     )
+    total_pages = max(1, (len(items) + _ADMIN_PAGE - 1) // _ADMIN_PAGE)
+    page = min(max(0, page), total_pages - 1)
+    chunk = items[page * _ADMIN_PAGE:(page + 1) * _ADMIN_PAGE]
     view = DesignView(title="УПРАВЛЕНИЕ КАТАЛОГОМ", accent=colors.ERROR)
     view.text(
         "**УПРАВЛЕНИЕ КАТАЛОГОМ**\n"
+        f"Товаров: {len(items)} · Страница {page + 1}/{total_pages}\n"
         "Выберите товар для изменения. Действия журналируются."
     )
     view.sep()
-    if items:
+    if chunk:
         row = discord.ui.ActionRow()
         sel = discord.ui.Select(
             placeholder="Товар", min_values=1, max_values=1,
@@ -1457,19 +1527,46 @@ async def build_admin_view(guild_id: int, user_id: int) -> DesignView:
                     description=(
                         f"{_money(it.price)} · {it.category}"
                     )[:100],
-                ) for it in items[:25]
+                ) for it in chunk
             ],
         )
 
         async def _sel_cb(interaction):
+            if not await _require_owner(interaction):
+                return
             item = shop_store.get_item(sel.values[0])
             if item:
                 await edit_card(interaction, await _admin_item_view(
-                    guild_id, user_id, item
+                    guild_id, user_id, item, page=page
                 ))
         sel.callback = _sel_cb
         row.add_item(sel)
         view.container.add_item(row)
+    nav = discord.ui.ActionRow()
+    if page > 0:
+        prev = discord.ui.Button(label="◀", style=discord.ButtonStyle.secondary)
+
+        async def _prev(i):
+            if not await _require_owner(i):
+                return
+            await edit_card(i, await build_admin_view(
+                guild_id, user_id, page - 1
+            ))
+        prev.callback = _prev
+        nav.add_item(prev)
+    if page < total_pages - 1:
+        nxt = discord.ui.Button(label="▶", style=discord.ButtonStyle.secondary)
+
+        async def _next(i):
+            if not await _require_owner(i):
+                return
+            await edit_card(i, await build_admin_view(
+                guild_id, user_id, page + 1
+            ))
+        nxt.callback = _next
+        nav.add_item(nxt)
+    if len(nav.children) > 0:
+        view.container.add_item(nav)
     back = discord.ui.ActionRow()
     b = discord.ui.Button(label="В меню", style=discord.ButtonStyle.secondary)
 
@@ -1484,6 +1581,8 @@ async def build_admin_view(guild_id: int, user_id: int) -> DesignView:
                            style=discord.ButtonStyle.secondary)
 
     async def _journal(i):
+        if not await _require_owner(i):
+            return
         await edit_card(i, await _admin_journal_view(guild_id))
     jb.callback = _journal
     journal.add_item(jb)
@@ -1514,6 +1613,8 @@ async def _admin_journal_view(guild_id: int) -> DesignView:
                           style=discord.ButtonStyle.secondary)
 
     async def _back(i):
+        if not await _require_owner(i):
+            return
         await edit_card(i, await build_admin_view(
             guild_id, i.user.id
         ))
@@ -1523,8 +1624,33 @@ async def _admin_journal_view(guild_id: int) -> DesignView:
     return view
 
 
+async def _persist_admin_item(
+    guild_id: int, user_id: int, new_item: ShopItem, detail: str,
+) -> bool:
+    """Сохранить правку каталога в PG с подтверждением.
+
+    True — изменение записано в PostgreSQL и применено к кэшу.
+    False — запись не подтверждена: кэш НЕ меняем, пользователь
+    получает ошибку (следующий sync_to_store не затрёт PG).
+    """
+    from storage import shop_catalog
+
+    ok = await shop_catalog.save_item_confirmed(
+        new_item, actor_id=user_id, source="discord_admin",
+    )
+    if not ok:
+        return False
+    shop_store.upsert_item(new_item)
+    shop_ops_store.record(
+        guild_id=guild_id, user_id=user_id, kind="admin",
+        item_id=new_item.id, price=new_item.price, status="done",
+        detail=detail,
+    )
+    return True
+
+
 async def _admin_item_view(
-    guild_id: int, user_id: int, item: ShopItem
+    guild_id: int, user_id: int, item: ShopItem, page: int = 0
 ) -> DesignView:
     view = DesignView(title="ТОВАР", accent=colors.ERROR)
     view.text(
@@ -1544,14 +1670,21 @@ async def _admin_item_view(
     )
 
     async def _toggle(i):
-        item.is_active = not item.is_active
-        shop_store.update_item(item)
-        shop_ops_store.record(
-            guild_id=guild_id, user_id=user_id, kind="admin",
-            item_id=item.id, price=0, status="done",
-            detail=f"active={item.is_active}",
+        if not await _require_owner(i):
+            return
+        new_item = replace(item, is_active=not item.is_active)
+        ok = await _persist_admin_item(
+            guild_id, user_id, new_item, f"active={new_item.is_active}"
         )
-        await edit_card(i, await _admin_item_view(guild_id, user_id, item))
+        if not ok:
+            await i.response.send_message(
+                "Не удалось сохранить изменение в базе данных.",
+                ephemeral=True,
+            )
+            return
+        await edit_card(i, await _admin_item_view(
+            guild_id, user_id, new_item
+        ))
     toggle.callback = _toggle
     row.add_item(toggle)
 
@@ -1561,6 +1694,8 @@ async def _admin_item_view(
         val = discord.ui.TextInput(label="Цена (монеты)", max_length=9)
 
         async def on_submit(self, interaction):
+            if not await _require_owner(interaction):
+                return
             try:
                 new_price = int(self.val.value.strip())
                 if new_price < 0:
@@ -1570,15 +1705,18 @@ async def _admin_item_view(
                     "Некорректная цена.", ephemeral=True
                 )
                 return
-            item.price = new_price
-            shop_store.update_item(item)
-            shop_ops_store.record(
-                guild_id=guild_id, user_id=user_id, kind="admin",
-                item_id=item.id, price=new_price, status="done",
-                detail="price_change",
+            new_item = replace(item, price=new_price)
+            ok = await _persist_admin_item(
+                guild_id, user_id, new_item, "price_change"
             )
+            if not ok:
+                await interaction.response.send_message(
+                    "Не удалось сохранить изменение в базе данных.",
+                    ephemeral=True,
+                )
+                return
             await edit_card(interaction, await _admin_item_view(
-                guild_id, user_id, item
+                guild_id, user_id, new_item, page=page
             ))
 
     async def _price(i):
@@ -1594,15 +1732,18 @@ async def _admin_item_view(
         )
 
         async def on_submit(self, interaction):
+            if not await _require_owner(interaction):
+                return
             raw = self.val.value.strip()
+            rep_price = item.rep_price
             if raw == "":
-                item.rep_price = None
+                rep_price = None
             else:
                 try:
-                    item.rep_price = int(raw)
-                    if item.rep_price < 0 or item.rep_price > 999:
+                    rep_price = int(raw)
+                    if rep_price < 0 or rep_price > 999:
                         raise ValueError
-                    if item.price > 0 and item.rep_price == 0:
+                    if item.price > 0 and rep_price == 0:
                         raise ValueError("paid_free_rep")
                 except ValueError as ve:
                     if str(ve) == "paid_free_rep":
@@ -1616,14 +1757,19 @@ async def _admin_item_view(
                         msg, ephemeral=True
                     )
                     return
-            shop_store.update_item(item)
-            shop_ops_store.record(
-                guild_id=guild_id, user_id=user_id, kind="admin",
-                item_id=item.id, price=0, status="done",
-                detail=f"rep_price={item.rep_price}",
+            new_item = replace(item, rep_price=rep_price)
+            ok = await _persist_admin_item(
+                guild_id, user_id, new_item,
+                f"rep_price={new_item.rep_price}",
             )
+            if not ok:
+                await interaction.response.send_message(
+                    "Не удалось сохранить изменение в базе данных.",
+                    ephemeral=True,
+                )
+                return
             await edit_card(interaction, await _admin_item_view(
-                guild_id, user_id, item
+                guild_id, user_id, new_item, page=page
             ))
 
     async def _rep(i):
@@ -1642,16 +1788,25 @@ async def _admin_item_view(
         )
 
         async def on_submit(self, interaction):
-            item.available_from = self.start.value.strip() or None
-            item.available_until = self.end.value.strip() or None
-            shop_store.update_item(item)
-            shop_ops_store.record(
-                guild_id=guild_id, user_id=user_id, kind="admin",
-                item_id=item.id, price=0, status="done",
-                detail=f"season {item.available_from}..{item.available_until}",
+            if not await _require_owner(interaction):
+                return
+            new_item = replace(
+                item,
+                available_from=self.start.value.strip() or None,
+                available_until=self.end.value.strip() or None,
             )
+            ok = await _persist_admin_item(
+                guild_id, user_id, new_item,
+                f"season {new_item.available_from}..{new_item.available_until}",
+            )
+            if not ok:
+                await interaction.response.send_message(
+                    "Не удалось сохранить изменение в базе данных.",
+                    ephemeral=True,
+                )
+                return
             await edit_card(interaction, await _admin_item_view(
-                guild_id, user_id, item
+                guild_id, user_id, new_item, page=page
             ))
 
     async def _season(i):
@@ -1664,7 +1819,9 @@ async def _admin_item_view(
     b = discord.ui.Button(label="К списку", style=discord.ButtonStyle.secondary)
 
     async def _back(i):
-        await edit_card(i, await build_admin_view(guild_id, user_id))
+        if not await _require_owner(i):
+            return
+        await edit_card(i, await build_admin_view(guild_id, user_id, page=page))
     b.callback = _back
     back.add_item(b)
     view.container.add_item(back)
@@ -1691,7 +1848,7 @@ async def open_category(
         await _open_wardrobe(interaction)
         return
     if category == "personal":
-        await edit_card(interaction, build_subcat_view(gid, uid))
+        await edit_card(interaction, await build_subcat_view(gid, uid))
         return
     builder = _CATEGORY_BUILDERS.get(category)
     if builder is None:

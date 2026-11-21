@@ -311,3 +311,65 @@ async def _h_design_publish(gid, params, actor):
     msg = await channel.send(view=view)
     return {"published": True, "template": key,
             "channel_id": channel_id, "message_id": msg.id}
+
+
+# ------------------------------------------------------------------
+# Moderation: case status + report actions (panel Moderation page)
+# ------------------------------------------------------------------
+
+_MOD_CASE_TARGETS = {"completed", "revoked"}
+_MOD_REPORT_ACTIONS = {"claim", "resolve", "dismiss", "escalate"}
+
+
+@register_action("moderation.case_status")
+async def _h_mod_case_status(gid, params, actor):
+    """Смена статуса дела модерации из панели.
+
+    Только терминальные переходы completed/revoked и только из
+    нетерминальных статусов — панель не может «воскресить»
+    закрытое дело или пометить pending-дело completed без
+    Discord-действия."""
+    from storage.moderation_store import moderation_store as db
+    if not gid:
+        raise ValueError("guild_id required")
+    case_id = int(params.get("case_id") or 0)
+    status = str(params.get("status") or "")
+    if not case_id:
+        raise ValueError("case_id required")
+    if status not in _MOD_CASE_TARGETS:
+        raise ValueError(f"unsupported case status: {status}")
+    details = params.get("details")
+    if not isinstance(details, dict):
+        details = {"note": str(details)[:500]} if details else {}
+    row = await db.case_status(
+        int(gid), case_id, status, int(actor or 0),
+        details=details, expected=("pending", "active", "unknown"),
+    )
+    if row is None:
+        return {"ok": False,
+                "error": "case not found or already terminal"}
+    return {"ok": True, "case_id": case_id, "status": status}
+
+
+@register_action("moderation.report_action")
+async def _h_mod_report_action(gid, params, actor):
+    """Действие по жалобе из панели (claim/resolve/dismiss/escalate)."""
+    from storage.moderation_store import moderation_store as db
+    if not gid:
+        raise ValueError("guild_id required")
+    report_id = int(params.get("report_id") or 0)
+    action = str(params.get("action") or "")
+    note = str(params.get("note") or "")[:500]
+    if not report_id:
+        raise ValueError("report_id required")
+    if action not in _MOD_REPORT_ACTIONS:
+        raise ValueError(f"unsupported report action: {action}")
+    row = await db.report_action(
+        int(gid), report_id, int(actor or 0), action, note=note,
+    )
+    if row is None:
+        return {"ok": False,
+                "error": "report not found, already handled, "
+                         "or assigned to another moderator"}
+    return {"ok": True, "report_id": report_id, "action": action,
+            "status": row.get("status")}

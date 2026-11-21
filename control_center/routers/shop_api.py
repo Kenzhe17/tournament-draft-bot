@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from control_center import rbac
 from control_center.auth import (
-    PanelUser, require_perm, verify_csrf,
+    PanelUser, current_user, require_perm, verify_csrf,
 )
 from storage import shop_catalog
 
@@ -24,7 +24,13 @@ router = APIRouter(prefix="/api/shop", tags=["shop"])
 
 MANAGE = rbac.PERM_SETTINGS_MANAGE
 
-CATEGORIES = {"icons", "tags", "services", "roles", "access", "cases"}
+# Категории — фактическая модель SHOP 2.0 (shop_items.category).
+# pets/cases — не товары каталога (свои подсистемы), access —
+# не существует в модели.
+CATEGORIES = {
+    "icons", "tags", "frames", "bundles", "color_roles",
+    "services", "roles",
+}
 RARITIES = {"basic", "premium", "elite", "special"}
 ITEM_TYPES = {"cosmetic", "role", "service"}
 COSMETIC_TYPES = {"color", "icon", "tag", "frame"}
@@ -44,6 +50,10 @@ class ItemBody(BaseModel):
     item_type: str = "cosmetic"
     role_id: int | None = None
     required_level: int = Field(default=0, ge=0, le=10000)
+    available_from: str | None = Field(default=None, max_length=40)
+    available_until: str | None = Field(default=None, max_length=40)
+    bundle: list[str] | None = None
+    rep_price: int | None = Field(default=None, ge=0, le=999)
 
 
 def _validate(body: ItemBody) -> None:
@@ -57,6 +67,17 @@ def _validate(body: ItemBody) -> None:
         raise HTTPException(422, f"unknown cosmetic_type: {body.cosmetic_type}")
     if body.item_type == "role" and not body.role_id:
         raise HTTPException(422, "role items require role_id")
+    # Двойная оплата обязательна: платный товар не может иметь
+    # rep_price=0 (обход REP-требования).
+    if body.price > 0 and body.rep_price == 0:
+        raise HTTPException(
+            422, "paid items cannot have rep_price=0"
+        )
+    if body.bundle is not None:
+        if not body.bundle or len(body.bundle) > 50:
+            raise HTTPException(422, "bundle must contain 1..50 ids")
+        if any(not isinstance(c, str) or not c for c in body.bundle):
+            raise HTTPException(422, "bundle ids must be non-empty strings")
 
 
 def _ser(r: dict[str, Any]) -> dict[str, Any]:
@@ -68,7 +89,35 @@ def _ser(r: dict[str, Any]) -> dict[str, Any]:
         "cosmetic_type": r["cosmetic_type"], "value": r["value"],
         "item_type": r["item_type"], "role_id": r["role_id"],
         "required_level": r["required_level"],
+        "available_from": r.get("available_from"),
+        "available_until": r.get("available_until"),
+        "bundle": r.get("bundle"),
+        "rep_price": r.get("rep_price"),
     }
+
+
+async def require_shop_owner(user: PanelUser = Depends(current_user)
+                             ) -> PanelUser:
+    """Управление каталогом — ТОЛЬКО BOT_OWNER_ID.
+
+    Discord Administrator, ADMIN_USER_IDS, организаторы и
+    модераторы (роли admin/moderator/organizer панели) прав
+    не имеют — проверяем id напрямую, а не через perm-бандлы.
+    """
+    try:
+        from config import BOT_OWNER_ID, GUILD_ID
+        from control_center.config import PANEL_GUILD_ID
+    except Exception:  # noqa: BLE001 — config недоступен: deny
+        raise HTTPException(
+            status_code=403,
+            detail="shop catalog management is restricted to bot owner",
+        )
+    if int(BOT_OWNER_ID or 0) != user.id:
+        raise HTTPException(status_code=403, detail="bot owner only")
+    expected = PANEL_GUILD_ID or int(GUILD_ID or 0)
+    if expected and user.guild_id and user.guild_id != expected:
+        raise HTTPException(status_code=403, detail="wrong guild")
+    return user
 
 
 @router.get("/items")
@@ -85,7 +134,7 @@ async def list_items(
 @router.post("/items")
 async def create_item(
     body: ItemBody,
-    user: PanelUser = Depends(require_perm("shop.manage")),
+    user: PanelUser = Depends(require_shop_owner),
     _csrf: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
     _validate(body)
@@ -105,7 +154,7 @@ async def create_item(
 async def update_item(
     item_id: str,
     body: ItemBody,
-    user: PanelUser = Depends(require_perm("shop.manage")),
+    user: PanelUser = Depends(require_shop_owner),
     _csrf: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
     _validate(body)
@@ -121,7 +170,7 @@ async def update_item(
 @router.post("/items/{item_id}/hide")
 async def hide_item(
     item_id: str,
-    user: PanelUser = Depends(require_perm("shop.manage")),
+    user: PanelUser = Depends(require_shop_owner),
     _csrf: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
     return await _set_active(item_id, False, user)
@@ -130,7 +179,7 @@ async def hide_item(
 @router.post("/items/{item_id}/show")
 async def show_item(
     item_id: str,
-    user: PanelUser = Depends(require_perm("shop.manage")),
+    user: PanelUser = Depends(require_shop_owner),
     _csrf: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
     return await _set_active(item_id, True, user)
@@ -139,7 +188,7 @@ async def show_item(
 @router.delete("/items/{item_id}")
 async def delete_item(
     item_id: str,
-    user: PanelUser = Depends(require_perm("shop.manage")),
+    user: PanelUser = Depends(require_shop_owner),
     _csrf: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
     """Архивирование: помечаем is_active=false, запись сохраняется.

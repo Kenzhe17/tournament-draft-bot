@@ -15,6 +15,7 @@ from discord.ext import commands, tasks
 from services import moderation_service as ms
 from storage.moderation_store import moderation_store as db
 from views import mod_panel
+from config import GUILD_ID
 
 logger=logging.getLogger(__name__)
 
@@ -399,7 +400,45 @@ class ModeratorCog(commands.GroupCog,group_name='mod',group_description='Цен�
 
 
 class ReportCog(commands.Cog):
-    def __init__(self,bot):self.bot=bot
+    def __init__(self,bot):
+        self.bot=bot
+        self._appeal_cd={}
+
+    @commands.Cog.listener()
+    async def on_message(self,message:discord.Message):
+        """Внешняя апелляция для забаненных: ЛС боту `appeal <MOD-id> <причина>`.
+        create_appeal проверяет target_id дела — чужие дела недоступны,
+        дедупликация по (case_id, appellant) встроена в store."""
+        if message.author.bot or message.guild is not None:
+            return
+        text=message.content.strip()
+        if not text.lower().startswith('appeal '):
+            return
+        parts=text.split(maxsplit=2)
+        if len(parts)<3 or not parts[1].isdigit():
+            await message.channel.send('Формат: appeal <номер дела, напр. 123> <причина>')
+            return
+        now=__import__('time').monotonic()
+        if now-self._appeal_cd.get(message.author.id,0)<60:
+            return
+        self._appeal_cd[message.author.id]=now
+        case_id=int(parts[1]);reason=ms.clean_reason(parts[2])
+        if len(reason)<10:
+            await message.channel.send('Опиши причину обжалования подробнее (от 10 символов).');return
+        gid=GUILD_ID or (self.bot.guilds[0].id if self.bot.guilds else None)
+        if not gid:
+            await message.channel.send('Сервис временно недоступен.');return
+        try:
+            r=await db.create_appeal(gid,case_id,message.author.id,reason)
+        except Exception:
+            logger.exception('DM appeal failed')
+            await message.channel.send('Не удалось принять апелляцию, попробуйте позже.');return
+        if not r:
+            await message.channel.send('Дело не найдено, не принадлежит тебе или апелляция уже создана.')
+            return
+        await message.channel.send(f'Апелляция APL-{r["id"]:06d} принята на рассмотрение.')
+        await ms.notice(self.bot,gid,'Апелляция из ЛС',
+            f'APL-{r["id"]:06d} на дело MOD-{case_id:06d}\nИгрок: <@{message.author.id}>\nИсточник: ЛС (вне сервера)')
 
     @commands.Cog.listener()
     async def on_automod_action(self,action:discord.AutoModAction):
