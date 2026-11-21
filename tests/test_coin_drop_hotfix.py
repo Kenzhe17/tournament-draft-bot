@@ -363,3 +363,25 @@ async def test_trigger_drop_cooldown_blocks_parallel():
     channel.send.assert_not_called()
     coin_drop.LAST_EVENT_TIME.pop(777, None)
     coin_drop.CHANNEL_MESSAGE_COUNTERS.pop(777, None)
+
+
+@pytest.mark.asyncio
+async def test_corrupt_pending_file_preserved_not_overwritten(tmp_path):
+    """Битый pending JSON не затирается пустым состоянием:
+    оригинал сохраняется как .corrupt-*, CRITICAL в лог."""
+    import logging
+    path = tmp_path / "pending.json"
+    path.write_text("{broken json!!!", encoding="utf-8")
+    store = DropPendingStore(path)
+    with patch.object(logging.getLogger("storage.drop_pending_store"),
+                      "critical") as crit:
+        item = store.add({"grant_key": "k1", "kind": "speed",
+                          "guild_id": 1, "user_id": 1, "amount": 10})
+    assert item["grant_key"] == "k1"
+    # Оригинал сохранён как .corrupt-*
+    corrupts = list(tmp_path.glob("pending.json.corrupt-*"))
+    assert len(corrupts) == 1
+    assert corrupts[0].read_text(encoding="utf-8") == "{broken json!!!"
+    crit.assert_called()
+    # Новый файл — валидный JSON с элементом.
+    assert store.get("k1")["user_id"] == 1

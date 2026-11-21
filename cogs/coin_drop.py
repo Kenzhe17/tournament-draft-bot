@@ -85,44 +85,66 @@ async def grant_drop_reward(cog, guild_id: int, user_id: int,
     """
     if amount <= 0:
         return "credited"
-    try:
-        row = await drop_reward_store.record(
-            grant_key, kind, guild_id, user_id, amount)
-    except Exception:
-        logger.critical(
-            "drop reward PG record failed key=%s guild=%s user=%s "
-            "amount=%s kind=%s — durable pending file fallback",
-            grant_key, guild_id, user_id, amount, kind)
+
+    async def _fixate() -> str:
+        # Протокол единственного владельца grant_key (внутри
+        # _grant_lock — сериализовано с worker drain):
+        # 1) СНАЧАЛА pending-файл: победитель, записанный туда
+        #    во время PG outage, имеет приоритет над новым
+        #    PG-обязательством — иначе B «перехватил» бы ключ.
+        item = drop_pending_store.get(grant_key)
+        if item is not None:
+            owner = int(item.get("user_id") or -1)
+            if owner != int(user_id):
+                return "other"
+            return await cog._settle_pending_item(item)
+        # 2) PG — атомарная запись обязательства.
         try:
-            item = drop_pending_store.add({
-                "grant_key": grant_key, "kind": kind,
-                "guild_id": guild_id, "user_id": user_id,
-                "amount": amount,
-            })
+            row = await drop_reward_store.record(
+                grant_key, kind, guild_id, user_id, amount)
         except Exception:
             logger.critical(
-                "drop reward fixation FAILED key=%s — ни PG, ни "
-                "pending-файл недоступны", grant_key)
-            return "failed"
-        if int(item.get("user_id") or -1) != int(user_id):
+                "drop reward PG record failed key=%s guild=%s "
+                "user=%s amount=%s kind=%s — durable pending file",
+                grant_key, guild_id, user_id, amount, kind)
+            try:
+                item = drop_pending_store.add({
+                    "grant_key": grant_key, "kind": kind,
+                    "guild_id": guild_id, "user_id": user_id,
+                    "amount": amount,
+                })
+            except Exception:
+                logger.critical(
+                    "drop reward fixation FAILED key=%s — ни PG, "
+                    "ни pending-файл недоступны", grant_key)
+                return "failed"
+            owner = int(item.get("user_id") or -1)
+            if owner != int(user_id):
+                return "other"
+            return await cog._settle_pending_item(item)
+        owner = int((row or {}).get("user_id") or -1)
+        if owner != int(user_id):
+            logger.warning(
+                "drop reward grant_key %s уже принадлежит "
+                "user=%s — отклонён user=%s",
+                grant_key, owner, user_id)
             return "other"
-        return await cog._settle_pending_item(item)
-    owner = int((row or {}).get("user_id") or -1)
-    if owner != int(user_id):
-        logger.warning(
-            "drop reward grant_key %s уже принадлежит user=%s — "
-            "отклонён user=%s", grant_key, owner, user_id)
-        return "other"
-    if (row or {}).get("status") == "completed":
-        return "credited"
-    # Единый claim-механизм: кнопка и worker не обрабатывают
-    # одну награду параллельно (lease + fencing по attempts).
-    claimed = await drop_reward_store.claim_key(grant_key)
-    if claimed is None:
-        # Строку уже держит worker — он доведёт начисление.
-        return "queued"
-    return ("credited" if await cog._process_drop_reward(claimed)
-            else "queued")
+        if (row or {}).get("status") == "completed":
+            return "credited"
+        # Единый claim-механизм: кнопка и worker не обрабатывают
+        # одну награду параллельно (lease + fencing по attempts).
+        claimed = await drop_reward_store.claim_key(grant_key)
+        if claimed is None:
+            # Строку уже держит worker — он доведёт начисление.
+            return "queued"
+        return ("credited" if await cog._process_drop_reward(claimed)
+                else "queued")
+
+    lock = getattr(cog, "_grant_lock", None)
+    if lock is not None:
+        async with lock:
+            return await _fixate()
+    return await _fixate()
 
 
 # ==========================================
@@ -261,6 +283,11 @@ class CoinDropCog(commands.Cog):
         self.bot = bot
         self._default_channel_id = NOTIFICATION_CHANNEL_ID
         self._drop_lock = asyncio.Lock()
+        # Сериализует ВСЕ операции фиксации владельца grant_key
+        # (PG record ↔ pending-файл ↔ drain) — иначе при
+        # восстановлении PG возможна гонка: B записывается в PG
+        # раньше, чем файл с победителем A перенесён в PG.
+        self._grant_lock = asyncio.Lock()
         self._reward_task: asyncio.Task | None = None
 
     def _target_channel_id(self, guild) -> int:
@@ -522,11 +549,16 @@ class CoinDropCog(commands.Cog):
 
     async def _drain_pending_file(self) -> None:
         """Перенос обязательств из durable pending-файла в PG.
+        Каждый settle идёт под _grant_lock — той же сериализацией,
+        что и grant_drop_reward: файл проверяется ДО создания
+        нового PG-обязательства, поэтому победитель из файла
+        не может быть «перехвачен» при восстановлении PG.
         Вызывается worker'ом каждые _DROP_WORKER_INTERVAL секунд
         и после восстановления PostgreSQL."""
         for item in drop_pending_store.all():
             try:
-                await self._settle_pending_item(item)
+                async with self._grant_lock:
+                    await self._settle_pending_item(item)
             except Exception:
                 logger.exception(
                     "drop pending drain failed key=%s",

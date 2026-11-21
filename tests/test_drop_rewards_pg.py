@@ -303,3 +303,59 @@ async def test_repeat_recovery_run_idempotent(pg_pool):
     rows = await s.claim_due()
     assert all(r["grant_key"] != "raffledrop:rr" for r in rows)
     assert await _balance(1, 15) == 350
+
+
+@pytest.mark.asyncio
+async def test_pg_outage_file_owner_survives_concurrent_grant(pg_pool, tmp_path, monkeypatch):
+    """Критическая гонка: PG down → A в pending-файл → PG recovery
+    → конкурентные grant(B) + drain. Победитель остаётся A,
+    начисление ровно один раз."""
+    import storage.db as dbmod
+    from storage.drop_pending_store import DropPendingStore
+    from cogs import coin_drop as cd
+
+    pending = DropPendingStore(tmp_path / "pending.json")
+    monkeypatch.setattr(cd, "drop_pending_store", pending)
+    cog = _cog()
+
+    real_record = drs.drop_reward_store.record
+    state = {"pg_down": True}
+
+    async def flaky_record(*a, **k):
+        if state["pg_down"]:
+            raise RuntimeError("pg down")
+        return await real_record(*a, **k)
+
+    monkeypatch.setattr(drs.drop_reward_store, "record", flaky_record)
+    # 1) PG down: A фиксируется в файл.
+    res_a = await cd.grant_drop_reward(cog, 1, 501, 300,
+                                       "speeddrop:race", "speed")
+    assert res_a == "queued"
+    assert pending.get("speeddrop:race")["user_id"] == 501
+
+    # 2) PG восстановился.
+    state["pg_down"] = False
+    bal_b_before = await _balance(1, 502)
+
+    # 3) Конкурентно: grant от B + drain файла — под _grant_lock.
+    res_b, _ = await asyncio.gather(
+        cd.grant_drop_reward(cog, 1, 502, 300, "speeddrop:race", "speed"),
+        cog._drain_pending_file(),
+    )
+    assert res_b == "other"          # B НЕ перехватил ключ
+    assert pending.get("speeddrop:race") is None  # файл перенесён
+
+    # 4) В PG ровно одна строка, владелец — A.
+    async with pg_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT user_id, status FROM drop_coin_rewards "
+            "WHERE grant_key='speeddrop:race'")
+    assert row is not None
+    assert int(row["user_id"]) == 501
+
+    # 5) Начисление — только A, ровно один раз.
+    claimed = await drs.drop_reward_store.claim_key("speeddrop:race")
+    if claimed:
+        await cog._process_drop_reward(claimed)
+    assert await _balance(1, 501) == 400   # 100 + 300
+    assert await _balance(1, 502) == bal_b_before  # B — ничего

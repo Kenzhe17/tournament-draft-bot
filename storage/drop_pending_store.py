@@ -20,6 +20,7 @@ grant_key на обоих уровнях.
 from __future__ import annotations
 
 import logging
+import shutil
 import threading
 import time
 from typing import Any
@@ -47,6 +48,23 @@ class DropPendingStore:
             return
         self._loaded = True
         data = load_json_file(self._path)
+        if data is None and self._path.exists():
+            # Файл есть, но JSON битый: НЕ перезаписываем его
+            # пустым состоянием — сохраняем как .corrupt-<ts>
+            # для ручного восстановления и логируем CRITICAL.
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            corrupt = self._path.with_name(
+                f"{self._path.name}.corrupt-{stamp}")
+            try:
+                shutil.copy2(self._path, corrupt)
+            except OSError:
+                corrupt = self._path
+            logger.critical(
+                "drop pending file %s is CORRUPT — preserved as %s; "
+                "queued rewards may need manual recovery",
+                self._path, corrupt)
+            self._items = {}
+            return
         if isinstance(data, dict):
             self._items = {
                 k: v for k, v in data.items() if isinstance(v, dict)
@@ -84,6 +102,13 @@ class DropPendingStore:
                 self._items.pop(key, None)
                 raise
             return stored
+
+    def get(self, grant_key: str) -> dict[str, Any] | None:
+        """Текущий владелец grant_key в файле (без записи)."""
+        with self._lock:
+            self._ensure_loaded()
+            item = self._items.get(str(grant_key))
+            return dict(item) if item is not None else None
 
     def remove(self, grant_key: str) -> None:
         with self._lock:
