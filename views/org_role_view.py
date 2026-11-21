@@ -178,6 +178,19 @@ def _display_name(guild: discord.Guild | None, user_id: int) -> str:
     return f"@{user_id}"
 
 
+def has_access_role(member) -> bool:
+    """Есть ли у участника роль «Доступ» (ACCESS_ROLE_ID).
+
+    ACCESS_ROLE_ID=0 — проверка отключена (роль не настроена).
+    """
+    from config import ACCESS_ROLE_ID
+    if ACCESS_ROLE_ID <= 0:
+        return True
+    return ACCESS_ROLE_ID in {
+        r.id for r in getattr(member, "roles", []) or []
+    }
+
+
 def _can_reset(user, guild: discord.Guild | None) -> bool:
     """Права на «Сбросить роли»: владелец/админы/менеджер-сервер.
 
@@ -318,6 +331,15 @@ async def _handle_role_button(
             if discord_role is None:
                 await interaction.response.send_message(
                     f"Роль {role_name} не найдена на сервере.",
+                    ephemeral=True,
+                )
+                return
+            # Роль «Доступ» обязательна для получения ORG-1/2/3 —
+            # даже при прямом вызове кнопки по ссылке на сообщение.
+            if not has_access_role(member):
+                await interaction.response.send_message(
+                    "Сначала получите роль «Доступ» — заявки принимаются "
+                    "в канале ротации доступа.",
                     ephemeral=True,
                 )
                 return

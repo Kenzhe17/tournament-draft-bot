@@ -22,6 +22,10 @@ def roles(monkeypatch, tmp_path):
     monkeypatch.setattr(omv, "_ORG_ROLES", [(11, "ORG-1"), (22, "ORG-2"), (33, "ORG-3")])
     monkeypatch.setattr(omv, "ORG_SLOT_FILE", tmp_path / "org_slot.json")
     monkeypatch.setattr(omv, "MANAGER_ROLE_ID", 0)
+    # Гейт роли «Доступ» в этих тестах отключён (ACCESS_ROLE_ID=0);
+    # отдельный тест ниже проверяет его с ненулевым ID.
+    import config
+    monkeypatch.setattr(config, "ACCESS_ROLE_ID", 0)
     yield
 
 
@@ -584,3 +588,33 @@ class TestAdminRelease:
         await yes.callback(ix)
         assert omv.load_state().get_holders(22) == []
         assert target.removed == []  # discord-роли не было
+
+
+# ---------- гейт роли «Доступ» ----------
+
+class TestAccessGate:
+    @pytest.mark.asyncio
+    async def test_take_denied_without_access_role(self, monkeypatch):
+        """Без роли «Доступ» ORG-1/2/3 не выдаются — даже по кнопке."""
+        import config
+        monkeypatch.setattr(config, "ACCESS_ROLE_ID", 999)
+        m = _Member(1)
+        guild = _Guild([m])
+        omv.save_state(_state())
+        ix = _Ix(m, guild)
+        await _RoleSlotButton_for(0).callback(ix)
+        assert omv.load_state().get_holders(11) == []
+        assert m.added == []
+        assert any("Доступ" in r for r in ix.replies)
+
+    @pytest.mark.asyncio
+    async def test_take_allowed_with_access_role(self, monkeypatch):
+        import config
+        monkeypatch.setattr(config, "ACCESS_ROLE_ID", 999)
+        m = _Member(1, role_ids=[999])
+        guild = _Guild([m])
+        omv.save_state(_state())
+        ix = _Ix(m, guild)
+        await _RoleSlotButton_for(0).callback(ix)
+        assert omv.load_state().get_holders(11) == [1]
+        assert m.added == [11]
