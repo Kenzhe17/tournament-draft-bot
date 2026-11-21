@@ -1,9 +1,9 @@
 """Подсчёт активности и выбор участника дня.
 
-Activity Score = floor(min(voice_seconds, 21600) / 300) + 10 * matches
+Activity Score = floor(voice_seconds / 300) + 10 * matches
 
 - voice_seconds: только подтверждённое присутствие в войсе (сканер
-  в cogs/banner.py), максимум 6 часов в сутки
+  в cogs/banner.py), без дневного лимита
 - matches: DISTINCT подтверждённых турнирных матчей из match_history
 
 Tiebreak: matches DESC -> voice_seconds DESC -> user_id ASC.
@@ -18,7 +18,6 @@ from datetime import date, datetime, time, timedelta, timezone
 logger = logging.getLogger(__name__)
 
 TZ_NAME = "Asia/Almaty"
-MAX_VOICE_SECONDS = 6 * 3600          # 6 часов в сутки
 POINTS_PER_5MIN = 1                   # 1 очко за каждые полные 5 минут
 MATCH_POINTS = 10                     # 10 очков за подтверждённый матч
 
@@ -52,8 +51,7 @@ def almaty_day_bounds_utc(day: date) -> tuple[datetime, datetime]:
 
 
 def activity_score(voice_seconds: int, matches: int) -> int:
-    capped = min(max(voice_seconds, 0), MAX_VOICE_SECONDS)
-    return (capped // 300) * POINTS_PER_5MIN + MATCH_POINTS * max(matches, 0)
+    return (max(voice_seconds, 0) // 300) * POINTS_PER_5MIN + MATCH_POINTS * max(matches, 0)
 
 
 @dataclass

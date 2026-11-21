@@ -1,7 +1,8 @@
 """Ког ежедневного баннера сервера.
 
 - Сканер голосовых каналов (каждые 60 сек): считает присутствие
-  реальных участников в общем войсе, накапливает до 6 ч/сутки,
+  реальных участников в общем войсе, накапливает всё подтверждённое
+  время без дневного лимита,
   пишет в banner_voice_daily (PostgreSQL).
 - Планировщик: каждый день в 00:05 (Asia/Almaty) публикует
   Server Banner за вчерашний день. Пропущенные дни догоняются
@@ -100,7 +101,7 @@ class BannerCog(commands.Cog):
             for member in humans:
                 key = (guild.id, member.id, day)
                 prev = self._credited.get(key, 0)
-                new = min(prev + elapsed, act.MAX_VOICE_SECONDS)
+                new = prev + elapsed
                 delta = new - prev
                 if delta > 0:
                     self._credited[key] = new
