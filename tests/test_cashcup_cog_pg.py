@@ -492,3 +492,186 @@ async def test_double_result_and_stale_tid_pg(pg_pool, monkeypatch):
     state = await cashcup_store.active(G)
     m = next(x for x in state["bracket"]["matches"] if x["id"] == mid)
     assert not m.get("room_id")
+
+
+# ---------- P0: восстановление регистрации после restart ----------
+
+
+class _CardChannel:
+    """Канал с реальными message_id: send/fetch/delete как у Discord."""
+
+    def __init__(self):
+        self.messages: dict[int, SimpleNamespace] = {}
+        self.next_id = 6000
+        self.sent_count = 0
+
+    async def send(self, *args, **kw):
+        mid = self.next_id
+        self.next_id += 1
+        self.sent_count += 1
+        msg = SimpleNamespace(id=mid, edit=AsyncMock(), delete=AsyncMock())
+        self.messages[mid] = msg
+        return msg
+
+    async def fetch_message(self, mid):
+        msg = self.messages.get(int(mid))
+        if msg is None:
+            raise discord.NotFound(
+                SimpleNamespace(status=404, reason="nf"),
+                {"message": "nf"})
+        return msg
+
+
+class _CardGuild(_Guild):
+    def __init__(self, gid: int, channel: _CardChannel):
+        super().__init__(gid)
+        self._channel = channel
+
+    def get_channel(self, cid):
+        return self._channel if cid == CH else None
+
+    async def fetch_channel(self, cid):
+        return self.get_channel(cid)
+
+
+async def _audit_count(tid: str) -> int:
+    pool = dbmod._pool
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT COUNT(*) FROM cashcup_audit WHERE tournament_id=$1",
+            tid)
+
+
+async def _snapshot(tid: str) -> dict:
+    state = await cashcup_store.latest(G)
+    assert state["tournament_id"] == tid
+    return {
+        "status": state["status"],
+        "version": state["version"],
+        "channel_id": state["channel_id"],
+        "message_id": state["message_id"],
+        "prize": state["prize"],
+        "pool": state.get("pool"),
+        "teams": state["teams"],
+        "audit": await _audit_count(tid),
+    }
+
+
+async def _registration_fixture(pg_pool, monkeypatch):
+    """Турнир в registration: 2 BR-команды, FF UID у всех,
+    приглашение запасного, ожидающая заявка pending."""
+    cog, guild, bot, tid, _ = await _seed_two_teams(pg_pool, monkeypatch)
+    for cap in (CAP_A, CAP_B):
+        inter = _interaction(cap, guild, bot)
+        await cog.register_br_team(inter)
+    state = await cashcup_store.active(G)
+    team_ids = {t["name"]: t["id"] for t in state["teams"]}
+    await _confirm_all(cog, guild, bot, tid, team_ids)
+    # Запасной приглашён, но НЕ подтвердил — sub_invites живёт.
+    cap_a = _interaction(CAP_A, guild, bot)
+    await cog.invite_sub(cap_a, str(SUB_A), tid=tid)
+    # Ожидающая заявка (pending) — через прямую мутацию стора.
+    def add_pending(st):
+        t = next(t for t in st["teams"] if t["name"] == "Alpha")
+        t.setdefault("pending", []).append(
+            {"discord_id": 930001, "ff_uid": "", "ff_ok": False})
+    await cashcup_store.mutate(G, CAP_A, "test_pending", add_pending,
+                               tournament_id=tid)
+    return cog, guild, bot, tid, team_ids
+
+
+@pytest.mark.asyncio
+async def test_registration_card_survives_restart_alive_message(
+        pg_pool, monkeypatch):
+    """Рестарт при ЖИВОЙ карточке: edit на месте, без дублей,
+    все команды/UID/sub_invites/pending сохранены."""
+    cog1, guild1, bot1, tid, _ = await _registration_fixture(
+        pg_pool, monkeypatch)
+    before = await _snapshot(tid)
+    assert before["status"] == "registration"
+    assert len(before["teams"]) == 2
+
+    # Карточка существует в «Discord» (канал с message_id).
+    ch = _CardChannel()
+    card = await ch.send(view="panel")
+    await cashcup_store.set_message(G, card.id)
+    before = await _snapshot(tid)
+
+    # === RESTART: старый cog уничтожен, новый поднимается ===
+    guild2 = _CardGuild(G, ch)
+    bot2 = _Bot(guild2)
+    cog2 = CashCupCog(bot2)  # type: ignore[arg-type]
+    await cog2.cog_load()
+    await cog2.on_ready()
+
+    # Карточка отредактирована на месте — НОВЫХ сообщений нет.
+    assert ch.sent_count == 1
+    card.edit.assert_awaited()
+    after = await _snapshot(tid)
+    assert after["message_id"] == before["message_id"]
+    assert after["teams"] == before["teams"]
+    assert after["status"] == "registration"
+    assert after["audit"] == before["audit"]
+
+    # Повторный on_ready (reconnect) — снова без дублей.
+    cog2._boards_ok = False
+    await cog2.on_ready()
+    assert ch.sent_count == 1
+    assert card.edit.await_count == 2
+
+    # Кнопки работают: новая BR-команда регистрируется в ТОТ ЖЕ
+    # tournament_id (не создаётся новый турнир).
+    br_teams = {
+        940001: _br_team("brC", "Gamma", 940001,
+                         [940001, 940002, 940003, 940004]),
+    }
+    monkeypatch.setattr(
+        cashcup_mod.team_store, "get_by_captain",
+        lambda uid: {**{CAP_A: _br_team("brA", "Alpha", CAP_A,
+                                        [CAP_A, P_A2, P_A3, P_A4]),
+                        CAP_B: _br_team("brB", "Beta", CAP_B,
+                                        [CAP_B, P_B2, P_B3, P_B4])},
+                     **br_teams}.get(uid))
+    inter = _interaction(940001, guild2, bot2)
+    await cog2.register_br_team(inter)
+    state = await cashcup_store.active(G)
+    assert state["tournament_id"] == tid
+    assert len(state["teams"]) == 3
+    names = {t["name"] for t in state["teams"]}
+    assert names == {"Alpha", "Beta", "Gamma"}
+
+
+@pytest.mark.asyncio
+async def test_registration_card_deleted_recreated_once(
+        pg_pool, monkeypatch):
+    """Карточка удалена во время рестарта: создаётся ОДНА замена,
+    message_id обновляется, данные турнира не трогаются."""
+    cog1, guild1, bot1, tid, _ = await _registration_fixture(
+        pg_pool, monkeypatch)
+    before = await _snapshot(tid)
+    await cashcup_store.set_message(G, 999999)  # «удалённое» сообщение
+
+    ch = _CardChannel()  # fetch(999999) -> NotFound
+    guild2 = _CardGuild(G, ch)
+    bot2 = _Bot(guild2)
+    cog2 = CashCupCog(bot2)  # type: ignore[arg-type]
+    await cog2.cog_load()
+    await cog2.on_ready()
+
+    assert ch.sent_count == 1           # ровно одна замена
+    after = await _snapshot(tid)
+    assert after["message_id"] != before["message_id"]
+    # message_id указывает на реально отправленное сообщение.
+    new_id = after["message_id"]
+    assert new_id in ch.messages
+    assert after["teams"] == before["teams"]
+    assert after["status"] == "registration"
+    assert after["version"] == before["version"]  # set_message — не mutate
+    assert after["audit"] == before["audit"]
+
+    # Повторный restore: теперь сообщение «существует» → edit,
+    # дублей нет.
+    cog2._boards_ok = False
+    await cog2.on_ready()
+    assert ch.sent_count == 1
+    ch.messages[new_id].edit.assert_awaited()

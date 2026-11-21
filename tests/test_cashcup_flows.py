@@ -744,13 +744,32 @@ async def test_restore_boards_updates_existing(cog):
 
 
 @pytest.mark.asyncio
-async def test_restore_skips_registration(cog):
-    st = _reg_state()  # registration — доски нет
+async def test_restore_registration_replaces_missing_card(cog):
+    """Registration: message_id отсутствует/сообщение удалено →
+    создаётся ОДНА замена карточки (P0 zero-data-loss)."""
+    st = _reg_state()  # message_id=None — карточки нет
     cog._store.state = st
-    ch = FakeChannel(msg=FakeMsg())
-    guild = SimpleNamespace(id=1, get_channel=lambda cid: ch)
+    ch = FakeChannel(msg=None)  # fetch -> NotFound
+    guild = SimpleNamespace(id=1, get_channel=lambda cid: ch,
+                            fetch_channel=lambda cid: ch)
     cog.bot = SimpleNamespace(guilds=[guild])
     await cog._restore_boards()
+    assert len(ch.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_restore_registration_edits_live_card(cog):
+    """Registration: живая карточка → edit на месте, без дублей."""
+    st = _reg_state()
+    st["message_id"] = 555
+    cog._store.state = st
+    msg = FakeMsg(mid=555)
+    ch = FakeChannel(msg=msg)
+    guild = SimpleNamespace(id=1, get_channel=lambda cid: ch,
+                            fetch_channel=lambda cid: ch)
+    cog.bot = SimpleNamespace(guilds=[guild])
+    await cog._restore_boards()
+    assert len(msg.edits) == 1
     assert not ch.sent
 
 

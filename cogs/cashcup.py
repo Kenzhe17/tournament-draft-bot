@@ -612,16 +612,28 @@ class CashCupCog(commands.Cog):
         for guild in getattr(self.bot, "guilds", []) or []:
             try:
                 state = await cashcup_store.latest(guild.id)
-                if not state or state.get("status") not in ("running", "completed") \
-                        or not state.get("bracket"):
+                if not state:
                     continue
-                channel = guild.get_channel(state.get("channel_id"))
-                if channel is None:
-                    try:
-                        channel = await guild.fetch_channel(state["channel_id"])
-                    except Exception:
+                status = state.get("status")
+                if status == "registration":
+                    # Регистрация тоже нуждается в восстановлении:
+                    # карточка в Discord переживает рестарт, но если
+                    # её удалили — без этого кода турнир мёртв.
+                    channel = await self._restore_channel(guild, state)
+                    if channel is None:
                         failures += 1
                         continue
+                    if not await self._restore_registration_card(
+                            state, channel):
+                        failures += 1
+                    continue
+                if status not in ("running", "completed") \
+                        or not state.get("bracket"):
+                    continue
+                channel = await self._restore_channel(guild, state)
+                if channel is None:
+                    failures += 1
+                    continue
                 # False = edit/send не выполнен (403/429/5xx/нет fresh state):
                 # считаем guild неудачным — on_ready повторит при следующем
                 # вызове, т.к. _boards_ok останется False.
@@ -632,6 +644,69 @@ class CashCupCog(commands.Cog):
                 logger.exception("CASH CUP board restore failed guild=%s",
                                  getattr(guild, "id", "?"))
         return failures
+
+    async def _restore_channel(self, guild, state: dict):
+        """Канал карточки/доски; None при недоступности."""
+        channel = guild.get_channel(state.get("channel_id"))
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(state["channel_id"])
+            except Exception:
+                return None
+        return channel
+
+    async def _restore_registration_card(self, state: dict,
+                                         channel) -> bool:
+        """Восстановить карточку регистрации после рестарта.
+
+        - message_id жив → идемпотентный edit (обновляет команды,
+          НЕ создаёт дублей при каждом on_ready/reconnect);
+        - NotFound → ОДНА замена + сохранение нового message_id
+          адресной записью (teams/status не трогаем);
+        - прочие HTTP-ошибки → False (on_ready повторит позже).
+        """
+        view = compose(_panel(state), CashCupView(True))
+        mid = state.get("message_id")
+        if mid:
+            try:
+                msg = await channel.fetch_message(mid)
+            except discord.NotFound:
+                msg = None  # удалена вручную — создаём замену
+            except discord.HTTPException as exc:
+                logger.warning("CASH CUP card fetch failed: %s", exc)
+                return False
+            if msg is not None:
+                try:
+                    await msg.edit(view=view,
+                                   allowed_mentions=discord.AllowedMentions.none())
+                    return True
+                except discord.NotFound:
+                    pass  # удалили между fetch и edit — заменяем
+                except discord.HTTPException as exc:
+                    logger.warning("CASH CUP card edit failed: %s", exc)
+                    return False
+        # Подтверждённое отсутствие сообщения — публикуем замену.
+        try:
+            msg = await channel.send(view=view,
+                                     allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException as exc:
+            logger.warning("CASH CUP card resend failed: %s", exc)
+            return False
+        try:
+            # Обновляет ТОЛЬКО колонку message_id активного турнира
+            # (unique index гарантирует единственную registration/running
+            # строку на guild). teams/status/state не изменяются.
+            await cashcup_store.set_message(state["guild_id"], msg.id)
+        except Exception:
+            # Discord-сообщение создано, но id не сохранён: удаляем
+            # сироту, иначе следующий restore создаст дубль.
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+            logger.exception("CASH CUP card message_id save failed")
+            return False
+        return True
 
     async def _refresh(self, guild_id: int, state: dict | None = None) -> None:
         if state is None:
