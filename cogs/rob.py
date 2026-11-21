@@ -57,7 +57,7 @@ class RobView(discord.ui.View):
         """Построить embed для ограбления."""
         chance_percent = int(success_chance * 100)
         embed = discord.Embed(
-            title=f" **ОГРАБЛЕНИЕ** | `/rob`",
+            title=f"**ОГРАБЛЕНИЕ** | `/rob`",
             description=(
                 f" **Жертва:** <@{self.victim_id}>\n"
                 f" **Грабитель:** <@{self.robber_id}>\n"
@@ -97,7 +97,7 @@ class RobStartButton(discord.ui.Button):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
                     )
                     await interaction.message.delete()
                     return
@@ -111,7 +111,7 @@ class RobStartButton(discord.ui.Button):
         victim_cash = victim_balance  # user_balance это наличные на руках
 
         if robber_balance <= 100:
-            await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} У вас недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100."),                ephemeral=True
+            await interaction.response.send_message( view=text_card(f"У вас недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100."),                ephemeral=True
             )
             await interaction.message.delete()
             return
@@ -322,7 +322,7 @@ class RobStartButton(discord.ui.Button):
                         bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['robber_loot_name']}):** Увеличил куш на +{pet_bonuses['robber_loot_bonus']:.1f}%!"
 
                     embed = discord.Embed(
-                        title=f" **УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
+                        title=f"**УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
                         description=(
                             f" **Грабитель:** <@{self.robber_id}>\n"
                             f" **Жертва:** <@{self.victim_id}>\n"
@@ -338,7 +338,7 @@ class RobStartButton(discord.ui.Button):
                     stolen_item = random.choice(stealable_items)
 
                     embed = discord.Embed(
-                        title=f" **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ ЗАЩИЩЁН**",
+                        title=f"**УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ ЗАЩИЩЁН**",
                         description=(
                             f" **Грабитель:** <@{self.robber_id}>\n"
                             f" **Жертва:** <@{self.victim_id}>\n"
@@ -391,7 +391,7 @@ class RobStartButton(discord.ui.Button):
                         bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['black_market_name']}):** Уменьшил комиссию на -{pet_bonuses['black_market_bonus']:.1f}%!"
                     
                     embed = discord.Embed(
-                        title=f" **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ!**",
+                        title=f"**УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ!**",
                         description=(
                             f" **Грабитель:** <@{self.robber_id}>\n"
                             f" **Жертва:** <@{self.victim_id}>\n"
@@ -407,7 +407,7 @@ class RobStartButton(discord.ui.Button):
                 if victim_balance == 0:
                     # У жертвы нет монет - считаем ограбление неуспешным
                     embed = discord.Embed(
-                        title=f" **ОГРАБЛЕНИЕ НЕУДАЧНО** | `/rob`",
+                        title=f"**ОГРАБЛЕНИЕ НЕУДАЧНО** | `/rob`",
                         description=(
                             f" **Грабитель:** <@{self.robber_id}>\n"
                             f" **Жертва:** <@{self.victim_id}>\n"
@@ -488,7 +488,7 @@ class RobStartButton(discord.ui.Button):
 
                     # Build success embed
                     embed = discord.Embed(
-                        title=f" **УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
+                        title=f"**УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
                         description=(
                             f" **Грабитель:** <@{self.robber_id}>\n"
                             f" **Жертва:** <@{self.victim_id}>\n"
@@ -566,7 +566,7 @@ class RobStartButton(discord.ui.Button):
                 bonus_text += f"\n\n🐾 **Лис-разведчик ({pet.pet_name}):** Сократил срок тюрьмы на -{jail_reduction_pct:.1f}%!"
 
             embed = discord.Embed(
-                title=f" **ОГРАБЛЕНИЕ ПРОВАЛЕНО** | `/rob`",
+                title=f"**ОГРАБЛЕНИЕ ПРОВАЛЕНО** | `/rob`",
                 description=(
                     f" **Грабитель:** <@{self.robber_id}>\n"
                     f" **Жертва:** <@{self.victim_id}>\n"
@@ -612,20 +612,20 @@ class RobCog(commands.Cog):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
                     )
                     return
 
         if user.id == interaction.user.id:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Нельзя ограбить самого себя!",
+                f"Нельзя ограбить самого себя!",
                 ephemeral=True
             )
             return
 
         if user.bot:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Нельзя ограбить бота!",
+                f"Нельзя ограбить бота!",
                 ephemeral=True
             )
             return
@@ -684,20 +684,20 @@ class RobCog(commands.Cog):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
                     )
                     return
 
         if user.id == interaction.user.id:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Нельзя ограбить самого себя!",
+                f"Нельзя ограбить самого себя!",
                 ephemeral=True
             )
             return
 
         if user.bot:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Нельзя ограбить бота!",
+                f"Нельзя ограбить бота!",
                 ephemeral=True
             )
             return
@@ -753,7 +753,7 @@ class RobGroupView(discord.ui.View):
         
         if self.original_message:
             try:
-                await self.original_message.edit( view=text_card(f"{replace_emojis('❌')} Время на сбор истекло! Лобби отменено.")
+                await self.original_message.edit( view=text_card(f"Время на сбор истекло! Лобби отменено.")
                 )
             except:
                 pass
@@ -791,7 +791,7 @@ class RobGroupView(discord.ui.View):
             members_list += f" (+{len(self.members) - 6})"
 
         embed = discord.Embed(
-            title=f" **ГРУППОВОЕ ОГРАБЛЕНИЕ** | `/robgroup`",
+            title=f"**ГРУППОВОЕ ОГРАБЛЕНИЕ** | `/robgroup`",
             description=(
                 f" **Цель:** <@{self.victim_id}>\n"
                 f" **Лидер:** <@{self.leader_id}>\n"
@@ -832,7 +832,7 @@ class RobGroupJoinButton(discord.ui.Button):
                         remaining = timedelta(hours=2) - (now - last_rob)
                         hours, remainder = divmod(remaining.seconds, 3600)
                         minutes, _ = divmod(remainder, 60)
-                        await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                            ephemeral=True
+                        await interaction.response.send_message( view=text_card(f"Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                            ephemeral=True
                         )
                         return
 
@@ -842,7 +842,7 @@ class RobGroupJoinButton(discord.ui.Button):
                 # Лобби уже завершено/идёт штурм — join запрещён
                 if self.game_view.finished:
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Лобби уже завершено!",
+                        f"Лобби уже завершено!",
                         ephemeral=True
                     )
                     return
@@ -850,7 +850,7 @@ class RobGroupJoinButton(discord.ui.Button):
                 # Проверка: уже в банде
                 if user_id in self.game_view.members:
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Вы уже в банде!",
+                        f"Вы уже в банде!",
                         ephemeral=True
                     )
                     return
@@ -858,7 +858,7 @@ class RobGroupJoinButton(discord.ui.Button):
                 # Проверка: нельзя участвовать в ограблении себя
                 if user_id == self.game_view.victim_id:
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Нельзя участвовать в ограблении самого себя!",
+                        f"Нельзя участвовать в ограблении самого себя!",
                         ephemeral=True
                     )
                     return
@@ -866,7 +866,7 @@ class RobGroupJoinButton(discord.ui.Button):
                 # Проверка: лимит участников
                 if len(self.game_view.members) >= 6:
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Банда полна (максимум 6 участников)!",
+                        f"Банда полна (максимум 6 участников)!",
                         ephemeral=True
                     )
                     return
@@ -878,7 +878,7 @@ class RobGroupJoinButton(discord.ui.Button):
 
                 if user_balance < required_balance:
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Недостаточно {get_emoji('money')}! Требуется минимум {required_balance} (30% от баланса лидера).",
+                        f"Недостаточно {get_emoji('money')}! Требуется минимум {required_balance} (30% от баланса лидера).",
                         ephemeral=True
                     )
                     return
@@ -909,7 +909,7 @@ class RobGroupStartButton(discord.ui.Button):
         # Проверка: только лидер
         if interaction.user.id != self.game_view.leader_id:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Только лидер может начать штурм!",
+                f"Только лидер может начать штурм!",
                 ephemeral=True
             )
             return
@@ -926,14 +926,14 @@ class RobGroupStartButton(discord.ui.Button):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
                     )
                     return
 
         # Проверка: минимум 2 участника
         if len(self.game_view.members) < 2:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Нужно минимум 2 участника для штурма!",
+                f"Нужно минимум 2 участника для штурма!",
                 ephemeral=True
             )
             return
@@ -968,7 +968,7 @@ class RobGroupStartButton(discord.ui.Button):
                         remaining = timedelta(hours=2) - (now - last_rob)
                         hours, remainder = divmod(remaining.seconds, 3600)
                         minutes, _ = divmod(remainder, 60)
-                        await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун для участника <@{member_id}>! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                            ephemeral=True
+                        await interaction.response.send_message( view=text_card(f"Кулдаун для участника <@{member_id}>! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                            ephemeral=True
                         )
                         await interaction.message.delete()
                         return
@@ -981,7 +981,7 @@ class RobGroupStartButton(discord.ui.Button):
         for member_id in members:
             member_balance = await user_balance_store.get_balance(guild_id, member_id)
             if member_balance <= 100:
-                await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} У участника <@{member_id}> недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100."),                    ephemeral=True
+                await interaction.response.send_message( view=text_card(f"У участника <@{member_id}> недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100."),                    ephemeral=True
                 )
                 await interaction.message.delete()
                 return
@@ -1098,7 +1098,7 @@ class RobGroupStartButton(discord.ui.Button):
                     
                     party_list = "\n".join([f" <@{mid}>" for mid in members])
                     embed = discord.Embed(
-                        title=f" **ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
+                        title=f"**ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
                         description=(
                             f" **Цель:** <@{victim_id}>\n"
                             f" **Результат:** Предмет защищён сейфом!\n"
@@ -1129,7 +1129,7 @@ class RobGroupStartButton(discord.ui.Button):
                     # У жертвы нет монет - считаем ограбление неуспешным
                     party_list = "\n".join([f" <@{mid}>" for mid in members])
                     embed = discord.Embed(
-                        title=f" **ГРУППОВОЕ ОГРАБЛЕНИЕ НЕУДАЧНО** | `/robgroup`",
+                        title=f"**ГРУППОВОЕ ОГРАБЛЕНИЕ НЕУДАЧНО** | `/robgroup`",
                         description=(
                             f" **Цель:** <@{victim_id}>\n"
                             f" **Результат:** У жертвы 0 {get_emoji('money')}\n"
@@ -1216,7 +1216,7 @@ class RobGroupStartButton(discord.ui.Button):
             bonus_text = ""
 
             embed = discord.Embed(
-                title=f" **ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
+                title=f"**ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
                 description=(
                     f" **Цель:** <@{victim_id}>\n"
                     f" **Украдено:** `{stolen_amount}` {get_emoji('money')}\n"
@@ -1270,7 +1270,7 @@ class RobGroupStartButton(discord.ui.Button):
                 jail_text += f" (-{jail_reduction_pct:.1f}% от {jail_pet_name})"
 
             embed = discord.Embed(
-                title=f" **ГРУППОВОЕ ОГРАБЛЕНИЕ ПРОВАЛ** | `/robgroup`",
+                title=f"**ГРУППОВОЕ ОГРАБЛЕНИЕ ПРОВАЛ** | `/robgroup`",
                 description=(
                     f" **Цель:** <@{victim_id}>\n"
                     f" **Штраф:** `{collected}` {get_emoji('money')}\n"
@@ -1305,7 +1305,7 @@ class RobGroupCancelButton(discord.ui.Button):
         # Проверка: только лидер
         if interaction.user.id != self.game_view.leader_id:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Только лидер может отменить лобби!",
+                f"Только лидер может отменить лобби!",
                 ephemeral=True
             )
             return
@@ -1315,7 +1315,7 @@ class RobGroupCancelButton(discord.ui.Button):
         if self.game_view.message_id in _robgroup_lobbies:
             del _robgroup_lobbies[self.game_view.message_id]
 
-        await interaction.response.edit_message( view=text_card(f"{replace_emojis('❌')} Лобби отменено.")
+        await interaction.response.edit_message( view=text_card(f"Лобби отменено.")
         )
 
 

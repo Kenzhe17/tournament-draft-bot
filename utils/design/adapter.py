@@ -15,6 +15,7 @@ import logging
 import re
 
 import discord
+from discord.ui.select import BaseSelect
 
 from utils.design import colors
 from utils.design.containers import chunk_text, section, separator
@@ -545,7 +546,7 @@ def _view_rows(view: discord.ui.View) -> list[discord.ui.ActionRow]:
             _flush()
             rows.append(item)
             continue
-        if isinstance(item, discord.ui.Select):
+        if isinstance(item, BaseSelect):
             _flush()
             row = discord.ui.ActionRow()
             row.add_item(item)

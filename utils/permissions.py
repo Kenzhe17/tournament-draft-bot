@@ -29,7 +29,7 @@ def is_admin() -> app_commands.check:
                     return True
 
         raise app_commands.CheckFailure(
-            "❌ Эта команда доступна только администраторам или организаторам (роль 'org', ORG-1/2/3)."
+            "Эта команда доступна только администраторам или организаторам (роль 'org', ORG-1/2/3)."
         )
 
     return app_commands.check(predicate)
@@ -57,7 +57,7 @@ def is_org() -> app_commands.check:
                     return True
 
         raise app_commands.CheckFailure(
-            "❌ Эта команда доступна только организаторам (роль 'org', ORG-1/2/3) или администраторам."
+            "Эта команда доступна только организаторам (роль 'org', ORG-1/2/3) или администраторам."
         )
 
     return app_commands.check(predicate)
@@ -103,20 +103,26 @@ def is_org_check(user: discord.Member, guild: discord.Guild) -> bool:
     return False
 
 
-def can_manage_tournament_results(user, guild: discord.Guild, tournament) -> bool:
-    """Управление результатами обычного турнира (/tournament create).
+def can_manage_tournament(user, guild: discord.Guild, tournament) -> bool:
+    """Единая проверка прав управления КОНКРЕТНЫМ турниром.
 
-    Допустимы:
-    - администратор сервера / владелец бота / ADMIN_USER_IDS;
-    - роли 'org' и ORG-1/2/3 (is_org_check);
-    - создатель турнира (tournament.organizer_id);
-    - уполномоченные организаторы канала этого турнира
-      (organizer_store; при заданном tournament_id — только
-      привязанные к этому турниру).
+    Разрешено:
+    - владельцу бота, администраторам сервера, ADMIN_USER_IDS;
+    - глобальной роли 'org' и ролям ORG-1/2/3 (is_org_check);
+    - создателю турнира (tournament.organizer_id);
+    - основному и дополнительным организаторам канала этого
+      турнира (organizer_store), при этом organizer_store.tournament_id
+      обязан совпадать с tournament.id — назначения от предыдущего
+      турнира доступа не дают (пустой tournament_id — legacy-запись
+      без привязки, считается действующей для текущего турнира
+      канала);
+    - пользователю с ролью из ORG_ROLE_MAP, назначенной именно
+      для канала этого турнира.
 
-    Капитан команды без организаторских прав — False.
+    Организатор чужого канала/турнира → False. Капитан команды без
+    организаторских прав → False.
     """
-    if user is None:
+    if user is None or tournament is None or guild is None:
         return False
     try:
         if is_org_check(user, guild):
@@ -126,22 +132,58 @@ def can_manage_tournament_results(user, guild: discord.Guild, tournament) -> boo
     uid = getattr(user, "id", 0)
     if not uid:
         return False
+    # Создатель турнира
     if getattr(tournament, "organizer_id", 0) == uid:
         return True
+    t_gid = getattr(tournament, "guild_id", 0) or getattr(guild, "id", 0)
+    t_cid = getattr(tournament, "channel_id", 0)
+    t_tid = str(getattr(tournament, "id", "") or "")
+    # Основной + дополнительные организаторы канала (с привязкой
+    # к этому турниру)
     try:
         from storage.organizer_store import organizer_store
 
-        orgs = organizer_store.get(
-            getattr(tournament, "guild_id", 0) or getattr(guild, "id", 0),
-            getattr(tournament, "channel_id", 0),
-        )
+        orgs = organizer_store.get(t_gid, t_cid)
         if orgs and orgs.is_organizer(uid):
-            tid = str(getattr(orgs, "tournament_id", "") or "")
-            if not tid or tid == str(getattr(tournament, "id", "") or ""):
+            bound_tid = str(getattr(orgs, "tournament_id", "") or "")
+            if not bound_tid or bound_tid == t_tid:
+                return True
+    except Exception:
+        pass
+    # ORG_ROLE_MAP: роль, назначенная для канала этого турнира
+    try:
+        from config import ORG_ROLE_MAP
+
+        role_id = ORG_ROLE_MAP.get(int(t_cid))
+        if role_id:
+            role = guild.get_role(int(role_id))
+            if role is not None and role in getattr(user, "roles", []):
                 return True
     except Exception:
         pass
     return False
+
+
+def can_manage_channel_tournament(user, guild: discord.Guild, channel_id: int) -> bool:
+    """Проверка прав на турнир в канале (если турнир существует).
+
+    Нет турнира → fallback на is_channel_organizer (управление
+    каналом организаторов). Есть турнир → can_manage_tournament
+    с проверкой привязки tournament_id.
+    """
+    try:
+        from storage.json_store import store
+
+        tournament = store.get(guild.id, channel_id)
+    except Exception:
+        tournament = None
+    if tournament is None:
+        return is_channel_organizer(user, guild, channel_id)
+    return can_manage_tournament(user, guild, tournament)
+
+
+# Обратная совместимость: старое имя той же проверки.
+can_manage_tournament_results = can_manage_tournament
 
 
 def is_channel_organizer(user: discord.Member, guild: discord.Guild, channel_id: int) -> bool:
@@ -163,13 +205,13 @@ def is_channel_organizer_decorator() -> app_commands.check:
 
     async def predicate(interaction: discord.Interaction) -> bool:
         if not interaction.guild:
-            raise app_commands.CheckFailure("❌ Эта команда доступна только на сервере.")
+            raise app_commands.CheckFailure("Эта команда доступна только на сервере.")
 
         if is_channel_organizer(interaction.user, interaction.guild, interaction.channel_id):
             return True
 
         raise app_commands.CheckFailure(
-            "❌ Эта команда доступна только организаторам канала или глобальным организаторам."
+            "Эта команда доступна только организаторам канала или глобальным организаторам."
         )
 
     return app_commands.check(predicate)
@@ -184,7 +226,7 @@ def is_bot_owner() -> app_commands.check:
             return True
 
         raise app_commands.CheckFailure(
-            "❌ Эта команда доступна только владельцу бота."
+            "Эта команда доступна только владельцу бота."
         )
 
     return app_commands.check(predicate)

@@ -1,6 +1,7 @@
 """Lucky Coins Event Module - Spontaneous coin drops in chat."""
 
 import asyncio
+import logging
 import random
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Set
@@ -13,9 +14,13 @@ from discord.ext import commands
 
 from config import get_emoji, BOT_OWNER_ID, NOTIFICATION_CHANNEL_ID
 from storage.user_balance_store import user_balance_store
+from storage.drop_reward_store import drop_reward_store
+from storage.drop_pending_store import drop_pending_store
 
 if TYPE_CHECKING:
     from bot import TournamentBot
+
+logger = logging.getLogger(__name__)
 
 
 # Custom check for bot owner
@@ -43,6 +48,105 @@ async def add_balance(guild_id: int, user_id: int, amount: int) -> None:
     await user_balance_store.add_balance(guild_id, user_id, amount)
 
 
+_DROP_BACKOFF_BASE = 30.0
+_DROP_BACKOFF_CAP = 1800.0
+_DROP_WORKER_INTERVAL = 15.0
+
+
+def _drop_backoff(attempts: int) -> float:
+    """Ограниченный экспоненциальный backoff: 30с, 60с, 120с, ...
+    максимум 30 минут. Без бесконечного быстрого повторения."""
+    return min(_DROP_BACKOFF_BASE * (2 ** max(0, attempts - 1)),
+               _DROP_BACKOFF_CAP)
+
+
+async def grant_drop_reward(cog, guild_id: int, user_id: int,
+                            amount: int, grant_key: str,
+                            kind: str) -> str:
+    """Фиксация победителя в надёжном хранилище + попытка выплаты.
+
+    Хранилища по приоритету:
+    1. drop_reward_store.record() — PostgreSQL (grant_key PK);
+    2. drop_pending_store.add() — атомарный JSON-файл, переживает
+       рестарт процесса (используется только при недоступности PG).
+
+    Награда НЕ считается зафиксированной, пока обязательство не
+    попало хотя бы в одно из них — «failed» означает, что
+    объявлять победителя нельзя.
+
+    Возвращает:
+      "credited" — монеты уже на балансе;
+      "queued"   — обязательство durable, worker доведёт до
+                   completed (включая случай, когда строку PG
+                   уже держит lease другого обработчика);
+      "other"    — grant_key уже принадлежит другому участнику
+                   (повторная фиксация с другим user_id);
+      "failed"   — зафиксировать не удалось нигде.
+    """
+    if amount <= 0:
+        return "credited"
+
+    async def _fixate() -> str:
+        # Протокол единственного владельца grant_key (внутри
+        # _grant_lock — сериализовано с worker drain):
+        # 1) СНАЧАЛА pending-файл: победитель, записанный туда
+        #    во время PG outage, имеет приоритет над новым
+        #    PG-обязательством — иначе B «перехватил» бы ключ.
+        item = drop_pending_store.get(grant_key)
+        if item is not None:
+            owner = int(item.get("user_id") or -1)
+            if owner != int(user_id):
+                return "other"
+            return await cog._settle_pending_item(item)
+        # 2) PG — атомарная запись обязательства.
+        try:
+            row = await drop_reward_store.record(
+                grant_key, kind, guild_id, user_id, amount)
+        except Exception:
+            logger.critical(
+                "drop reward PG record failed key=%s guild=%s "
+                "user=%s amount=%s kind=%s — durable pending file",
+                grant_key, guild_id, user_id, amount, kind)
+            try:
+                item = drop_pending_store.add({
+                    "grant_key": grant_key, "kind": kind,
+                    "guild_id": guild_id, "user_id": user_id,
+                    "amount": amount,
+                })
+            except Exception:
+                logger.critical(
+                    "drop reward fixation FAILED key=%s — ни PG, "
+                    "ни pending-файл недоступны", grant_key)
+                return "failed"
+            owner = int(item.get("user_id") or -1)
+            if owner != int(user_id):
+                return "other"
+            return await cog._settle_pending_item(item)
+        owner = int((row or {}).get("user_id") or -1)
+        if owner != int(user_id):
+            logger.warning(
+                "drop reward grant_key %s уже принадлежит "
+                "user=%s — отклонён user=%s",
+                grant_key, owner, user_id)
+            return "other"
+        if (row or {}).get("status") == "completed":
+            return "credited"
+        # Единый claim-механизм: кнопка и worker не обрабатывают
+        # одну награду параллельно (lease + fencing по attempts).
+        claimed = await drop_reward_store.claim_key(grant_key)
+        if claimed is None:
+            # Строку уже держит worker — он доведёт начисление.
+            return "queued"
+        return ("credited" if await cog._process_drop_reward(claimed)
+                else "queued")
+
+    lock = getattr(cog, "_grant_lock", None)
+    if lock is not None:
+        async with lock:
+            return await _fixate()
+    return await _fixate()
+
+
 # ==========================================
 # UI Компоненты Ивента
 # ==========================================
@@ -61,32 +165,71 @@ class SpeedDropView(discord.ui.View):
         custom_id="speed_coin_drop_btn"  # Will be dynamically updated
     )
     async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-
+        # Флаг занимаем ДО ответа: два быстрых клика не должны
+        # оба пройти проверку claimed и получить двойную выплату.
         if self.claimed:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f" Кто-то оказался быстрее вас!",
                 ephemeral=True
             )
             return
 
+        # Defer — только ack «бот думает», победитель ещё НЕ
+        # объявлен: фиксация обязательства идёт после defer,
+        # иначе медленный PG даст Discord 10062.
+        await interaction.response.defer()
+
+        # Сначала durable-фиксация победителя (PG → pending-файл):
+        # claimed НЕ потребляется и ивент не завершается, пока
+        # обязательство не сохранено в надёжном хранилище.
+        cog = interaction.client.get_cog("CoinDropCog")
+        result = await grant_drop_reward(
+            cog, interaction.guild_id, interaction.user.id,
+            self.reward_amount, f"speeddrop:{self.event_id}", "speed")
+
+        if result == "other":
+            await interaction.followup.send(
+                "Награда по этому событию уже зафиксирована за "
+                "другим участником.", ephemeral=True)
+            return
+        if result == "failed":
+            # Ни PG, ни durable-файл не приняли обязательство —
+            # claimed не потреблён, ивент жив, клик можно повторить.
+            await interaction.followup.send(
+                "Временная ошибка сохранения — попробуйте забрать "
+                "награду ещё раз.", ephemeral=True)
+            return
+
+        # Зафиксировано — теперь занимаем claim (гонка двух кликов:
+        # второй увидит claimed и получит «кто-то быстрее»).
+        if self.claimed:
+            await interaction.followup.send(
+                " Кто-то оказался быстрее вас!", ephemeral=True)
+            return
         self.claimed = True
         self.stop()
 
-        # Выплата победителю
-        await add_balance(interaction.guild_id, interaction.user.id, self.reward_amount)
-
         result_embed = discord.Embed(
-            title=f" **ИВЕНТ ЗАВЕРШЁН | НАГРАДА ЗАБРАНА**",
+            title=f"**ИВЕНТ ЗАВЕРШЁН | НАГРАДА ЗАБРАНА**",
             description=(
                 f" **Счастливчик:** {interaction.user.mention}\n"
                 f" **Выигрыш:** **`{self.reward_amount:,}`** {get_emoji('money')}\n\n"
-                f" *Монеты зачислены на ваш баланс. Проверить: `/balance`*"
+                + ("*Монеты зачислены на ваш баланс. Проверить: `/balance`*"
+                   if result == "credited" else
+                   "*Зачисление подтверждается — при задержке монеты "
+                   "появятся автоматически, повторное начисление "
+                   "исключено.*")
             ),
             color=0x2ECC71
         )
-        await interaction.edit_original_response(view=smart_view(await interaction.original_response(), None))
-        await interaction.followup.send( view=compose(result_embed))
+        try:
+            await interaction.edit_original_response(view=smart_view(await interaction.original_response(), None))
+            await interaction.followup.send( view=compose(result_embed))
+        except discord.HTTPException:
+            # Ответ Discord потерян — монеты уже зачислены
+            # идемпотентно, пользователь не пострадает.
+            logger.warning("speed drop notify failed user=%s",
+                           interaction.user.id)
 
 
 # 2. Режим «Розыгрыш / 60 секунд» (Raffle Drop)
@@ -99,7 +242,7 @@ class RaffleDropView(discord.ui.View):
 
     def build_embed(self) -> discord.Embed:
         return discord.Embed(
-            title=f" **СПОНТАННЫЙ ИВЕНТ | ЛОТЕРЕЯ МОНЕТ**",
+            title=f"**СПОНТАННЫЙ ИВЕНТ | ЛОТЕРЕЯ МОНЕТ**",
             description=(
                 f" В чате разыгрывается мешок с монетами!\n"
                 f" Награда: **`{self.reward_amount:,}`** {get_emoji('money')}\n"
@@ -138,7 +281,20 @@ from cogs.groups import admin_group, bind_commands
 class CoinDropCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
-        self.target_channel_id = NOTIFICATION_CHANNEL_ID
+        self._default_channel_id = NOTIFICATION_CHANNEL_ID
+        self._drop_lock = asyncio.Lock()
+        # Сериализует ВСЕ операции фиксации владельца grant_key
+        # (PG record ↔ pending-файл ↔ drain) — иначе при
+        # восстановлении PG возможна гонка: B записывается в PG
+        # раньше, чем файл с победителем A перенесён в PG.
+        self._grant_lock = asyncio.Lock()
+        self._reward_task: asyncio.Task | None = None
+
+    def _target_channel_id(self, guild) -> int:
+        from services.discord_cfg import channel_id as _dc
+        gid = guild.id if guild else None
+        return _dc(gid, "discord.notification_channel_id",
+                   self._default_channel_id)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -147,7 +303,7 @@ class CoinDropCog(commands.Cog):
             return
 
         # Проверяем нужный канал
-        if message.channel.id != self.target_channel_id:
+        if message.channel.id != self._target_channel_id(message.guild):
             return
 
         channel_id = message.channel.id
@@ -169,20 +325,29 @@ class CoinDropCog(commands.Cog):
 
     async def trigger_drop(self, channel: discord.TextChannel):
         """Логика генерации случайного ивента (сумма 100-500, шанс 50/50)."""
-        # Check if coin drops are enabled in settings
-        from storage.json_store import store
-        settings = store.get_settings()
-        if not settings.get("coin_drop_enabled", True):
+        # Check if coin drops are enabled: Control Center (PG) →
+        # legacy settings.json fallback внутри peek.
+        from services.settings_service import settings_service
+        if not settings_service.peek(channel.guild.id if channel.guild else None,
+                                      "feature.coin_drop_enabled"):
             return
 
-        # Записываем время ивента
-        LAST_EVENT_TIME[channel.id] = datetime.now()
+        # Защита от параллельного запуска (естественный ивент + forcedrop).
+        async with self._drop_lock:
+            # Повторная проверка кулдауна под локом.
+            last_event = LAST_EVENT_TIME.get(channel.id)
+            if last_event and (datetime.now() - last_event) < timedelta(minutes=30):
+                return
 
-        reward = random.randint(100, 500)
-        is_speed_mode = random.choice([True, False])
+            # Записываем время ивента до отправки — повторный триггер
+            # в окне отправки не создаст второй дроп.
+            LAST_EVENT_TIME[channel.id] = datetime.now()
 
-        # Генерируем уникальный ID для ивента (чтобы избежать конфликтов кнопок)
-        event_id = str(datetime.now().timestamp())
+            reward = random.randint(100, 500)
+            is_speed_mode = random.choice([True, False])
+
+            # Генерируем уникальный ID для ивента (чтобы избежать конфликтов кнопок)
+            event_id = str(datetime.now().timestamp())
 
         if is_speed_mode:
             # === РЕЖИМ 1: НА СКОРОСТЬ ===
@@ -192,7 +357,7 @@ class CoinDropCog(commands.Cog):
                 item.custom_id = f"speed_coin_drop_{event_id}"
 
             embed = discord.Embed(
-                title=f" **СПОНТАННЫЙ ИВЕНТ | БЫСТРЫЕ МОНЕТЫ**",
+                title=f"**СПОНТАННЫЙ ИВЕНТ | БЫСТРЫЕ МОНЕТЫ**",
                 description=(
                     f" В чате обнаружен мешок с монетами!\n"
                     f" Нажмите кнопку как можно быстрее — кто успеет первым, тот забрал куш.\n\n"
@@ -212,12 +377,19 @@ class CoinDropCog(commands.Cog):
             embed = view.build_embed()
             msg = await channel.send( view=compose(embed, view))
 
-            # Ожидание 60 секунд для сбора участников
-            await asyncio.sleep(60.0)
+            # Ожидание 60 секунд для сбора участников — в фоне,
+            # чтобы не держать обработчик сообщения.
+            self.bot.loop.create_task(
+                self._raffle_finish(msg, view, reward, channel))
 
+    async def _raffle_finish(self, msg: discord.Message, view: "RaffleDropView",
+                             reward: int, channel: discord.TextChannel) -> None:
+        """Финализация розыгрыша через 60 секунд (фоновая задача)."""
+        try:
+            await asyncio.sleep(60.0)
             if not view.participants:
                 no_p_embed = discord.Embed(
-                    title=f" **ЛОТЕРЕЯ ЗАВЕРШЕНА | НИКОГО**",
+                    title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | НИКОГО**",
                     description=f" Никто не успел принять участие за 60 секунд. Мешок с {get_emoji('money')} сгорел!",
                     color=0xED4245
                 )
@@ -226,38 +398,189 @@ class CoinDropCog(commands.Cog):
                     await msg.reply( view=compose(no_p_embed))
                 except discord.HTTPException:
                     pass
-            else:
-                winner_id = random.choice(list(view.participants))
-                winner = channel.guild.get_member(winner_id)
-                if not winner:
-                    # Если пользователь не найден, выбираем другого
-                    view.participants.remove(winner_id)
-                    if view.participants:
-                        winner_id = random.choice(list(view.participants))
-                        winner = channel.guild.get_member(winner_id)
+                return
 
-                if winner:
-                    await add_balance(channel.guild.id, winner.id, reward)
+            winner_id = random.choice(list(view.participants))
+            winner = channel.guild.get_member(winner_id)
+            if not winner:
+                # Если пользователь не найден, выбираем другого
+                view.participants.discard(winner_id)
+                if view.participants:
+                    winner_id = random.choice(list(view.participants))
+                    winner = channel.guild.get_member(winner_id)
 
-                    result_embed = discord.Embed(
-                        title=f" **ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
-                        description=(
-                            f" **Победитель:** {winner.mention}\n"
-                            f" **Выигрыш:** **`{reward:,}`** {get_emoji('money')}\n"
-                            f" **Всего участников:** `{len(view.participants)}`\n\n"
-                            f" *Монеты зачислены на ваш баланс. Проверить: `/balance`*"
-                        ),
-                        color=0x2ECC71
-                    )
+            if winner:
+                result = await grant_drop_reward(
+                    self, channel.guild.id, winner.id, reward,
+                    f"raffledrop:{view.event_id}", "raffle")
+                if result in ("failed", "other"):
+                    # Обязательство не зафиксировано durable —
+                    # НЕ объявляем победителя и НЕ обещаем выплату.
+                    # CRITICAL-лог содержит все данные для
+                    # ручного восстановления.
+                    logger.critical(
+                        "raffle winner NOT persisted event=%s "
+                        "winner=%s amount=%s result=%s",
+                        view.event_id, winner.id, reward, result)
                     try:
                         await msg.edit(view=smart_view(msg, None))
-                        await msg.reply( view=compose(result_embed))
+                        await msg.reply(view=compose(discord.Embed(
+                            title="**ЛОТЕРЕЯ ОТМЕНЕНА | ТЕХНИЧЕСКАЯ ОШИБКА**",
+                            description=(
+                                "Розыгрыш не завершён: временная "
+                                "ошибка сохранения данных. Победитель "
+                                "не объявлен — обратитесь к "
+                                "администратору."),
+                            color=0xED4245)))
                     except discord.HTTPException:
                         pass
+                    return
+
+                result_embed = discord.Embed(
+                    title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
+                    description=(
+                        f" **Победитель:** {winner.mention}\n"
+                        f" **Выигрыш:** **`{reward:,}`** {get_emoji('money')}\n"
+                        f" **Всего участников:** `{len(view.participants)}`\n\n"
+                        + ("*Монеты зачислены на ваш баланс. Проверить: `/balance`*"
+                           if result == "credited" else
+                           "*Зачисление подтверждается — при задержке монеты "
+                           "появятся автоматически.*")
+                    ),
+                    color=0x2ECC71
+                )
+                try:
+                    await msg.edit(view=smart_view(msg, None))
+                    await msg.reply( view=compose(result_embed))
+                except discord.HTTPException:
+                    pass
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("coin_drop raffle finish failed")
 
     # Админ-команда для принудительного вызова ивента
     async def cog_load(self) -> None:
         bind_commands(admin_group, self, ["forcedrop"])
+        # Восстановление долговременных наград: незавершённые
+        # обязательства из drop_coin_rewards подхватываются
+        # автоматически после рестарта/восстановления PG.
+        self._reward_task = asyncio.get_running_loop().create_task(
+            self._reward_worker())
+
+    async def cog_unload(self) -> None:
+        task = self._reward_task
+        self._reward_task = None
+        if task:
+            task.cancel()
+
+    async def _process_drop_reward(self, row: dict) -> bool:
+        """Одна попытка начисления по зафиксированному обязательству.
+        row — результат claim_key/claim_due: содержит attempts
+        текущего lease. complete/retry fencing'ятся по attempts —
+        устаревший worker не сможет перезаписать чужую обработку.
+        Идемпотентно: add_balance_once дедуплицирует по grant_key
+        даже при повторной обработке после потерянного ответа."""
+        key = row["grant_key"]
+        attempts = int(row.get("attempts") or 0)
+        try:
+            if not user_balance_store._use_db:
+                raise RuntimeError(
+                    "drop rewards require PostgreSQL idempotency")
+            await user_balance_store.add_balance_once(
+                int(row["guild_id"]), int(row["user_id"]),
+                int(row["amount"]), key)
+        except Exception as exc:
+            delay = _drop_backoff(attempts or 1)
+            try:
+                ok = await drop_reward_store.retry(
+                    key, attempts, f"{type(exc).__name__}: {exc}", delay)
+                if not ok:
+                    logger.info(
+                        "drop reward retry skipped — lease lost key=%s",
+                        key)
+            except Exception:
+                logger.critical(
+                    "drop reward retry-mark failed key=%s — "
+                    "row stays processing until lease expiry", key)
+            logger.warning(
+                "drop reward deferred key=%s attempts=%s next_in=%.0fs",
+                key, attempts, delay)
+            return False
+        try:
+            ok = await drop_reward_store.complete(key, attempts)
+            if not ok:
+                logger.info(
+                    "drop reward complete skipped — lease lost key=%s",
+                    key)
+        except Exception:
+            # Начисление закоммичено, но отметка потеряна:
+            # lease истечёт → worker повторит → add_balance_once
+            # вернёт существующий грант без двойного кредита.
+            logger.exception(
+                "drop reward complete failed key=%s", key)
+        logger.info("drop reward credited key=%s user=%s amount=%s",
+                    key, row.get("user_id"), row.get("amount"))
+        return True
+
+    async def _settle_pending_item(self, item: dict) -> str:
+        """Pending-файл → PG record → claim → process.
+        При повторном сбое PG элемент остаётся в файле до
+        следующего тика worker (файл переживает рестарт)."""
+        key = item["grant_key"]
+        try:
+            row = await drop_reward_store.record(
+                key, item["kind"], int(item["guild_id"]),
+                int(item["user_id"]), int(item["amount"]))
+        except Exception:
+            logger.warning("drop reward still unpersisted key=%s", key)
+            return "queued"
+        drop_pending_store.remove(key)
+        logger.info("drop reward persisted from pending file key=%s", key)
+        owner = int((row or {}).get("user_id") or -1)
+        if owner != int(item["user_id"]):
+            return "other"
+        if (row or {}).get("status") == "completed":
+            return "credited"
+        claimed = await drop_reward_store.claim_key(key)
+        if claimed is None:
+            return "queued"
+        return ("credited" if await self._process_drop_reward(claimed)
+                else "queued")
+
+    async def _drain_pending_file(self) -> None:
+        """Перенос обязательств из durable pending-файла в PG.
+        Каждый settle идёт под _grant_lock — той же сериализацией,
+        что и grant_drop_reward: файл проверяется ДО создания
+        нового PG-обязательства, поэтому победитель из файла
+        не может быть «перехвачен» при восстановлении PG.
+        Вызывается worker'ом каждые _DROP_WORKER_INTERVAL секунд
+        и после восстановления PostgreSQL."""
+        for item in drop_pending_store.all():
+            try:
+                async with self._grant_lock:
+                    await self._settle_pending_item(item)
+            except Exception:
+                logger.exception(
+                    "drop pending drain failed key=%s",
+                    item.get("grant_key"))
+                # PG может лежать — остальные элементы подождут
+                # следующего тика.
+                return
+
+    async def _reward_worker(self) -> None:
+        """Фоновый цикл восстановления наград. Тикает каждые
+        _DROP_WORKER_INTERVAL секунд; ошибки PG не роняют цикл —
+        backoff задаётся next_attempt_at на уровне строк."""
+        while True:
+            try:
+                await self._drain_pending_file()
+                for row in await drop_reward_store.claim_due(limit=10):
+                    await self._process_drop_reward(row)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("drop reward worker tick failed")
+            await asyncio.sleep(_DROP_WORKER_INTERVAL)
 
     @admin_group.command(name="forcedrop", description="Принудительно запустить ивент 'Счастливые монеты' (Только владелец бота)")
     @is_bot_owner()

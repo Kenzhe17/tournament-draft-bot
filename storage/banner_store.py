@@ -81,6 +81,31 @@ class BannerStore:
                 guild_id, user_id, day, seconds,
             )
 
+    async def add_voice_seconds_batch(
+        self, guild_id: int, day: date, rows: list[tuple[int, int]]
+    ) -> None:
+        """Пакетное начисление: rows = [(user_id, seconds), ...].
+
+        Один executemany вместо N отдельных UPSERT'ов — сканер
+        голосовых каналов пишет всех участников гильдии за проход
+        одним round-trip'ом.
+        """
+        rows = [(uid, s) for uid, s in rows if s > 0]
+        if not rows:
+            return
+        await self._ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.executemany(
+                """
+                INSERT INTO banner_voice_daily (guild_id, user_id, day, seconds)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (guild_id, user_id, day)
+                DO UPDATE SET seconds = banner_voice_daily.seconds + EXCLUDED.seconds
+                """,
+                [(guild_id, uid, day, s) for uid, s in rows],
+            )
+
     async def get_voice_seconds(
         self, guild_id: int, user_id: int, day: date
     ) -> int:
@@ -97,7 +122,7 @@ class BannerStore:
     async def get_voice_day_map(
         self, guild_id: int, day: date
     ) -> dict[int, int]:
-        """user_id -> capped voice seconds for the day."""
+        """user_id -> voice seconds for the day."""
         await self._ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -106,7 +131,7 @@ class BannerStore:
                 "WHERE guild_id=$1 AND day=$2",
                 guild_id, day,
             )
-        return {int(r["user_id"]): min(int(r["seconds"]), 21600) for r in rows}
+        return {int(r["user_id"]): int(r["seconds"]) for r in rows}
 
     # ---------------- tournament matches ----------------
 

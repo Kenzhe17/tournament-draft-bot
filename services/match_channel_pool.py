@@ -1,6 +1,6 @@
 """Централизованный менеджер пула постоянных каналов матчей.
 
-5 постоянных каналов из ``MM_MATCH_CHANNEL_POOL`` переиспользуются.
+2 постоянных канала из ``MM_MATCH_CHANNEL_POOL`` переиспользуются.
 Состояние каждого слота хранится в PostgreSQL (таблица
 ``match_channel_slots``) — это гарантирует атомарность даже при
 нескольких процессах бота: захват выполняется через
@@ -84,12 +84,13 @@ async def acquire_slot(guild_id: int, owner: str) -> int | None:
                 """
                 SELECT channel_id FROM match_channel_slots
                 WHERE state = 'free'
+                  AND channel_id = ANY($2::bigint[])
                   AND (guild_id = 0 OR guild_id = $1)
                 ORDER BY channel_id
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
                 """,
-                guild_id,
+                guild_id, pool_channel_ids(),
             )
             if row is None:
                 return None

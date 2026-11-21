@@ -14,8 +14,6 @@ import logging
 
 import discord
 
-from utils.design.layouts import DesignView
-
 logger = logging.getLogger(__name__)
 
 from config import INFO_CHANNEL_ID, WELCOME_CHANNEL_ID
@@ -32,9 +30,9 @@ def build_welcome_view(
     info_ref = f"<#{info_channel_id}>" if info_channel_id else "#информация"
     view = social_view(BANNER_WELCOME, timeout=None)
     view.text(
-        "₊˚⊹♡ **Добро пожаловать на сервер**, "
+        "**Добро пожаловать на сервер**, "
         f"{member.mention}!\n\n"
-        f"Ты стал(а) нашим **{member_number}-м** участником ♡"
+        f"Ты стал(а) нашим **{member_number}-м** участником"
     )
     view.sep()
     view.text(
@@ -84,9 +82,9 @@ async def send_welcome_message(
     if member.bot or not WELCOME_CHANNEL_ID:
         return False
 
-    from storage.json_store import store
-    settings = store.get_settings()
-    if not settings.get("welcome_enabled", True):
+    # Control Center (PG) → legacy settings.json fallback в peek.
+    from services.settings_service import settings_service
+    if not settings_service.peek(member.guild.id, "feature.welcome_enabled"):
         return False
 
     channel, channel_guild = await _find_channel(client, member)
@@ -102,17 +100,35 @@ async def send_welcome_message(
 
     info_channel_id = INFO_CHANNEL_ID or None
 
+    # Control Center template override: admin_templates['welcome.card']
+    # (guild → global). Если шаблон есть и валиден — используем его
+    # вместо стандартной карточки; при ошибке — fallback на дефолт.
+    custom_view = None
     try:
-        from services.social.common import BANNER_WELCOME, banner_file
-        view = build_welcome_view(number, member, info_channel_id)
-        await channel.send(view=view, file=banner_file(BANNER_WELCOME))
+        from services.cv2_templates import render_template
+        from storage import admin_config_store as _cfg_store
+        tpl = await _cfg_store.get_template(member.guild.id, "welcome.card") \
+            or await _cfg_store.get_template(0, "welcome.card")
+        if tpl:
+            custom_view = render_template(tpl["payload"])
+    except Exception as exc:  # noqa: BLE001 — шаблон не должен ломать welcome
+        logger.warning(f"welcome.card template failed, using default: {exc}")
+        custom_view = None
+
+    try:
+        if custom_view is not None:
+            await channel.send(view=custom_view)
+        else:
+            from services.social.common import BANNER_WELCOME, banner_file
+            view = build_welcome_view(number, member, info_channel_id)
+            await channel.send(view=view, file=banner_file(BANNER_WELCOME))
         logger.info(
             f"Welcome sent to {channel.id} in guild "
             f"{channel_guild.id if channel_guild else '?'} "
             f"for member {member.id}")
         return True
-    except Exception as e:
+    except Exception:
         logger.exception(
-            f"Failed to send welcome message to channel "
-            f"{WELCOME_CHANNEL_ID}: {e}")
+            "Failed to send welcome message to channel %s",
+            WELCOME_CHANNEL_ID)
         return False

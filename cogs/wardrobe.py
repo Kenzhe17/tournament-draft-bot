@@ -135,7 +135,7 @@ def _select_values(interaction: discord.Interaction) -> list[str]:
     return (interaction.data or {}).get("values") or []
 
 
-class WardrobeSearchModal(discord.ui.Modal, title="🔍 Поиск в каталоге"):
+class WardrobeSearchModal(discord.ui.Modal, title="Поиск в каталоге"):
     query = discord.ui.TextInput(
         label="Название предмета",
         placeholder="Например: Misha, AK, броня…",
@@ -153,7 +153,7 @@ class WardrobeSearchModal(discord.ui.Modal, title="🔍 Поиск в катал
         results = ff_catalog.search_items(self.query.value, limit=PAGE_SIZE * 20)
         if not results:
             await interaction.followup.send(
-                replace_emojis("❌ Ничего не найдено по этому запросу."),
+                replace_emojis("Ничего не найдено по этому запросу."),
                 ephemeral=True,
             )
             return
@@ -235,7 +235,7 @@ class WardrobeView(discord.ui.View):
                     equipped_line = f"**{it.get('name')}** `{it.get('type')}`"
                     thumb = ff_catalog.icon_url(equipped_id)
             embed = discord.Embed(
-                title=f" ГАРДЕРОБ",
+                title=f"ГАРДЕРОБ",
                 description=(
                     f" Вещей: **{owned}**\n"
                     f" Баланс: **{_fmt_money(balance)}** {get_emoji('money')}\n"
@@ -279,7 +279,7 @@ class WardrobeView(discord.ui.View):
         item = ff_catalog.get_item(self.item_id)
         if not item:
             return discord.Embed(
-                title="❌ Предмет не найден",
+                title="Предмет не найден",
                 description="Возможно, он был удалён из каталога.",
                 color=discord.Color.red(),
             )
@@ -289,7 +289,7 @@ class WardrobeView(discord.ui.View):
         is_equipped = equipped_id == int(item["itemID"])
         rarity = str(item.get("rarity") or "NONE")
 
-        status = "✅ **В гардеробе**" if owned else f"💰 **{_fmt_money(price)}** {get_emoji('money')}"
+        status = "**В гардеробе**" if owned else f"💰 **{_fmt_money(price)}** {get_emoji('money')}"
         if is_equipped:
             status += " · ⭐ **Ваш образ**"
 
@@ -333,13 +333,12 @@ class WardrobeView(discord.ui.View):
     def _build_main(self) -> None:
         sizes = _category_sizes()
         select = discord.ui.Select(
-            placeholder="📂 Выберите категорию…",
+            placeholder="Выберите категорию…",
             custom_id="wardrobe:category",
             options=[
                 discord.SelectOption(
                     label=name,
                     value=key,
-                    emoji=emoji,
                     description=f"{sizes.get(key, 0)} вещей",
                 )
                 for key, (emoji, name, _types) in CATEGORIES.items()
@@ -374,8 +373,8 @@ class WardrobeView(discord.ui.View):
             )
             await self._go(interaction, view)
 
-        self.add_item(self._nav_button("🔍 Поиск", discord.ButtonStyle.primary, on_search))
-        self.add_item(self._nav_button("� Мои вещи", discord.ButtonStyle.secondary, on_owned))
+        self.add_item(self._nav_button("Поиск", discord.ButtonStyle.primary, on_search))
+        self.add_item(self._nav_button("Мои вещи", discord.ButtonStyle.secondary, on_owned))
 
     def _list_view(self, page: int) -> "WardrobeView":
         return WardrobeView(
@@ -411,7 +410,7 @@ class WardrobeView(discord.ui.View):
 
         if page_items:
             select = discord.ui.Select(
-                placeholder="🎽 Выберите предмет…",
+                placeholder="Выберите предмет…",
                 custom_id="wardrobe:item",
                 options=[
                     discord.SelectOption(
@@ -449,18 +448,18 @@ class WardrobeView(discord.ui.View):
 
         self.add_item(
             self._nav_button(
-                "⬅️", discord.ButtonStyle.secondary, on_prev, disabled=self.page <= 0
+                "Назад", discord.ButtonStyle.secondary, on_prev, disabled=self.page <= 0
             )
         )
         self.add_item(
             self._nav_button(
-                "➡️",
+                "Вперёд",
                 discord.ButtonStyle.secondary,
                 on_next,
                 disabled=self.page + 1 >= pages,
             )
         )
-        self.add_item(self._nav_button("🔙", discord.ButtonStyle.gray, on_back))
+        self.add_item(self._nav_button("Назад", discord.ButtonStyle.gray, on_back))
 
     def _build_detail(self) -> None:
         item = ff_catalog.get_item(self.item_id)
@@ -468,20 +467,83 @@ class WardrobeView(discord.ui.View):
         async def on_buy(interaction: discord.Interaction) -> None:
             if not item:
                 return
-            price = price_for(item)
-            try:
-                await user_balance_store.subtract_balance(
-                    self.guild_id, self.user_id, price
+            # Повторная проверка владения внутри callback — защита
+            # от двойного нажатия/повторной отправки.
+            item_id_int = int(item["itemID"])
+            if wardrobe_store.is_owned(self.guild_id, self.user_id, item_id_int):
+                view = WardrobeView(
+                    self.guild_id,
+                    self.user_id,
+                    mode="detail",
+                    item_id=self.item_id,
+                    back=self.back,
                 )
-            except ValueError:
+                await self._go(interaction, view)
+                return
+            price = price_for(item)
+            # Durable-операция: монеты + REP списываются атомарно,
+            # выдача идемпотентна, возврат при сбое — обе валюты.
+            from storage.rep_balance_store import (
+                rep_balance_store, rep_price_for_amount,
+            )
+            from storage.shop_purchase_ops_store import (
+                purchase_ops_store,
+            )
+            rep_price = rep_price_for_amount(price)
+            item_id_int = int(item["itemID"])
+            op_id = purchase_ops_store.new_op_id()
+            await purchase_ops_store.create(
+                op_id, self.guild_id, self.user_id, "wardrobe",
+                str(item_id_int), price,
+                payload={"ff_item": str(item_id_int)},
+                rep_amount=rep_price,
+            )
+            charge = await purchase_ops_store.charge(
+                op_id, self.guild_id, self.user_id, price,
+                rep_amount=rep_price,
+            )
+            if charge == "insufficient":
                 await interaction.response.send_message(
                     replace_emojis(
-                        f"❌ Недостаточно монет! Нужно **{_fmt_money(price)}** {get_emoji('money')}."
+                        f"Недостаточно монет! Нужно **{_fmt_money(price)}** {get_emoji('money')}."
                     ),
                     ephemeral=True,
                 )
                 return
-            wardrobe_store.add(self.guild_id, self.user_id, int(item["itemID"]))
+            if charge == "insufficient_rep":
+                rep_bal = await rep_balance_store.get_balance(
+                    self.guild_id, self.user_id
+                )
+                await interaction.response.send_message(
+                    replace_emojis(
+                        f"Недостаточно REP! Нужно **{rep_price}**, "
+                        f"доступно **{rep_bal}**."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            if charge != "charged":
+                await interaction.response.send_message(
+                    "Не удалось проверить баланс. Попробуйте позже.",
+                    ephemeral=True,
+                )
+                return
+            if not wardrobe_store.add(self.guild_id, self.user_id, item_id_int):
+                # Предмет уже был у игрока — идемпотентный возврат обеих валют.
+                await purchase_ops_store.refund(
+                    op_id, self.guild_id, self.user_id, price
+                )
+                await purchase_ops_store.set_status(op_id, "refunded")
+                view = WardrobeView(
+                    self.guild_id,
+                    self.user_id,
+                    mode="detail",
+                    item_id=self.item_id,
+                    back=self.back,
+                )
+                await self._go(interaction, view)
+                return
+            await purchase_ops_store.set_status(op_id, "done")
             view = WardrobeView(
                 self.guild_id,
                 self.user_id,
@@ -524,7 +586,7 @@ class WardrobeView(discord.ui.View):
         if item and not wardrobe_store.is_owned(self.guild_id, self.user_id, int(item["itemID"])):
             self.add_item(
                 self._nav_button(
-                    f"💰 Купить · {_fmt_money(price_for(item))}",
+                    f"Купить · {_fmt_money(price_for(item))}",
                     discord.ButtonStyle.success,
                     on_buy,
                 )
@@ -534,12 +596,12 @@ class WardrobeView(discord.ui.View):
             is_eq = equipped_id == int(item["itemID"])
             self.add_item(
                 self._nav_button(
-                    "⭐ Снять образ" if is_eq else "⭐ Сделать образом",
+                    "Снять образ" if is_eq else "Сделать образом",
                     discord.ButtonStyle.primary if not is_eq else discord.ButtonStyle.secondary,
                     on_equip,
                 )
             )
-        self.add_item(self._nav_button("🔙 Назад", discord.ButtonStyle.gray, on_back))
+        self.add_item(self._nav_button("Назад", discord.ButtonStyle.gray, on_back))
 
 
 class WardrobeCog(commands.Cog):
@@ -549,8 +611,7 @@ class WardrobeCog(commands.Cog):
     async def cog_load(self) -> None:
         bind_commands(player_group, self, ["wardrobe"])
 
-    # Слэш-команда скрыта: декоратор закомментирован, код сохранён.
-    # @player_group.command(name="wardrobe", description="Гардероб — коллекция вещей Free Fire")
+    @player_group.command(name="wardrobe", description="Гардероб — коллекция вещей Free Fire")
     async def wardrobe(self, interaction: discord.Interaction) -> None:
         """Открыть свой гардероб."""
         view = WardrobeView(interaction.guild_id, interaction.user.id, mode="main")

@@ -270,6 +270,91 @@ def ranking_view(
     )
 
 
+def tournament_view(
+    *,
+    title: str,
+    lines: Iterable[str],
+    rows: list[discord.ui.ActionRow] | None = None,
+    timeout: float | None = 180.0,
+) -> DesignView:
+    """TournamentCard — регистрация, составы, сетка."""
+    return DesignView.simple(
+        title=title,
+        body="\n".join(lines),
+        accent=colors.TOURNAMENT,
+        rows=rows,
+        timeout=timeout,
+    )
+
+
+def match_view(
+    *,
+    title: str,
+    lines: Iterable[str],
+    rows: list[discord.ui.ActionRow] | None = None,
+    timeout: float | None = 180.0,
+) -> DesignView:
+    """MatchCard — противостояние команд и результаты."""
+    return DesignView.simple(
+        title=title,
+        body="\n".join(lines),
+        accent=colors.MATCH,
+        rows=rows,
+        timeout=timeout,
+    )
+
+
+def queue_view(
+    *,
+    title: str,
+    lines: Iterable[str],
+    rows: list[discord.ui.ActionRow] | None = None,
+    timeout: float | None = 180.0,
+) -> DesignView:
+    """QueueCard — поиск игроков и состояние очереди."""
+    return DesignView.simple(
+        title=title,
+        body="\n".join(lines),
+        accent=colors.RATING,
+        rows=rows,
+        timeout=timeout,
+    )
+
+
+def result_view(
+    *,
+    title: str,
+    lines: Iterable[str],
+    rows: list[discord.ui.ActionRow] | None = None,
+    timeout: float | None = 180.0,
+) -> DesignView:
+    """ResultCard — окончательный результат с изменениями ELO."""
+    return DesignView.simple(
+        title=title,
+        body="\n".join(lines),
+        accent=colors.SUCCESS,
+        rows=rows,
+        timeout=timeout,
+    )
+
+
+def shop_view(
+    *,
+    title: str,
+    lines: Iterable[str],
+    rows: list[discord.ui.ActionRow] | None = None,
+    timeout: float | None = 180.0,
+) -> DesignView:
+    """ShopCard — товары и инвентарь."""
+    return DesignView.simple(
+        title=title,
+        body="\n".join(lines),
+        accent=colors.CASE,
+        rows=rows,
+        timeout=timeout,
+    )
+
+
 def game_view(
     *,
     title: str,

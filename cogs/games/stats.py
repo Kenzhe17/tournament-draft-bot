@@ -24,7 +24,7 @@ class GamesStatsCog(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def game_stats(self, interaction: discord.Interaction):
         if interaction.user.id != BOT_OWNER_ID and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Недостаточно прав.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.response.send_message("Недостаточно прав.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         await interaction.response.defer(ephemeral=True)
 

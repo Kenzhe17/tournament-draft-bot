@@ -38,7 +38,7 @@ class QuizLobbyView(discord.ui.View):
         total_bank = len(self.players) * self.bet
 
         embed = discord.Embed(
-            title=f" **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | ЛОББИ**",
+            title=f"**МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | ЛОББИ**",
             description=(
                 f" **Создатель:** {self.host.mention}\n"
                 f" **Ставка:** `{self.bet:,}` {get_emoji('money')}\n"
@@ -139,7 +139,7 @@ class QuizLobbyView(discord.ui.View):
 
             leaderboard = "\n".join([f" {p.mention} — **{scores[p.id]}** баллов" for p in players])
             round_embed = discord.Embed(
-                title=f" **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД {round_idx}/10**",
+                title=f"**МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД {round_idx}/10**",
                 description=(
                     f" **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
                     f"###  Пример: **`{expression} = ?`**\n\n"
@@ -203,7 +203,7 @@ class QuizLobbyView(discord.ui.View):
             result_text = f" **Ничья!** {winner_mentions} получают по `{prize_per_player:,}` {get_emoji('money')}!"
 
         final_embed = discord.Embed(
-            title=f" **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РЕЗУЛЬТАТ**",
+            title=f"**МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РЕЗУЛЬТАТ**",
             description=(
                 f" **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
                 f"**Итоговый счёт:**\n"
@@ -227,7 +227,7 @@ class QuizLobbyView(discord.ui.View):
 
         self.stop()
         cancel_embed = discord.Embed(
-            title=f" **Игра отменена**",
+            title=f"**Игра отменена**",
             description="Создатель распустил лобби. Все ставки возвращены на счета.",
             color=0xED4245
         )
@@ -256,7 +256,7 @@ class MathQuizCog(commands.Cog):
         # Check if user is in a thread
         if not isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message(
-                "❌ Игры можно запускать только в игровых тредах. Используйте `/thread` для создания треда или `/delete` для удаления текущего.",
+                "Игры можно запускать только в игровых тредах. Используйте `/thread` для создания треда или `/delete` для удаления текущего.",
                 ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
@@ -302,7 +302,7 @@ class MathQuizCog(commands.Cog):
 
             leaderboard = "\n".join([f" {p.mention} — **{scores[p.id]}** баллов" for p in players])
             round_embed = discord.Embed(
-                title=f" **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД {round_idx}/10**",
+                title=f"**МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД {round_idx}/10**",
                 description=(
                     f" **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
                     f"###  Пример: **`{expression} = ?`**\n\n"
@@ -376,7 +376,7 @@ class MathQuizCog(commands.Cog):
 
         final_board = "\n".join([f" {p.mention} — **{scores[p.id]}** баллов" for p in players])
         final_embed = discord.Embed(
-            title=f" **ИГРА ЗАВЕРШЕНА | ФИНАЛЬНЫЕ ИТОГИ**",
+            title=f"**ИГРА ЗАВЕРШЕНА | ФИНАЛЬНЫЕ ИТОГИ**",
             description=f"{result_text}\n\n**Финальный счёт:**\n{final_board}",
             color=0x2ECC71
         )

@@ -38,7 +38,7 @@ class HistoryView(discord.ui.View):
             self.add_item(prev_button)
         else:
             disabled_button = discord.ui.Button(
-                label="◀",
+                label="Назад",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -50,7 +50,7 @@ class HistoryView(discord.ui.View):
             self.add_item(next_button)
         else:
             disabled_button = discord.ui.Button(
-                label="▶",
+                label="Вперёд",
                 style=discord.ButtonStyle.primary,
                 disabled=True
             )
@@ -63,7 +63,7 @@ class PrevButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="◀"
+            label="Назад"
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -88,7 +88,7 @@ class NextButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="▶"
+            label="Вперёд"
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -168,9 +168,9 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
 
         parts = ["**Сводка**"]
         parts.append(f" Матчей: {total} • Побед: {wins} `({win_rate:.1f}%)` • Поражений: {losses}")
-        parts.append(f" K/D/A: {stats.get('total_kills', 0)}/{stats.get('total_deaths', 0)}/{stats.get('total_assists', 0)}")
-        parts.append(f" K+A/D: {stats.get('kda_ratio', stats.get('kd_ratio', 0)):.2f} • Средний урон: {stats.get('avg_damage', 0):,.0f}")
-        parts.append(f" Всего урона: {stats.get('total_damage', 0):,.0f}")
+        kd = stats.get('total_kills', 0) / max(stats.get('total_deaths', 0), 1)
+        parts.append(f" K/D: {stats.get('total_kills', 0)}/{stats.get('total_deaths', 0)}")
+        parts.append(f" K/D Ratio: {kd:.2f}")
 
         if matches:
             parts.append("")
@@ -181,7 +181,7 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             parts.append("")
             parts.append(" Ещё не играл в турниры")
 
-        title = f" ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f" ИСТОРИЯ МАТЧЕЙ"
+        title = f"ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f" ИСТОРИЯ МАТЧЕЙ"
         embed = discord.Embed(
             title=title,
             description="\n".join(parts),
@@ -203,8 +203,7 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
                 f" {('✅' if won else '❌')} {result_text} • ELO {match.elo_change:+d}",
                 "",
                 "**Ваша статистика**",
-                f" K/D/A: {match.kills}/{match.deaths}/{match.assists}",
-                f" Урон: {match.damage:,.0f}",
+                f" K/D: {match.kills}/{match.deaths}",
                 "",
                 f"**Союзники ({match.team_name})**",
                 f" {_format_players(match.teammates, user_id, user_name)}",
@@ -218,13 +217,13 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
                 parts.append(f" **Ставка:** {match.bet_amount} {get_emoji('money')} → {match.bet_win} {get_emoji('money')}")
 
             embed = discord.Embed(
-                title=f" ИСТОРИЯ МАТЧЕЙ — Матч #{match_index + 1}",
+                title=f"ИСТОРИЯ МАТЧЕЙ — Матч #{match_index + 1}",
                 description="\n".join(parts),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
         else:
             embed = discord.Embed(
-                title=f" ИСТОРИЯ МАТЧЕЙ",
+                title=f"ИСТОРИЯ МАТЧЕЙ",
                 description="Матч не найден",
                 color=discord.Color.from_rgb(69, 69, 69)
             )

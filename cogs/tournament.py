@@ -6,14 +6,15 @@ import asyncio
 import logging
 import random
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Optional
 
 import discord
-from utils.design import compose, text_card, smart_view
+from utils.design import compose, text_card
 
 from discord import app_commands
 from discord.ext import commands
 
+import config as _cfg
 from config import TOURNAMENT_CHANNELS, BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL, NOTIFICATION_ROLE_ID, NOTIFICATION_CHANNEL_ID
 from models.tournament import (
     FormationMode,
@@ -49,13 +50,15 @@ logger = logging.getLogger(__name__)
 # Tournaments 2.0: /tournament create разрешает только эти режимы.
 # Legacy-значения FormationMode (elo/skill/random/random-auto)
 # остаются валидными для уже созданных турниров и /mmsquad.
-ALLOWED_CREATE_FORMATIONS = (FormationMode.DRAFT, FormationMode.BALANCED_SR)
+ALLOWED_CREATE_FORMATIONS = (
+    FormationMode.DRAFT, FormationMode.BALANCED_SR, FormationMode.RANDOM,
+)
 
 
 def parse_create_formation(raw: str) -> FormationMode | None:
     """Режим формирования для /tournament create или None.
 
-    Возвращает FormationMode только для draft/balanced-sr;
+    Возвращает FormationMode только для draft/balanced-sr/random;
     неизвестные и legacy-значения → None (серверная валидация
     дублирует Literal-выбор в UI).
     """
@@ -93,6 +96,145 @@ async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float
         pass
 
 
+async def _perform_tournament_delete(
+    bot, guild: discord.Guild, channel_id: int, tournament: Tournament,
+    actor_user_id: int | None = None,
+) -> None:
+    """Фактическое удаление активного турнира (только не-COMPLETE)."""
+    if tournament.phase == TournamentPhase.COMPLETE:
+        logger.warning(
+            "Попытка удалить завершённый турнир %s:%s — отклонено",
+            guild.id, channel_id,
+        )
+        return
+
+    # Удалить сообщение турнира если есть
+    if tournament.message_id:
+        try:
+            channel = guild.get_channel(channel_id)
+            if channel:
+                message = await channel.fetch_message(tournament.message_id)
+                await message.delete()
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение турнира: {e}")
+
+    store.delete(guild.id, channel_id)
+    logger.info("Турнир удален на сервере %s", guild.id)
+
+    from services import tournament_audit_service as audit_svc
+    # Отмена до старта матчей vs удаление идущего турнира.
+    _cancel_phases = {
+        TournamentPhase.SETUP, TournamentPhase.RULES_VOTING,
+        TournamentPhase.DRAFT, TournamentPhase.TEAMS,
+    }
+    await audit_svc.record(
+        guild_id=guild.id, channel_id=channel_id,
+        tournament_id=str(tournament.id),
+        actor_user_id=actor_user_id,
+        action=(
+            audit_svc.A.TOURNAMENT_CANCEL
+            if tournament.phase in _cancel_phases
+            else audit_svc.A.TOURNAMENT_DELETE
+        ),
+        before={"phase": tournament.phase.value},
+        dedup_key=f"tdelete:{tournament.id}",
+    )
+
+    # Разблокировать канал если он был заблокирован поиском
+    if hasattr(bot, 'mm_cog'):
+        from cogs.mm import LOCKED_CHANNELS
+        if channel_id in LOCKED_CHANNELS:
+            del LOCKED_CHANNELS[channel_id]
+            logger.info(f"Channel {channel_id} unlocked after tournament deletion")
+
+    # Сбросить лимит поиска если освободился турнир
+    if hasattr(bot, 'mm_cog'):
+        await bot.mm_cog.reset_search_limit(guild.id)
+
+    # Update organizer setup embed if it exists
+    from storage.organizer_store import organizer_store as org_store
+    from services.discord_cfg import channel_ids as _dc_ids
+    for ch_id in _dc_ids(guild.id, "discord.tournament_channels",
+                         TOURNAMENT_CHANNELS):
+        orgs = org_store.get(guild.id, ch_id)
+        if orgs and orgs.message_id:
+            try:
+                update_channel = guild.get_channel(ch_id)
+                if update_channel:
+                    update_message = await update_channel.fetch_message(orgs.message_id)
+                    from views.organizer_view import build_multi_channel_embed, OrganizerManagementButton
+                    from discord.ui import View
+                    new_embed = build_multi_channel_embed(guild)
+                    new_view = View()
+                    new_view.add_item(OrganizerManagementButton(guild.id, ch_id, guild))
+                    await update_message.edit( view=compose(new_embed, new_view))
+            except Exception:
+                pass
+
+
+class _DeleteTournamentConfirmView(discord.ui.View):
+    """Ephemeral-подтверждение отмены активного турнира."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(timeout=60)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+        ok = discord.ui.Button(
+            label="Подтвердить удаление",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"tourn_delete_ok:{guild_id}:{channel_id}",
+        )
+        ok.callback = self._confirm
+        self.add_item(ok)
+
+        cancel = discord.ui.Button(
+            label="Отмена",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"tourn_delete_no:{guild_id}:{channel_id}",
+        )
+        cancel.callback = self._cancel
+        self.add_item(cancel)
+
+    async def _confirm(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import can_manage_tournament
+
+        # Повторная серверная проверка: турнир мог завершиться
+        # или права — отозваться с момента показа кнопки.
+        tournament = store.get(self.guild_id, self.channel_id)
+        if tournament is None:
+            await interaction.response.edit_message(
+                view=compose(text="-# Турнир уже отсутствует.", view=None))
+            return
+        if tournament.phase == TournamentPhase.COMPLETE:
+            await interaction.response.edit_message(
+                view=compose(
+                    text=(
+                        "Турнир уже завершён и защищён от удаления. "
+                        "Результаты сохранены в истории."
+                    ),
+                    view=None))
+            return
+        if not can_manage_tournament(
+            interaction.user, interaction.guild, tournament
+        ):
+            await interaction.response.send_message(
+                replace_emojis("У вас нет прав на удаление этого турнира."),
+                ephemeral=True)
+            return
+
+        await _perform_tournament_delete(
+            interaction.client, interaction.guild,
+            self.channel_id, tournament,
+            actor_user_id=interaction.user.id)
+        await interaction.response.edit_message(
+            view=compose(text="Турнир удалён.", view=None))
+
+    async def _cancel(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(
+            view=compose(text="-# Отменено.", view=None))
+
+
 class TournamentCog(commands.Cog):
     """Ког с командами управления турниром."""
 
@@ -102,15 +244,24 @@ class TournamentCog(commands.Cog):
     tournament_group = app_commands.Group(name="tournament", description="Управление турнирами")
 
     @tournament_group.command(name="create", description="Создать новый турнир")
-    @app_commands.describe(size="Размер турнира: 16 или 32 игрока (8 — legacy)", formation="Режим: draft (ручной драфт) или balanced-sr (балансировка по SR)")
+    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока", formation="Режим: draft (драфт капитанами), balanced-sr (балансировка по SR) или random (случайно)")
     @is_org()
     async def tournament_create(
         self,
         interaction: discord.Interaction,
         size: str,
-        formation: Literal["draft", "balanced-sr"] = "draft",
+        formation: Literal["draft", "balanced-sr", "random"] = "draft",
     ) -> None:
         """Создать турнир с указанным размером."""
+        try:
+            from services.settings_service import settings_service
+            if not settings_service.peek(
+                    interaction.guild_id, "feature.tournaments_enabled"):
+                await interaction.response.send_message(
+                    "Этот раздел временно отключён.", ephemeral=True)
+                return
+        except Exception:
+            pass
         # Проверить если канал заблокирован поиском (только если есть активные игроки)
         from cogs.mm import LOCKED_CHANNELS
         if interaction.channel_id in LOCKED_CHANNELS:
@@ -120,7 +271,7 @@ class TournamentCog(commands.Cog):
             search = mm_search_store.get(interaction.guild_id, search_channel_id)
             if search and search.players:
                 await interaction.response.send_message(
-                    "❌ Этот канал заблокирован для поиска MM. Используйте другой канал или дождитесь завершения поиска.",
+                    "Этот канал заблокирован для поиска MM. Используйте другой канал или дождитесь завершения поиска.",
                     ephemeral=True
                 )
                 return
@@ -133,41 +284,60 @@ class TournamentCog(commands.Cog):
             # Проверяем фазу существующего турнира
             if existing.phase != TournamentPhase.COMPLETE:
                 await interaction.response.send_message(
-                    replace_emojis("❌ На этом канале уже есть активный турнир. Удалите его с помощью `/tournament delete`, чтобы создать новый."),
+                    replace_emojis("На этом канале уже есть активный турнир. Удалите его с помощью `/tournament delete`, чтобы создать новый."),
                     ephemeral=True
                 )
                 asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
-            # Если турнир завершен, можно удалить и создать новый
-            if existing.message_id:
-                try:
-                    channel = interaction.guild.get_channel(existing.channel_id)
-                    if channel:
-                        message = await channel.fetch_message(existing.message_id)
-                        await message.edit(view=smart_view(message, None))
-                except Exception:
-                    pass
-            store.delete(interaction.guild_id, interaction.channel_id)
+            # Завершённый турнир нельзя просто удалить — архивируем
+            # результаты/историю, затем освобождаем слот канала.
+            # Если архивация не удалась — слот НЕ освобождается:
+            # сообщаем организатору и прерываем создание, чтобы
+            # не потерять результаты предыдущего турнира.
+            from services import tournament_lifecycle
+            from services import tournament_audit_service as audit_svc
+            released = await tournament_lifecycle.release_completed_tournament(
+                interaction.guild, existing,
+                channel=interaction.channel,
+            )
+            if not released:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "Не удалось сохранить архив завершённого "
+                        "турнира — слот канала НЕ освобождён. "
+                        "Новый турнир не создан, повторите попытку."
+                    ),
+                    ephemeral=True,
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
+            await audit_svc.record_interaction(
+                interaction,
+                tournament_id=str(existing.id),
+                action=audit_svc.A.TOURNAMENT_ARCHIVED,
+                after={"phase": "complete", "winner": existing.winner_team_index},
+            )
 
         # Validate size
         try:
             tournament_size = TournamentSize(size)
         except ValueError:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверный размер. Используйте: 8, 16 или 32."),
+                replace_emojis("Неверный размер. Используйте: 8, 16 или 32."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Validate formation mode — Tournaments 2.0: только draft и
-        # balanced-sr. Legacy-значения FormationMode сохраняются для
-        # старых турниров и /mmsquad, но создание через /tournament
-        # create ими запрещено (проверка и на сервере, не только в UI).
+        # Validate formation mode — r!z3 CLASSIC: только draft,
+        # balanced-sr и random. Legacy-значения FormationMode
+        # сохраняются для старых турниров и /mmsquad, но создание
+        # через /tournament create ими запрещено (проверка и на
+        # сервере, не только в UI).
         formation_mode = parse_create_formation(formation)
         if formation_mode is None:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверный режим формирования. Доступны: draft, balanced-sr."),
+                replace_emojis("Неверный режим формирования. Доступны: draft, balanced-sr, random."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -206,7 +376,7 @@ class TournamentCog(commands.Cog):
 
         # Send ephemeral confirmation first
         await interaction.response.send_message(
-            replace_emojis(f"✅ Турнир создан\n-# {_debug}"),
+            replace_emojis(f"Турнир создан\n-# {_debug}"),
             ephemeral=True
         )
 
@@ -235,7 +405,10 @@ class TournamentCog(commands.Cog):
 
         # Update organizer setup embed if it exists
         from storage.organizer_store import organizer_store as org_store
-        for channel_id in TOURNAMENT_CHANNELS:
+        from services.discord_cfg import channel_ids as _dc_ids2
+        for channel_id in _dc_ids2(interaction.guild_id,
+                                   "discord.tournament_channels",
+                                   TOURNAMENT_CHANNELS):
             orgs = org_store.get(interaction.guild_id, channel_id)
             if orgs and orgs.message_id:
                 try:
@@ -253,98 +426,95 @@ class TournamentCog(commands.Cog):
 
         logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
 
+        from services import tournament_audit_service as audit_svc
+        await audit_svc.record_interaction(
+            interaction,
+            tournament_id=str(tournament.id),
+            action=audit_svc.A.TOURNAMENT_CREATE,
+            after={
+                "size": size,
+                "formation": formation,
+                "phase": tournament.phase.value,
+            },
+        )
+
     @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_channel_organizer_decorator()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
-        """Удалить текущий турнир."""
+        """Удалить текущий турнир (с подтверждением; завершённые
+        турниры защищены от удаления)."""
+        from utils.permissions import can_manage_tournament
+
         existing = store.get(interaction.guild_id, interaction.channel_id)
         if not existing:
             await interaction.response.send_message(
-                replace_emojis("❌ На этом сервере нет активного турнира."),
+                replace_emojis("На этом сервере нет активного турнира."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Удалить сообщение турнира если есть
-        if existing.message_id:
-            try:
-                channel = interaction.guild.get_channel(existing.channel_id)
-                if channel:
-                    message = await channel.fetch_message(existing.message_id)
-                    await message.delete()
-            except Exception as e:
-                logger.warning(f"Не удалось удалить сообщение турнира: {e}")
+        # Серверная проверка непосредственно перед удалением:
+        # завершённые турниры защищены от любых путей удаления.
+        if existing.phase == TournamentPhase.COMPLETE:
+            await interaction.response.send_message(
+                "Турнир уже завершён и защищён от удаления. "
+                "Результаты сохранены в истории. Для создания "
+                "следующего турнира используйте /tournament create",
+                ephemeral=True,
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
 
-        # Отключить голосование за формат в MM-матчах этого турнира
-        try:
-            from services.format_vote import cancel_open_format_votes
+        # Права проверяем по актуальному турниру (привязка
+        # tournament_id), а не только декоратором канала.
+        if not can_manage_tournament(
+            interaction.user, interaction.guild, existing
+        ):
+            await interaction.response.send_message(
+                replace_emojis("У вас нет прав на удаление этого турнира."),
+                ephemeral=True,
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
 
-            cancel_open_format_votes(existing)
-        except Exception as exc:
-            logger.warning("Format vote cancel failed: %s", exc)
-
-        # Отменить голосование за правила, если турнир удалён
-        # во время RULES_VOTING.
-        try:
-            from services.rules_vote import cancel_rules_vote
-
-            cancel_rules_vote(existing)
-        except Exception as exc:
-            logger.warning("Rules vote cancel failed: %s", exc)
-
-        store.delete(interaction.guild_id, interaction.channel_id)
-        logger.info("Турнир удален на сервере %s", interaction.guild_id)
-
-        # Разблокировать канал если он был заблокирован поиском
-        if hasattr(self.bot, 'mm_cog'):
-            from cogs.mm import LOCKED_CHANNELS
-            if interaction.channel_id in LOCKED_CHANNELS:
-                del LOCKED_CHANNELS[interaction.channel_id]
-                logger.info(f"Channel {interaction.channel_id} unlocked after tournament deletion")
-
-        # Сбросить лимит поиска если освободился турнир
-        if hasattr(self.bot, 'mm_cog'):
-            await self.bot.mm_cog.reset_search_limit(interaction.guild_id)
-
-        # Update organizer setup embed if it exists
-        from storage.organizer_store import organizer_store as org_store
-        for channel_id in TOURNAMENT_CHANNELS:
-            orgs = org_store.get(interaction.guild_id, channel_id)
-            if orgs and orgs.message_id:
-                try:
-                    update_channel = interaction.guild.get_channel(channel_id)
-                    if update_channel:
-                        update_message = await update_channel.fetch_message(orgs.message_id)
-                        from views.organizer_view import build_multi_channel_embed, OrganizerManagementButton
-                        from discord.ui import View
-                        new_embed = build_multi_channel_embed(interaction.guild)
-                        new_view = View()
-                        new_view.add_item(OrganizerManagementButton(interaction.guild_id, channel_id, interaction.guild))
-                        await update_message.edit( view=compose(new_embed, new_view))
-                except Exception:
-                    pass
-
+        # Отмена активного турнира — только с подтверждением.
+        view = _DeleteTournamentConfirmView(
+            interaction.guild_id, interaction.channel_id)
         await interaction.response.send_message(
-            "🗑️ **Турнир успешно удален.**",
-            ephemeral=True
+            view=compose(
+                text=(
+                    "### Отмена турнира\n"
+                    "Турнир будет удалён вместе с кнопками. "
+                    "Уже подтверждённые результаты и начисления "
+                    "сохраняются в истории.\n"
+                    "-# Подтвердите удаление."
+                ),
+                view=view,
+            ),
+            ephemeral=True,
         )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
 
     @tournament_group.command(name="deleteall", description="Удалить все активные турниры (только владелец бота)")
     async def tournament_deleteall(self, interaction: discord.Interaction):
         if interaction.user.id != BOT_OWNER_ID:
-            await interaction.response.send_message("❌ Только владелец бота.", ephemeral=True)
+            await interaction.response.send_message("Только владелец бота.", ephemeral=True)
             return
 
         tournaments = store.get_by_guild(interaction.guild_id)
         if not tournaments:
-            await interaction.response.send_message("✅ Активных турниров нет.", ephemeral=True)
+            await interaction.response.send_message("Активных турниров нет.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
         deleted = 0
+        skipped_completed = 0
         for t in tournaments:
+            # Завершённые турниры защищены от удаления —
+            # deleteall их не трогает.
+            if t.phase == TournamentPhase.COMPLETE:
+                skipped_completed += 1
+                continue
             try:
                 if t.message_id:
                     msg = await self.bot.fetch_message(t.message_id)
@@ -354,6 +524,15 @@ class TournamentCog(commands.Cog):
             try:
                 store.delete(t.guild_id, t.channel_id)
                 deleted += 1
+                from services import tournament_audit_service as audit_svc
+                await audit_svc.record(
+                    guild_id=t.guild_id, channel_id=t.channel_id,
+                    tournament_id=str(t.id),
+                    actor_user_id=interaction.user.id,
+                    action=audit_svc.A.TOURNAMENT_DELETE,
+                    before={"phase": t.phase.value, "via": "deleteall"},
+                    dedup_key=f"tdelete:{t.id}",
+                )
             except Exception as e:
                 logger.error(f"deleteall: store.delete failed for {t.guild_id}:{t.channel_id}: {e}")
 
@@ -363,7 +542,27 @@ class TournamentCog(commands.Cog):
             except Exception:
                 pass
 
-        await interaction.followup.send(f"🗑️ Удалено турниров: **{deleted}**", ephemeral=True)
+        suffix = (
+            f" · завершённых защищено: **{skipped_completed}**"
+            if skipped_completed else ""
+        )
+        await interaction.followup.send(
+            f"Удалено турниров: **{deleted}**{suffix}", ephemeral=True)
+
+    @tournament_group.command(name="log", description="Журнал действий турнира (для организаторов)")
+    async def tournament_log(self, interaction: discord.Interaction) -> None:
+        """Ephemeral-панель аудита текущего/последнего турнира канала."""
+        from views.tournament_audit_view import (
+            _can_view, open_audit_panel)
+        # Предварительная проверка прав — журнал не открывается
+        # обычным участникам даже на чтение.
+        if not await _can_view(interaction, None):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "У вас нет прав на просмотр журнала."),
+                ephemeral=True)
+            return
+        await open_audit_panel(interaction)
 
     @tournament_group.command(name="test", description="Тестовые операции турниров")
     @is_bot_owner()
@@ -372,18 +571,23 @@ class TournamentCog(commands.Cog):
         operation="Тестовая операция",
         keep_players="(normal/fill) Сохранить реальных игроков",
         no_bots="(normal/fill) Только реальные игроки, без ботов",
+        формат="(ultimatum/fill) Формат Ультиматума",
     )
     @app_commands.choices(
         category=[
             app_commands.Choice(name="Обычный", value="normal"),
             app_commands.Choice(name="Battle Royale", value="br"),
-            app_commands.Choice(name="Ultimatum", value="ultimatum"),
+            app_commands.Choice(name="Ультиматум", value="ultimatum"),
         ],
         operation=[
             app_commands.Choice(name="Заполнить ботами", value="fill"),
             app_commands.Choice(name="Заполнить ботами-командами", value="fill_teams"),
             app_commands.Choice(name="Заполнить статистику", value="fill_stats"),
             app_commands.Choice(name="Запуск только с реальными", value="start_real"),
+        ],
+        формат=[
+            app_commands.Choice(name="Ультиматум Соло", value="solo"),
+            app_commands.Choice(name="Ультиматум Дуо", value="duo"),
         ],
     )
     async def tournament_test(
@@ -393,6 +597,7 @@ class TournamentCog(commands.Cog):
         operation: app_commands.Choice[str],
         keep_players: bool = False,
         no_bots: bool = False,
+        формат: Optional[app_commands.Choice[str]] = None,
     ) -> None:
         """Единая команда тестовых операций: /tournament test."""
         cat, op = category.value, operation.value
@@ -409,7 +614,7 @@ class TournamentCog(commands.Cog):
         }
         if (cat, op) not in valid:
             await interaction.response.send_message(
-                f"❌ Операция `{op}` недоступна для `{cat}`.",
+                f"Операция `{op}` недоступна для `{cat}`.",
                 ephemeral=True,
             )
             return
@@ -437,10 +642,13 @@ class TournamentCog(commands.Cog):
         cmd = group.get_command(names[op])
         if cog is None or cmd is None:
             await interaction.response.send_message(
-                "❌ Целевой ког не загружен.", ephemeral=True
+                "Целевой ког не загружен.", ephemeral=True
             )
             return
-        await cmd.callback(cog, interaction)
+        if cat == "ultimatum":
+            await cmd.callback(cog, interaction, формат)
+        else:
+            await cmd.callback(cog, interaction)
 
     @is_bot_owner()
     async def test_start(self, interaction: discord.Interaction, keep_players: bool = False, no_bots: bool = False) -> None:
@@ -448,7 +656,7 @@ class TournamentCog(commands.Cog):
         tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
+                replace_emojis("Сначала создайте турнир командой `/tournament`."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -456,7 +664,7 @@ class TournamentCog(commands.Cog):
 
         if tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир уже запущен."),
+                replace_emojis("Турнир уже запущен."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -470,7 +678,7 @@ class TournamentCog(commands.Cog):
         # If no_bots=True, just start with current players (no filling)
         if no_bots:
             await interaction.response.send_message(
-                f"🧪 Турнир запущен только с реальными игроками ({len(tournament.all_players)} чел)! Нажмите Старт для запуска.",
+                f"Турнир запущен только с реальными игроками ({len(tournament.all_players)} чел)! Нажмите Старт для запуска.",
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -563,9 +771,9 @@ class TournamentCog(commands.Cog):
 
         store.set(tournament)
 
-        message = f"🧪 Турнир заполнен {required_players} тестовыми игроками! Нажмите Старт для запуска."
+        message = f"Турнир заполнен {required_players} тестовыми игроками! Нажмите Старт для запуска."
         if keep_players:
-            message = f"🧪 Турнир заполнен ботовыми игроками ({required_players} всего, реальные сохранены)! Нажмите Старт для запуска."
+            message = f"Турнир заполнен ботовыми игроками ({required_players} всего, реальные сохранены)! Нажмите Старт для запуска."
 
         await interaction.response.send_message(message, ephemeral=True)
         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -578,7 +786,7 @@ class TournamentCog(commands.Cog):
         tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
+                replace_emojis("Сначала создайте турнир командой `/tournament`."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -586,7 +794,7 @@ class TournamentCog(commands.Cog):
 
         if tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир уже запущен."),
+                replace_emojis("Турнир уже запущен."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -598,7 +806,7 @@ class TournamentCog(commands.Cog):
 
         if current_players < required_players:
             await interaction.response.send_message(
-                f"❌ Недостаточно игроков. Нужно {required_players}, есть {current_players}. Используйте /test keep_players:true для добавления ботов.",
+                f"Недостаточно игроков. Нужно {required_players}, есть {current_players}. Используйте /test keep_players:true для добавления ботов.",
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -608,7 +816,7 @@ class TournamentCog(commands.Cog):
         tournament.is_test = True
 
         await interaction.response.send_message(
-            f"🧪 Турнир готов к запуску с {len(tournament.all_players)} реальными игроками! Нажмите Старт для запуска.",
+            f"Турнир готов к запуску с {len(tournament.all_players)} реальными игроками! Нажмите Старт для запуска.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -636,8 +844,8 @@ class TournamentCog(commands.Cog):
     async def help_command(self, interaction: discord.Interaction) -> None:
         """Показать интерактивную справку."""
         embed = discord.Embed(
-            title=f"  СПРАВКА ПО КОМАНДАМ  ",
-            description=f" **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n **Выберите категорию в меню ниже:**\n{replace_emojis('a_dot_smaller')} Турниры — Топ, Battle Royale, Ультиматум и Ranked Matchmaking\n{replace_emojis('a_dot_smaller')} Профиль — Карточка игрока, ранг и история матчей\n{replace_emojis('a_dot_smaller')} Социальное — Репутация, брак и дни рождения\n{replace_emojis('a_dot_smaller')} Экономика — Баланс, сейф, переводы и криминал\n{replace_emojis('a_dot_smaller')} Магазин — Покупка предметов и инвентарь\n{replace_emojis('a_dot_smaller')} Питомцы — RPG-питомцы сами\n{replace_emojis('a_dot_smaller')} Мини-игры — Казино-игры на монеты\n{replace_emojis('a_dot_smaller')} Система рангов — Ранги, уровни и ELO\n{replace_emojis('a_dot_smaller')} Организаторам — Турниры, инфо-центр и баннер\n{replace_emojis('a_dot_smaller')} Правила сервера — Свод правил и регламент",
+            title=f"СПРАВКА ПО КОМАНДАМ",
+            description=f" **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n **Выберите категорию в меню ниже:**\nТурниры — Топ, Battle Royale, Ультиматум и Ranked Matchmaking\nПрофиль — Карточка игрока, ранг и история матчей\nСоциальное — Репутация, брак и дни рождения\nЭкономика — Баланс, сейф, переводы и криминал\nМагазин — Покупка предметов и инвентарь\nПитомцы — RPG-питомцы сами\nМини-игры — Казино-игры на монеты\nСистема рангов — Ранги, уровни и ELO\nОрганизаторам — Турниры, инфо-центр и баннер\nПравила сервера — Свод правил и регламент",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         view = HelpGuideView(current=None)
@@ -646,6 +854,9 @@ class TournamentCog(commands.Cog):
     @economy_group.command(name="balance", description="Показать ваш баланс")
     async def balance(self, interaction: discord.Interaction) -> None:
         """Показать баланс пользователя."""
+        # Defer ДО PG-чтений баланса — медленный pool не должен
+        # приводить к 10062 Unknown interaction.
+        await interaction.response.defer()
         from storage.user_balance_store import user_balance_store
         from storage.user_bank_store import user_bank_store
         from config import get_emoji
@@ -655,14 +866,14 @@ class TournamentCog(commands.Cog):
         total = cash + safe
 
         embed = discord.Embed(
-            title=f" **БАЛАНС ПОЛЬЗОВАТЕЛЯ | /balance**",
+            title=f"**БАЛАНС ПОЛЬЗОВАТЕЛЯ | /balance**",
             description=f" **Пользователь:** {interaction.user.mention}\n\n **Наличные:** **`{cash:,}`** {get_emoji('money')}\n **В сейфе:** **`{safe:,}`** {get_emoji('money')}\n **Всего:** **`{total:,}`** {get_emoji('money')}\n\n *Используйте `/daily` для получения награды.*",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         try:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 view=compose(embed), ephemeral=False,
                 allowed_mentions=discord.AllowedMentions.none())
         except (discord.NotFound, discord.DiscordServerError):
@@ -718,7 +929,7 @@ class TournamentCog(commands.Cog):
 
         if not report:
             await interaction.followup.send(
-                "✅ Опасных прав у ролей и каналов не обнаружено!"
+                "Опасных прав у ролей и каналов не обнаружено!"
             )
         else:
             full_text = "\n".join(report)
@@ -727,7 +938,7 @@ class TournamentCog(commands.Cog):
                     full_text[:1900] + "\n\n*(Список слишком длинный, обрезан)*"
                 )
             await interaction.followup.send(
-                f"🔍 **Результаты проверки:**\n\n{full_text}"
+                f"**Результаты проверки:**\n\n{full_text}"
             )
 
     @check2fa.error
@@ -740,180 +951,23 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="shop", description="Магазин")
     async def shop(self, interaction: discord.Interaction) -> None:
-        """Показать магазин."""
-        from storage.user_balance_store import user_balance_store
-        from storage.shop_store import inventory_store
-        from storage.player_stats_store import player_stats_store
-        from views.shop_view import ShopMainView
-        from models.player_stats import PlayerStats
-
-        # Получить баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-
-        # Получить инвентарь
-        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-        inventory_count = len(cosmetics)
-        max_inventory = 20
-
-        # Получить ранг
-        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-        rank = "Без ранга"
-        if stats:
-            from cogs.tournament import get_rank_emoji
-            rank = get_rank_emoji(stats.level)
-
-        # Создать embed в новом формате
-        embed = discord.Embed(
-            title=replace_emojis("МАГАЗИН СЕРВЕРА | Главное меню"),
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
-        embed.description = (
-            f"Добро пожаловать в игровой магазин \n"
-            f"Выберите нужный раздел в выпадающем меню ниже, чтобы посмотреть доступные товары."
-        )
-
-        # Профиль пользователя
-        embed.add_field(
-            name=replace_emojis("• Ваш профиль:"),
-            value=f" Баланс: {balance:,} {get_emoji('money')}\n"
-                  f" Ранг: {rank}\n"
-                  f" Инвентарь: {inventory_count}/{max_inventory}",
-            inline=False
-        )
-
-        embed.add_field(
-            name=replace_emojis("a_dot_smaller Для навигации используйте компоненты ниже"),
-            value="",
-            inline=False
-        )
-
-        # Создать View с выпадающим меню категорий
-        view = ShopMainView()
-
-        try:
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-        except (discord.NotFound, discord.DiscordServerError):
-            pass
+        """Показать магазин (SHOP 2.0, CV2)."""
+        # Defer ДО сборки main-view (PG/JSON чтения) — иначе 10062.
+        await interaction.response.defer(ephemeral=True)
+        from views.shop2_view import open_shop
+        await open_shop(interaction)
 
     @app_commands.command(name="inventory", description="Ваш инвентарь")
     async def inventory(self, interaction: discord.Interaction) -> None:
-        """Показать инвентарь косметики."""
-        from storage.shop_store import inventory_store, shop_store
-        from views.shop_view import InventoryEquipSelect, InventoryUnequipSelect
-
-        # Получить инвентарь
-        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-
-        if not cosmetics:
-            await interaction.response.send_message(
-                replace_emojis("• Ваш инвентарь пуст. Используйте `/shop` для покупки косметики."),
-                ephemeral=True
-            )
-            return
-
-        # Icon map для значков
-        icon_map = {
-            "icon_letter": "icon_letter",
-            "icon_paw": "icon_paw",
-            "icon_bluestacks": "icon_bluestacks",
-            "icon_teacup": "icon_teacup",
-            "icon_ribbon": "icon_ribbon",
-            "icon_18plus": "icon_18plus",
-            "icon_heart": "icon_heart",
-            "icon_v_badge": "icon_v_badge",
-            "icon_cards": "icon_cards",
-            "icon_cat_ears": "icon_cat_ears",
-            "icon_wing": "icon_wing",
-            "icon_fuck_you": "icon_fuck_you",
-            "icon_zzz": "icon_zzz",
-        }
-
-        # Rare emoji map
-        rare_map = {
-            "basic": "rare_basic",
-            "premium": "rare_premium",
-            "elite": "rare_elite",
-            "special": "rare_special",
-        }
-
-        # Сгруппировать по типам
-        equipped_tags = []
-        equipped_icons = []
-        unequipped_tags = []
-        unequipped_icons = []
-        equipped_items = []
-        unequipped_items = []
-
-        for cosmetic in cosmetics:
-            item = shop_store.get_item(cosmetic.item_id)
-            if not item:
-                continue
-
-            rare_emoji = rare_map.get(item.rarity.value, "")
-            if cosmetic.equipped:
-                equipped_items.append((cosmetic.item_id, item.name))
-                if item.cosmetic_type.value == "tag":
-                    equipped_tags.append(f" Тег: **{item.value}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-                elif item.cosmetic_type.value == "icon":
-                    icon_emoji = icon_map.get(item.value, "")
-                    equipped_icons.append(f" Значок: {replace_emojis(icon_emoji)} **{item.name}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-            else:
-                unequipped_items.append((cosmetic.item_id, item.name))
-                if item.cosmetic_type.value == "tag":
-                    unequipped_tags.append(f" Тег: **{item.value}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-                elif item.cosmetic_type.value == "icon":
-                    icon_emoji = icon_map.get(item.value, "")
-                    unequipped_icons.append(f" Значок: {replace_emojis(icon_emoji)} **{item.name}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
-
-        # Build description
-        description_parts = ["Управление вашей экипировкой и предметами:\n"]
-
-        # Экипировано
-        description_parts.append(f"{replace_emojis('•')} **Экипировано:**")
-        if equipped_tags:
-            description_parts.extend(equipped_tags)
-        if equipped_icons:
-            description_parts.extend(equipped_icons)
-        if not equipped_tags and not equipped_icons:
-            description_parts.append(f" Ничего не экипировано")
-        description_parts.append("")
-
-        # В инвентаре
-        description_parts.append(f"{replace_emojis('•')} **В инвентаре:**")
-        if unequipped_tags:
-            description_parts.extend(unequipped_tags)
-        if unequipped_icons:
-            description_parts.extend(unequipped_icons)
-        if not unequipped_tags and not unequipped_icons:
-            description_parts.append(f" Инвентарь пуст")
-        description_parts.append("")
-
-        # Управление
-        description_parts.append(f"{replace_emojis('•')} **Управление:**")
-        description_parts.append(f" Используйте выпадающие меню ниже для экипировки/снятия.")
-        description_parts.append("")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Максимум 1 тег и 1 значок одновременно")
-
-        # Создать embed
-        embed = discord.Embed(
-            title=f" ИНВЕНТАРЬ ПОЛЬЗОВАТЕЛЯ",
-            description="\n".join(description_parts),
-            color=discord.Color.from_rgb(69, 69, 69)
+        """Показать инвентарь (SHOP 2.0, CV2)."""
+        await interaction.response.defer(ephemeral=True)
+        from views.inventory2_view import build_inventory_view
+        await interaction.followup.send(
+            view=await build_inventory_view(
+                interaction.guild_id, interaction.user.id
+            ),
+            ephemeral=True,
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-        # Создать View с select menu
-        view = discord.ui.View()
-
-        # Добавить select menu для экипировки и снятия
-        if unequipped_items:
-            view.add_item(InventoryEquipSelect(unequipped_items))
-
-        if equipped_items:
-            view.add_item(InventoryUnequipSelect(equipped_items))
-
-        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
     # @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
     # async def rps(self, interaction: discord.Interaction) -> None:
@@ -924,7 +978,7 @@ class TournamentCog(commands.Cog):
     #     # Check cooldown (3 seconds)
     #     if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_rps"):
     #         await interaction.response.send_message(
-    #             "⏳ Подождите 3 секунды перед повторной игрой!",
+    #             "Подождите 3 секунды перед повторной игрой!",
     #             ephemeral=True
     #         )
     #         return
@@ -962,8 +1016,8 @@ class TournamentCog(commands.Cog):
         dev_games = [g for g in all_games if g.status == "dev"]
 
         embed = discord.Embed(
-            title=f" МИНИ-ИГРЫ | Главное меню",
-            description=f" {interaction.user.mention}\n\n **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n **Статус игр:**\n{replace_emojis('a_dot_smaller')} 🔓 Реализовано: **{len(ready_games)}** игр\n{replace_emojis('a_dot_smaller')} 🔒 В разработке: **{len(dev_games)}** игр\n\n **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
+            title=f"МИНИ-ИГРЫ | Главное меню",
+            description=f" {interaction.user.mention}\n\n **Информация:**\nВаш баланс: {balance:,} {get_emoji('money')}\n\n **Статус игр:**\nРеализовано: **{len(ready_games)}** игр\nВ разработке: **{len(dev_games)}** игр\n\n **Категории:**\n**Игры на удачу**\nБыстрые игры на риск: монетка, кубики, угадай число и др.\n**Викторины и головоломки**\nИнтеллектуальные состязания, викторины и слова.\n**Казино и ставки**\nСлоты, рулетка, баккара, лотерея и высокие ставки.\n\nВыберите категорию в меню ниже для просмотра списка игр",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -982,7 +1036,7 @@ class TournamentCog(commands.Cog):
     #     # Check cooldown (3 seconds)
     #     if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_guess_number"):
     #         await interaction.response.send_message(
-    #             "⏳ Подождите 3 секунды перед повторной игрой!",
+    #             "Подождите 3 секунды перед повторной игрой!",
     #             ephemeral=True
     #         )
     #         return
@@ -1229,27 +1283,19 @@ class TournamentCog(commands.Cog):
     #     await interaction.response.send_modal(MinigameTournamentModal(interaction.guild_id, interaction.user.id))
 
     @player_group.command(name="profile", description="Показать ваш профиль")
-    @app_commands.describe(user="Пользователь (пусто = ваш профиль)", limit="Количество матчей для графика ELO (макс 30)")
-    async def profile(self, interaction: discord.Interaction, user: discord.Member = None, limit: int = 10) -> None:
-        """Показать детальный профиль игрока."""
-        from views.profile_view import ProfileView
+    @app_commands.describe(user="Пользователь (пусто = ваш профиль)")
+    async def profile(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
+        """Показать детальный профиль игрока (CV2, без PNG)."""
+        from views.profile_view import build_profile_layout
 
         # Если пользователь не указан, показываем профиль автора
         target_user = user if user else interaction.user
-        is_owner = target_user.id == interaction.user.id
 
-        from services.profile_card import build_profile_png
-
-        # Рендер PNG ~3с — сначала defer, иначе interaction протухает (404)
         await interaction.response.defer()
-        png = await build_profile_png(interaction.guild, target_user)
-
-        # Кнопки только для владельца
-        view = ProfileView(interaction.guild_id, target_user.id, is_owner)
-
+        layout = await build_profile_layout(interaction.guild, target_user)
         await interaction.followup.send(
-            file=discord.File(__import__("io").BytesIO(png), filename="profile.png"),
-            view=view,
+            view=layout,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
     @player_set_group.command(name="bio", description="Установить описание профиля (раз в 7 дней)")
@@ -1259,19 +1305,19 @@ class TournamentCog(commands.Cog):
         text = value.strip()
         if not text:
             await interaction.response.send_message(
-                "❌ Описание не может быть пустым.", ephemeral=True
+                "Описание не может быть пустым.", ephemeral=True
             )
             return
         if len(text) > 256:
             await interaction.response.send_message(
-                "❌ Описание слишком длинное (максимум 256 символов).", ephemeral=True
+                "Описание слишком длинное (максимум 256 символов).", ephemeral=True
             )
             return
         if not await self._check_profile_field_cooldown(interaction, "description"):
             return
         await self._save_profile_field(interaction, description=text)
         await interaction.response.send_message(
-            "✅ Описание профиля обновлено.", ephemeral=True
+            "Описание профиля обновлено.", ephemeral=True
         )
 
     @player_set_group.command(
@@ -1293,7 +1339,7 @@ class TournamentCog(commands.Cog):
                     continue
             if not normalized:
                 await interaction.response.send_message(
-                    "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ "
+                    "Неверный формат даты. Используйте ДД.ММ.ГГГГ "
                     "(например, 25.12.2004).",
                     ephemeral=True,
                 )
@@ -1305,7 +1351,7 @@ class TournamentCog(commands.Cog):
         await self._save_profile_field(interaction, birthday=new_value)
         suffix = "" if new_value else " Дата убрана."
         await interaction.response.send_message(
-            f"✅ День рождения обновлён.{suffix}", ephemeral=True
+            f"День рождения обновлён.{suffix}", ephemeral=True
         )
 
     async def _check_profile_field_cooldown(
@@ -1322,7 +1368,7 @@ class TournamentCog(commands.Cog):
         if left > 0:
             await interaction.response.send_message(
                 replace_emojis(
-                    f"⏳ Это поле можно менять **раз в 7 дней**.\n"
+                    f"Это поле можно менять **раз в 7 дней**.\n"
                     f"Осталось: **{format_remaining(left)}**"
                 ),
                 ephemeral=True,
@@ -1485,12 +1531,12 @@ class TournamentCog(commands.Cog):
 
         if user.id == interaction.user.id:
             await interaction.response.send_message(
-                replace_emojis("❌ Нельзя жениться на себе."), ephemeral=True
+                replace_emojis("Нельзя жениться на себе."), ephemeral=True
             )
             return
         if user.bot:
             await interaction.response.send_message(
-                replace_emojis("❌ Нельзя жениться на боте."), ephemeral=True
+                replace_emojis("Нельзя жениться на боте."), ephemeral=True
             )
             return
 
@@ -1500,13 +1546,13 @@ class TournamentCog(commands.Cog):
 
         if own_stats.spouse_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Вы уже состоите в браке. Сначала разведитесь через `/player divorce`."),
+                replace_emojis("Вы уже состоите в браке. Сначала разведитесь через `/player divorce`."),
                 ephemeral=True,
             )
             return
         if target_stats.spouse_id:
             await interaction.response.send_message(
-                replace_emojis(f"❌ {user.mention} уже состоит в браке."), ephemeral=True
+                replace_emojis(f"{user.mention} уже состоит в браке."), ephemeral=True
             )
             return
 
@@ -1521,7 +1567,7 @@ class TournamentCog(commands.Cog):
         spouse_id = getattr(stats, "spouse_id", 0) if stats else 0
         if not spouse_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Вы не состоите в браке."), ephemeral=True
+                replace_emojis("Вы не состоите в браке."), ephemeral=True
             )
             return
 
@@ -1534,7 +1580,7 @@ class TournamentCog(commands.Cog):
             await player_stats_store.set(spouse_stats)
 
         embed = discord.Embed(
-            title=" РАЗВОД | /player divorce",
+            title="РАЗВОД | /player divorce",
             description=f" {interaction.user.mention} подал(а) на развод. Брак расторгнут.",
             color=discord.Color.from_rgb(69, 69, 69),
         )
@@ -1545,7 +1591,7 @@ class TournamentCog(commands.Cog):
         """Список дней рождения участников сервера."""
         if not interaction.guild:
             await interaction.response.send_message(
-                replace_emojis("❌ Команда доступна только на сервере."), ephemeral=True
+                replace_emojis("Команда доступна только на сервере."), ephemeral=True
             )
             return
 
@@ -1565,7 +1611,7 @@ class TournamentCog(commands.Cog):
         """Список действующих браков с пагинацией."""
         if not interaction.guild:
             await interaction.response.send_message(
-                replace_emojis("❌ Команда доступна только на сервере."), ephemeral=True
+                replace_emojis("Команда доступна только на сервере."), ephemeral=True
             )
             return
 
@@ -1657,8 +1703,8 @@ class TournamentCog(commands.Cog):
         xp_remaining = xp_needed - current_xp
 
         embed = discord.Embed(
-            title=f" УРОВЕНЬ ПОЛЬЗОВАТЕЛЯ | /rank",
-            description=f" {interaction.user.mention}\n\n{replace_emojis('•')} **Текущий статус:**\n Уровень: Level {stats.level}\n Ранг: {rank_title}\n\n{replace_emojis('•')} **Прогресс опыта:**\n Прогресс: `{progress_bar}` ({progress_percent}%)\n До след. уровня: {xp_remaining:,} XP\n\n{replace_emojis('a_dot_smaller')} Накопить XP можно через участие в турнирах и победы",
+            title=f"УРОВЕНЬ ПОЛЬЗОВАТЕЛЯ | /rank",
+            description=f" {interaction.user.mention}\n\n**Текущий статус:**\n Уровень: Level {stats.level}\n Ранг: {rank_title}\n\n**Прогресс опыта:**\n Прогресс: `{progress_bar}` ({progress_percent}%)\n До след. уровня: {xp_remaining:,} XP\n\nНакопить XP можно через участие в турнирах и победы",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         # Эмблема текущего подранга вместо аватара; fallback — аватар
@@ -1697,8 +1743,8 @@ class TournamentCog(commands.Cog):
         lost_bets = stats["total_bets"] - stats["successful_bets"]
 
         embed = discord.Embed(
-            title=f" СТАТИСТИКА СТАВОК | /bet",
-            description=f"Ваша общая статистика по ставкам:\n\n{replace_emojis('•')} **Основное:**\n Всего ставок: {stats['total_bets']}\n Выигрышных: {stats['successful_bets']}\n Проигрышных: {lost_bets}\n Точность: {accuracy:.1f}%\n\n{replace_emojis('•')} **Баланс:**\n Выиграно: +{stats['total_won']} {get_emoji('money')}\n Проиграно: -{stats['total_lost']} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени",
+            title=f"СТАТИСТИКА СТАВОК | /bet",
+            description=f"Ваша общая статистика по ставкам:\n\n**Основное:**\n Всего ставок: {stats['total_bets']}\n Выигрышных: {stats['successful_bets']}\n Проигрышных: {lost_bets}\n Точность: {accuracy:.1f}%\n\n**Баланс:**\n Выиграно: +{stats['total_won']} {get_emoji('money')}\n Проиграно: -{stats['total_lost']} {get_emoji('money')}\n\nДанные обновляются в реальном времени",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1722,7 +1768,7 @@ class TournamentCog(commands.Cog):
     #     """Включить или выключить лимит для круга."""
     #     if circle not in [2, 3, 4]:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Круг должен быть 2, 3 или 4."),
+    #             replace_emojis("Круг должен быть 2, 3 или 4."),
     #             ephemeral=True
     #         )
     #         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1730,7 +1776,7 @@ class TournamentCog(commands.Cog):
     #
     #     if status.lower() not in ["on", "off"]:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Статус должен быть 'on' или 'off'."),
+    #             replace_emojis("Статус должен быть 'on' или 'off'."),
     #             ephemeral=True
     #         )
     #         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1739,7 +1785,7 @@ class TournamentCog(commands.Cog):
     #     tournament = store.get(interaction.guild_id)
     #     if not tournament:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Нет активного турнира."),
+    #             replace_emojis("Нет активного турнира."),
     #             ephemeral=True,
     #         )
     #         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1747,7 +1793,7 @@ class TournamentCog(commands.Cog):
     #
     #     if tournament.phase != TournamentPhase.SETUP:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Лимиты можно менять только в фазе настройки."),
+    #             replace_emojis("Лимиты можно менять только в фазе настройки."),
     #             ephemeral=True
     #         )
     #         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1758,7 +1804,7 @@ class TournamentCog(commands.Cog):
     #
     #     status_text = "включен" if tournament.circle_limits_enabled[circle] else "отключен"
     #     await interaction.response.send_message(
-    #         replace_emojis("✅ Лимит для круга {circle} {status_text}."),
+    #         replace_emojis("Лимит для круга {circle} {status_text}."),
     #         ephemeral=True
     #     )
     #     asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1772,7 +1818,7 @@ class TournamentCog(commands.Cog):
     #     # Ограничение длины
     #     if len(bio) > 100:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Описание должно быть не более 100 символов."),
+    #             replace_emojis("Описание должно быть не более 100 символов."),
     #             ephemeral=True
     #         )
     #         return
@@ -1796,7 +1842,7 @@ class TournamentCog(commands.Cog):
     #     await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
 
     #     await interaction.response.send_message(
-    #         replace_emojis("✅ Био установлено: {bio}"),
+    #         replace_emojis("Био установлено: {bio}"),
     #         ephemeral=True
     #     )
 
@@ -1829,12 +1875,12 @@ class TournamentCog(commands.Cog):
 
     #     if url:
     #         await interaction.response.send_message(
-    #             replace_emojis("✅ Аватар профиля обновлен."),
+    #             replace_emojis("Аватар профиля обновлен."),
     #             ephemeral=True
     #         )
     #     else:
     #         await interaction.response.send_message(
-    #             replace_emojis("✅ Аватар профиля установлен по умолчанию (из Discord).",
+    #             replace_emojis("Аватар профиля установлен по умолчанию (из Discord).",
     #             ephemeral=True
     #         )
 
@@ -1852,7 +1898,7 @@ class TournamentCog(commands.Cog):
     #         embed.description = f"📝 {stats.bio}"
 
     #     embed.add_field(name=replace_emojis("🏆 ELO", value=str(int(stats.elo)), inline=True)
-    #     embed.add_field(name="🥇 Победы", value=str(stats.wins), inline=True)
+    #     embed.add_field(name="Победы", value=str(stats.wins), inline=True)
     #     embed.add_field(name=replace_emojis("🎮 Игры", value=str(stats.games), inline=True)
     #     embed.add_field(name=replace_emojis("📈 Win Rate", value=f"{win_rate:.0f}%", inline=True)
     #     embed.add_field(name=replace_emojis("⚔️ K/D Ratio", value=f"{stats.kd_ratio:.2f}", inline=True)
@@ -1879,7 +1925,7 @@ class TournamentCog(commands.Cog):
         except Exception:
             logger.exception("booyah compute failed")
             await interaction.edit_original_response(
-                view=text_card(replace_emojis("❌ Не удалось загрузить рекорды.")))
+                view=text_card(replace_emojis("Не удалось загрузить рекорды.")))
             return
 
         view = HallOfFameView(
@@ -1910,7 +1956,7 @@ class TournamentCog(commands.Cog):
             set_elo=elo
         )
 
-        await ctx.send(replace_emojis(f"✅ ELO игрока {player.display_name} изменен на {elo}."), delete_after=10)
+        await ctx.send(replace_emojis(f"ELO игрока {player.display_name} изменен на {elo}."), delete_after=10)
 
     @admin_group.command(name="edit", description=f"Изменить ELO или {get_emoji('money')} игрока")
     @app_commands.describe(
@@ -1932,14 +1978,14 @@ class TournamentCog(commands.Cog):
 
         if type not in ["elo", "money"]:
             await interaction.response.send_message(
-                replace_emojis("❌ Тип должен быть 'elo' или 'money'."),
+                replace_emojis("Тип должен быть 'elo' или 'money'."),
                 ephemeral=True
             )
             return
 
         if operation not in ["set", "add", "remove"]:
             await interaction.response.send_message(
-                replace_emojis("❌ Операция должна быть 'set', 'add' или 'remove'."),
+                replace_emojis("Операция должна быть 'set', 'add' или 'remove'."),
                 ephemeral=True
             )
             return
@@ -1966,7 +2012,7 @@ class TournamentCog(commands.Cog):
             )
 
             await interaction.response.send_message(
-                replace_emojis("✅ ELO игрока {player.display_name}: {current_elo} → {new_elo}"),
+                "ELO игрока {player.display_name}: {current_elo} → {new_elo}",
                 ephemeral=True
             )
         else:  # money
@@ -1985,7 +2031,7 @@ class TournamentCog(commands.Cog):
                 await user_balance_store.remove_balance(interaction.guild_id, player.id, amount)
 
             await interaction.response.send_message(
-                replace_emojis("✅ Монеты игрока {player.display_name}: {current_balance} → {new_balance}"),
+                "Монеты игрока {player.display_name}: {current_balance} → {new_balance}",
                 ephemeral=True
             )
 
@@ -1999,7 +2045,7 @@ class TournamentCog(commands.Cog):
         from storage.db import get_pool
 
         if not player_stats_store._use_db:
-            await interaction.response.send_message(replace_emojis("❌ База данных не включена."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("База данных не включена."), ephemeral=True)
             return
 
         pool = await get_pool()
@@ -2010,7 +2056,7 @@ class TournamentCog(commands.Cog):
                 player.id, interaction.guild_id, player.display_name
             )
 
-        await interaction.response.send_message(replace_emojis(f"✅ Обновлено {result} записей для {player.display_name}."), ephemeral=True)
+        await interaction.response.send_message(replace_emojis(f"Обновлено {result} записей для {player.display_name}."), ephemeral=True)
 
     @admin_group.command(name="fix", description="Сбросить статистику ботов (cap1, cap2 и т.д.)")
     @app_commands.default_permissions(administrator=True)
@@ -2021,7 +2067,7 @@ class TournamentCog(commands.Cog):
         from storage.db import get_pool
 
         if not player_stats_store._use_db:
-            await interaction.response.send_message(replace_emojis("❌ База данных не включена."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("База данных не включена."), ephemeral=True)
             return
 
         # Bot names to reset (both lowercase and uppercase variants)
@@ -2104,7 +2150,7 @@ class TournamentCog(commands.Cog):
                     reset_count += 1
 
         await interaction.response.send_message(
-            replace_emojis(f"✅ Сброшена статистика для {reset_count} ботов."),
+            replace_emojis(f"Сброшена статистика для {reset_count} ботов."),
             ephemeral=True
         )
 
@@ -2124,7 +2170,7 @@ class TournamentCog(commands.Cog):
     #     tournament = store.get(interaction.guild_id)
     #     if not tournament:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Нет активного турнира."),
+    #             replace_emojis("Нет активного турнира."),
     #             ephemeral=True,
     #         )
     #         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -2152,7 +2198,7 @@ class TournamentCog(commands.Cog):
     #         # Replace in circles
     #         if old_name not in tournament.all_players:
     #             await interaction.response.send_message(
-    #                 replace_emojis("❌ Игрок `{old_name}` не найден."),
+    #                 replace_emojis("Игрок `{old_name}` не найден."),
     #                 ephemeral=True,
     #             )
     #             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -2175,7 +2221,7 @@ class TournamentCog(commands.Cog):
 
     #         if not found:
     #             await interaction.response.send_message(
-    #                 replace_emojis("❌ Игрок `{old_name}` не найден в финальных командах."),
+    #                 replace_emojis("Игрок `{old_name}` не найден в финальных командах."),
     #                 ephemeral=True,
     #             )
     #             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -2194,7 +2240,7 @@ class TournamentCog(commands.Cog):
 
     #         if not found:
     #             await interaction.response.send_message(
-    #                 replace_emojis("❌ Игрок `{old_name}` не найден в командах."),
+    #                 replace_emojis("Игрок `{old_name}` не найден в командах."),
     #                 ephemeral=True,
     #             )
     #             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -2203,7 +2249,7 @@ class TournamentCog(commands.Cog):
     #     store.set(tournament)
 
     #     await interaction.response.send_message(
-    #         replace_emojis("✅ Игрок `{old_name}` заменен на `{new_name}`."),
+    #         replace_emojis("Игрок `{old_name}` заменен на `{new_name}`."),
     #         ephemeral=True
     #     )
     #     asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -2222,7 +2268,7 @@ class TournamentCog(commands.Cog):
     #     tournament = store.get(interaction.guild_id)
     #     if not tournament:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Нет активного турнира."),
+    #             replace_emojis("Нет активного турнира."),
     #             ephemeral=True,
     #         )
     #         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -2233,14 +2279,14 @@ class TournamentCog(commands.Cog):
     #     if tournament.phase == TournamentPhase.SETUP:
     #         if not tournament.remove_player(name):
     #             await interaction.response.send_message(
-    #                 replace_emojis("❌ Игрок `{name}` не найден."),
+    #                 replace_emojis("Игрок `{name}` не найден."),
     #                 ephemeral=True,
     #             )
     #             asyncio.create_task(_delete_ephemeral_later(interaction))
     #             return
     #     else:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Можно удалять игроков только на этапе настройки."),
+    #             replace_emojis("Можно удалять игроков только на этапе настройки."),
     #             ephemeral=True,
     #         )
     #         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -2249,7 +2295,7 @@ class TournamentCog(commands.Cog):
     #     store.set(tournament)
 
     #     await interaction.response.send_message(
-    #         replace_emojis("✅ Игрок `{name}` удален."),
+    #         replace_emojis("Игрок `{name}` удален."),
     #         ephemeral=True
     #     )
     #     asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -2263,18 +2309,18 @@ class TournamentCog(commands.Cog):
         from storage.user_balance_store import user_balance_store
 
         if amount < 100:
-            await interaction.response.send_message(replace_emojis("❌ Минимальная сумма: 100 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Минимальная сумма: 100 🪙"), ephemeral=True)
             return
 
         if user.id == interaction.user.id:
-            await interaction.response.send_message(replace_emojis("❌ Нельзя передать самому себе"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Нельзя передать самому себе"), ephemeral=True)
             return
 
         # Check if sender has at least 1 game played
         sender_stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
         if not sender_stats or sender_stats.games < 1:
             await interaction.response.send_message(
-                replace_emojis("❌ Вы должны сыграть хотя бы 1 игру в турнире для использования /pay"),
+                replace_emojis("Вы должны сыграть хотя бы 1 игру в турнире для использования /pay"),
                 ephemeral=True
             )
             return
@@ -2283,7 +2329,7 @@ class TournamentCog(commands.Cog):
         recipient_stats = await player_stats_store.get(interaction.guild_id, user.id)
         if not recipient_stats or recipient_stats.games < 1:
             await interaction.response.send_message(
-                replace_emojis(f"❌ {user.mention} должен сыграть хотя бы 1 игру в турнире для получения перевода"),
+                replace_emojis(f"{user.mention} должен сыграть хотя бы 1 игру в турнире для получения перевода"),
                 ephemeral=True
             )
             return
@@ -2331,7 +2377,7 @@ class TournamentCog(commands.Cog):
                 color=discord.Color.green()
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('•')} **Комиссия:** {fee_display}%\n{replace_emojis('•')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}{pet_bonus_text}"
+            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n**Комиссия:** {fee_display}%\n**Списалось:** {result['total_deducted']:,} {get_emoji('money')}{pet_bonus_text}"
             embed.add_field(name="Пользователь", value=f" {user.mention} **получил** — {result['amount']:,} {get_emoji('money')}", inline=False)
 
             try:
@@ -2340,7 +2386,7 @@ class TournamentCog(commands.Cog):
                 pass
         except ValueError as e:
             try:
-                await interaction.response.send_message(replace_emojis(f"❌ {str(e)}"), ephemeral=True)
+                await interaction.response.send_message(replace_emojis(f"{str(e)}"), ephemeral=True)
             except (discord.NotFound, discord.DiscordServerError):
                 pass
 
@@ -2359,7 +2405,7 @@ class TournamentCog(commands.Cog):
         sender_stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
         if not sender_stats or sender_stats.games < 1:
             await interaction.response.send_message(
-                replace_emojis("❌ Вы должны сыграть хотя бы 1 игру в турнире для использования /gift"),
+                replace_emojis("Вы должны сыграть хотя бы 1 игру в турнире для использования /gift"),
                 ephemeral=True
             )
             return
@@ -2368,7 +2414,7 @@ class TournamentCog(commands.Cog):
         recipient_stats = await player_stats_store.get(interaction.guild_id, user.id)
         if not recipient_stats or recipient_stats.games < 1:
             await interaction.response.send_message(
-                replace_emojis(f"❌ {user.mention} должен сыграть хотя бы 1 игру в турнире для получения подарка"),
+                replace_emojis(f"{user.mention} должен сыграть хотя бы 1 игру в турнире для получения подарка"),
                 ephemeral=True
             )
             return
@@ -2377,6 +2423,16 @@ class TournamentCog(commands.Cog):
         item = shop_store.get_item(item_id)
         if not item:
             await interaction.response.send_message(replace_emojis("• Предмет не найден"), ephemeral=True)
+            return
+
+        # Discord-роли нельзя передавать как предметы: роль —
+        # отдельная сущность аккаунта, инвентарная запись без
+        # переноса роли привела бы к рассинхронизации.
+        if item.item_type == "role":
+            await interaction.response.send_message(
+                replace_emojis("• Роли нельзя передавать как предметы"),
+                ephemeral=True
+            )
             return
 
         # Check if sender has the item
@@ -2603,7 +2659,7 @@ class TournamentCog(commands.Cog):
             )
 
         embed = discord.Embed(
-            title=f" **Кто я?** ",
+            title=f"**Кто я?**",
             description=f"  {response} ",
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -2688,8 +2744,8 @@ class TournamentCog(commands.Cog):
             fire_emoji = "🔥" if streak >= 3 else ""
 
             embed = discord.Embed(
-                title=f" ЕЖЕДНЕВНАЯ НАГРАДА | /daily",
-                description=f" {interaction.user.mention}\n\n{replace_emojis('•')} **Ваша награда:**\n Получено: {reward} {get_emoji('money')}\n Серия заходов: {streak} дней {fire_emoji}\n\n{replace_emojis('a_dot_smaller')} Возвращайтесь через 12 часов, чтобы получить следующую награду!",
+                title=f"ЕЖЕДНЕВНАЯ НАГРАДА | /daily",
+                description=f" {interaction.user.mention}\n\n**Ваша награда:**\n Получено: {reward} {get_emoji('money')}\n Серия заходов: {streak} дней {fire_emoji}\n\nВозвращайтесь через 12 часов, чтобы получить следующую награду!",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -2704,7 +2760,7 @@ class TournamentCog(commands.Cog):
         # Check permissions manually
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "❌ У вас нет прав для использования этой команды. Требуются права администратора.",
+                "У вас нет прав для использования этой команды. Требуются права администратора.",
                 ephemeral=True
             )
             return
@@ -2714,12 +2770,12 @@ class TournamentCog(commands.Cog):
         try:
             await setup_org_role_message(self.bot, interaction.guild, interaction.channel)
             await interaction.followup.send(
-                "✅ Сообщение для управления ролью организатора создано",
+                "Сообщение для управления ролью организатора создано",
                 ephemeral=False
             )
         except Exception as e:
             await interaction.followup.send(
-                f"❌ Ошибка при создании сообщения: {str(e)}",
+                f"Ошибка при создании сообщения: {str(e)}",
                 ephemeral=True
             )
 
@@ -2733,16 +2789,16 @@ class TournamentCog(commands.Cog):
             " **Добро пожаловать на сервер!**\n"
             "Этот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n"
             "  **НАВИГАЦИЯ ПО КАНАЛАМ:**\n"
-            f"{replace_emojis('a_dot_smaller')} <#1200125075156910181>  Основное общение сообщества\n"
-            f"{replace_emojis('a_dot_smaller')} <#1549809898643001484>  Проведение турниров\n"
-            f"{replace_emojis('a_dot_smaller')} <#1514677029159567604>  Яркие моменты из игр\n"
-            f"{replace_emojis('a_dot_smaller')} <#1551167853741219880>  Команды ботов и спам-игры\n"
-            f"{replace_emojis('a_dot_smaller')} <#1250974603162026024>  Прослушивание треков\n"
-            f"{replace_emojis('a_dot_smaller')} <#1242489553189732373>  Полезные файлы для FF\n\n"
-            f" {replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже, чтобы узнать больше"
+            f"<#1200125075156910181>  Основное общение сообщества\n"
+            f"<#1549809898643001484>  Проведение турниров\n"
+            f"<#1514677029159567604>  Яркие моменты из игр\n"
+            f"<#1551167853741219880>  Команды ботов и спам-игры\n"
+            f"<#1250974603162026024>  Прослушивание треков\n"
+            f"<#1242489553189732373>  Полезные файлы для FF\n\n"
+            f" Выберите категорию в меню ниже, чтобы узнать больше"
         )
         embed = discord.Embed(
-            title="✧ DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ ✧",
+            title="DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ",
             description=_os.getenv("GUIDE_NAV_TEXT") or _guide_desc,
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -2756,7 +2812,7 @@ class TournamentCog(commands.Cog):
 
         # Send confirmation to bot owner only
         await interaction.response.send_message(
-            replace_emojis("✅ Сообщение приветствия создано"),
+            replace_emojis("Сообщение приветствия создано"),
             ephemeral=True
         )
 
@@ -2781,14 +2837,14 @@ class TournamentCog(commands.Cog):
             await betting_stats_store.reset_user(guild_id, user_id)
             
             await interaction.response.send_message(
-                replace_emojis("✅ Статистика пользователя {user_name} успешно сброшена!"),
+                replace_emojis("Статистика пользователя {user_name} успешно сброшена!"),
                 ephemeral=True
             )
             logger.info(f"Reset stats for user {user_name} (ID: {user_id}) in guild {guild_id}")
         except Exception as e:
             logger.error(f"Error resetting user stats: {e}", exc_info=True)
             await interaction.response.send_message(
-                replace_emojis("❌ Произошла ошибка при сбросе статистики: {e}"),
+                replace_emojis("Произошла ошибка при сбросе статистики: {e}"),
                 ephemeral=True
             )
 
@@ -2821,7 +2877,7 @@ class TournamentCog(commands.Cog):
         tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден в этом канале."),
+                replace_emojis("Турнир не найден в этом канале."),
                 ephemeral=True
             )
             return
@@ -2838,7 +2894,7 @@ class TournamentCog(commands.Cog):
             matches_to_fill.append(("final", 0))
         else:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в подходящей фазе. Нужно быть в qualifiers, semifinals или final."),
+                replace_emojis("Турнир не в подходящей фазе. Нужно быть в qualifiers, semifinals или final."),
                 ephemeral=True
             )
             return
@@ -2884,7 +2940,7 @@ class TournamentCog(commands.Cog):
         store.set(tournament)
 
         await interaction.response.send_message(
-            replace_emojis(f"✅ Статистика рандомно заполнена для {total_filled} матчей."),
+            replace_emojis(f"Статистика рандомно заполнена для {total_filled} матчей."),
             ephemeral=True
         )
 
@@ -2932,7 +2988,7 @@ class TournamentCog(commands.Cog):
     ) -> None:
         """Обработка ошибок slash-команд."""
         if isinstance(error, app_commands.CheckFailure):
-            msg = str(error) or replace_emojis("❌ Недостаточно прав."),
+            msg = str(error) or replace_emojis("Недостаточно прав."),
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(msg, ephemeral=True)
@@ -2945,7 +3001,7 @@ class TournamentCog(commands.Cog):
             return
 
         logger.exception("Ошибка команды: %s", error)
-        msg = replace_emojis("❌ Произошла ошибка при выполнении команды."),
+        msg = replace_emojis("Произошла ошибка при выполнении команды."),
         try:
             if interaction.response.is_done():
                 await interaction.followup.send(msg, ephemeral=True)
@@ -2970,24 +3026,52 @@ def get_rank_emoji(level: int) -> str:
 async def send_tournament_notification(tournament, guild, action: str) -> None:
     """Send tournament notification to notification channel."""
     try:
-        channel = guild.get_channel(NOTIFICATION_CHANNEL_ID)
+        from services.discord_cfg import channel_id as _dcid, role_ids as _drid
+        _gid = getattr(tournament, "guild_id", None) or (
+            guild.id if guild else 0)
+        _nch = _dcid(_gid, "discord.notification_channel_id",
+                     NOTIFICATION_CHANNEL_ID)
+        _nroles = [_dcid(_gid, "discord.notification_role_id", 0)]
+        channel = guild.get_channel(_nch)
         if not channel:
-            logger.warning(f"Notification channel {NOTIFICATION_CHANNEL_ID} not found")
+            logger.warning(f"Notification channel {_nch} not found")
             return
 
-        role = guild.get_role(NOTIFICATION_ROLE_ID)
+        _nrid = _nroles[0] if _nroles else 0
+        role = guild.get_role(_nrid)
         role_mention = role.mention if role else ""
 
-        embed = discord.Embed(
-            title="Турнир Создан",
-            description=(
-                f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
-                f"**Регистрация** {replace_emojis("➡️")} <#{tournament.channel_id}>"
-            ),
-            color=discord.Color.blue()
-        )
+        # Control Center template override: tournament.announcement
+        # (guild → global). Fallback — стандартный embed.
+        custom_view = None
+        try:
+            from storage import admin_config_store as _cfg_store
+            from services.cv2_templates import render_template
+            _gid = getattr(tournament, "guild_id", None) or guild.id
+            tpl = await _cfg_store.get_template(
+                _gid, "tournament.announcement") or \
+                await _cfg_store.get_template(0, "tournament.announcement")
+            if tpl:
+                custom_view = render_template(tpl["payload"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                f"tournament.announcement template failed: {exc}")
+            custom_view = None
 
-        await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
+        if custom_view is not None:
+            await channel.send(view=custom_view,
+                               allowed_mentions=discord.AllowedMentions(
+                                   roles=True))
+        else:
+            embed = discord.Embed(
+                title="Турнир Создан",
+                description=(
+                    f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
+                    f"**Регистрация** <#{tournament.channel_id}>"
+                ),
+                color=discord.Color.blue()
+            )
+            await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
         logger.info(f"Tournament notification sent: {action} in guild {guild.id}")
     except Exception as e:
         logger.error(f"Failed to send tournament notification: {e}")
@@ -3018,20 +3102,21 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
     if value == "tournaments":
         return discord.Embed(
-            title="  РАЗДЕЛ: ТУРНИРЫ  ",
+            title="РАЗДЕЛ: ТУРНИРЫ",
             description=(
                 f" **Турниры, рейтинговые матчи и статистика**\n\n"
                 f" **Доступные команды:**\n"
                 f"{dot}  `/top` — Таблица лидеров `(уровень / монеты / ELO / репутация)`\n"
                 f"{dot}  `/booyah` — Зал славы, рекорды и история турниров\n"
-                f"{dot}  `/mm squad` — Поиск матча 4×4 (Ranked Matchmaking)\n"
-                f"{dot}  `/mm delete` — Удалить поиски на сервере (орг)\n"
-                f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
+                + (f"{dot}  `/mm squad` — Поиск матча 4×4 (Ranked Matchmaking)\n"
+                   f"{dot}  `/mm delete` — Удалить поиски на сервере (орг)\n"
+                   if _cfg.MM_ENABLED else "")
+                + f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
                 f"{dot}  `/br create|delete` — Battle Royale (орг)\n"
-                f"{dot}  `/ultimatum create|delete` — Ультиматум (орг)\n"
+                f"{dot}  `/tournament ультиматум создать|удалить` — Ультиматум (орг)\n"
                 f"{dot}  `/team create|status|delete` — Команды для BR\n"
                 f"{dot}  `/ff info|stats` — Статистика Free Fire\n"
-                f"{dot}  `/player ulti`, `/player ulti_history` — Статистика Ultimatum\n"
+                f"{dot}  `/player ulti`, `/player ulti_history` — Рейтинг Ультиматума (Соло/Дуо)\n"
                 + footer
             ),
             color=gray,
@@ -3039,7 +3124,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
     if value == "profile":
         return discord.Embed(
-            title="  РАЗДЕЛ: ПРОФИЛЬ  ",
+            title="РАЗДЕЛ: ПРОФИЛЬ",
             description=(
                 f" **Персональный аккаунт и матчи**\n\n"
                 f" **Доступные команды:**\n"
@@ -3056,7 +3141,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
     if value == "social":
         return discord.Embed(
-            title="  РАЗДЕЛ: СОЦИАЛЬНОЕ  ",
+            title="РАЗДЕЛ: СОЦИАЛЬНОЕ",
             description=(
                 f" **Репутация, брак и дни рождения**\n\n"
                 f" **Доступные команды:**\n"
@@ -3075,7 +3160,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
     if value == "economy":
         return discord.Embed(
-            title="  РАЗДЕЛ: ЭКОНОМИКА  ",
+            title="РАЗДЕЛ: ЭКОНОМИКА",
             description=(
                 f" **Финансы, сейф и криминал**\n\n"
                 f" **Доступные команды:**\n"
@@ -3097,7 +3182,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
     if value == "shop":
         return discord.Embed(
-            title="  РАЗДЕЛ: МАГАЗИН  ",
+            title="РАЗДЕЛ: МАГАЗИН",
             description=(
                 f" **Покупка товаров и инвентарь**\n\n"
                 f" **Доступные команды:**\n"
@@ -3112,7 +3197,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
     if value == "pets":
         return discord.Embed(
-            title="  РАЗДЕЛ: ПИТОМЦЫ  ",
+            title="РАЗДЕЛ: ПИТОМЦЫ",
             description=(
                 f" **RPG-система питомцев с уникальными способностями**\n\n"
                 f" **Доступные команды:**\n"
@@ -3123,7 +3208,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f"{dot}  `/pet coowner @игрок` — Со-опекунство\n"
                 f"{dot}  `/pet coowner_remove` — Убрать со-опекуна / выйти\n\n"
                 f" **Покупка и уход:**\n"
-                f"{dot} Питомцы покупаются через `/shop` → Питомцы\n"
+                f"{dot} Питомцы покупаются через `/shop`, категория «Питомцы»\n"
                 f"{dot} Кормление — 30 монет `(сытость, энергия, EXP)`\n"
                 f"{dot} Таинственное яйцо — 500 монет, шанс 20%\n\n"
                 f" **Цены по редкости:**\n"
@@ -3136,7 +3221,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
     if value == "games":
         return discord.Embed(
-            title="  РАЗДЕЛ: МИНИ-ИГРЫ  ",
+            title="РАЗДЕЛ: МИНИ-ИГРЫ",
             description=(
                 f" **Казино-игры на монеты**\n\n"
                 f" **Доступные команды:**\n"
@@ -3156,27 +3241,28 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
     if value == "ranks":
         return discord.Embed(
-            title="  СИСТЕМА РАНГОВ  ",
+            title="СИСТЕМА РАНГОВ",
             description=(
                 f" **Система рангов по уровням:**\n{rank_lines}\n\n"
                 f"{dot} `/top` — ELO-таблица лидеров\n"
                 f"{dot} `/player rank` — Текущий ранг и прогресс\n"
-                f"{dot} `/player ulti` — Рейтинг Ultimatum"
+                f"{dot} `/player ulti` — Рейтинг Ультиматума"
             ),
             color=gray,
         )
 
     if value == "organizers":
         return discord.Embed(
-            title="  РАЗДЕЛ: ОРГАНИЗАТОРАМ  ",
+            title="РАЗДЕЛ: ОРГАНИЗАТОРАМ",
             description=(
                 f" **Турниры, инфо-центр и баннер `(админы/орги)`**\n\n"
                 f" **Турниры:**\n"
                 f"{dot}  `/tournament create|delete|deleteall|test` — Сетка турнира\n"
                 f"{dot}  `/br create|delete|test_fill|test_teams|test_stats` — Battle Royale\n"
-                f"{dot}  `/ultimatum create|delete|test_fill` — Ультиматум\n"
-                f"{dot}  `/mm squad|delete|test` — Matchmaking 4×4\n"
-                f"{dot}  `/team create|delete|status` — Команды BR\n\n"
+                f"{dot}  `/tournament ультиматум создать|удалить|сетка|статус|история|исправить` — Ультиматум\n"
+                + (f"{dot}  `/mm squad|delete|test` — Matchmaking 4×4\n"
+                   if _cfg.MM_ENABLED else "")
+                + f"{dot}  `/team create|delete|status` — Команды BR\n\n"
                 f" **Сервер и контент:**\n"
                 f"{dot}  `/server role|welcome|check2fa|off` — Настройки сервера\n"
                 f"{dot}  `/info publish|update|status|validate` — Информационный центр\n"
@@ -3192,7 +3278,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
 
     if value == "rules":
         embed = discord.Embed(
-            title=" СВОД ПРАВИЛ И РЕГЛАМЕНТ R1Z3",
+            title="СВОД ПРАВИЛ И РЕГЛАМЕНТ R1Z3",
             color=gray,
         )
         embed.add_field(
@@ -3276,16 +3362,16 @@ class _ResetProgressConfirmView(discord.ui.View):
             caches = clear_memory_caches()
             json_files = reset_json_files()
             await interaction.followup.send(
-                "✅ **Сброс прогресса выполнен** (одна транзакция).\n"
+                "**Сброс прогресса выполнен** (одна транзакция).\n"
                 + summary
-                + f"\nJSON-файлы прогресса → *.bak: {len(json_files)}"
+                + f"\nJSON-файлы прогресса: *.bak: {len(json_files)}"
                 + f"\nIn-memory кэши очищены: {len(caches)}", ephemeral=True)
             logger.warning(
                 f"User progress reset executed by {interaction.user.id}")
         except Exception as e:
             logger.exception("progress reset failed")
             await interaction.followup.send(
-                f"❌ Ошибка сброса, транзакция откачена: {e}",
+                f"Ошибка сброса, транзакция откачена: {e}",
                 ephemeral=True)
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.secondary)
@@ -3369,6 +3455,11 @@ class HelpGuideView(discord.ui.View):
     def __init__(self, current=None):
         super().__init__(timeout=None)
         self.add_item(HelpGuideSelectMenu(current=current))
+
+
+# Модульный алиас: cogs.ultimatum присоединяет свою группу
+# к /tournament через этот объект (тот же Group, что в когe).
+tournament_group = TournamentCog.tournament_group
 
 
 async def setup(bot: TournamentBot) -> None:

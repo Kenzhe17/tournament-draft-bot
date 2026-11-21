@@ -23,8 +23,7 @@ _ID_ENV_KEYS = [
     "NOTIFICATION_CHANNEL_ID", "MOD_LOG_WEBHOOK_URL",
     "MOD_LOG_CHANNEL_ID", "MUTE_ROLE_ID", "BR_ROLE_ID",
     "BR_ROOM_CHANNEL_ID", "BR_DATA_CHANNEL_ID", "BR_TEAM_CHANNEL_ID",
-    "OCR_RESULT_CHANNEL_ID", "OCR_STATS_CHANNEL_ID",
-    "OCR_ADMIN_ROLE_ID", "ULT_ROLE_ID", "ULT_ROOM_CHANNEL_ID",
+    "ULT_ROLE_ID", "ULT_ROOM_CHANNEL_ID",
     "WELCOME_CHANNEL_ID", "PET_HUNGER_CHANNEL_ID",
     "ROOM_DATA_CHANNEL_ID", "GAMES_CHANNEL_ID", "INFO_CHANNEL_ID",
     "REP_LOG_CHANNEL_ID", "GIF_TRIGGER_USER_IDS",
@@ -50,24 +49,24 @@ class TestNoProdDefaults:
             "NOTIFICATION_ROLE_ID", "NOTIFICATION_CHANNEL_ID",
             "MOD_LOG_CHANNEL_ID", "MUTE_ROLE_ID", "BR_ROLE_ID",
             "BR_ROOM_CHANNEL_ID", "BR_DATA_CHANNEL_ID",
-            "BR_TEAM_CHANNEL_ID", "OCR_RESULT_CHANNEL_ID",
-            "OCR_STATS_CHANNEL_ID", "OCR_ADMIN_ROLE_ID",
+            "BR_TEAM_CHANNEL_ID",
             "ULT_ROLE_ID", "ULT_ROOM_CHANNEL_ID",
             "WELCOME_CHANNEL_ID", "PET_HUNGER_CHANNEL_ID",
             "GAMES_CHANNEL_ID",
             "INFO_CHANNEL_ID", "REP_LOG_CHANNEL_ID",
         ):
             assert getattr(cfg, name) == 0, f"{name} имеет дефолт"
-        # Исключения: единые каналы сервера по требованию
-        # Tournaments 2.0 (комната данных / OCR-сопоставление).
+        # Исключение: единый канал данных комнат по требованию сервера.
         assert cfg.ROOM_DATA_CHANNEL_ID == 1561683314480255057
-        assert cfg.OCR_MAPPING_CHANNEL_ID == 1570473950218158180
 
     def test_collections_empty_without_env(self, clean_env):
         cfg = clean_env
         assert cfg.ORG_ROLE_MAP == {}
         assert cfg.TOURNAMENT_CHANNELS == []
-        assert cfg.MM_MATCH_CHANNEL_POOL == []
+        # CLASSIC: без env — ровно два постоянных канала r!z3.
+        assert cfg.MM_MATCH_CHANNEL_POOL == [
+            1569282744909824061, 1569282781270245417,
+        ]
         assert cfg.MATCH_FOUND_CHANNEL_ID == 0
         assert cfg.ADMIN_USER_IDS == set()
         assert cfg.ALLOWED_GUILD_IDS == set()
@@ -159,11 +158,11 @@ class TestIsolationBehavior:
             "1561707634938351728", "1196165488565289012",
         }
         files = [
-            "bot.py", "cogs/mm.py", "cogs/ocr_upload.py",
+            "bot.py", "cogs/mm.py",
             "cogs/coin_drop.py", "cogs/ultimatum.py",
-            "views/br_view.py", "views/room_modal.py",
-            "views/games_view.py", "views/ocr_match_view.py",
-            "views/ultimatum_room_modal.py", "ultimatum/tournament.py",
+            "views/br_view.py", "views/games_view.py",
+            "views/ultimatum_view.py", "ultimatum/service.py",
+            "ultimatum/store.py", "ultimatum/bracket.py",
             "services/welcome_card.py", "storage/pet_store.py",
             "utils/permissions.py", "cogs/moderation.py",
         ]

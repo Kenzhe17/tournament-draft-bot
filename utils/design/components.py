@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import discord
 
-from utils.design.emojis import em
 
 # Роли стилей
 STYLE_PRIMARY = discord.ButtonStyle.primary
@@ -37,8 +36,6 @@ def btn(
     *,
     style: str = "secondary",
     custom_id: str | None = None,
-    emoji_key: str | None = None,
-    emoji: str | None = None,
     url: str | None = None,
     disabled: bool = False,
     row: int | None = None,
@@ -47,19 +44,13 @@ def btn(
     """Кнопка дизайн-системы.
 
     style: 'primary' | 'secondary' | 'success' | 'danger' | 'link'
-    emoji_key: ключ из utils.design.emojis (например 'coin', 'back')
-    emoji: готовая строка эмодзи (приоритетнее emoji_key)
     """
     resolved_style = _STYLE_MAP.get(style, STYLE_SECONDARY)
-    resolved_emoji = emoji if emoji is not None else (em(emoji_key) if emoji_key else None)
-    if resolved_emoji is not None and resolved_emoji == em(emoji_key or "") and not resolved_emoji:
-        resolved_emoji = None
 
     button = discord.ui.Button(
         style=resolved_style,
         label=label,
         custom_id=custom_id,
-        emoji=resolved_emoji,
         url=url,
         disabled=disabled,
         row=row,
@@ -108,16 +99,12 @@ def option(
     value: str,
     *,
     description: str | None = None,
-    emoji_key: str | None = None,
-    emoji: str | None = None,
     default: bool = False,
 ) -> discord.SelectOption:
-    """SelectOption с поддержкой emoji_key."""
-    resolved_emoji = emoji if emoji is not None else (em(emoji_key) if emoji_key else None)
+    """SelectOption."""
     return discord.SelectOption(
         label=label,
         value=value,
         description=description,
-        emoji=resolved_emoji,
         default=default,
     )

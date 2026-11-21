@@ -49,7 +49,7 @@ def _check_uid(uid: str) -> bool:
 
 def _error_embed(exc: FreeFireError) -> discord.Embed:
     return discord.Embed(
-        title=replace_emojis(f"{get_emoji('error')} FREE FIRE | Ошибка"),
+        title=replace_emojis(f"FREE FIRE | Ошибка"),
         description=str(exc),
         color=discord.Color.red(),
     )
@@ -57,7 +57,7 @@ def _error_embed(exc: FreeFireError) -> discord.Embed:
 
 def _no_key_embed() -> discord.Embed:
     return discord.Embed(
-        title=replace_emojis(f"{get_emoji('warning')} FREE FIRE | API не настроен"),
+        title=replace_emojis(f"FREE FIRE | API не настроен"),
         description=(
             "Ключ Free Fire API не задан.\n"
             "Установите переменную `FREEFIRE_API_KEY`."
@@ -88,7 +88,7 @@ async def _check_and_key(interaction: discord.Interaction, uid: str) -> bool:
     """Тег r!z3 + валидация UID + API ключ. True — можно продолжать."""
     if not _has_server_tag(interaction.user):
         await interaction.response.send_message(
-            "🚫 Команды `/ff` доступны только участникам "
+            "Команды `/ff` доступны только участникам "
             "с тегом **r!z3** в профиле Discord.",
             ephemeral=True,
         )
@@ -125,7 +125,7 @@ async def ff_info(
         if remaining > 0:
             ready_at = int(time.time()) + remaining
             await interaction.response.send_message(
-                f"⏳ `/ff info` доступна через <t:{ready_at}:R>.",
+                f"`/ff info` доступна через <t:{ready_at}:R>.",
                 ephemeral=True,
             )
             return
@@ -165,7 +165,7 @@ async def ff_stats(
         if remaining > 0:
             ready_at = int(time.time()) + remaining
             await interaction.response.send_message(
-                f"⏳ `/ff stats` доступна через <t:{ready_at}:R>.",
+                f"`/ff stats` доступна через <t:{ready_at}:R>.",
                 ephemeral=True,
             )
             return
@@ -253,20 +253,6 @@ async def ff_item(
     embed.set_thumbnail(url=ff_catalog.icon_url(item.get("itemID")))
     embed.set_footer(text=FOOTER)
     await interaction.response.send_message( view=compose(embed))
-
-
-# ------------------------------------------------------------------ /ff ocr
-# Слэш-команда скрыта: декораторы закомментированы, код сохранён.
-# @ff_group.command(
-#     name="ocr", description="Распознать статистику CS 4x4 по скриншоту"
-# )
-# @app_commands.describe(screenshot="Скриншот экрана результатов матча")
-async def ff_ocr(
-    interaction: discord.Interaction, screenshot: discord.Attachment
-) -> None:
-    from cogs.statistic import run_statistic
-
-    await run_statistic(interaction, screenshot)
 
 
 class FreeFireCog(commands.Cog):

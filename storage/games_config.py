@@ -214,21 +214,10 @@ async def sync_games_to_db(guild_id: int) -> int:
                 )
                 
                 if existing:
-                    # Обновить существующую игру
-                    await conn.execute(
-                        """
-                        UPDATE minigames
-                        SET name = $2, description = $3, category = $4, difficulty = $5,
-                            min_bet = $6, max_bet = $7, multiplier = $8,
-                            is_pvp = $9, is_pve = $10, is_active = $11,
-                            command_name = $12
-                        WHERE id = $1
-                        """,
-                        game.id, game.name, game.description, game.category,
-                        game.difficulty, game.min_bet, game.max_bet,
-                        game.multiplier, game.is_pvp, game.is_pve,
-                        game.status in ("ready", "available"), game.command
-                    )
+                    # Control Center: существующие строки НЕ
+                    # перезаписываем — каталог редактируется через
+                    # панель (is_active, ставки, описания).
+                    continue
                 else:
                     # Создать новую игру
                     await conn.execute(

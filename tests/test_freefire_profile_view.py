@@ -237,7 +237,7 @@ async def test_overview_renders_key_data_and_buttons():
     buttons = _buttons(view)
     assert len(buttons) == 5
     labels = {b.label for b in buttons}
-    assert labels == {"Обзор", "Ранги", "Экипировка", "Аккаунт", "✕"}
+    assert labels == {"Обзор", "Ранги", "Экипировка", "Аккаунт", "Закрыть"}
     # активная вкладка выделена
     active = [b for b in buttons if b.style == discord.ButtonStyle.primary]
     assert len(active) == 1 and active[0].label == "Обзор"

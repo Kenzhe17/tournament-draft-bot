@@ -61,6 +61,17 @@ ORG_1_ROLE_ID = int(os.getenv("ORG_1_ROLE_ID", "0"))
 ORG_2_ROLE_ID = int(os.getenv("ORG_2_ROLE_ID", "0"))
 ORG_3_ROLE_ID = int(os.getenv("ORG_3_ROLE_ID", "0"))
 
+# Ежедневная ротация роли «Доступ» (daily access rotation).
+ACCESS_ROLE_ID = int(os.getenv("ACCESS_ROLE_ID", "1566949895078940672"))
+ACCESS_ROTATION_CHANNEL_ID = int(
+    os.getenv("ACCESS_ROTATION_CHANNEL_ID") or "0"
+)
+# Имена канала панели (fallback, если ID не задан в env).
+ACCESS_CHANNEL_NAMES = ("доступ-ротация", "access-rotation", "access_rotation")
+ACCESS_MAX_HOLDERS = 10
+ACCESS_ROTATION_HOUR = 21          # Asia/Almaty
+ACCESS_NEW_HOLDER_PROTECT_HOURS = 72
+
 
 def _parse_channel_role_map(raw: str) -> dict[int, int]:
     """'cid:rid,cid:rid,...' → {channel_id: role_id}."""
@@ -83,11 +94,13 @@ ORG_ROLE_MAP = _parse_channel_role_map(os.getenv("ORG_ROLE_MAP", ""))
 
 # Пул постоянных каналов MM-матчей: вместо create/delete на каждый
 # матч канал берётся из пула, чистится и переназначается.
-# Переопределяется env MM_MATCH_CHANNEL_POOL (csv id).
+# Переопределяется env MM_MATCH_CHANNEL_POOL (csv id); без env —
+# ровно два постоянных канала r!z3.
+_DEFAULT_MM_MATCH_CHANNEL_POOL = (1569282744909824061, 1569282781270245417)
 MM_MATCH_CHANNEL_POOL = [
     int(x) for x in os.getenv("MM_MATCH_CHANNEL_POOL", "").split(",")
     if x.strip()
-]
+] or list(_DEFAULT_MM_MATCH_CHANNEL_POOL)
 
 # Notification role ID for tournament announcements
 NOTIFICATION_ROLE_ID = int(os.getenv("NOTIFICATION_ROLE_ID", "0"))
@@ -103,6 +116,12 @@ TOURNAMENT_CHANNELS = [int(x.strip()) for x in TOURNAMENT_CHANNELS_RAW.split(","
 # По умолчанию — первый турнирный канал, если не задан явно.
 MATCH_FOUND_CHANNEL_ID = int(os.getenv("MATCH_FOUND_CHANNEL_ID", "0")) or (
     TOURNAMENT_CHANNELS[0] if TOURNAMENT_CHANNELS else 0
+)
+
+# Канал журнала аудита турниров (CV2-карточки событий).
+# 0 = публикация отключена, записи остаются в PostgreSQL.
+TOURNAMENT_AUDIT_CHANNEL_ID = int(
+    os.getenv("TOURNAMENT_AUDIT_CHANNEL_ID") or "0"
 )
 
 # Moderation logging webhook — СЕКРЕТ, только через env.
@@ -136,18 +155,6 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 # Канал приветствий новым участникам (0 = welcome отключён)
 WELCOME_CHANNEL_ID = int(os.getenv("WELCOME_CHANNEL_ID", "0"))
 
-# OCR: канал итоговых результатов матчей и канал статистики
-OCR_RESULT_CHANNEL_ID = int(os.getenv("OCR_RESULT_CHANNEL_ID", "0"))
-OCR_STATS_CHANNEL_ID = int(os.getenv("OCR_STATS_CHANNEL_ID", "0"))
-# Роль для пинга админов при проблемах OCR-маппинга
-OCR_ADMIN_ROLE_ID = int(os.getenv("OCR_ADMIN_ROLE_ID", "0"))
-# Канал OCR-скриншотов/сопоставления для обычных турниров
-# (/tournament create). MM-матчи публикуют OCR в канале матча.
-# Не путать с ROOM_DATA_CHANNEL_ID (ID/пароль игровых комнат).
-OCR_MAPPING_CHANNEL_ID = int(
-    os.getenv("OCR_MAPPING_CHANNEL_ID") or "1570473950218158180"
-)
-
 # Ultimatum: роль участников и канал данных комнат
 ULT_ROLE_ID = int(os.getenv("ULT_ROLE_ID", "0"))
 ULT_ROOM_CHANNEL_ID = int(os.getenv("ULT_ROOM_CHANNEL_ID", "0"))
@@ -158,6 +165,11 @@ PET_HUNGER_CHANNEL_ID = int(os.getenv("PET_HUNGER_CHANNEL_ID", "0"))
 # турниров (/tournament create). MM-матчи шлют в свой канал матча.
 ROOM_DATA_CHANNEL_ID = int(
     os.getenv("ROOM_DATA_CHANNEL_ID") or "1561683314480255057"
+)
+# Канал общего чата для уведомления «КОМНАТА ОТКРЫТА»
+# (без ID/пароля — только упоминания участников и ссылки).
+ROOM_OPEN_NOTIFY_CHANNEL_ID = int(
+    os.getenv("ROOM_OPEN_NOTIFY_CHANNEL_ID") or "1200125075156910181"
 )
 GAMES_CHANNEL_ID = int(os.getenv("GAMES_CHANNEL_ID", "0"))
 
@@ -196,6 +208,23 @@ CIRCLES = (2, 3, 4)
 
 # Smart Balance (r!z3 Ranked 4×4): веса критериев и допуски.
 # SR в диапазоне 0–10, команды по 4 игрока.
+
+# MM_ENABLED=0 скрывает Matchmaking от игроков: новые поиски и вход
+# в очереди запрещены, существующие матчи доигрываются, история и
+# инфраструктура сохраняются. Включение обратно — env + редеплой
+# (или runtime-флаг Control Center после его интеграции).
+MM_ENABLED = os.getenv("MM_ENABLED", "1").strip().lower() not in (
+    "0", "false", "no", "off",
+)
+
+# CASHCUP_ENABLED=0 (по умолчанию) не регистрирует /cashcup и его
+# persistent views. Состояние турнира в PostgreSQL (cashcup_*) при этом
+# сохраняется — включение обратно не теряет данные. Управление —
+# только ADMIN (владелец/admin-perm/BOT_OWNER_ID/ADMIN_USER_IDS).
+CASHCUP_ENABLED = os.getenv("CASHCUP_ENABLED", "0").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+
 MM_BALANCE_WEIGHTS = {
     "sum": float(os.getenv("MM_BALANCE_W_SUM", "0.40")),
     "top": float(os.getenv("MM_BALANCE_W_TOP", "0.30")),
@@ -567,6 +596,36 @@ STANDARD_EMOJIS = {
     "a_dot_smaller": "⋮",
 }
 
+# Эмодзи, используемые только для украшения интерфейса.
+# Всегда возвращают пустую строку, чтобы не попадать в CV2-карточки.
+# Смысловые эмодзи (валюта, рейтинги, игровые иконки, редкости) сюда не входят.
+DECORATIVE_EMOJI_KEYS = {
+    # Навигация и стрелки
+    "arrow_left", "arrow_right", "white_arrow", "white_dot",
+    "sub_directory", "sub_middle",
+    "a_sparkle", "a_star", "a_triple_dots", "a_dot_smaller",
+    "back", "forward", "refresh", "dropdown", "settings", "eye",
+    # Статусы и уведомления
+    "success", "error", "warning", "info", "loading", "check", "cross",
+    "question", "link",
+    # Коммуникация и модерация
+    "pin", "megaphone", "new", "comment", "announce",
+    "delete", "block",
+    # Игры и разделы (декоративные иконки меню)
+    "game", "dice", "slots", "roulette", "rps", "brain",
+    "draft", "match", "screenshot", "stats", "damage",
+    "freefire", "pet", "sparkle", "star", "clock",
+    "skull", "target", "sword", "team", "profile",
+    "grow", "kill_death", "notes", "book", "light_bulb", "flash",
+    "shop", "gift", "daily", "bet", "bank", "tournament",
+    "room", "tag",
+    "case_basic", "case_premium", "case_elite", "case_special",
+    # Assets 2.0 декоративные
+    "arcade", "boost", "favorite", "home", "inventory", "moderation",
+    "music", "partners", "rules", "security", "streams", "support",
+}
+
+
 def _emoji_tag(emoji_name: str, custom_id: str) -> str:
     """Discord custom emoji tag. Имена эмодзи не могут содержать пробелы."""
     safe_name = emoji_name.replace(" ", "_")
@@ -575,6 +634,9 @@ def _emoji_tag(emoji_name: str, custom_id: str) -> str:
 
 def get_emoji(emoji_name: str) -> str:
     """Get custom emoji with ID or fallback to standard emoji."""
+
+    if emoji_name in DECORATIVE_EMOJI_KEYS:
+        return ""
 
     # Check rank emojis
     if emoji_name in RANK_EMOJIS:
@@ -637,6 +699,20 @@ def replace_emojis(text: str) -> str:
         "🔙": "back",
         "🔽": "dropdown",
         "🆕": "new",
+        "➡️": "arrow_right",
+        "→": "white_arrow",
+        "▶": "forward",
+        "◀": "back",
+        "⬅️": "arrow_left",
+
+        # Decorative status markers
+        "❓": "question",
+        "⏳": "loading",
+        "ℹ️": "info",
+        "🟢": "success",
+        "🔵": "info",
+        "🟡": "warning",
+        "🔒": "security",
 
         # Communication
         "💬": "comment",
@@ -685,7 +761,6 @@ def replace_emojis(text: str) -> str:
         "🏠": "room",
 
         # Additional symbols for replacement
-        "⬅️": "arrow_left",
         "⋯": "a_triple_dots",
 
         # Case emojis

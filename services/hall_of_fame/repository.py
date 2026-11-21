@@ -35,20 +35,6 @@ async def match_aggregates(guild_id: int) -> dict:
             WHERE guild_id=$1 AND user_id >= $2 AND elo_change > 0
             ORDER BY elo_change DESC, date DESC LIMIT 1
             """, guild_id, MIN_REAL_USER_ID)
-        top_assists = await conn.fetchrow(
-            """
-            SELECT user_id, assists, date, match_type, tournament_id
-            FROM match_history
-            WHERE guild_id=$1 AND user_id >= $2 AND assists > 0
-            ORDER BY assists DESC, date DESC LIMIT 1
-            """, guild_id, MIN_REAL_USER_ID)
-        top_damage = await conn.fetchrow(
-            """
-            SELECT user_id, damage, date, match_type, tournament_id
-            FROM match_history
-            WHERE guild_id=$1 AND user_id >= $2 AND damage > 0
-            ORDER BY damage DESC, date DESC LIMIT 1
-            """, guild_id, MIN_REAL_USER_ID)
         # Чемпионаты: победы в финальных матчах по уникальным турнирам
         champ_rows = await conn.fetch(
             """
@@ -67,8 +53,6 @@ async def match_aggregates(guild_id: int) -> dict:
             """, guild_id, MIN_REAL_USER_ID)
     return {
         "top_kills": dict(top_kills) if top_kills else None,
-        "top_assists": dict(top_assists) if top_assists else None,
-        "top_damage": dict(top_damage) if top_damage else None,
         "top_elo_gain": dict(top_elo_gain) if top_elo_gain else None,
         "championships": {int(r["user_id"]): int(r["cnt"]) for r in champ_rows},
         "match_counts": {int(r["user_id"]): int(r["cnt"]) for r in match_counts},
@@ -129,36 +113,68 @@ async def invite_leader(guild_id: int) -> tuple[int, int] | None:
 
 
 async def ultimatum_records() -> dict:
-    """Рекорды Ultimatum из elo_ratings (глобальная таблица)."""
+    """Рекорды Ультиматума из ult_elo_ratings (Соло, новая система).
+
+    Фолбэк на легаси elo_ratings, если новых рейтингов ещё нет.
+    """
     pool = await get_pool()
     async with pool.acquire() as conn:
-        if not await table_exists(conn, "elo_ratings"):
-            return {}
-        top = await conn.fetchrow(
-            """
-            SELECT discord_id, username, peak_elo, elo, wins, losses, rated_matches
-            FROM elo_ratings WHERE discord_id >= $1
-            ORDER BY peak_elo DESC LIMIT 1
-            """, MIN_REAL_USER_ID)
-        top_winrate = await conn.fetchrow(
-            """
-            SELECT discord_id, username, wins, rated_matches
-            FROM elo_ratings
-            WHERE discord_id >= $1 AND rated_matches >= 10
-            ORDER BY (wins::float / NULLIF(rated_matches,0)) DESC LIMIT 1
-            """, MIN_REAL_USER_ID)
-        top_duels = await conn.fetchrow(
-            """
-            SELECT discord_id, username, rated_matches
-            FROM elo_ratings WHERE discord_id >= $1
-            ORDER BY rated_matches DESC LIMIT 1
-            """, MIN_REAL_USER_ID)
-        top_wins = await conn.fetchrow(
-            """
-            SELECT discord_id, username, wins
-            FROM elo_ratings WHERE discord_id >= $1
-            ORDER BY wins DESC LIMIT 1
-            """, MIN_REAL_USER_ID)
+        new_table = await table_exists(conn, "ult_elo_ratings")
+        if new_table:
+            top = await conn.fetchrow(
+                """
+                SELECT discord_id, elo AS peak_elo, elo, wins, losses,
+                       rated_matches
+                FROM ult_elo_ratings WHERE format='solo' AND discord_id >= $1
+                ORDER BY peak_elo DESC LIMIT 1
+                """, MIN_REAL_USER_ID)
+            top_winrate = await conn.fetchrow(
+                """
+                SELECT discord_id, wins, rated_matches
+                FROM ult_elo_ratings
+                WHERE format='solo' AND discord_id >= $1 AND rated_matches >= 10
+                ORDER BY (wins::float / NULLIF(rated_matches,0)) DESC LIMIT 1
+                """, MIN_REAL_USER_ID)
+            top_duels = await conn.fetchrow(
+                """
+                SELECT discord_id, rated_matches
+                FROM ult_elo_ratings WHERE format='solo' AND discord_id >= $1
+                ORDER BY rated_matches DESC LIMIT 1
+                """, MIN_REAL_USER_ID)
+            top_wins = await conn.fetchrow(
+                """
+                SELECT discord_id, wins
+                FROM ult_elo_ratings WHERE format='solo' AND discord_id >= $1
+                ORDER BY wins DESC LIMIT 1
+                """, MIN_REAL_USER_ID)
+        elif await table_exists(conn, "elo_ratings"):
+            top = await conn.fetchrow(
+                """
+                SELECT discord_id, username, peak_elo, elo, wins, losses, rated_matches
+                FROM elo_ratings WHERE discord_id >= $1
+                ORDER BY peak_elo DESC LIMIT 1
+                """, MIN_REAL_USER_ID)
+            top_winrate = await conn.fetchrow(
+                """
+                SELECT discord_id, username, wins, rated_matches
+                FROM elo_ratings
+                WHERE discord_id >= $1 AND rated_matches >= 10
+                ORDER BY (wins::float / NULLIF(rated_matches,0)) DESC LIMIT 1
+                """, MIN_REAL_USER_ID)
+            top_duels = await conn.fetchrow(
+                """
+                SELECT discord_id, username, rated_matches
+                FROM elo_ratings WHERE discord_id >= $1
+                ORDER BY rated_matches DESC LIMIT 1
+                """, MIN_REAL_USER_ID)
+            top_wins = await conn.fetchrow(
+                """
+                SELECT discord_id, username, wins
+                FROM elo_ratings WHERE discord_id >= $1
+                ORDER BY wins DESC LIMIT 1
+                """, MIN_REAL_USER_ID)
+        else:
+            top = top_winrate = top_duels = top_wins = None
     def _d(r):
         return dict(r) if r else None
     return {

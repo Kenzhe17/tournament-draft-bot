@@ -34,8 +34,6 @@ PLAYER_STATS_RESET = {
     "best_loss_streak": 0,
     "total_kills": 0,
     "total_deaths": 0,
-    "total_assists": 0,
-    "total_damage": 0,
     "best_match_kills": 0,
     "total_elo_change": 0,
     "last_elo_change": 0,
@@ -76,6 +74,15 @@ DELETE_TABLES = [
     "ultimatum_rounds",
     "ultimatum_players",
     "ultimatum_tournaments",
+    # Ультиматум 2.0
+    "ult2_audit",
+    "ult2_votes",
+    "ult2_duo_invites",
+    "ult2_matches",
+    "ult2_entrants",
+    "ult2_tournaments",
+    "ult_elo_history",
+    "ult_elo_ratings",
     # Сквозная нумерация матчей — новая эпоха с Match #1
     "match_numbers",
     # Зал славы: исторические пики — новая эпоха после сброса
@@ -236,6 +243,14 @@ async def guard_problems(conn, tables: set[str]) -> list[str]:
         if n:
             problems.append(
                 f"активных ultimatum-турниров: {n}")
+    if "ult2_tournaments" in tables:
+        n = await conn.fetchval(
+            "SELECT COUNT(*) FROM ult2_tournaments "
+            "WHERE status IN ('REGISTRATION','IN_PROGRESS')"
+        )
+        if n:
+            problems.append(
+                f"активных ult2-турниров: {n}")
     if "mm_queues" in tables:
         n = await conn.fetchval("SELECT COUNT(*) FROM mm_queues")
         if n:
