@@ -388,3 +388,7 @@ def schedule_sync(bot: commands.Bot, guild_id: int) -> None:
     except Exception:
         logger.debug("CASHCUP public sync schedule failed",
                      exc_info=True)
+
+
+async def setup(bot: commands.Bot) -> None:
+    await bot.add_cog(CashCupPublicCog(bot))
