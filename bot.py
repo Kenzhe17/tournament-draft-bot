@@ -349,6 +349,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.banner")
         await self.load_extension("cogs.banner_admin")
         await self.load_extension("cogs.access")
+        await self.load_extension("cogs.card_repair")
 
         # Регистрация общих групп команд (/player, /economy, /games, ...)
         from cogs.groups import ROOT_GROUPS
@@ -635,6 +636,7 @@ class TournamentBot(commands.Bot):
         tournament: Tournament,
         *,
         from_timer: bool = False,
+        force: bool = False,
     ) -> bool:
         """Отредактировать главное сообщение турнира.
 
@@ -658,6 +660,11 @@ class TournamentBot(commands.Bot):
         ставки) идут с from_timer=False — они всегда делают
         полный rebuild, поэтому изменения от пользователя
         отражаются немедленно.
+
+        force=True (owner repair): пропускает fingerprint-кэш
+        и инвалидирует _EDIT_CACHE — карточка перезаписывается
+        актуальным контентом даже при совпадающей подписи и
+        проверяет существование сообщения через fetch_message.
         """
         # Защита от гонки: если в канале уже другой турнир
         # (завершённый заархивирован, создан новый), запоздавшее
@@ -684,7 +691,10 @@ class TournamentBot(commands.Bot):
             return False
 
         fp_key = str(tournament.id)
-        fp = _tournament_display_fingerprint(tournament) if from_timer else ""
+        fp = (
+            _tournament_display_fingerprint(tournament)
+            if from_timer and not force else ""
+        )
         now = time.monotonic()
         if from_timer and fp:
             cached_fp = _TOURNAMENT_FP_CACHE.get(fp_key)
@@ -718,6 +728,13 @@ class TournamentBot(commands.Bot):
             f"{guild.id}:{tournament.channel_id}:"
             f"{tournament.id}:{tournament.message_id}"
         )
+        if force:
+            # Принудительное восстановление карточки (repair):
+            # игнорируем кэш подписи — сообщение редактируется
+            # даже при совпадающем контенте, а кэшированный
+            # Message инвалидируется (fetch_message заново
+            # проверит существование сообщения).
+            _EDIT_CACHE.pop(key, None)
         async with _edit_lock(key):
             channel = guild.get_channel(tournament.channel_id)
             if channel is None:
