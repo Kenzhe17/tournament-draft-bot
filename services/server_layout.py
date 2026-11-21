@@ -35,6 +35,10 @@ CHANNELS = (
     ('commands', '🤖・команды-бота', 'СООБЩЕСТВО', ('команды-бота',)),
     ('games', '🎮・мини-игры', 'СООБЩЕСТВО', ('мини-игры',)),
     ('moments', '📸・моменты', 'СООБЩЕСТВО', ('моменты', 'хайлайты')),
+    ('access', '🎟・доступ-ротация', 'СООБЩЕСТВО',
+     ('доступ-ротация', 'access-rotation', 'access_rotation')),
+    ('org_panel', '🛡・панель-организаторов', 'КОМАНДА',
+     ('панель-организаторов', 'org-panel', 'организаторы')),
 )
 _LOCKS: dict[int, asyncio.Lock] = {}
 
@@ -141,6 +145,18 @@ def configured_bindings(guild_id: int) -> dict[str, int]:
     tournament_ids = channel_ids(guild_id, 'discord.tournament_channels', config.TOURNAMENT_CHANNELS)
     for i, cid in enumerate(tournament_ids[:3], 1):
         candidates[f'tournament_{i}'] = cid
+    # Панель ротации доступа и панель организаторов — привязка по
+    # env/сохранённому состоянию, чтобы миграция не создавала дубли.
+    candidates['access'] = channel_id(
+        guild_id, 'discord.access_channel_id',
+        getattr(config, 'ACCESS_ROTATION_CHANNEL_ID', 0) or 0)
+    try:
+        from views.org_role_view import load_state as _org_state
+        _os = _org_state()
+        if _os and _os.guild_id == guild_id and _os.channel_id:
+            candidates['org_panel'] = int(_os.channel_id)
+    except Exception:  # noqa: BLE001
+        pass
     # Persisted bindings take precedence after an explicit layout migration.
     for key, cid in candidates.items():
         if cid and not result.get(key):
