@@ -343,6 +343,8 @@ class TournamentBot(commands.Bot):
             await self.load_extension("cogs.cashcup")
         if CASHCUP_ENABLED and CASHCUP_TEST_ENABLED:
             await self.load_extension("cogs.cashcup_test")
+        if CASHCUP_ENABLED:
+            await self.load_extension("cogs.cashcup_public")
         await self.load_extension("cogs.wardrobe")
         await self.load_extension("cogs.emoji")
         await self.load_extension("cogs.reputation")
