@@ -27,9 +27,12 @@ from services import tournament_audit_service as audit_svc
 
 
 class _FakeMessage:
-    def __init__(self, mid: int, view=None):
+    def __init__(self, mid: int, view=None, content: str = ""):
         self.id = mid
         self.view = view
+        self.content = content
+        self.components = []
+        self.author = SimpleNamespace(id=999)
         self.edits = []
         self._channels = None  # реестр каналов/веток бота
 
@@ -56,13 +59,22 @@ class _FakeThread:
         self.sent = []
         self._next = tid * 100
         self._channels = None
+        self.parent_id = None
 
     async def send(self, view=None, **kw):
         self._next += 1
         msg = _FakeMessage(self._next, view)
         msg._channels = self._channels
+        # Как в Discord: components сообщения = children view.
+        msg.components = list(getattr(view, "children", []) or [])
         self.sent.append(msg)
         return msg
+
+    def history(self, limit: int = 100):
+        async def _gen():
+            for m in reversed(self.sent[-limit:]):
+                yield m
+        return _gen()
 
     async def fetch_message(self, mid: int):
         import discord as _d
@@ -398,6 +410,24 @@ class _FakeJournalStore:
         await self.update_ids(entry_id, sync_status=status,
                               last_error=last_error)
 
+    async def set_retry(self, entry_id, delay_seconds,
+                        last_error=None):
+        for e in list(self.mains.values()) + list(
+                self.matches.values()):
+            if e["id"] == entry_id:
+                e["sync_status"] = "retry_wait"
+                e["last_error"] = last_error
+                e["next_attempt_at"] = delay_seconds
+                e["retry_count"] = e.get("retry_count", 0) + 1
+                return
+
+    async def set_processing(self, entry_id):
+        for e in list(self.mains.values()) + list(
+                self.matches.values()):
+            if e["id"] == entry_id and e.get("sync_status") != "synced":
+                e["sync_status"] = "processing"
+                return
+
     async def list_pending(self, limit=100):
         return []
 
@@ -417,6 +447,14 @@ def journal_env(monkeypatch):
                         lambda: 1571226820593061980)
     monkeypatch.setattr(jn, "_EDIT_TS", {})
     monkeypatch.setattr(jn, "_SIG_CACHE", {})
+    # Изоляция очереди recovery между тестами: worker/heap/locks
+    # привязаны к event loop конкретного теста.
+    monkeypatch.setattr(jn, "_RECOVERY_HEAP", [])
+    monkeypatch.setattr(jn, "_RECOVERY_QUEUED", set())
+    monkeypatch.setattr(jn, "_RETRY_ATTEMPTS", {})
+    monkeypatch.setattr(jn, "_RECOVERY_STATS", {})
+    monkeypatch.setattr(jn, "_RECOVERY_WORKER", None)
+    monkeypatch.setattr(jn, "_FLUSH_LOCKS", {})
     jn._URL_CACHE.clear()
     return js, audit_ch, bot
 
@@ -703,8 +741,9 @@ async def test_full_lifecycle_flush(journal_env, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_send_failure_marks_error(journal_env, monkeypatch):
-    """Discord API недоступен → sync_status='error', без исключений."""
+async def test_send_failure_marks_retry_wait(journal_env, monkeypatch):
+    """Discord API временно недоступен → sync_status='retry_wait'
+    (временная ошибка), без исключений и без 'error'."""
     js, audit_ch, bot = journal_env
     t = _tournament()
 
@@ -721,8 +760,10 @@ async def test_send_failure_marks_error(journal_env, monkeypatch):
 
     await jn._flush_guarded("1_1000")   # не должно бросить
     main = js.mains["1_1000"]
-    assert main["sync_status"] == "error"
-    assert "main card publish failed" in (main.get("last_error") or "")
+    assert main["sync_status"] == "retry_wait"
+    assert main["retry_count"] == 1
+    assert main["next_attempt_at"] is not None
+    assert "discord down" in (main.get("last_error") or "")
 
 
 @pytest.mark.asyncio
@@ -925,8 +966,9 @@ async def _ret_none():
 
 @pytest.mark.asyncio
 async def test_partial_sync_when_summary_fails(journal_env, monkeypatch):
-    """Ветка есть, но сводка не опубликована → 'partial',
-    матчевые карточки при этом синхронизированы."""
+    """Временный сбой send сводки → 'retry_wait' (не partial):
+    flush прерывается до финализации, повторная попытка
+    доставляет все карточки → 'synced'."""
     js, audit_ch, bot = journal_env
     t = _tournament()
 
@@ -937,7 +979,7 @@ async def test_partial_sync_when_summary_fails(journal_env, monkeypatch):
         jn.audit_store, "list_events",
         lambda **kw: _ret_events([]))
 
-    # Ветка, у которой первый send (сводка) падает.
+    # Ветка, у которой первый send (сводка) падает один раз.
     class _FlakyThread(_FakeThread):
         def __init__(self, tid):
             super().__init__(tid)
@@ -955,20 +997,22 @@ async def test_partial_sync_when_summary_fails(journal_env, monkeypatch):
         return flaky
     monkeypatch.setattr(jn, "_ensure_thread", _thread)
 
+    # Первая попытка: временная ошибка → retry_wait, без
+    # частично записанного 'synced'.
+    await jn._flush_guarded("1_1000")
+    main = js.mains["1_1000"]
+    assert main["sync_status"] == "retry_wait"
+
+    # Повторный flush (как делает worker после backoff):
+    # сводка и матчевые карточки доезжают → 'synced'.
     await jn._flush_guarded("1_1000")
     main = js.mains["1_1000"]
     assert main["thread_id"] == 4242
-    assert main["sync_status"] == "partial"
-    assert main["summary_message_id"] is None
-    # Матчевые карточки — synced (send после первого успешен).
+    assert main["sync_status"] == "synced"
+    assert main["summary_message_id"]
     assert js.matches
     assert all(m["sync_status"] == "synced"
                for m in js.matches.values())
-
-    # Повторный flush: сводка доезжает → 'synced'.
-    await jn._flush_guarded("1_1000")
-    assert js.mains["1_1000"]["sync_status"] == "synced"
-    assert js.mains["1_1000"]["summary_message_id"]
 
 
 @pytest.mark.asyncio
@@ -1109,3 +1153,230 @@ def test_audit_view_has_no_organizers_filter():
     assert tav._event_matches(
         {"source": "tournament", "action": "player.join"},
         "all") is True
+
+
+# ---------------------------------------------------------------------------
+# Journal Resilience: threads API, retry, идемпотентность, recover
+# ---------------------------------------------------------------------------
+
+
+class _FakeGuild:
+    """Guild с корректным API discord.py 2.7: active_threads()
+    (async), БЕЗ fetch_threads."""
+
+    def __init__(self, threads=()):
+        self._threads = list(threads)
+
+    async def active_threads(self):
+        return list(self._threads)
+
+
+class _FakeParentChannel:
+    """Текстовый канал с archived_threads() (как discord.py)."""
+
+    def __init__(self, archived=()):
+        self._archived = list(archived)
+
+    def archived_threads(self, limit=100, **kw):
+        async def _gen():
+            for t in self._archived:
+                yield t
+        return _gen()
+
+
+class _FakeHTTPExc(__import__("discord").HTTPException):
+    """discord.HTTPException с заданными status/code/retry_after."""
+
+    def __init__(self, message="http error", *, status=None,
+                 code=None, retry_after=None):
+        resp = SimpleNamespace(status=status or 500,
+                               reason="fake")
+        super().__init__(resp, {"code": code or 0,
+                                "message": message})
+        if status is not None:
+            self.status = status
+        if code is not None:
+            self.code = code
+        self.retry_after = retry_after
+
+
+class _FakeMessageWithThread(_FakeMessage):
+    def __init__(self, mid, guild=None, channel=None, **kw):
+        super().__init__(mid, **kw)
+        self.guild = guild
+        self.channel = channel
+
+    async def create_thread(self, name=None, **kw):
+        raise _FakeHTTPExc("thread exists", status=400, code=160004)
+
+
+@pytest.mark.asyncio
+async def test_ensure_thread_finds_by_parent_id():
+    """Существующая ветка находится по parent_id сообщения —
+    без fetch_threads (несуществующий API) и без создания
+    дубля."""
+    import discord as _d
+    existing = _FakeThread(7777, name="Журнал 1_1000")
+    existing.parent_id = 555
+    guild = _FakeGuild(threads=[existing])
+    channel = _FakeParentChannel()
+    msg = _FakeMessageWithThread(
+        555, guild=guild, channel=channel)
+
+    th = await jn._ensure_thread(None, msg, "Журнал 1_1000")
+    assert th is existing
+
+
+@pytest.mark.asyncio
+async def test_ensure_thread_160004_finds_archived():
+    """Ошибка 160004 + ветка в архиве → находим и
+    разархивируем, дубль не создаётся."""
+    existing = _FakeThread(8888, name="Журнал 1_1000")
+    existing.parent_id = 555
+    existing.archived = True
+    guild = _FakeGuild()
+    channel = _FakeParentChannel(archived=[existing])
+    msg = _FakeMessageWithThread(
+        555, guild=guild, channel=channel)
+
+    th = await jn._ensure_thread(None, msg, "Журнал 1_1000")
+    assert th is existing
+    assert existing.archived is False  # unarchive вызван
+
+
+@pytest.mark.asyncio
+async def test_ensure_thread_429_is_retryable():
+    class _Msg(_FakeMessageWithThread):
+        async def create_thread(self, name=None, **kw):
+            raise _FakeHTTPExc("rate limited", status=429,
+                               retry_after=210.0)
+
+    msg = _Msg(1, guild=_FakeGuild(), channel=_FakeParentChannel())
+    with pytest.raises(jn._RetryableJournalError) as ei:
+        await jn._ensure_thread(None, msg, "Журнал x")
+    assert ei.value.retry_after == 210.0
+
+
+@pytest.mark.asyncio
+async def test_ensure_thread_403_is_permanent():
+    class _Msg(_FakeMessageWithThread):
+        async def create_thread(self, name=None, **kw):
+            raise _FakeHTTPExc("forbidden", status=403)
+
+    msg = _Msg(1, guild=_FakeGuild(), channel=_FakeParentChannel())
+    with pytest.raises(jn._PermanentJournalError):
+        await jn._ensure_thread(None, msg, "Журнал x")
+
+
+@pytest.mark.asyncio
+async def test_send_or_edit_429_retryable_403_permanent(journal_env,
+                                                      monkeypatch):
+    js, audit_ch, bot = journal_env
+
+    async def _boom429(*a, **kw):
+        raise _FakeHTTPExc("rate limited", status=429,
+                           retry_after=80.0)
+    audit_ch.send = _boom429
+    with pytest.raises(jn._RetryableJournalError) as ei:
+        await jn._send_or_edit(
+            audit_ch, message_id=0,
+            view=jn.build_main_card(None, {"tournament_id": "1_1",
+                                           "journal_no": 1}),
+            sig_key=1)
+    assert ei.value.retry_after == 80.0
+
+    async def _boom403(*a, **kw):
+        raise _FakeHTTPExc("forbidden", status=403)
+    audit_ch.send = _boom403
+    with pytest.raises(jn._PermanentJournalError):
+        await jn._send_or_edit(
+            audit_ch, message_id=0,
+            view=jn.build_main_card(None, {"tournament_id": "1_1",
+                                           "journal_no": 1}),
+            sig_key=2)
+
+
+@pytest.mark.asyncio
+async def test_lost_message_id_adopts_existing_card(journal_env,
+                                                  monkeypatch):
+    """PG потерял audit_message_id, но карточка в Discord есть —
+    flush принимает её, а не создаёт дубль."""
+    js, audit_ch, bot = journal_env
+    t = _tournament()
+
+    async def _load(tid):
+        return t
+    monkeypatch.setattr(jn, "_load_tournament", _load)
+    monkeypatch.setattr(
+        jn.audit_store, "list_events",
+        lambda **kw: _ret_events([]))
+
+    # Имитируем: карточка уже существует в канале (id потерян
+    # в PG — upsert_main создаёт запись без audit_message_id).
+    # Предзаполняем историю «чужим» send с маркером tid.
+    marker_msg = _FakeMessage(424242)
+    marker_msg.components = [
+        SimpleNamespace(children=[
+            SimpleNamespace(content="**ID:** `1_1000`")])]
+    audit_ch.sent.append(marker_msg)
+
+    await jn._flush_guarded("1_1000")
+    main = js.mains["1_1000"]
+    # Основная карточка — принята существующая, новый send
+    # для неё не выполнялся (sent вырос только на thread/cards).
+    assert main["audit_message_id"] == 424242
+    texts = [getattr(m, "content", "") for m in audit_ch.sent]
+    assert not any("ЖУРНАЛ ТУРНИРА" in (m.content or "")
+                   for m in audit_ch.sent[1:])
+
+
+@pytest.mark.asyncio
+async def test_retry_delay_honors_retry_after():
+    d = jn._retry_delay(1, retry_after=210.0)
+    assert d >= 211.0
+    d2 = jn._retry_delay(1)
+    assert 20.0 <= d2 <= 40.0
+    d_max = jn._retry_delay(20)
+    assert d_max <= jn._RETRY_MAX_SEC * 1.25
+
+
+@pytest.mark.asyncio
+async def test_recover_returns_stats_and_enqueues(journal_env,
+                                                monkeypatch):
+    """recover() больше не делает массовый параллельный flush —
+    возвращает статистику постановки в очередь worker'а."""
+    js, audit_ch, bot = journal_env
+    scheduled = []
+
+    async def _list_pending(limit=100):
+        return [
+            {"tournament_id": "1_1000"},
+            {"tournament_id": "1_1001"},
+            {"tournament_id": "1_1000"},  # дубль tid
+        ]
+    monkeypatch.setattr(js, "list_pending", _list_pending)
+    monkeypatch.setattr(jn, "schedule_recovery",
+                        lambda tid, **kw: scheduled.append(tid))
+    jn._RECOVERED = False
+    try:
+        stats = await jn.recover(bot)
+    finally:
+        jn._RECOVERED = False
+    assert stats["checked"] == 3
+    assert stats["scheduled"] == 2      # дубли tid схлопнуты
+    assert sorted(scheduled) == ["1_1000", "1_1001"]
+
+
+@pytest.mark.asyncio
+async def test_get_thread_rejects_stale_parent(journal_env):
+    """Сохранённый thread_id, указывающий на чужую ветку
+    (parent_id не совпадает с карточкой), отбрасывается."""
+    js, audit_ch, bot = journal_env
+    th = _FakeThread(31337)
+    th.parent_id = 999999              # чужое сообщение
+    bot._channels[31337] = th
+    got = await jn._get_thread(bot, 31337, expected_parent_id=555)
+    assert got is None
+    # Без проверки parent — ветка возвращается (совместимость).
+    got2 = await jn._get_thread(bot, 31337)
+    assert got2 is th
