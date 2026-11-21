@@ -94,6 +94,8 @@ def render_panel_view(
     row = discord.ui.ActionRow()
     row.add_item(_JoinButton())
     row.add_item(_LeaveButton())
+    row.add_item(_GuideButton())
+    row.add_item(_OrgPanelButton())
     container.add_item(row)
     view.add_item(container)
     return view
@@ -112,6 +114,52 @@ class AccessPanelView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(_JoinButton())
         self.add_item(_LeaveButton())
+        self.add_item(_GuideButton())
+        self.add_item(_OrgPanelButton())
+
+
+class _GuideButton(discord.ui.Button):
+    """«Как стать организатором» — приватная CV2-инструкция."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            label="Как стать организатором",
+            style=discord.ButtonStyle.primary,
+            custom_id="access:guide",
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from services.access_academy import build_guide_view
+        await interaction.response.send_message(
+            view=build_guide_view(),
+            ephemeral=True,
+            allowed_mentions=_NO_MENTIONS,
+        )
+
+
+class _OrgPanelButton(discord.ui.Button):
+    """«Панель организатора» — ссылка на сообщение ORG-панели."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            label="Панель организатора",
+            style=discord.ButtonStyle.secondary,
+            custom_id="access:orgpanel",
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from services.access_academy import org_panel_url
+        guild = interaction.guild
+        url = org_panel_url(guild.id) if guild is not None else None
+        if url:
+            await interaction.response.send_message(
+                f"Панель организатора: {url}", ephemeral=True,
+                allowed_mentions=_NO_MENTIONS)
+        else:
+            await interaction.response.send_message(
+                "Панель организатора пока не настроена — "
+                "обратитесь к администратору.",
+                ephemeral=True, allowed_mentions=_NO_MENTIONS)
 
 
 class _JoinButton(discord.ui.Button):
