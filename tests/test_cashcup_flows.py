@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import asyncio
+import time
 
 import pytest
 
@@ -15,6 +16,13 @@ def _last(i):
     if i.response.sent:
         return i.response.sent[-1][0]
     return ""
+
+
+def _sent(i):
+    """(msg, kw) последнего ответа — followup после defer, иначе response."""
+    if i.followup.sent:
+        return i.followup.sent[-1]
+    return i.response.sent[-1]
 from services import cashcup_bracket as cb
 
 
@@ -148,6 +156,7 @@ def cog(monkeypatch):
     c._board_locks = {}
     c._boards_lock = asyncio.Lock()
     c._boards_ok = False
+    c._state_cache = {}
     return c
 
 
@@ -334,7 +343,7 @@ async def test_show_roster_sends_view(cog):
     cog._store.state = st
     i = make_interaction(_member(10))
     await cog.show_roster(i)
-    msg, kw = i.response.sent[-1]
+    msg, kw = _sent(i)
     assert isinstance(kw.get("view"), cashcup.RosterView)
     assert kw["view"].is_captain is True
     labels = [getattr(c, "label", "") for c in kw["view"].children]
@@ -350,7 +359,7 @@ async def test_show_roster_member_no_privileged(cog):
     cog._store.state = st
     i = make_interaction(_member(11))
     await cog.show_roster(i)
-    view = i.response.sent[-1][1]["view"]
+    view = _sent(i)[1]["view"]
     assert view.is_captain is False
     labels = [getattr(c, "label", "") for c in view.children]
     assert "Пригласить запасного" not in labels
@@ -735,13 +744,32 @@ async def test_restore_boards_updates_existing(cog):
 
 
 @pytest.mark.asyncio
-async def test_restore_skips_registration(cog):
-    st = _reg_state()  # registration — доски нет
+async def test_restore_registration_replaces_missing_card(cog):
+    """Registration: message_id отсутствует/сообщение удалено →
+    создаётся ОДНА замена карточки (P0 zero-data-loss)."""
+    st = _reg_state()  # message_id=None — карточки нет
     cog._store.state = st
-    ch = FakeChannel(msg=FakeMsg())
-    guild = SimpleNamespace(id=1, get_channel=lambda cid: ch)
+    ch = FakeChannel(msg=None)  # fetch -> NotFound
+    guild = SimpleNamespace(id=1, get_channel=lambda cid: ch,
+                            fetch_channel=lambda cid: ch)
     cog.bot = SimpleNamespace(guilds=[guild])
     await cog._restore_boards()
+    assert len(ch.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_restore_registration_edits_live_card(cog):
+    """Registration: живая карточка → edit на месте, без дублей."""
+    st = _reg_state()
+    st["message_id"] = 555
+    cog._store.state = st
+    msg = FakeMsg(mid=555)
+    ch = FakeChannel(msg=msg)
+    guild = SimpleNamespace(id=1, get_channel=lambda cid: ch,
+                            fetch_channel=lambda cid: ch)
+    cog.bot = SimpleNamespace(guilds=[guild])
+    await cog._restore_boards()
+    assert len(msg.edits) == 1
     assert not ch.sent
 
 
@@ -1090,3 +1118,223 @@ async def test_orphan_board_deleted_when_pg_write_fails(cog, monkeypatch):
     assert len(ch.sent) == 1
     m, _ = ch.sent[0]
     assert m.deleted is True
+
+
+# ---------------- Modal-кнопки: нет 10062 при медленном PG ----------------
+
+def _card_state(mid=555, tid="tidA"):
+    st = _reg_state()
+    st["tournament_id"] = tid
+    st["message_id"] = mid
+    return st
+
+
+@pytest.mark.asyncio
+async def test_my_data_modal_opens_with_tid(cog):
+    """«Мои данные» открывает FFDataModal с tid конкретного турнира."""
+    cog._state_cache[1] = (time.monotonic(), _card_state())
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+    await v.my_data.callback(i)
+    assert i.response.modal is not None
+    assert i.response.modal.tid == "tidA"
+
+
+@pytest.mark.asyncio
+async def test_my_data_slow_pg_no_10062(cog, monkeypatch):
+    """PG отвечает >3 c: кнопка обязана ответить до дедлайна Discord
+    (3 c) — ephemeral «занята», без modal и без Unknown interaction."""
+    async def slow_active(gid):
+        await asyncio.sleep(3.5)
+        return _card_state()
+    async def slow_latest(gid):
+        return None
+    monkeypatch.setattr(cashcup.cashcup_store, "active", slow_active)
+    monkeypatch.setattr(cashcup.cashcup_store, "latest", slow_latest)
+    cog._state_cache.clear()
+
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+
+    t0 = time.monotonic()
+    await v.my_data.callback(i)
+    elapsed = time.monotonic() - t0
+
+    assert elapsed < 3.0            # ответ до дедлайна Discord
+    assert i.response.is_done()     # interaction подтверждён -> не 10062
+    assert i.response.modal is None
+    assert "занята" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_my_data_warm_cache_skips_pg(cog, monkeypatch):
+    """Тёплый кэш: modal открывается мгновенно, PG не вызывается."""
+    async def boom(gid):
+        raise AssertionError("PG не должен вызываться при тёплом кэше")
+    monkeypatch.setattr(cashcup.cashcup_store, "active", boom)
+    monkeypatch.setattr(cashcup.cashcup_store, "latest", boom)
+    cog._state_cache[1] = (time.monotonic(), _card_state())
+
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+
+    t0 = time.monotonic()
+    await v.my_data.callback(i)
+    assert time.monotonic() - t0 < 0.5
+    assert i.response.modal is not None
+    assert i.response.modal.tid == "tidA"
+
+
+@pytest.mark.asyncio
+async def test_my_data_stale_card_rejected(cog):
+    """Клик по устаревшей карточке (другой message_id) -> отказ,
+    modal не открывается."""
+    cog._state_cache.clear()
+    cog._store.state = _card_state(mid=555)
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=999)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+    await v.my_data.callback(i)
+    assert i.response.modal is None
+    assert "устарел" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_sub_join_slow_pg_no_10062(cog, monkeypatch):
+    """«Запасной» при PG >3 c: ответ до дедлайна, без 10062."""
+    async def slow_active(gid):
+        await asyncio.sleep(3.5)
+        return _card_state()
+    async def slow_latest(gid):
+        return None
+    monkeypatch.setattr(cashcup.cashcup_store, "active", slow_active)
+    monkeypatch.setattr(cashcup.cashcup_store, "latest", slow_latest)
+    cog._state_cache.clear()
+
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+
+    t0 = time.monotonic()
+    await v.sub_join.callback(i)
+    elapsed = time.monotonic() - t0
+
+    assert elapsed < 3.0
+    assert i.response.is_done()
+    assert "занята" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_sub_join_modal_keeps_tid(cog):
+    """«Запасной» с одним приглашением открывает FFDataModal
+    с tid турнира и team_id команды."""
+    st = _card_state()
+    t = _team("T1", "Alpha", 1, [_player(1)])
+    t["sub_invites"] = [42]
+    st["teams"] = [t]
+    cog._state_cache[1] = (time.monotonic(), st)
+
+    i = make_interaction(_member(42))
+    i.message = SimpleNamespace(id=555)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+    await v.sub_join.callback(i)
+
+    assert i.response.modal is not None
+    assert i.response.modal.tid == "tidA"
+    assert i.response.modal.team_id == "T1"
+
+
+@pytest.mark.asyncio
+async def test_sub_join_stale_card_rejected(cog):
+    cog._state_cache.clear()
+    cog._store.state = _card_state(mid=555)
+    i = make_interaction(_member(1))
+    i.message = SimpleNamespace(id=999)
+    i.client = FakeClient(cog)
+    v = cashcup.CashCupView(True)
+    await v.sub_join.callback(i)
+    assert i.response.modal is None
+    assert "устарел" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_team_pick_slow_pg_no_10062(cog, monkeypatch):
+    """PickView→_team_pick: PG >3с до ответа — ephemeral «занята»,
+    без 10062 (modal-ветки не могут defer)."""
+    st = _reg_state()
+    st["tournament_id"] = "tidA"
+    st["message_id"] = 555
+    st["teams"] = [_team("T1", "Alpha", 1, [_player(1)])]
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    i.client = FakeClient(cog)
+
+    async def slow_state(gid):
+        await asyncio.sleep(3.5)
+        return st
+    monkeypatch.setattr(cog, "_current_state", slow_state)
+
+    t0 = time.monotonic()
+    await cog._team_pick(i, "verify", "T1", tid="tidA")
+    assert time.monotonic() - t0 < 3.0
+    assert i.response.is_done()
+    assert "занята" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_match_pick_slow_pg_no_10062(cog, monkeypatch):
+    """PickView→_match_pick: то же ограничение 2с до send_modal."""
+    st = _running_state(2)
+    st["tournament_id"] = "tidA"
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    i.client = FakeClient(cog)
+    mid = st["bracket"]["matches"][0]["id"]
+
+    async def slow_state(gid):
+        await asyncio.sleep(3.5)
+        return st
+    monkeypatch.setattr(cog, "_current_state", slow_state)
+
+    t0 = time.monotonic()
+    await cog._match_pick(i, "room", mid, tid="tidA")
+    assert time.monotonic() - t0 < 3.0
+    assert i.response.is_done()
+    assert "занята" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_resolve_defers_before_slow_mutate(cog, monkeypatch):
+    """resolve() обязан defer ДО медленного PG mutate —
+    иначе 10062 при disput-потоке."""
+    st = _running_state(2)
+    st["tournament_id"] = "tidA"
+    m = st["bracket"]["matches"][0]
+    m["status"] = "disputed"
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    i.client = FakeClient(cog)
+
+    orig = cog._store.mutate
+
+    async def slow_mutate(*a, **k):
+        await asyncio.sleep(3.5)
+        return await orig(*a, **k)
+    monkeypatch.setattr(cog._store, "mutate", slow_mutate)
+
+    task = asyncio.create_task(cog.resolve(
+        i, m["id"], SimpleNamespace(value="a"),
+        "https://discord.com/channels/1/2/3", tid="tidA"))
+    await asyncio.sleep(0.3)
+    assert i.response.is_done()  # defer уже выполнен
+    await task
+    assert i.followup.sent or i.response.sent

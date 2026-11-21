@@ -234,7 +234,10 @@ async def build_collection_view(
             ))
         b2.callback = _next
         nav.add_item(b2)
-    view.container.add_item(nav)
+    # Пустой ActionRow запрещён Discord (50035) — добавляем только
+    # когда есть хотя бы одна кнопка навигации.
+    if nav.children:
+        view.container.add_item(nav)
 
     frow = discord.ui.ActionRow()
     fsel = discord.ui.Select(

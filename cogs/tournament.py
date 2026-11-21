@@ -854,6 +854,9 @@ class TournamentCog(commands.Cog):
     @economy_group.command(name="balance", description="Показать ваш баланс")
     async def balance(self, interaction: discord.Interaction) -> None:
         """Показать баланс пользователя."""
+        # Defer ДО PG-чтений баланса — медленный pool не должен
+        # приводить к 10062 Unknown interaction.
+        await interaction.response.defer()
         from storage.user_balance_store import user_balance_store
         from storage.user_bank_store import user_bank_store
         from config import get_emoji
@@ -870,7 +873,7 @@ class TournamentCog(commands.Cog):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         try:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 view=compose(embed), ephemeral=False,
                 allowed_mentions=discord.AllowedMentions.none())
         except (discord.NotFound, discord.DiscordServerError):
@@ -949,14 +952,17 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="shop", description="Магазин")
     async def shop(self, interaction: discord.Interaction) -> None:
         """Показать магазин (SHOP 2.0, CV2)."""
+        # Defer ДО сборки main-view (PG/JSON чтения) — иначе 10062.
+        await interaction.response.defer(ephemeral=True)
         from views.shop2_view import open_shop
         await open_shop(interaction)
 
     @app_commands.command(name="inventory", description="Ваш инвентарь")
     async def inventory(self, interaction: discord.Interaction) -> None:
         """Показать инвентарь (SHOP 2.0, CV2)."""
+        await interaction.response.defer(ephemeral=True)
         from views.inventory2_view import build_inventory_view
-        await interaction.response.send_message(
+        await interaction.followup.send(
             view=await build_inventory_view(
                 interaction.guild_id, interaction.user.id
             ),
