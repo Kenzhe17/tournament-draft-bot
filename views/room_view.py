@@ -228,8 +228,16 @@ class RoomModal(discord.ui.Modal):
         # Defer ДО любых запросов к store/БД/Discord: публикация карточки
         # и уведомления может занять секунды — без defer Discord отвечает
         # 10062 Unknown interaction.
+        #
+        # thinking=True КРИТИЧНО: без него defer() на modal_submit —
+        # это DEFERRED_MESSAGE_UPDATE, который целится в сообщение,
+        # с которого открыта модалка (публичная карточка турнира
+        # при единственном матче!). Тогда edit_original_response
+        # перезаписывал бы публичную карточку служебным UI.
+        # С thinking=True ответ — отдельное приватное сообщение.
         if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(
+                ephemeral=True, thinking=True)
 
         room_id = (self.room_input.value or "").strip()
         password = (self.pass_input.value or "").strip()
@@ -297,8 +305,20 @@ class RoomModal(discord.ui.Modal):
             async def _cancel(ic: discord.Interaction) -> None:
                 _PENDING_EDITS.pop(
                     (self.guild_id, self.channel_id, ic.user.id), None)
-                await ic.response.edit_message(
-                    view=text_card("-# Изменение отменено."))
+                # Никогда не перезаписывать публичную карточку
+                # турнира служебным текстом — даже если по какой-то
+                # причине кнопка оказалась на ней.
+                t = _load_tournament(self.guild_id, self.channel_id)
+                if (
+                    t is not None
+                    and ic.message is not None
+                    and ic.message.id == t.message_id
+                ):
+                    await ic.response.send_message(
+                        "-# Изменение отменено.", ephemeral=True)
+                else:
+                    await ic.response.edit_message(
+                        view=text_card("-# Изменение отменено."))
 
             ok.callback = _ok
             cancel.callback = _cancel
@@ -328,9 +348,11 @@ async def _apply_room_edit(
     token: tuple[int, int, int],
 ) -> None:
     # Defer ДО чтения store и публикации — иначе Discord 10062.
-    # Confirm-карточка ephemeral — ответ должен остаться ephemeral.
+    # thinking=True: приватный ответ, не трогаем сообщение,
+    # с которого нажата кнопка подтверждения.
     if not interaction.response.is_done():
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(
+            ephemeral=True, thinking=True)
 
     pending = _PENDING_EDITS.pop(token, None)
     if pending is None or time.time() - pending["ts"] > _PENDING_TTL:
@@ -359,7 +381,7 @@ async def _apply_room_edit(
         return
     await _save_room(
         interaction, tournament, fresh, pending["room_id"],
-        pending["password"], edit_reply=True)
+        pending["password"])
 
 
 async def _save_room(
@@ -368,8 +390,6 @@ async def _save_room(
     m: dict[str, Any],
     room_id: str,
     password: str,
-    *,
-    edit_reply: bool = False,
 ) -> None:
     gid, cid = interaction.guild_id, interaction.channel_id
     result = room_store.upsert_room(
@@ -439,11 +459,12 @@ async def _save_room(
     )
     if interaction.response.is_done():
         # Defer уже выполнен (on_submit / confirm-кнопка) —
-        # редактируем исходный ответ, не вызывая response повторно.
+        # редактируем исходный ПРИВАТНЫЙ ответ, не вызывая
+        # response повторно.
         await interaction.edit_original_response(view=text_card(text))
-    elif edit_reply:
-        await interaction.response.edit_message(view=text_card(text))
     else:
+        # Ответ не отложен — только приватное сообщение,
+        # никогда не edit_message публичной карточки.
         await interaction.response.send_message(
             view=text_card(text), ephemeral=True)
 
