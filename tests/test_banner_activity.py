@@ -19,9 +19,17 @@ def test_score_matches_only():
     assert act.activity_score(0, 4) == 40
 
 
-def test_score_combined_and_cap():
-    # 10 часов войса капается до 6ч=72 очка + 2 матча=20 -> 92
-    assert act.activity_score(10 * 3600, 2) == 72 + 20
+def test_score_combined_no_daily_cap():
+    # 10 часов войса без лимита = 120 очков + 2 матча=20 -> 140
+    assert act.activity_score(10 * 3600, 2) == 120 + 20
+
+
+def test_score_voice_long_days():
+    # Начисление за 6, 8, 12 и 18 часов без дневного лимита
+    assert act.activity_score(6 * 3600, 0) == 72
+    assert act.activity_score(8 * 3600, 0) == 96
+    assert act.activity_score(12 * 3600, 0) == 144
+    assert act.activity_score(18 * 3600, 0) == 216
 
 
 def test_score_partial_5min():

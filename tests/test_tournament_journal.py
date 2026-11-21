@@ -1031,3 +1031,81 @@ async def test_journal_no_uses_max_not_count(monkeypatch):
 
 async def _ret_pool(pool):
     return pool
+
+
+# ---------------------------------------------------------------------------
+# organizer.* скрыты из Discord-журнала (остаются в PostgreSQL)
+# ---------------------------------------------------------------------------
+
+
+def test_notify_event_ignores_organizer():
+    jn._DIRTY.clear()
+    # source=organizer — игнор.
+    jn.notify_event({"persisted": "pg", "source": "organizer",
+                     "tournament_id": "1_1000",
+                     "action": "organizer.assign"})
+    assert "1_1000" not in jn._DIRTY
+    # organizer.* action под другим source — тоже игнор.
+    jn.notify_event({"persisted": "pg", "source": "tournament",
+                     "tournament_id": "1_1000",
+                     "action": "organizer.role_grant"})
+    assert "1_1000" not in jn._DIRTY
+    jn._DIRTY.clear()
+
+
+@pytest.mark.asyncio
+async def test_tournament_events_excludes_organizer(monkeypatch):
+    events = [
+        {"action": "organizer.assign", "source": "organizer",
+         "tournament_id": "1_1000", "created_at": 1.0},
+        {"action": "player.join", "source": "tournament",
+         "tournament_id": "1_1000", "created_at": 2.0},
+        {"action": "organizer.reset", "source": "system",
+         "tournament_id": "1_1000", "created_at": 3.0},
+    ]
+    monkeypatch.setattr(
+        jn.audit_store, "list_events",
+        lambda **kw: _ret_events(events))
+    out = await jn._tournament_events(1, 2, "1_1000")
+    assert [e["action"] for e in out] == ["player.join"]
+
+
+@pytest.mark.asyncio
+async def test_publish_skips_organizer_events(monkeypatch):
+    sent = []
+
+    class _Ch(_FakeChannel):
+        async def send(self, view=None, **kw):
+            sent.append(view)
+            return _FakeMessage(1, view)
+
+    ch = _Ch(999)
+    bot = _FakeBot({999: ch})
+    monkeypatch.setattr(audit_svc, "_bot", bot)
+    monkeypatch.setattr(audit_svc, "_audit_channel_id", lambda: 999)
+
+    # organizer.* без tournament_id — тоже без карточки.
+    await audit_svc._publish({
+        "event_id": "e2", "tournament_id": None,
+        "source": "organizer", "action": "organizer.role_grant",
+    })
+    await audit_svc._publish({
+        "event_id": "e3", "tournament_id": "1_1",
+        "source": "organizer", "action": "organizer.assign",
+    })
+    assert sent == []
+
+
+def test_audit_view_has_no_organizers_filter():
+    from views import tournament_audit_view as tav
+    assert "organizers" not in tav.FILTERS
+    # organizer.* скрыт из всех фильтров, включая "all".
+    assert tav._event_matches(
+        {"source": "organizer", "action": "organizer.assign"},
+        "all") is False
+    assert tav._event_matches(
+        {"source": "tournament", "action": "organizer.reset"},
+        "all") is False
+    assert tav._event_matches(
+        {"source": "tournament", "action": "player.join"},
+        "all") is True
