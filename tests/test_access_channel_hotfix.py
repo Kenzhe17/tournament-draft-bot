@@ -723,3 +723,29 @@ async def test_retry_429_honors_full_retry_after(monkeypatch):
     result = await access_cog._retry_429(_factory)
     assert result == "ok"
     assert slept and slept[0] >= 42.0   # НЕ min(...,5)
+
+
+@pytest.mark.asyncio
+async def test_binding_rejected_when_state_channel_differs_from_pinned(
+        pinned, store):
+    """ACCESS_ROTATION_CHANNEL_ID задан, но сохранённый
+    access_state.channel_id указывает на другой канал —
+    привязка ещё не синхронизирована → кнопки отклоняются,
+    даже если message_id и канал нажатия «совпадают»."""
+    guild, _, _ = _guild_with_pinned()
+    # state.channel_id = другой канал, message_id = 5555.
+    await store.set_panel(1, OLD_DUP, 5555)
+    joined = []
+
+    async def _qj(gid, uid):
+        joined.append(uid)
+        return True
+    store.queue_join = _qj  # type: ignore[attr-defined]
+
+    btn = access_panel._JoinButton()
+    # Нажатие в pinned-канале на «правильное» message_id —
+    # всё равно отклоняется: state.channel_id != pinned.
+    ix = FakeInteraction(guild, channel_id=PINNED, message_id=5555)
+    await btn.callback(ix)
+    assert joined == []
+    assert "устарела" in ix.response.messages[0]["content"]

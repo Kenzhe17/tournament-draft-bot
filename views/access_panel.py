@@ -77,9 +77,14 @@ async def _panel_binding_current(interaction: discord.Interaction) -> bool:
     ok = bool(pinned) and interaction.channel_id == int(pinned)
     ok = ok and bool(mid) and message is not None \
         and int(message.id) == int(mid)
-    # Если env-ID не задан — channel_id из state тоже обязан
-    # совпадать с каналом нажатия.
-    if not ACCESS_ROTATION_CHANNEL_ID and cid:
+    # Закреплённый канал: сохранённая привязка state.channel_id
+    # обязана совпадать с ним — при расхождении панель ещё
+    # не синхронизирована, действия отклоняются до resync.
+    if ACCESS_ROTATION_CHANNEL_ID:
+        ok = ok and bool(cid) and int(cid) == int(pinned)
+    elif cid:
+        # Если env-ID не задан — channel_id из state тоже
+        # обязан совпадать с каналом нажатия.
         ok = ok and interaction.channel_id == int(cid)
     if ok:
         return True
