@@ -299,7 +299,7 @@ def _teams_render(state: dict, page: int) -> tuple[str, int, int]:
 
 # ---------- /alert: уведомление капитанов о незаполненных данных ----------
 
-_ALERT_COOLDOWN = 15 * 60  # секунд между публичными /alert
+# /alert cooldown отсутствует by design: рассылка только вручную.
 
 # Человекочитаемые причины для публичного отчёта (без FF UID).
 _ALERT_PROB_LABELS = {
@@ -335,6 +335,11 @@ _ALERT_FOOTER = (
 )
 
 
+def _esc(text: str) -> str:
+    """Escape Discord markdown/упоминаний в пользовательских строках."""
+    return discord.utils.escape_markdown(str(text))
+
+
 def _alert_member_issue(p: dict) -> tuple[str, bool]:
     """(текст проблемы, нужно ли действие игрока).
 
@@ -365,14 +370,20 @@ def _alert_report(state: dict) -> dict:
         cap = t.get("captain")
         if cap:
             captains.append(int(cap))
-        lines = [f"**{_label(t)}** — капитан <@{cap}>", ""]
+        lines = [f"**{_esc(_label(t))}** — капитан <@{cap}>", ""]
         issues: list[str] = []
         for p in t.get("members") or []:
             text, needs = _alert_member_issue(p)
             if text:
-                issues.append(f"- <@{p.get('discord_id')}> — {text}")
                 if needs:
+                    # Активный пинг: игрок должен заполнить данные.
+                    issues.append(
+                        f"- <@{p.get('discord_id')}> — {text}")
                     actors.append(int(p["discord_id"]))
+                else:
+                    # Только ожидает ADMIN — БЕЗ активного пинга.
+                    who = _esc(str(p.get("nick") or "участник"))
+                    issues.append(f"- {who} — {text}")
         # Структурные проблемы (дубли UID/Discord, состав, >2 ПК,
         # cross-team) — из существующей диагностики, без изменений.
         issues += [f"- {sp}" for sp in diag["structural"]]
@@ -954,13 +965,12 @@ class CashCupCog(commands.Cog):
         # открывающие Modal (send_modal нельзя после defer),
         # проверяют свежесть карточки без ожидания PostgreSQL.
         self._state_cache: dict[int, tuple[float, dict | None]] = {}
-        # /alert: per-guild lock + cooldown публичных уведомлений.
+        # /alert: per-guild lock против параллельных рассылок.
         self._alert_locks: dict[int, asyncio.Lock] = {}
-        self._alert_last: dict[int, float] = {}
-        # (signature отчёта, {sha1 отправленных чанков}) — защита
-        # от дублей при частичной публикации; в памяти, при рестарте
-        # сбрасывается (cooldown 15 мин ограничивает спам).
-        self._alert_sent: dict[int, tuple[str, set]] = {}
+        # (signature отчёта, {sha1 отправленных чанков}, complete)
+        # — защита от дублей при частичной публикации; в памяти,
+        # после рестарта автоматическое восстановление не ведётся.
+        self._alert_sent: dict[int, tuple[str, set, bool]] = {}
 
     def _board_lock(self, guild_id: int) -> asyncio.Lock:
         return self._board_locks.setdefault(guild_id, asyncio.Lock())
@@ -1944,8 +1954,9 @@ class CashCupCog(commands.Cog):
         """Публичное уведомление капитанов о незаполненных данных.
 
         Только CASH CUP ADMIN. Публикует отчёт в канал карточки
-        регистрации; состояние турнира не изменяется. Cooldown
-        15 минут, защита от параллельных запусков per-guild lock.
+        регистрации; состояние турнира не изменяется. Без
+        cooldown — только ручные вызовы ADMIN; per-guild lock
+        сериализует параллельные запросы.
         """
         if not interaction.guild or not _is_cashcup_admin(interaction.user):
             await self._reply(interaction, "Недостаточно прав")
@@ -1983,16 +1994,11 @@ class CashCupCog(commands.Cog):
                         f"Все команды готовы ({report['ready']}/"
                         f"{report['total']}) — уведомление не требуется.")
                     return
-                last = self._alert_last.get(guild_id)
-                elapsed = time.monotonic() - last if last else None
-                if elapsed is not None and elapsed < _ALERT_COOLDOWN:
-                    wait_min = int((_ALERT_COOLDOWN - elapsed + 59) // 60)
-                    await self._reply(
-                        interaction,
-                        f"Уведомление уже отправлялось — повторите "
-                        f"через {wait_min} мин.")
-                    return
-                # Повторная проверка статуса непосредственно перед
+                # Cooldown отсутствует: /alert — строго ручной
+                # инструмент ADMIN, повторный вызов сразу после
+                # завершённой рассылки формирует новый отчёт.
+                # Защита от гонок — только per-guild lock выше.
+                # Повторная проверка статуса перед публикацией.
                 # публикацией: состав/статус могли измениться.
                 fresh = await cashcup_store.active(guild_id)
                 if not fresh \
@@ -2044,14 +2050,20 @@ class CashCupCog(commands.Cog):
                 sent_map = getattr(self, "_alert_sent", None)
                 if sent_map is None:
                     sent_map = self._alert_sent = {}
-                dedup = sent_map.get(guild_id)
+                prev = sent_map.get(guild_id)
+                dedup = prev
                 # Дедуп действует только для НЕЗАВЕРШЁННОЙ
                 # публикации того же отчёта: после полного
                 # уведомления или при изменении отчёта — свежая
                 # рассылка без пропусков.
+                sig_changed_partial = bool(
+                    prev and prev[0] != sig and not prev[2])
                 if dedup and (dedup[0] != sig or dedup[2]):
                     dedup = None
                 sent_hashes = set(dedup[1]) if dedup else set()
+                # Активные получатели пингов: капитаны всех команд
+                # + игроки, которым нужно заполнить данные.
+                ping_ids = set(report["captains"]) | set(report["actors"])
                 sent = 0
                 failed_at = None
                 for idx, chunk in enumerate(chunks):
@@ -2059,11 +2071,16 @@ class CashCupCog(commands.Cog):
                     if chash in sent_hashes:
                         sent += 1
                         continue
-                    # allowed_mentions — ТОЛЬКО реально упомянутые
-                    # в этом сообщении пользователи, ≤100, без
-                    # roles/@everyone/@here.
-                    ids = sorted({int(u) for u in
-                                  re.findall(r"<@(\d+)>", chunk)})[:100]
+                    # allowed_mentions — ТОЛЬКО целевые
+                    # получатели, реально упомянутые в этом
+                    # сообщении, ≤100, без roles/@everyone/@here.
+                    ids = sorted(
+                        {int(u) for u in re.findall(r"<@(\d+)>", chunk)}
+                        & ping_ids)[:100]
+                    if len(ids) >= 100:
+                        logger.warning(
+                            "cashcup alert chunk %s has %s pings",
+                            idx, len(ids))
                     mentions = discord.AllowedMentions(
                         users=[discord.Object(id=u) for u in ids])
                     try:
@@ -2080,10 +2097,6 @@ class CashCupCog(commands.Cog):
                         break
                 sent_map[guild_id] = (
                     sig, sent_hashes, sent >= len(chunks))
-                # Cooldown — только если хоть одно сообщение ушло;
-                # полная ошибка не блокирует повторную попытку.
-                if sent:
-                    self._alert_last[guild_id] = time.monotonic()
                 logger.info(
                     "cashcup alert guild=%s admin=%s tournament=%s "
                     "teams=%s ready=%s mentions=%s messages=%s",
@@ -2112,22 +2125,27 @@ class CashCupCog(commands.Cog):
                         interaction,
                         "Не удалось опубликовать уведомление — "
                         "проверьте права бота в канале карточки. "
-                        "Cooldown не установлен, можно повторить.")
+                        "Повторите /alert вручную.")
                     return
                 total_chunks = len(chunks)
+                prefix = (
+                    "Примечание: предыдущая рассылка была "
+                    "неполной — её части относились к старому "
+                    "состоянию.\n" if sig_changed_partial else "")
                 if failed_at is not None or sent < total_chunks:
                     await self._reply(
                         interaction,
+                        prefix +
                         f"Уведомление опубликовано ЧАСТИЧНО: "
                         f"сообщений {sent}/{total_chunks}, "
                         f"команд {report['total']}, "
                         f"готово {report['ready']}. "
-                        f"Повторный вызов не продублирует "
-                        f"отправленные части (в пределах перезапуска "
-                        f"и неизменного отчёта).")
+                        f"Повторный /alert не продублирует "
+                        f"отправленные части, пока отчёт не изменится.")
                     return
                 await self._reply(
                     interaction,
+                    prefix +
                     f"Уведомление опубликовано: команд "
                     f"{report['total']}, готово {report['ready']}, "
                     f"упоминаний {len(mention_ids)}, "

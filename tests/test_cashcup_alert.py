@@ -400,7 +400,8 @@ async def test_cancelled_latest_not_alerted(env):
 # ---------------- §9.15–16: cooldown и preview ----------------
 
 @pytest.mark.asyncio
-async def test_cooldown_blocks_second_alert(env):
+async def test_repeat_alert_immediately_resends(env):
+    """Cooldown отсутствует: повторный /alert сразу шлёт новый отчёт."""
     env.store.state = _reg_state([
         _team("t1", "ALPHA", 10, [_player(u) for u in (10, 11, 12, 33)]),
     ])
@@ -412,22 +413,22 @@ async def test_cooldown_blocks_second_alert(env):
 
     i2 = make_interaction(admin, channel=env.channel)
     await env.cog.alert.callback(env.cog, i2, preview=False)
-    assert len(env.channel.sent) == first_sends  # новых пингов нет
-    assert "повторите" in _last(i2).lower() or "мин" in _last(i2)
+    assert len(env.channel.sent) > first_sends  # новая рассылка
 
 
 @pytest.mark.asyncio
-async def test_cooldown_expires(env):
+async def test_three_sequential_alerts_all_send(env):
+    """Три последовательных вызова — три полные рассылки."""
     env.store.state = _reg_state([
         _team("t1", "ALPHA", 10, [_player(u) for u in (10, 11, 12, 33)]),
     ])
     admin = _member(99, admin=True)
-    i1 = make_interaction(admin, channel=env.channel)
-    await env.cog.alert.callback(env.cog, i1, preview=False)
-    env.cog._alert_last[1] = 0  # «давно»
-    i2 = make_interaction(admin, channel=env.channel)
-    await env.cog.alert.callback(env.cog, i2, preview=False)
-    assert len(env.channel.sent) > 1
+    counts = []
+    for _ in range(3):
+        i = make_interaction(admin, channel=env.channel)
+        await env.cog.alert.callback(env.cog, i, preview=False)
+        counts.append(len(env.channel.sent))
+    assert counts[0] >= 1 and counts[1] > counts[0]         and counts[2] > counts[1]
 
 
 @pytest.mark.asyncio
@@ -517,9 +518,9 @@ async def test_missing_card_link_warns_not_creates(env):
 
 
 @pytest.mark.asyncio
-async def test_parallel_alerts_single_publish(env):
-    """Два одновременных /alert — per-guild lock + cooldown:
-    публичных сообщений не больше одного прогона."""
+async def test_parallel_alerts_serialized_no_interleave(env):
+    """Два одновременных /alert: per-guild lock сериализует —
+    каждая рассылка завершается целиком, сообщения не перемешиваются."""
     env.store.state = _reg_state([
         _team("t1", "ALPHA", 10, [_player(u) for u in (10, 11, 12, 33)]),
     ])
@@ -529,15 +530,14 @@ async def test_parallel_alerts_single_publish(env):
     await asyncio.gather(
         env.cog.alert.callback(env.cog, i1, preview=False),
         env.cog.alert.callback(env.cog, i2, preview=False))
-    # cooldown срабатывает на втором — сообщений ровно один прогон
-    first_run = len(env.channel.sent)
-    assert first_run >= 1
+    # Две последовательные полные рассылки (без cooldown).
+    n = len(env.channel.sent)
+    assert n >= 2
+    # Третий ручной вызов — ещё одна полная рассылка.
     i3 = make_interaction(admin, channel=env.channel)
     await env.cog.alert.callback(env.cog, i3, preview=False)
-    assert len(env.channel.sent) == first_run
+    assert len(env.channel.sent) > n
 
-
-# ---------------- §9.19–20: смежные кнопки/карточки ----------------
 
 @pytest.mark.asyncio
 async def test_my_data_button_still_present(env):
@@ -595,13 +595,18 @@ async def test_failed_send_no_cooldown(env, monkeypatch):
     env.store.state = _reg_state([
         _team("t1", "ALPHA", 10, [_player(u) for u in (10, 11, 12, 33)]),
     ])
+    orig_send = env.channel.send
     async def _boom(*a, **kw):
         raise discord.HTTPException(_FakeResp(), "boom")
-    monkeypatch.setattr(env.channel, "send", _boom)
+    env.channel.send = _boom
     admin = _member(99, admin=True)
     i1 = make_interaction(admin, channel=env.channel)
     await env.cog.alert.callback(env.cog, i1, preview=False)
-    assert not env.cog._alert_last.get(1)
+    # После полной ошибки следующий ручной вызов снова пытается.
+    env.channel.send = orig_send
+    i2 = make_interaction(admin, channel=env.channel)
+    await env.cog.alert.callback(env.cog, i2, preview=False)
+    assert env.channel.sent
 
 
 @pytest.mark.asyncio
