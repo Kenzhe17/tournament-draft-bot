@@ -43,9 +43,14 @@ class _FakeMessage:
         return self
 
     async def create_thread(self, name=None, **kw):
-        # Как в Discord: ветка регистрируется и доступна
-        # через get_channel/fetch_channel в последующих flush.
-        th = _FakeThread(9000 + self.id, name=name)
+        # Discord-модель: thread.id == message.id,
+        # thread.parent_id == message.channel.id.
+        # Ветка регистрируется и доступна через
+        # get_channel/fetch_channel в последующих flush.
+        th = _FakeThread(self.id, name=name)
+        th.parent_id = int(
+            getattr(getattr(self, "channel", None), "id", 0)
+            or 0)
         th._channels = self._channels
         if self._channels is not None:
             self._channels[th.id] = th
@@ -66,6 +71,8 @@ class _FakeThread:
         self._next += 1
         msg = _FakeMessage(self._next, view)
         msg._channels = self._channels
+        # Родительский канал сообщения — сам канал/ветка.
+        msg.channel = self
         # Как в Discord: components сообщения = children view.
         msg.components = list(getattr(view, "children", []) or [])
         self.sent.append(msg)
@@ -495,6 +502,7 @@ def journal_env(monkeypatch):
     # привязаны к event loop конкретного теста.
     monkeypatch.setattr(jn, "_RECOVERY_HEAP", [])
     monkeypatch.setattr(jn, "_RECOVERY_QUEUED", set())
+    monkeypatch.setattr(jn, "_PENDING_LAST_SCHEDULE", {})
     monkeypatch.setattr(jn, "_RETRY_ATTEMPTS", {})
     monkeypatch.setattr(jn, "_RECOVERY_STATS", {})
     monkeypatch.setattr(jn, "_RECOVERY_WORKER", None)
@@ -833,8 +841,14 @@ async def test_deleted_main_message_recreates(journal_env, monkeypatch):
     monkeypatch.setattr(jn, "_VERIFY_TTL", 0)
 
     # Удаляем сообщение: fetch_message → NotFound → send нового.
+    # Падают только запросы СТАРОГО id — новый id должен
+    # находиться (send его только что добавил в sent).
+    _orig_fetch = audit_ch.fetch_message
+
     async def _nf(mid):
-        raise _d.NotFound(_FakeResponse(), "gone")
+        if int(mid) == int(old_mid):
+            raise _d.NotFound(_FakeResponse(), "gone")
+        return await _orig_fetch(mid)
     audit_ch.fetch_message = _nf
     # _send_or_edit ловит NotFound внутри fetch_message —
     # но наш fake channel.fetch_message теперь всегда NotFound,
@@ -1643,3 +1657,171 @@ async def test_concurrent_flush_single_main_card(journal_env,
     assert r1 == "synced" and r2 == "synced"
     # Основная карточка отправлена ровно один раз.
     assert len(audit_ch.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_thread_rejects_foreign_thread_same_channel(
+        journal_env):
+    """Ветка в ТОМ ЖЕ канале, но от другого сообщения
+    (thread.id != main_message.id) — чужая ссылка → None.
+    Связь thread.id == message.id обязательна."""
+    js, audit_ch, bot = journal_env
+    foreign = _FakeThread(31337)
+    foreign.parent_id = int(audit_ch.id)   # канал совпадает
+    bot._channels[31337] = foreign
+    # expected_message_id=555001: чужая ветка отклоняется.
+    got = await jn._get_thread(
+        bot, 31337,
+        expected_parent_id=int(audit_ch.id),
+        expected_message_id=555001)
+    assert got is None
+    # Ветка, привязанная к карточке (id ветки == id сообщения).
+    bound = _FakeThread(555001)
+    bound.parent_id = int(audit_ch.id)
+    bot._channels[555001] = bound
+    got2 = await jn._get_thread(
+        bot, 555001,
+        expected_parent_id=int(audit_ch.id),
+        expected_message_id=555001)
+    assert got2 is bound
+
+
+@pytest.mark.asyncio
+async def test_flush_recreates_thread_for_recreated_main_card(
+        journal_env, monkeypatch):
+    """Основная карточка пересоздана (новый message_id), а
+    thread_id в PG — от старой карточки → _get_thread
+    отклоняет чужую ветку, _ensure_thread создаёт ветку,
+    привязанную к НОВОЙ карточке."""
+    js, audit_ch, bot = journal_env
+    t = _tournament()
+
+    async def _load(tid):
+        return t
+    monkeypatch.setattr(jn, "_load_tournament", _load)
+    monkeypatch.setattr(
+        jn.audit_store, "list_events",
+        lambda **kw: _ret_events([]))
+
+    created = []
+
+    async def _spy_ensure(bot_, msg, name):
+        created.append((msg.id, name))
+        th = _FakeThread(9000 + msg.id, name=name)
+        th.parent_id = int(getattr(msg.channel, "id", 0) or 0)
+        bot_._channels[th.id] = th
+        return th
+    monkeypatch.setattr(jn, "_ensure_thread", _spy_ensure)
+
+    # PG: основная карточка есть (id подтверждён), а thread_id
+    # указывает на ветку от СТАРОЙ карточки — в том же канале,
+    # но thread.id != текущему main_mid.
+    js.mains["1_1000"] = {
+        "id": 91, "guild_id": 1, "channel_id": 2,
+        "tournament_id": "1_1000", "journal_no": 1,
+        "audit_channel_id": int(audit_ch.id),
+        "audit_message_id": 424242,
+        "thread_id": 31337, "result_message_id": None,
+        "summary_message_id": None, "status": "active",
+        "sync_status": "pending", "retry_count": 0,
+        "next_attempt_at": None, "pending_components": "",
+        "last_error": None,
+    }
+    _main_msg = _FakeMessage(424242)
+    _main_msg.channel = audit_ch
+    audit_ch.sent.append(_main_msg)
+    stale_thread = _FakeThread(31337)
+    stale_thread.parent_id = int(audit_ch.id)
+    bot._channels[31337] = stale_thread
+
+    await jn._flush_guarded("1_1000")
+    main = js.mains["1_1000"]
+    new_mid = main["audit_message_id"]
+    assert new_mid == 424242
+    # Ветка создана для ТЕКУЩЕЙ карточки, не для старой.
+    assert created and created[0][0] == 424242
+    assert main["thread_id"] == 9000 + 424242
+    # Чужая ветка не «усыновлена».
+    assert main["thread_id"] != 31337
+
+
+@pytest.mark.asyncio
+async def test_partial_when_match_card_fails(journal_env,
+                                              monkeypatch):
+    """Постоянный сбой карточки матча → итоговый статус
+    'partial' (не 'synced'), диагностика в last_error."""
+    js, audit_ch, bot = journal_env
+    t = _tournament()
+
+    async def _load(tid):
+        return t
+    monkeypatch.setattr(jn, "_load_tournament", _load)
+    monkeypatch.setattr(
+        jn.audit_store, "list_events",
+        lambda **kw: _ret_events([]))
+
+    # Ветка: первая отправка (сводка) успешна, все последующие
+    # (карточки матчей) — Discord 403.
+    class _MatchFailThread(_FakeThread):
+        def __init__(self, tid):
+            super().__init__(tid)
+            self._n = 0
+
+        async def send(self, view=None, **kw):
+            self._n += 1
+            if self._n > 1:
+                raise _FakeHTTPExc("forbidden", status=403)
+            return await super().send(view=view, **kw)
+
+    flaky = _MatchFailThread(4242)
+
+    async def _thread(bot_, msg, name):
+        return flaky
+    monkeypatch.setattr(jn, "_ensure_thread", _thread)
+
+    result = await jn._flush_guarded("1_1000")
+    main = js.mains["1_1000"]
+    assert result == "partial"
+    assert main["sync_status"] == "partial"
+    assert "match" in (main.get("last_error") or "")
+    # Карточки матчей помечены error — не synced.
+    assert js.matches
+    assert any(m["sync_status"] == "error"
+               for m in js.matches.values())
+
+
+@pytest.mark.asyncio
+async def test_pg_down_recover_then_pending_poll_recovers(
+        journal_env, monkeypatch):
+    """PG недоступен при recover() → bot готов → PG восстановлен
+    → pending-записи подхватываются периодическим poll'ом worker'а
+    БЕЗ рестарта и без повторного recover()."""
+    js, audit_ch, bot = journal_env
+    calls = {"n": 0}
+    rows = [{"tournament_id": "1_1000"}]
+
+    async def _list_pending(limit=100):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("pg down")
+        return rows
+    monkeypatch.setattr(js, "list_pending", _list_pending)
+    monkeypatch.setattr(jn.tournament_store, "all", lambda: [])
+    monkeypatch.setattr(jn, "_ensure_recovery_worker",
+                        lambda: None)
+    monkeypatch.setattr(jn, "schedule_recovery",
+                        lambda tid, **kw: jn._RECOVERY_QUEUED.add(
+                            str(tid)))
+
+    jn._RECOVERED = False
+    stats = await jn.recover(bot)
+    # Скан не состоялся → recover можно повторить, очередь пуста.
+    assert stats["scheduled"] == 0
+    assert jn._RECOVERED is False
+    assert "1_1000" not in jn._RECOVERY_QUEUED
+
+    # PG «восстановлен»: периодический poll подхватывает запись.
+    n = await jn._poll_pending_recovery()
+    assert n == 1
+    assert "1_1000" in jn._RECOVERY_QUEUED
+    jn._RECOVERED = False

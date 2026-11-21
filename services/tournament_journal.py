@@ -84,12 +84,17 @@ _RECOVERY_HEAP: list[tuple[float, str]] = []  # (run_at monotonic, tid)
 _RECOVERY_QUEUED: set[str] = set()
 _RECOVERY_WORKER: asyncio.Task | None = None
 _PG_POLL_LAST = 0.0
+_PENDING_LAST_SCHEDULE: dict[str, float] = {}
 _RETRY_ATTEMPTS: dict[str, int] = {}
 _RECOVERY_STATS: dict[str, int] = {}
 
 _WORKER_INTERVAL = 1.0        # пауза между flush разных турниров
 _PG_POLL_SEC = 30.0           # как часто worker опрашивает PG
-                              # на отложенные retry_wait
+                              # на отложенные retry_wait и
+                              # пропущенные pending-записи
+_PENDING_RESCAN_SEC = 120.0   # минимальный интервал повторной
+                              # постановки одного турнира из
+                              # периодического скана pending
 _RETRY_BASE_SEC = 30.0        # первый backoff
 _RETRY_MAX_SEC = 1800.0       # потолок backoff
 _RETRY_JITTER = 0.2           # ±20%
@@ -1104,12 +1109,19 @@ async def _ensure_thread(
 async def _get_thread(
     bot: discord.Client, thread_id: int,
     *, expected_parent_id: int | None = None,
+    expected_message_id: int | None = None,
 ):
-    """Получить ветку по id. Если задан expected_parent_id —
-    это id РОДИТЕЛЬСКОГО КАНАЛА ветки (thread.parent_id ==
-    channel.id, НЕ id сообщения): несовпадение = устаревшая
-    или чужая ссылка → None (ветка будет найдена/создана
-    через _ensure_thread)."""
+    """Получить ветку по id.
+
+    Проверки актуальности сохранённой ссылки:
+    - ``expected_parent_id`` — id РОДИТЕЛЬСКОГО КАНАЛА
+      (thread.parent_id == channel.id);
+    - ``expected_message_id`` — id ОСНОВНОЙ КАРТОЧКИ:
+      у ветки, созданной из сообщения, ``thread.id ==
+      message.id``. Ветка в том же канале, но от другого
+      сообщения — чужая, отбрасывается.
+    Несовпадение = устаревшая/чужая ссылка → None (ветка
+    будет найдена/создана через _ensure_thread)."""
     ch = bot.get_channel(thread_id)
     if ch is None:
         try:
@@ -1122,6 +1134,13 @@ async def _get_thread(
         logger.info("journal: thread %s parent mismatch "
                     "(%s != %s) — stale id", thread_id, pid,
                     expected_parent_id)
+        return None
+    if (expected_message_id is not None
+            and int(getattr(ch, "id", 0) or 0)
+            != int(expected_message_id)):
+        logger.info("journal: thread %s not bound to main "
+                    "card %s — stale id", thread_id,
+                    expected_message_id)
         return None
     if getattr(ch, "archived", False):
         try:
@@ -1315,7 +1334,8 @@ async def _flush_tournament(tournament_id: str) -> str:
     thread = None
     if thread_id:
         thread = await _get_thread(
-            bot, thread_id, expected_parent_id=int(channel.id))
+            bot, thread_id, expected_parent_id=int(channel.id),
+            expected_message_id=new_main_mid)
     if thread is None:
         try:
             msg = await channel.fetch_message(new_main_mid)
@@ -1339,6 +1359,7 @@ async def _flush_tournament(tournament_id: str) -> str:
     match_by_key = {m["key"]: m for m in all_matches}
 
     summary_mid = int(main.get("summary_message_id") or 0)
+    match_failed = False
     if thread is not None:
         # Сводка общих событий — одно сообщение в ветке.
         # При потерянном summary_message_id сначала ищем
@@ -1415,11 +1436,15 @@ async def _flush_tournament(tournament_id: str) -> str:
             except _PermanentJournalError as exc:
                 logger.warning("journal: match card permanent "
                                "%s %s: %s", tid, mk, exc)
+                match_failed = True
                 try:
                     await journal_store.set_sync(
                         int(entry["id"]), "error", str(exc)[:400])
                 except Exception:
                     pass
+                continue
+            if not mid:
+                match_failed = True
                 continue
             if mid and mid != int(entry.get("audit_message_id") or 0):
                 try:
@@ -1431,6 +1456,7 @@ async def _flush_tournament(tournament_id: str) -> str:
                 except Exception as exc:
                     # Не прерываем остальные карточки — запись
                     # матча останется pending и будет повторена.
+                    match_failed = True
                     logger.warning(
                         "journal: match ids update failed %s: %s",
                         mk, exc)
@@ -1448,8 +1474,18 @@ async def _flush_tournament(tournament_id: str) -> str:
     # карточка, ветка и сводка. Иначе 'partial': list_pending
     # подхватит запись после рестарта (thread_id IS NULL или
     # sync_status <> 'synced').
-    incomplete = thread is None or not summary_mid
-    final_status = "partial" if incomplete else "synced"
+    # 'synced' — только когда подтверждено ВСЁ: карточка,
+    # ветка, сводка и КАЖДАЯ карточка матча. Любой сбой
+    # отдельного матча → 'partial' + диагностика в last_error.
+    missing = []
+    if thread is None:
+        missing.append("thread")
+    if not summary_mid:
+        missing.append("summary")
+    if match_failed:
+        missing.append("match")
+    final_status = "partial" if missing else "synced"
+    diag = ("incomplete: " + ",".join(missing)) if missing else None
     await journal_store.update_ids(
         int(main["id"]),
         audit_channel_id=int(channel.id),
@@ -1459,6 +1495,7 @@ async def _flush_tournament(tournament_id: str) -> str:
         summary_message_id=summary_mid or None,
         status=("cancelled" if cancelled else None),
         sync_status=final_status,
+        last_error=diag,
     )
     # Отправленные и подтверждённые id компоненты — снимаем
     # send-pending отметки (часть могла остаться, если send
@@ -1642,6 +1679,36 @@ async def _poll_deferred_retries() -> int:
     return scheduled
 
 
+async def _poll_pending_recovery() -> int:
+    """Периодический rescan list_pending → постановка в очередь.
+
+    Закрывает сценарий «PG был недоступен при recover()»:
+    записи, пропущенные стартовым сканом, подхватываются
+    автоматически после восстановления соединения — без
+    рестарта и без повторного recover(). Повторная постановка
+    одного турнира ограничена _PENDING_RESCAN_SEC, чтобы
+        вечно-частичные записи не вызывали бесконечный flush.
+    """
+    try:
+        rows = await journal_store.list_pending(limit=200)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("journal: pending poll failed: %s", exc)
+        return 0
+    now = time.monotonic()
+    scheduled = 0
+    for row in rows:
+        tid = str(row.get("tournament_id") or "")
+        if not tid:
+            continue
+        last = _PENDING_LAST_SCHEDULE.get(tid, 0.0)
+        if now - last < _PENDING_RESCAN_SEC:
+            continue
+        _PENDING_LAST_SCHEDULE[tid] = now
+        schedule_recovery(tid)
+        scheduled += 1
+    return scheduled
+
+
 async def _recovery_worker() -> None:
     """Единственный worker (пере)публикации журналов.
 
@@ -1659,6 +1726,7 @@ async def _recovery_worker() -> None:
                 if now - _PG_POLL_LAST >= _PG_POLL_SEC:
                     _PG_POLL_LAST = now
                     await _poll_deferred_retries()
+                    await _poll_pending_recovery()
                 await asyncio.sleep(0.5)
                 continue
             run_at, tid = _RECOVERY_HEAP[0]
@@ -1855,9 +1923,15 @@ async def recover(bot: discord.Client | None = None) -> dict[str, int]:
         return stats
 
     tids: set[str] = set()
+    pending_scan_failed = False
     try:
         pending = await journal_store.list_pending(limit=200)
     except Exception as exc:
+        # PG недоступен: НЕ помечаем recover как выполненный —
+        # периодический _poll_pending_recovery в worker'е
+        # подхватит записи после восстановления соединения,
+        # а повторный вызов recover() тоже сможет отработать.
+        pending_scan_failed = True
         logger.warning("journal recover: list_pending failed: %s",
                        exc)
         pending = []
@@ -1882,6 +1956,7 @@ async def recover(bot: discord.Client | None = None) -> dict[str, int]:
                        exc)
 
     for tid in sorted(tids):
+        _PENDING_LAST_SCHEDULE[tid] = time.monotonic()
         schedule_recovery(tid)
         stats["scheduled"] += 1
 
@@ -1916,4 +1991,9 @@ async def recover(bot: discord.Client | None = None) -> dict[str, int]:
         except RuntimeError:
             pass
         logger.info("journal recover scheduled: %s", stats)
+    if pending_scan_failed:
+        # Стартовый скан не состоялся — разрешаем повторный
+        # recover() и полагаемся на периодический pending-poll
+        # worker'а для подхвата записей после восстановления PG.
+        _RECOVERED = False
     return stats

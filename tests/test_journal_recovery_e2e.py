@@ -197,6 +197,7 @@ def discord_env(monkeypatch):
     monkeypatch.setattr(jn, "_VERIFY_TS", {})
     monkeypatch.setattr(jn, "_RECOVERY_HEAP", [])
     monkeypatch.setattr(jn, "_RECOVERY_QUEUED", set())
+    monkeypatch.setattr(jn, "_PENDING_LAST_SCHEDULE", {})
     monkeypatch.setattr(jn, "_RETRY_ATTEMPTS", {})
     monkeypatch.setattr(jn, "_RECOVERY_STATS", {})
     monkeypatch.setattr(jn, "_RECOVERY_WORKER", None)
