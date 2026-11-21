@@ -14,8 +14,10 @@ DDL ленивый (CREATE TABLE IF NOT EXISTS). Ошибки БД пробра�
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -479,3 +481,45 @@ async def set_panel(
             """,
             guild_id, channel_id, message_id,
         )
+
+
+# ---------------------------------------------------------------------------
+# Межпроцессная блокировка панели (advisory lock)
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def panel_mutex(guild_id: int):
+    """Межпроцессная блокировка обновления панели доступа.
+
+    PostgreSQL advisory lock на выделенном соединении: один
+    ``asyncio.Lock`` не защищает от параллельных процессов
+    (Railway реплики / несколько воркеров). ``yield False`` —
+    блокировку держит другой процесс, обновление нужно
+    пропустить. Ошибки БД пробрасываются — вызывающий код
+    обязан НЕ создавать канал/сообщение при сбое.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _ensure(conn)
+        # Стабильный int64-ключ из guild_id (переполнение Discord ID
+        # не помещается в int4 — хэшируем в знаковый bigint).
+        key = int.from_bytes(
+            hashlib.md5(f"access-panel:{guild_id}".encode()).digest()[:8],
+            "big", signed=True,
+        )
+        acquired = bool(await conn.fetchval(
+            "SELECT pg_try_advisory_lock($1)", key
+        ))
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                try:
+                    await conn.execute(
+                        "SELECT pg_advisory_unlock($1)", key
+                    )
+                except Exception:
+                    # Соединение закрывается — сессионный lock
+                    # снимается автоматически.
+                    pass

@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, time, timedelta, timezone
 
@@ -19,7 +20,6 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from config import (
-    ACCESS_CHANNEL_NAMES,
     ACCESS_ROTATION_CHANNEL_ID,
     ACCESS_ROTATION_HOUR,
     ADMIN_USER_IDS,
@@ -68,30 +68,45 @@ async def _require_admin(interaction: discord.Interaction) -> bool:
 
 
 async def resolve_panel_channel(guild: discord.Guild):
-    """Канал панели: env ID → поиск по имени → создать."""
-    cid = ACCESS_ROTATION_CHANNEL_ID
-    if cid:
-        ch = guild.get_channel(cid)
-        if ch is None:
-            try:
-                ch = await guild.fetch_channel(cid)
-            except Exception:
-                ch = None
-        if ch is not None:
-            return ch
-    wanted = {n.lower() for n in ACCESS_CHANNEL_NAMES}
-    for ch in getattr(guild, "text_channels", []) or []:
-        if str(getattr(ch, "name", "")).lower() in wanted:
-            return ch
+    """Канал панели — делегировано сервису: только закреплённый
+    ACCESS_ROTATION_CHANNEL_ID, без автосоздания и без выбора
+    дубликата по имени."""
+    return await rot.resolve_panel_channel(guild)
+
+
+_PANEL_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+def _panel_lock(guild_id: int) -> asyncio.Lock:
+    return _PANEL_LOCKS.setdefault(guild_id, asyncio.Lock())
+
+
+async def _edit_panel_message(message, view) -> None:
+    edit_kwargs = {}
+    att = edit_attachments(message)
+    if att is not None:
+        edit_kwargs["attachments"] = att
+    await message.edit(
+        view=view,
+        allowed_mentions=discord.AllowedMentions.none(),
+        **edit_kwargs,
+    )
+
+
+async def _retry_429(coro_factory):
+    """Один повтор при Discord 429 (retry_after), иначе проброс."""
     try:
-        return await guild.create_text_channel("доступ-ротация")
-    except Exception as exc:
-        logger.warning("access: cannot create panel channel: %s", exc)
-        return None
+        return await coro_factory()
+    except discord.HTTPException as exc:
+        if getattr(exc, "status", None) != 429:
+            raise
+        delay = min(float(getattr(exc, "retry_after", 1.0) or 1.0), 5.0)
+        await asyncio.sleep(delay)
+        return await coro_factory()
 
 
-async def ensure_panel(guild: discord.Guild) -> bool:
-    """Создать/обновить единственную панель в канале (in-place)."""
+async def _ensure_panel_locked(guild: discord.Guild) -> bool:
+    """Тело ensure_panel под per-guild asyncio.Lock + PG mutex."""
     from views.access_panel import render_panel_view
     try:
         channel = await resolve_panel_channel(guild)
@@ -100,35 +115,137 @@ async def ensure_panel(guild: discord.Guild) -> bool:
         ctx = await rot.panel_context(guild)
         view = render_panel_view(guild, ctx)
         state = await access_store.get_state(guild.id)
+        stored_cid = state.get("channel_id")
         mid = state.get("message_id")
+        resync = False
+        if stored_cid and int(stored_cid) != int(channel.id):
+            # В access_state старый channel_id дублирующего канала:
+            # message_id оттуда НЕ переносим — ищем панель внутри
+            # закреплённого канала и сохраняем правильную пару.
+            logger.warning(
+                "access: stored panel channel %s != pinned %s "
+                "guild=%s — syncing state", stored_cid, channel.id,
+                guild.id)
+            mid = None
+            resync = True
+        message = None
         if mid:
             try:
-                message = await channel.fetch_message(int(mid))
-                edit_kwargs = {}
-                att = edit_attachments(message)
-                if att is not None:
-                    edit_kwargs["attachments"] = att
-                await message.edit(
-                    view=view,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                    **edit_kwargs,
-                )
-                return True
+                message = await _retry_429(
+                    lambda: channel.fetch_message(int(mid)))
             except discord.NotFound:
-                pass  # сообщение удалено — создаём новое
-            except Exception:
+                message = None
+            except discord.Forbidden:
+                logger.error(
+                    "access: cannot read panel message in pinned "
+                    "channel %s", channel.id)
                 return False
-        message = await channel.send(
-            view=view,
-            file=banner_file(),
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-        await access_store.set_panel(guild.id, channel.id, message.id)
+            except discord.HTTPException as exc:
+                logger.warning("access: panel fetch failed: %s", exc)
+                return False
+        if message is not None:
+            try:
+                await _retry_429(lambda: _edit_panel_message(
+                    message, view))
+            except discord.NotFound:
+                message = None  # удалено между fetch и edit — ищем ниже
+            except discord.Forbidden:
+                logger.error(
+                    "access: cannot edit panel message %s",
+                    message.id)
+                return False
+            except discord.HTTPException as exc:
+                logger.warning("access: panel edit failed: %s", exc)
+                return False
+            else:
+                if resync or state.get("channel_id") != channel.id:
+                    try:
+                        await access_store.set_panel(
+                            guild.id, channel.id, message.id)
+                    except Exception as exc:
+                        logger.warning(
+                            "access: set_panel sync failed: %s", exc)
+                return True
+        # Сообщения из state нет (или канал сменился) — сначала
+        # ищем уже опубликованную панель в закреплённом канале,
+        # чтобы не отправить второе сообщение после сбоя
+        # сохранения message_id.
+        found = await rot.find_panel_message(channel)
+        if found is not None:
+            try:
+                await _retry_429(lambda: _edit_panel_message(
+                    found, view))
+            except discord.HTTPException as exc:
+                logger.warning(
+                    "access: found-panel edit failed: %s", exc)
+                return False
+            try:
+                await access_store.set_panel(
+                    guild.id, channel.id, found.id)
+            except Exception as exc:
+                logger.warning(
+                    "access: set_panel after find failed: %s", exc)
+                return False
+            return True
+        # Панели в закреплённом канале нет — единственное
+        # разрешённое действие: ОДНО сообщение панели. Каналы
+        # не создаются никогда.
+        try:
+            message = await _retry_429(lambda: channel.send(
+                view=view,
+                file=banner_file(),
+                allowed_mentions=discord.AllowedMentions.none(),
+            ))
+        except discord.Forbidden:
+            logger.error(
+                "access: no permission to send panel in pinned "
+                "channel %s", channel.id)
+            return False
+        except discord.HTTPException as exc:
+            logger.warning("access: panel send failed: %s", exc)
+            return False
+        try:
+            await access_store.set_panel(
+                guild.id, channel.id, message.id)
+        except Exception as exc:
+            # Сообщение уже опубликовано — следующий запуск найдёт
+            # его через find_panel_message и не отправит второе.
+            logger.warning(
+                "access: set_panel failed after send: %s", exc)
+            return False
         return True
     except Exception as exc:
         logger.warning("access: ensure_panel failed guild=%s: %s",
                        guild.id, exc)
         return False
+
+
+async def ensure_panel(guild: discord.Guild) -> bool:
+    """Создать/обновить единственную панель в закреплённом канале.
+
+    Двойная блокировка: asyncio.Lock на guild_id (внутри
+    процесса) + pg advisory lock через access_store.panel_mutex
+    (между процессами). Никаких новых каналов.
+    """
+    if guild is None:
+        return False
+    async with _panel_lock(guild.id):
+        mutex = getattr(access_store, "panel_mutex", None)
+        if mutex is None:
+            return await _ensure_panel_locked(guild)
+        try:
+            async with mutex(guild.id) as acquired:
+                if not acquired:
+                    logger.info(
+                        "access: panel update skipped guild=%s "
+                        "(mutex held by another process)", guild.id)
+                    return False
+                return await _ensure_panel_locked(guild)
+        except Exception as exc:
+            logger.warning(
+                "access: panel mutex failed guild=%s: %s",
+                guild.id, exc)
+            return False
 
 
 # ---------------------------------------------------------------------------
