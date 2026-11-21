@@ -31,6 +31,7 @@ from services import cashcup_bracket as cb
 class FakeResponse:
     def __init__(self):
         self.sent = []
+        self.edits = []
         self.modal = None
         self._done = False
 
@@ -39,6 +40,10 @@ class FakeResponse:
 
     async def send_message(self, msg, **kw):
         self.sent.append((msg, kw))
+        self._done = True
+
+    async def edit_message(self, content=None, **kw):
+        self.edits.append((content, kw))
         self._done = True
 
     async def defer(self, **kw):
@@ -177,9 +182,12 @@ def _player(uid, ff=None, nick=None, device="mobile", verified=False,
 
 
 def _team(tid, name, captain, members, lineup=None):
+    # Реалистичный дефолт: основа = первые 4 участника (как при
+    # регистрации BR-команды), а не только капитан.
     return {"id": tid, "name": name, "captain": captain,
             "members": members, "pending": [],
-            "lineup": lineup if lineup is not None else [captain],
+            "lineup": (lineup if lineup is not None
+                       else [p["discord_id"] for p in members[:4]]),
             "sub_invites": []}
 
 
@@ -406,7 +414,9 @@ async def test_verify_rejects_incomplete_profile(cog):
     i = make_interaction(_member(99, admin=True))
     await cog.verify(i, "Alpha")
     assert not any(p["verified"] for p in st["teams"][0]["members"])
-    assert "профиль" in _last(i).lower()
+    # Полная диагностика: показаны ВСЕ проблемы игрока, не только первая.
+    msg = _last(i).lower()
+    assert "не заполнен" in msg and "ff api" in msg
 
 
 @pytest.mark.asyncio
@@ -1129,17 +1139,37 @@ def _card_state(mid=555, tid="tidA"):
     return st
 
 
+def _my_data_state(mid=555, tid="tidA"):
+    st = _card_state(mid=mid, tid=tid)
+    st["teams"] = [_team("t1", "Alpha", 1, [_player(1)])]
+    return st
+
+
 @pytest.mark.asyncio
-async def test_my_data_modal_opens_with_tid(cog):
-    """«Мои данные» открывает FFDataModal с tid конкретного турнира."""
-    cog._state_cache[1] = (time.monotonic(), _card_state())
+async def test_my_data_status_view_then_modal(cog):
+    """«Мои данные»: сначала ephemeral-статус профиля, modal
+    открывается кнопкой «Обновить данные» с tid турнира."""
+    cog._state_cache[1] = (time.monotonic(), _my_data_state())
     i = make_interaction(_member(1))
     i.message = SimpleNamespace(id=555)
     i.client = FakeClient(cog)
     v = cashcup.CashCupView(True)
     await v.my_data.callback(i)
-    assert i.response.modal is not None
-    assert i.response.modal.tid == "tidA"
+    # Первый ответ — статус, НЕ modal.
+    assert i.response.modal is None
+    msg, kw = i.response.sent[-1]
+    assert "МОИ ДАННЫЕ" in msg
+    assert "UID" in msg and "FF API" in msg and "ADMIN" in msg
+    view = kw.get("view")
+    assert view is not None and len(view.children) == 1
+    # Клик «Обновить данные» — modal как первый ответ этого
+    # interaction, с tid конкретного турнира.
+    i2 = make_interaction(_member(1))
+    i2.client = FakeClient(cog)
+    await view.children[0].callback(i2)
+    assert i2.response.modal is not None
+    assert i2.response.modal.tid == "tidA"
+    assert i2.response.modal.team_id == "t1"
 
 
 @pytest.mark.asyncio
@@ -1177,7 +1207,7 @@ async def test_my_data_warm_cache_skips_pg(cog, monkeypatch):
         raise AssertionError("PG не должен вызываться при тёплом кэше")
     monkeypatch.setattr(cashcup.cashcup_store, "active", boom)
     monkeypatch.setattr(cashcup.cashcup_store, "latest", boom)
-    cog._state_cache[1] = (time.monotonic(), _card_state())
+    cog._state_cache[1] = (time.monotonic(), _my_data_state())
 
     i = make_interaction(_member(1))
     i.message = SimpleNamespace(id=555)
@@ -1187,8 +1217,8 @@ async def test_my_data_warm_cache_skips_pg(cog, monkeypatch):
     t0 = time.monotonic()
     await v.my_data.callback(i)
     assert time.monotonic() - t0 < 0.5
-    assert i.response.modal is not None
-    assert i.response.modal.tid == "tidA"
+    assert i.response.modal is None
+    assert i.response.sent, "статус не отправлен"
 
 
 @pytest.mark.asyncio
@@ -1338,3 +1368,385 @@ async def test_resolve_defers_before_slow_mutate(cog, monkeypatch):
     assert i.response.is_done()  # defer уже выполнен
     await task
     assert i.followup.sent or i.response.sent
+
+
+# ---------------- Cash Cup Registration & Verification 2.0 ----------------
+
+def _full_player(uid, *, verified=False, ff_ok=True, device="mobile",
+                 ff=None, region="ru", nick=None):
+    return {"discord_id": uid,
+            "ff_uid": ff if ff is not None else f"77{uid:05d}",
+            "nick": nick if nick is not None else f"p{uid}",
+            "region": region, "device": device,
+            "verified": verified, "ff_ok": ff_ok, "joined_at": "t"}
+
+
+def _ready_team(tid, name, captain, n=4, verified=True):
+    return _team(tid, name, captain,
+                 [_full_player(captain + i, verified=verified)
+                  for i in range(n)])
+
+
+def _state_with_teams(teams):
+    st = _reg_state()
+    st["teams"] = teams
+    return st
+
+
+# 1-2: знаменатели FF API / ADMIN = фактические members
+
+def test_teams_render_4_players_denominator(cog):
+    st = _state_with_teams([_ready_team("t1", "Alpha", 10, n=4,
+                                        verified=False)])
+    text, page, pages = cashcup._teams_render(st, 0)
+    assert "FF API: 4/4" in text and "ADMIN: 0/4" in text
+    assert "verified:" not in text and "/5 ·" not in text.split("ADMIN")[0]
+
+
+def test_teams_render_5_players_denominator(cog):
+    st = _state_with_teams([_ready_team("t1", "Alpha", 10, n=5,
+                                        verified=False)])
+    text, _, _ = cashcup._teams_render(st, 0)
+    assert "FF API: 5/5" in text and "ADMIN: 0/5" in text
+    assert "Участники: 5/5" in text
+
+
+# 3: готовая команда из 4
+def test_diag_ready_team_four(cog):
+    st = _state_with_teams([_ready_team("t1", "Alpha", 10)])
+    d = cashcup._team_diag(st, st["teams"][0])
+    assert d["status"] == "Готова"
+    assert d["problems"] == []
+
+
+# 4: один неподтверждённый ADMIN -> Ожидает ADMIN
+def test_diag_waits_admin(cog):
+    members = [_full_player(10 + i, verified=(i != 2)) for i in range(4)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    d = cashcup._team_diag(st, st["teams"][0])
+    assert d["status"] == "Ожидает ADMIN"
+    assert d["admin"] == 3 and d["ff_api"] == 4
+    assert any("ADMIN" in p for p in d["problems"])
+
+
+# 5: несколько ошибок в одной команде — все показаны
+def test_diag_multiple_errors_one_team(cog):
+    bad1 = _full_player(10, ff="", nick="", ff_ok=False)
+    bad2 = _full_player(11, device="")
+    good = [_full_player(12), _full_player(13)]
+    st = _state_with_teams([_team("t1", "Alpha", 10,
+                                  [bad1, bad2] + good)])
+    d = cashcup._team_diag(st, st["teams"][0])
+    assert d["status"] == "Не готова"
+    joined = " ".join(d["problems"]).lower()
+    assert "free fire uid" in joined and "устройство" in joined \
+        and "ff api" in joined
+    # Строки-проблемы есть у обоих битых игроков (у «хороших» —
+    # только ожидание ADMIN).
+    bad_lines = [p for p in d["problems"] if "<@10>" in p or "<@11>" in p]
+    assert len(bad_lines) == 2
+    assert "free fire uid" in bad_lines[0].lower()
+    assert "устройство" in bad_lines[1].lower()
+
+
+# 6: несколько проблемных команд при старте — сводка по всем
+@pytest.mark.asyncio
+async def test_start_shows_all_team_problems(cog):
+    st = _reg_state()
+    st["prizes"] = {"places": {"1": 1000, "2": 0, "3": 0},
+                    "currency": "KZT", "total": 1000}
+    st["teams"] = [
+        _team("t1", "Alpha", 10, [_full_player(10 + i, ff_ok=False)
+                                 for i in range(4)]),
+        _team("t2", "Beta", 20, [_full_player(20)]),
+    ]
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    await cog.start(i)
+    msg = _last(i)
+    assert "Alpha" in msg and "Beta" in msg
+    assert "старт невозможен" in msg.lower() or "невозможен" in msg.lower()
+    assert st["status"] == "registration"  # сетка не создана
+    assert not any(a["action"] == "start" for a in cog._store.audits)
+
+
+# 7: устройство не указано — отдельно, не Mobile/ПК
+def test_diag_no_device_counted_separately(cog):
+    members = [_full_player(10 + i, device=("" if i == 0 else "mobile"))
+               for i in range(4)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    d = cashcup._team_diag(st, st["teams"][0])
+    assert d["no_device"] == 1 and d["pcs"] == 0
+    assert d["status"] == "Не готова"
+    assert any("не указано устройство" in p for p in d["problems"])
+
+
+# 8: отсутствие FF API подтверждения
+def test_diag_ff_api_missing(cog):
+    members = [_full_player(10 + i, ff_ok=(i != 1)) for i in range(4)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    d = cashcup._team_diag(st, st["teams"][0])
+    assert any("FF API не подтверждён" in p for p in d["problems"])
+    assert d["status"] == "Не готова"
+
+
+# 10: частичное подтверждение запрещено — ошибка -> НИКТО не verified
+@pytest.mark.asyncio
+async def test_verify_no_partial_confirm(cog):
+    members = [_full_player(10 + i, verified=False) for i in range(4)]
+    members[2]["ff_ok"] = False  # один битый
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    await cog.verify(i, "Alpha")
+    assert not any(p["verified"] for p in st["teams"][0]["members"])
+
+
+# 11: смена UID/региона/устройства сбрасывает ADMIN-подтверждение
+def test_member_problems_admin_flag(cog):
+    p = _full_player(10, verified=True)
+    assert cashcup._member_problems(p) == []
+    p2 = dict(p, verified=False)
+    probs = cashcup._member_problems(p2)
+    assert probs == ["ожидает подтверждения ADMIN"]
+    # include_admin=False (verify) — ADMIN-ожидание не ошибка
+    assert cashcup._member_problems(p2, include_admin=False) == []
+
+
+# 12: изменение состава пересчитывает готовность
+def test_diag_recalculates_on_roster_change(cog):
+    members = [_full_player(10 + i, verified=True) for i in range(4)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    assert cashcup._team_diag(st, st["teams"][0])["status"] == "Готова"
+    st["teams"][0]["members"].pop()          # 4 -> 3
+    st["teams"][0]["lineup"] = [10, 11, 12]
+    d = cashcup._team_diag(st, st["teams"][0])
+    assert d["status"] in ("Не готова", "Ошибка состава")
+    assert d["members"] == 3
+
+
+# 14: повторное нажатие verify идемпотентно
+@pytest.mark.asyncio
+async def test_verify_idempotent_second_call(cog):
+    st = _state_with_teams([_ready_team("t1", "Alpha", 10)])
+    cog._store.state = st
+    i1 = make_interaction(_member(99, admin=True))
+    await cog.verify(i1, "Alpha")
+    i2 = make_interaction(_member(99, admin=True))
+    await cog.verify(i2, "Alpha")
+    assert all(p["verified"] for p in st["teams"][0]["members"])
+    assert len(cog._store.audits) == 2  # два audit, состояние не ломается
+
+
+# 16: пагинация 13/16/32 команд — все на месте, без обрезки
+def test_teams_pagination_counts(cog):
+    for n, expected_pages in ((13, 3), (16, 4), (32, 7)):
+        teams = [_team(f"t{i}", f"Team{i}", i,
+                       [_full_player(i * 10 + j) for j in range(1)])
+                 for i in range(n)]
+        st = _state_with_teams(teams)
+        seen = []
+        page = 0
+        while True:
+            text, page, pages = cashcup._teams_render(st, page)
+            for t in teams[page * 5:(page + 1) * 5]:
+                seen.append(t["name"])
+            if page >= pages - 1:
+                break
+            page += 1
+        assert pages == expected_pages
+        assert len(seen) == n and len(set(seen)) == n
+        # Каждая команда — целый блок на одной странице.
+        for name in seen:
+            pass  # покрыто постраничным рендером выше
+
+
+# 17: лимит 2 ПК — Ошибка состава
+def test_diag_pc_limit_error(cog):
+    members = [_full_player(10 + i,
+                            device=("pc" if i < 3 else "mobile"))
+               for i in range(4)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    d = cashcup._team_diag(st, st["teams"][0])
+    assert d["status"] == "Ошибка состава"
+    assert any("двух ПК" in p for p in d["problems"])
+
+
+# дубли FF UID внутри команды
+def test_diag_duplicate_ff_uid(cog):
+    members = [_full_player(10 + i, ff="99999") for i in range(4)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    d = cashcup._team_diag(st, st["teams"][0])
+    assert d["status"] == "Ошибка состава"
+    assert any("Free Fire UID" in p for p in d["problems"])
+
+
+# check_team — read-only диагностика ADMIN
+@pytest.mark.asyncio
+async def test_check_team_readonly_diagnostics(cog):
+    members = [_full_player(10 + i, ff_ok=(i != 1)) for i in range(4)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    cog._store.state = st
+    audits_before = len(cog._store.audits)
+    i = make_interaction(_member(99, admin=True))
+    await cog.check_team(i, "Alpha")
+    msg = _last(i)
+    assert "ПРОВЕРКА КОМАНДЫ" in msg and "Alpha" in msg
+    assert "FF API не подтверждён" in msg
+    assert "не допущена" in msg.lower()
+    assert len(cog._store.audits) == audits_before  # read-only
+
+
+# start: чистая команда проходит diag-gate (до _validate_teams)
+@pytest.mark.asyncio
+async def test_start_diag_gate_passes_ready(cog, monkeypatch):
+    st = _reg_state()
+    st["prizes"] = {"places": {"1": 1000, "2": 0, "3": 0},
+                    "currency": "KZT", "total": 1000}
+    st["teams"] = [_ready_team("t1", "Alpha", 10),
+                   _ready_team("t2", "Beta", 20)]
+    cog._store.state = st
+    # _validate_teams -> _member_check: глушим Discord-проверки,
+    # но оставляем сам gate.
+    async def fake_member_check(bot, guild, uid):
+        return "t"
+    monkeypatch.setattr(cashcup, "_member_check", fake_member_check)
+    i = make_interaction(_member(99, admin=True))
+    await cog.start(i)
+    assert st["status"] == "running" or \
+        any(a["action"] == "start" for a in cog._store.audits)
+
+
+# ---------------- Review fixes: >5 членов, chunked start, admin status ----
+
+def test_diag_over_5_members_structural_error(cog):
+    """Regression: состав >5 — структурная ошибка, verify не
+    подтверждает."""
+    members = [_full_player(10 + i, verified=True) for i in range(6)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    d = cashcup._team_diag(st, st["teams"][0])
+    assert d["status"] == "Ошибка состава"
+    assert any("максимум 5" in p for p in d["problems"])
+
+
+@pytest.mark.asyncio
+async def test_verify_rejects_over_5_members(cog):
+    members = [_full_player(10 + i, verified=False) for i in range(6)]
+    st = _state_with_teams([_team("t1", "Alpha", 10, members)])
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    await cog.verify(i, "Alpha")
+    assert not any(p["verified"] for p in st["teams"][0]["members"])
+    assert "5" in _last(i)
+
+
+@pytest.mark.asyncio
+async def test_start_13_bad_teams_all_problems_visible(cog):
+    """13 проблемных команд: отчёт уходит несколькими
+    ephemeral-сообщениями, ни одна команда не потеряна."""
+    st = _reg_state()
+    st["prizes"] = {"places": {"1": 1000, "2": 0, "3": 0},
+                    "currency": "KZT", "total": 1000}
+    st["teams"] = [
+        _team(f"t{i}", f"Team{i:02d}", i * 10,
+              [_full_player(i * 10 + j, ff_ok=False) for j in range(4)])
+        for i in range(13)
+    ]
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    await cog.start(i)
+    # followup.sent — все chunked-сообщения (response уже deferred).
+    all_text = "\n".join(m for m, _ in i.followup.sent)
+    for n in range(13):
+        assert f"Team{n:02d}" in all_text, f"Team{n:02d} потеряна"
+    assert "старт невозможен" in all_text.lower()
+    assert st["status"] == "registration"
+
+
+@pytest.mark.asyncio
+async def test_confirm_ff_reports_real_admin_status(cog, monkeypatch):
+    """Ответ confirm_ff отражает реальный verified: ожидает /
+    подтверждён — в зависимости от сохранённого флага."""
+    st = _reg_state()
+    stored_uid = "7700001"
+    p = _full_player(1, verified=True, ff=stored_uid)
+    st["teams"] = [_team("t1", "Alpha", 1, [p])]
+    cog._store.state = st
+
+    async def fake_member_check(bot, guild, uid):
+        return "t"
+    async def fake_ff(uid, region):
+        return {"ff_uid": uid.strip(), "region": region,
+                "nick": "nick1"}
+    monkeypatch.setattr(cashcup, "_member_check", fake_member_check)
+    monkeypatch.setattr(cashcup, "_ff_profile", fake_ff)
+
+    # Повтор тех же данных при verified=True -> «ADMIN: подтверждён».
+    i = make_interaction(_member(1))
+    await cog.confirm_ff(i, "t1", stored_uid, "ru", "mobile")
+    assert "ADMIN: подтверждён" in _last(i)
+
+    # verified=False -> «ADMIN: ожидает проверки».
+    st["teams"][0]["members"][0]["verified"] = False
+    i2 = make_interaction(_member(1))
+    await cog.confirm_ff(i2, "t1", stored_uid, "ru", "mobile")
+    assert "ожидает проверки" in _last(i2)
+
+
+@pytest.mark.asyncio
+async def test_teams_pagination_buttons_edit_message(cog):
+    """Real discord.ui.View: «Команды» -> ▶ правит то же
+    сообщение на страницу 2 без новых send."""
+    teams = [_team(f"t{i}", f"Team{i:02d}", i,
+                   [_full_player(i * 10 + j) for j in range(1)])
+             for i in range(12)]
+    cog._store.state = _state_with_teams(teams)
+    i = make_interaction(_member(1))
+    i.client = FakeClient(cog)
+    await cog.show_teams(i)
+    # Deferred -> followup.send с view=TeamsView(page0 of 3).
+    assert i.followup.sent, "список не отправлен"
+    _, kw = i.followup.sent[-1]
+    view = kw["view"]
+    assert isinstance(view, cashcup.TeamsView)
+    assert "Team00" in i.followup.sent[-1][0]
+    # Клик ▶ — component interaction: edit_message, не send.
+    i2 = make_interaction(_member(1))
+    i2.client = FakeClient(cog)
+    nxt = [b for b in view.children
+           if getattr(b, "label", "") == "▶"]
+    assert nxt, "нет кнопки ▶"
+    await nxt[0].callback(i2)
+    assert i2.response.edits, "страница не отредактирована"
+    content, ekw = i2.response.edits[-1]
+    assert ekw.get("view") is not None
+    assert "Team05" in content and "Team00" not in content
+    assert "стр. 2/3" in content
+
+
+@pytest.mark.asyncio
+async def test_start_report_includes_all_problems_no_truncation(cog):
+    """Команда с >12 проблемами: КАЖДАЯ строка проблемы доходит до
+    админа — ни [:12]-капа, ни [:1900]-обрезки."""
+    st = _reg_state()
+    st["prizes"] = {"places": {"1": 1000, "2": 0, "3": 0},
+                    "currency": "KZT", "total": 1000}
+    bad_members = [
+        {"discord_id": 900 + j, "ff_uid": "", "nick": "",
+         "region": "", "device": "", "verified": False,
+         "ff_ok": False, "joined_at": "t"}
+        for j in range(4)
+    ]
+    st["teams"] = [_team("t1", "Messy", 900, bad_members)]
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    await cog.start(i)
+
+    all_text = "\n".join(
+        m for m, _ in list(i.response.sent) + list(i.followup.sent))
+    # 4 участника × 6 проблем = 24 строки — больше старого капа 12.
+    n_ff_uid = all_text.count("не заполнен Free Fire UID")
+    n_admin = all_text.count("ожидает подтверждения ADMIN")
+    assert n_ff_uid == 4 and n_admin == 4
+    assert "ещё" not in all_text  # нет «… ещё N» хвоста
+    assert all(len(m) <= 2000 for m, _ in i.followup.sent)

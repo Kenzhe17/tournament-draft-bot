@@ -675,3 +675,56 @@ async def test_registration_card_deleted_recreated_once(
     await cog2.on_ready()
     assert ch.sent_count == 1
     ch.messages[new_id].edit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_confirm_ff_verified_reset_only_on_identity_change(
+        pg_pool, monkeypatch):
+    """§4.6/§9.11: verified сбрасывается ТОЛЬКО при смене
+    UID/региона/устройства; повтор тех же данных — сохраняет."""
+    cog, guild, bot, tid, _ = await _seed_two_teams(pg_pool, monkeypatch)
+    for cap in (CAP_A, CAP_B):
+        inter = _interaction(cap, guild, bot)
+        await cog.register_br_team(inter)
+    state = await cashcup_store.active(G)
+    team_ids = {t["name"]: t["id"] for t in state["teams"]}
+    await _confirm_all(cog, guild, bot, tid, team_ids)
+
+    # ADMIN подтверждает Alpha.
+    admin = _interaction(ADMIN_UID, guild, bot, admin=True)
+    await cog.verify(admin, "Alpha", tid=tid)
+    state = await cashcup_store.active(G)
+    alpha = next(t for t in state["teams"] if t["name"] == "Alpha")
+    assert all(p["verified"] for p in alpha["members"])
+
+    # P_A2 повторно отправляет ТЕ ЖЕ данные -> verified сохраняется.
+    same = _interaction(P_A2, guild, bot)
+    await cog.confirm_ff(same, team_ids["Alpha"], _ff_uid(P_A2),
+                         "ru", "mobile", tid=tid)
+    state = await cashcup_store.active(G)
+    alpha = next(t for t in state["teams"] if t["name"] == "Alpha")
+    p2 = next(p for p in alpha["members"]
+              if p["discord_id"] == P_A2)
+    assert p2["verified"] is True
+
+    # P_A2 меняет устройство -> verified сбрасывается.
+    chg = _interaction(P_A2, guild, bot)
+    await cog.confirm_ff(chg, team_ids["Alpha"], _ff_uid(P_A2),
+                         "ru", "pc", tid=tid)
+    state = await cashcup_store.active(G)
+    alpha = next(t for t in state["teams"] if t["name"] == "Alpha")
+    p2 = next(p for p in alpha["members"]
+              if p["discord_id"] == P_A2)
+    assert p2["verified"] is False
+    assert p2["device"] == "pc"
+
+    # P_A2 меняет UID -> verified остаётся False (новые данные).
+    other = _interaction(P_A2, guild, bot)
+    await cog.confirm_ff(other, team_ids["Alpha"], "55500123",
+                         "ru", "pc", tid=tid)
+    state = await cashcup_store.active(G)
+    alpha = next(t for t in state["teams"] if t["name"] == "Alpha")
+    p2 = next(p for p in alpha["members"]
+              if p["discord_id"] == P_A2)
+    assert p2["verified"] is False
+    assert p2["ff_uid"] == "55500123"
