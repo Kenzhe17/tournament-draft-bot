@@ -348,11 +348,22 @@ async def _apply_room_edit(
     token: tuple[int, int, int],
 ) -> None:
     # Defer ДО чтения store и публикации — иначе Discord 10062.
-    # thinking=True: приватный ответ, не трогаем сообщение,
-    # с которого нажата кнопка подтверждения.
+    # Confirm-карточка всегда ephemeral: для component-взаимодействия
+    # defer() без thinking — type-6 deferred_message_update, который
+    # обновляет ЕЁ на месте (edit_original_response ниже правит
+    # тот же приватный ответ — PR #26). Если по какой-то причине
+    # кнопка оказалась на публичном сообщении — thinking=True,
+    # чтобы служебный ответ не перезаписал публичную карточку.
     if not interaction.response.is_done():
-        await interaction.response.defer(
-            ephemeral=True, thinking=True)
+        _msg = interaction.message
+        _flags = getattr(_msg, "flags", None)
+        _is_ephemeral = bool(
+            getattr(_flags, "ephemeral", False)) if _flags else False
+        if _is_ephemeral:
+            await interaction.response.defer()
+        else:
+            await interaction.response.defer(
+                ephemeral=True, thinking=True)
 
     pending = _PENDING_EDITS.pop(token, None)
     if pending is None or time.time() - pending["ts"] > _PENDING_TTL:
