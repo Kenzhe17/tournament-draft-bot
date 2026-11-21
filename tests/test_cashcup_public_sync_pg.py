@@ -332,6 +332,31 @@ class TestSync:
         rows = await pubstore.list_for_tournament(tid)
         assert all(r["status"] == "ok" for r in rows)
 
+    async def test_backfill_completed_tournament_no_pings(
+            self, pg_pool, discord_env):
+        """Включение функции на уже идущем/завершённом турнире:
+        backfill публикует все матчи, но без пингов капитанов."""
+        from services.cashcup_sim import simulate_to_final
+        cog, _guild, _bch, mch = discord_env
+        await cashcup_store.create(G, 12345, 1, "BACKFILL")
+
+        def change(st):
+            st["teams"] = _teams(8)
+            st["bracket"] = create_bracket(
+                [t["id"] for t in st["teams"]], seed=5)
+            st["status"] = "running"
+            simulate_to_final(st, seed=5)
+            st["status"] = "completed"
+        state, _ = await cashcup_store.mutate(G, 1, "backfill", change)
+        tid = state["tournament_id"]
+
+        assert await cog.sync_guild(G) is True
+        rows = await pubstore.list_for_tournament(tid)
+        assert len(rows) == len(state["bracket"]["matches"]) + 1
+        # Все карточки созданы, но ни одна не содержит пинга.
+        assert mch.send_calls
+        assert all(not c.get("content") for c in mch.send_calls)
+
     async def test_disabled_without_channels(self, pg_pool, monkeypatch):
         guild = FakeGuild(G, {})
         bot = FakeBot(guild)

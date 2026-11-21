@@ -201,10 +201,15 @@ class CashCupPublicCog(commands.Cog):
                  "hash": render.bracket_hash(state)})
             for m in state["bracket"].get("matches", []):
                 card = render.match_card(state, m)
+                # Пинг капитанов — только для реально открытой пары.
+                # Backfill завершённых матчей running-турнира не должен
+                # уведомлять команды постфактум.
+                content = card["content"] \
+                    if m.get("status") == "ready" else None
                 match_ok = await self._ensure(
                     tid, guild_id, f"match:{m['id']}", match_ch,
                     {"embed": card["embed"], "hash": card["hash"],
-                     "content": card["content"],
+                     "content": content,
                      "ping_ids": card["ping_ids"]},
                     match_view=True)
                 ok = ok and match_ok
