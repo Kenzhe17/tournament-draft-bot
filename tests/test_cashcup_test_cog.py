@@ -13,10 +13,8 @@ from __future__ import annotations
 
 import inspect
 
-import pytest
-
 import discord
-from discord.ext import commands
+import pytest
 
 from cogs.cashcup_test import CashCupTestCog, TestPanelView, _cid
 
@@ -27,7 +25,6 @@ class _FakeFollowup:
 
     async def send(self, *args, **kwargs):
         self.calls.append((args, kwargs))
-        return None
 
 
 class _FakeResponse:

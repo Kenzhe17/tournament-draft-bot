@@ -218,7 +218,9 @@ async def test_manual_match_flow_checkin_room_result_dispute(pg_pool):
     """Check-in → комната → результат → следующий раунд → спор →
     решение — тот же путь, что у кнопок панели, через store.mutate."""
     from services.cashcup_bracket import (
-        create_bracket, ready_matches, record_result,
+        create_bracket,
+        ready_matches,
+        record_result,
     )
     sess = await cashcup_test_store.create_snapshot(
         G, 222, 999, _snapshot_state(4))
