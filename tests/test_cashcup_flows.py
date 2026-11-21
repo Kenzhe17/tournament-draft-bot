@@ -1722,3 +1722,31 @@ async def test_teams_pagination_buttons_edit_message(cog):
     assert ekw.get("view") is not None
     assert "Team05" in content and "Team00" not in content
     assert "стр. 2/3" in content
+
+
+@pytest.mark.asyncio
+async def test_start_report_includes_all_problems_no_truncation(cog):
+    """Команда с >12 проблемами: КАЖДАЯ строка проблемы доходит до
+    админа — ни [:12]-капа, ни [:1900]-обрезки."""
+    st = _reg_state()
+    st["prizes"] = {"places": {"1": 1000, "2": 0, "3": 0},
+                    "currency": "KZT", "total": 1000}
+    bad_members = [
+        {"discord_id": 900 + j, "ff_uid": "", "nick": "",
+         "region": "", "device": "", "verified": False,
+         "ff_ok": False, "joined_at": "t"}
+        for j in range(4)
+    ]
+    st["teams"] = [_team("t1", "Messy", 900, bad_members)]
+    cog._store.state = st
+    i = make_interaction(_member(99, admin=True))
+    await cog.start(i)
+
+    all_text = "\n".join(
+        m for m, _ in list(i.response.sent) + list(i.followup.sent))
+    # 4 участника × 6 проблем = 24 строки — больше старого капа 12.
+    n_ff_uid = all_text.count("не заполнен Free Fire UID")
+    n_admin = all_text.count("ожидает подтверждения ADMIN")
+    assert n_ff_uid == 4 and n_admin == 4
+    assert "ещё" not in all_text  # нет «… ещё N» хвоста
+    assert all(len(m) <= 2000 for m, _ in i.followup.sent)

@@ -1593,22 +1593,37 @@ class CashCupCog(commands.Cog):
 
     async def _reply_chunked(self, interaction: discord.Interaction,
                              header: str, blocks: list[str]) -> None:
-        """Длинный отчёт несколькими ephemeral-сообщениями: каждый
-        блок команды попадает в одно из сообщений целиком — при
-        любом числе команд все проблемы доступны, ничего не
-        теряется за границей 1900 символов."""
-        chunks: list[str] = []
-        cur = header
+        """Длинный отчёт несколькими ephemeral-сообщениями.
+
+        Лимит Discord — 2000 символов на сообщение, поэтому отчёт
+        упаковывается построчно: блоки и строки проблем никогда не
+        обрезаются — при переполнении текст продолжается в
+        следующем сообщении. Единственный теоретический fallback —
+        принудительный срез ОДНОЙ строки длиннее лимита (практически
+        недостижимо: имена и диагностики короче)."""
+        limit = 1900
+        lines = [header]
         for block in blocks:
-            if len(cur) + len(block) + 2 > 1900:
-                chunks.append(cur)
-                cur = ""
-            cur = (cur + "\n\n" + block) if cur else block
-        chunks.append(cur)
-        await self._reply(interaction, chunks[0][:1900])
-        for extra in chunks[1:]:
+            lines.append("")
+            lines.extend(block.split("\n"))
+        msgs: list[str] = []
+        cur = ""
+        for ln in lines:
+            candidate = (cur + "\n" + ln) if cur else ln
+            if len(candidate) > limit and cur:
+                msgs.append(cur)
+                cur = ln
+            else:
+                cur = candidate
+            while len(cur) > limit:
+                msgs.append(cur[:limit])
+                cur = cur[limit:]
+        if cur:
+            msgs.append(cur)
+        await self._reply(interaction, msgs[0])
+        for extra in msgs[1:]:
             await interaction.followup.send(
-                extra[:1900], ephemeral=True,
+                extra, ephemeral=True,
                 allowed_mentions=discord.AllowedMentions.none())
 
     async def _guard(self, interaction: discord.Interaction, device: str = "mobile") -> str:
@@ -1950,12 +1965,11 @@ class CashCupCog(commands.Cog):
             if bad:
                 blocks = []
                 for t, d in bad:
-                    probs = d["problems"][:12]
-                    tail = (f"\n- … ещё {len(d['problems'])-12}"
-                            if len(d["problems"]) > 12 else "")
+                    # ВСЕ проблемы без усечения: построчная упаковка
+                    # в _reply_chunked гарантирует доступность каждой.
                     blocks.append(
                         f"**{_label(t)}** — {d['status']}\n"
-                        + "\n".join(f"- {p}" for p in probs) + tail)
+                        + "\n".join(f"- {p}" for p in d["problems"]))
                 await self._reply_chunked(
                     interaction,
                     "**CASH CUP · старт невозможен — проблемы команд:**",
