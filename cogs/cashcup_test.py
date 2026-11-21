@@ -332,6 +332,7 @@ class CashCupTestCog(commands.Cog):
     async def cog_load(self) -> None:
         pass
 
+    @commands.Cog.listener()
     async def on_ready(self) -> None:
         """Регистрирует persistent views всех живых тестовых сессий —
         кнопки панели работают после рестарта бота."""
@@ -363,9 +364,14 @@ class CashCupTestCog(commands.Cog):
 
     async def _reply(self, interaction: discord.Interaction,
                      text: str, *, view=None) -> None:
+        # ВАЖНО: view=None передавать нельзя — discord.py падает с
+        # TypeError "expected view parameter to be of type View or
+        # LayoutView, not NoneType". kwargs собираем условно.
+        kwargs = {"ephemeral": True}
+        if view is not None:
+            kwargs["view"] = view
         try:
-            await interaction.followup.send(text[:2000], view=view,
-                                            ephemeral=True)
+            await interaction.followup.send(text[:2000], **kwargs)
         except discord.HTTPException:
             pass
 
@@ -672,7 +678,7 @@ class CashCupTestCog(commands.Cog):
         except (CashCupTestError, BracketError) as exc:
             await self._reply(interaction, f"TEST: {exc}")
 
-    async def _find_match(self, state: dict, mid: str) -> dict | None:
+    def _find_match(self, state: dict, mid: str) -> dict | None:
         b = state.get("bracket") or {}
         active = set(b.get("active_keys") or [])
         return next((m for m in b.get("matches", [])
@@ -982,11 +988,29 @@ class CashCupTestCog(commands.Cog):
             cog = interaction.client.get_cog("CashCupTestCog")
             if cog is None:
                 return
+            # Права проверяются в момент клика: ADMIN мог быть отозван
+            # после открытия ephemeral-кнопок.
+            if not interaction.guild or not _is_admin(interaction.user):
+                await interaction.response.send_message(
+                    "TEST: только ADMIN", ephemeral=True)
+                return
+            guild_of = cog._guild_of(sid)
+            if guild_of is not None and guild_of != interaction.guild.id:
+                await interaction.response.send_message(
+                    "TEST: сессия принадлежит другому серверу",
+                    ephemeral=True)
+                return
             await interaction.response.defer(ephemeral=True)
             await cog._gf_game(interaction, sid, mid, side)
         return cb
 
     async def _gf_game(self, interaction, sid, mid, side):
+        # Повторная проверка на входе: права могли быть отозваны
+        # между кликом и выполнением.
+        if (not interaction.guild
+                or not _is_admin(interaction.user)):
+            await self._reply(interaction, "TEST: только ADMIN")
+            return
         gid = interaction.guild.id
         uid = interaction.user.id
 

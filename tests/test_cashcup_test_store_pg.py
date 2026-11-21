@@ -214,6 +214,89 @@ async def test_archived_session_rejects_mutation(pg_pool):
 
 
 @pytest.mark.asyncio
+async def test_manual_match_flow_checkin_room_result_dispute(pg_pool):
+    """Check-in → комната → результат → следующий раунд → спор →
+    решение — тот же путь, что у кнопок панели, через store.mutate."""
+    from services.cashcup_bracket import (
+        create_bracket, ready_matches, record_result,
+    )
+    sess = await cashcup_test_store.create_snapshot(
+        G, 222, 999, _snapshot_state(4))
+    sid = sess["session_id"]
+
+    def start(st):
+        st["bracket"] = create_bracket(
+            [t["id"] for t in st["teams"]], seed=1)
+        st["status"] = "running"
+    await cashcup_test_store.mutate(G, 999, "start", start, session_id=sid)
+
+    def find(st, mid):
+        b = st["bracket"]
+        active = set(b.get("active_keys") or [])
+        return next((m for m in b["matches"]
+                     if m["id"] == mid and m["id"] in active
+                     and m.get("status") in ("ready", "disputed")), None)
+
+    # Первый активный матч.
+    state = await cashcup_test_store.get(G, sid)
+    mid = ready_matches(state["bracket"])[0]["id"]
+
+    # 1) Виртуальный check-in обоих капитанов.
+    def checkin(st):
+        m = find(st, mid)
+        caps = [int(t["captain"]) for t in st["teams"]
+                if t["id"] in (m["a"], m["b"])]
+        for c in caps:
+            if c not in m["checkins"]:
+                m["checkins"].append(c)
+        m["test_checkin"] = True
+    await cashcup_test_store.mutate(G, 999, "checkin", checkin,
+                                    session_id=sid)
+
+    # 2) Фиктивная комната.
+    def room(st):
+        m = find(st, mid)
+        assert len(m["checkins"]) == 2
+        m["room_id"] = f"TEST-{mid}"
+        m["test_room"] = True
+    await cashcup_test_store.mutate(G, 999, "room", room, session_id=sid)
+
+    # 3) Спор блокирует результат.
+    def dispute(st):
+        m = find(st, mid)
+        m["status"] = "disputed"
+        m["dispute"] = {"reason": "test", "evidence": []}
+    await cashcup_test_store.mutate(G, 999, "dispute", dispute,
+                                    session_id=sid)
+
+    def blocked(st):
+        m = find(st, mid)
+        assert m is not None and m["status"] == "disputed"
+        # record_result не принимает disputed: ready_matches его
+        # фильтрует — продвижение результата заблокировано.
+        from services.cashcup_bracket import ready_matches as rm
+        assert all(x["id"] != mid for x in rm(st["bracket"]))
+    await cashcup_test_store.mutate(G, 999, "assert_blocked", blocked,
+                                    session_id=sid)
+
+    # 4) Решение спора записывает результат.
+    def resolve(st):
+        m = find(st, mid)
+        m["status"] = "ready"
+        record_result(st["bracket"], mid, 1, 0,
+                      evidence="TEST:dispute")
+        if st["bracket"]["champion"]:
+            st["status"] = "completed"
+    await cashcup_test_store.mutate(G, 999, "resolve", resolve,
+                                    session_id=sid)
+
+    # 5) Матч завершён, сетка перешла дальше.
+    state = await cashcup_test_store.get(G, sid)
+    done = next(m for m in state["bracket"]["matches"] if m["id"] == mid)
+    assert done["status"] == "completed" and done["winner"]
+
+
+@pytest.mark.asyncio
 async def test_session_isolated_per_guild(pg_pool):
     s1 = await cashcup_test_store.create_snapshot(
         G, 1, 1, _snapshot_state(3))
