@@ -1355,6 +1355,10 @@ async def test_recover_returns_stats_and_enqueues(journal_env,
             {"tournament_id": "1_1000"},  # дубль tid
         ]
     monkeypatch.setattr(js, "list_pending", _list_pending)
+    # Активные турниры из store не добавляем — тестируем
+    # только очередь pending-записей.
+    monkeypatch.setattr(jn.tournament_store, "all",
+                        lambda: [])
     monkeypatch.setattr(jn, "schedule_recovery",
                         lambda tid, **kw: scheduled.append(tid))
     jn._RECOVERED = False
