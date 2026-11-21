@@ -69,6 +69,12 @@ CREATE TABLE IF NOT EXISTS access_state (
     message_id  BIGINT,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS access_welcomed (
+    guild_id    BIGINT NOT NULL,
+    user_id     BIGINT NOT NULL,
+    sent_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (guild_id, user_id)
+);
 """
 
 _INDEXES = (
@@ -429,6 +435,33 @@ async def get_state(guild_id: int) -> dict[str, Any]:
         "channel_id": int(row["channel_id"]) if row["channel_id"] else None,
         "message_id": int(row["message_id"]) if row["message_id"] else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Флаг приветственного ЛС (academy)
+# ---------------------------------------------------------------------------
+
+
+async def was_welcomed(guild_id: int, user_id: int) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _ensure(conn)
+        return bool(await conn.fetchval(
+            "SELECT 1 FROM access_welcomed "
+            "WHERE guild_id=$1 AND user_id=$2",
+            guild_id, user_id,
+        ))
+
+
+async def mark_welcomed(guild_id: int, user_id: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _ensure(conn)
+        await conn.execute(
+            "INSERT INTO access_welcomed (guild_id, user_id) "
+            "VALUES ($1,$2) ON CONFLICT DO NOTHING",
+            guild_id, user_id,
+        )
 
 
 async def set_panel(

@@ -537,6 +537,14 @@ class TournamentBot(commands.Bot):
         except Exception as exc:
             logger.warning("Access panel view registration failed: %s", exc)
 
+        # Кнопки ЛС-инструкции новому владельцу «Доступа».
+        try:
+            from services.access_academy import AccessDmView
+
+            self.add_view(AccessDmView())
+        except Exception as exc:
+            logger.warning("Access DM view registration failed: %s", exc)
+
 
         # Set up error handler for app commands
         self.tree.on_error = self.on_app_command_error

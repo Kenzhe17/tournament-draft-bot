@@ -278,6 +278,13 @@ async def _grant(guild: discord.Guild, user_id: int) -> bool:
         await member.add_roles(role)
     except discord.Forbidden:
         raise
+    # Личное обучение для нового владельца «Доступа» — один раз,
+    # закрытые ЛС не блокируют выдачу роли.
+    try:
+        from services import access_academy
+        await access_academy.send_welcome_dm(member, guild_id=guild.id)
+    except Exception:
+        pass
     try:
         await access_store.queue_remove(guild.id, user_id)
     except Exception as exc:
