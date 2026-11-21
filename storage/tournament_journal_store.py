@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS tournament_journal (
     last_error TEXT,
     next_attempt_at TIMESTAMPTZ,
     retry_count INTEGER NOT NULL DEFAULT 0,
+    pending_components TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )
@@ -51,6 +52,13 @@ _MIGRATIONS = (
     "ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ",
     "ALTER TABLE tournament_journal "
     "ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
+    # Компоненты карточки, для которых send уже вызывался,
+    # но id сообщения ещё не подтверждён в БД. При рестате
+    # такая запись обязана искать существующее сообщение
+    # в истории, а не отправлять новое вслепую.
+    "ALTER TABLE tournament_journal "
+    "ADD COLUMN IF NOT EXISTS pending_components "
+    "TEXT NOT NULL DEFAULT ''",
 )
 
 _INDEXES = (
@@ -179,6 +187,35 @@ async def list_pending(limit: int = 100) -> list[dict[str, Any]]:
             ORDER BY updated_at ASC LIMIT $1
             """,
             limit,
+        )
+        return [_row_to_dict(r) for r in rows]
+
+
+async def list_deferred_retries() -> list[dict[str, Any]]:
+    """retry_wait-записи основных карточек с next_attempt_at
+    в будущем.
+
+    ``list_pending`` возвращает только «созревшие» записи —
+    отложенные retry после рестарта иначе теряются из очереди.
+    Этот метод отдаёт их вместе со временем попытки, чтобы
+    worker поставил их в кучу с правильной задержкой.
+    Карточки матчей отдельных строк не требуют: их обрабатывает
+    flush турнира.
+    """
+    from storage.db import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_table(conn)
+        rows = await conn.fetch(
+            """
+            SELECT tournament_id, next_attempt_at
+            FROM tournament_journal
+            WHERE kind = 'tournament'
+              AND sync_status = 'retry_wait'
+              AND retry_count < 10
+              AND next_attempt_at IS NOT NULL
+              AND next_attempt_at > now()
+            """,
         )
         return [_row_to_dict(r) for r in rows]
 
@@ -365,6 +402,61 @@ async def set_retry(entry_id: int, delay_seconds: float,
             WHERE id = $1
             """,
             entry_id, last_error, float(delay_seconds),
+        )
+
+
+async def mark_send_pending(entry_id: int, component: str) -> None:
+    """Отметить, что Discord-send компонента уже вызывался,
+    но его message_id ещё не сохранён.
+
+    Вызывается НЕПОСРЕДСТВЕННО перед channel.send: если процесс
+    упадёт между send и записью id (или Discord создаст
+    сообщение, а ответ потеряется), при следующем flush
+    запись найдёт существующую карточку в истории вместо
+    создания дубля.
+    """
+    from storage.db import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_table(conn)
+        await conn.execute(
+            """
+            UPDATE tournament_journal SET
+                pending_components = CASE
+                    WHEN pending_components IS NULL
+                         OR pending_components = '' THEN $2
+                    WHEN position(',' || $2 || ',' in
+                         ',' || pending_components || ',') > 0
+                        THEN pending_components
+                    ELSE pending_components || ',' || $2
+                END,
+                updated_at = now()
+            WHERE id = $1
+            """,
+            entry_id, str(component),
+        )
+
+
+async def clear_send_pending(entry_id: int, component: str) -> None:
+    """Снять отметку send-pending для компонента.
+
+    Вызывается когда message_id подтверждён в БД либо когда
+    Discord гарантированно НЕ создал сообщение (429/403/404).
+    """
+    from storage.db import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_table(conn)
+        await conn.execute(
+            """
+            UPDATE tournament_journal SET
+                pending_components = trim(both ',' from replace(
+                    ',' || pending_components || ',',
+                    ',' || $2 || ',', ',')),
+                updated_at = now()
+            WHERE id = $1
+            """,
+            entry_id, str(component),
         )
 
 
