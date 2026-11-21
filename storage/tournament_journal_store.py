@@ -37,10 +37,29 @@ CREATE TABLE IF NOT EXISTS tournament_journal (
     status TEXT NOT NULL DEFAULT 'active',
     sync_status TEXT NOT NULL DEFAULT 'pending',
     last_error TEXT,
+    next_attempt_at TIMESTAMPTZ,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    pending_components TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )
 """
+
+# Колонки для устойчивой очереди восстановления (retry_wait).
+# ADD COLUMN IF NOT EXISTS — обратно совместимо со старыми БД.
+_MIGRATIONS = (
+    "ALTER TABLE tournament_journal "
+    "ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ",
+    "ALTER TABLE tournament_journal "
+    "ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
+    # Компоненты карточки, для которых send уже вызывался,
+    # но id сообщения ещё не подтверждён в БД. При рестате
+    # такая запись обязана искать существующее сообщение
+    # в истории, а не отправлять новое вслепую.
+    "ALTER TABLE tournament_journal "
+    "ADD COLUMN IF NOT EXISTS pending_components "
+    "TEXT NOT NULL DEFAULT ''",
+)
 
 _INDEXES = (
     # Одна основная карточка на турнир.
@@ -72,6 +91,8 @@ async def ensure_table(conn) -> None:
     if _table_ready:
         return
     await conn.execute(_DDL)
+    for stmt in _MIGRATIONS:
+        await conn.execute(stmt)
     for stmt in _INDEXES:
         await conn.execute(stmt)
     _table_ready = True
@@ -129,20 +150,72 @@ async def list_matches(tournament_id: str) -> list[dict[str, Any]]:
 
 
 async def list_pending(limit: int = 100) -> list[dict[str, Any]]:
-    """Записи, требующие (пере)публикации — для recovery."""
+    """Записи, требующие (пере)публикации — для recovery.
+
+    Статусы:
+    - ``pending`` / ``partial`` — всегда;
+    - ``retry_wait`` — только когда ``next_attempt_at`` наступил
+      (или не задан); ``retry_count`` ограничивает цикл;
+    - ``processing`` — только «зависшие» (обновлялись давно —
+      процесс умер посреди flush);
+    - ``error`` — постоянные ошибки, автоматический retry
+      не выполняется (ручное вмешательство);
+    - ``synced`` — никогда.
+    """
     from storage.db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
         await ensure_table(conn)
         rows = await conn.fetch(
-            "SELECT * FROM tournament_journal "
-            "WHERE sync_status <> 'synced' "
-            "   OR audit_message_id IS NULL "
-            "   OR (kind = 'tournament' AND thread_id IS NULL) "
-            "   OR (kind = 'tournament' AND thread_id IS NOT NULL "
-            "       AND summary_message_id IS NULL) "
-            "ORDER BY updated_at ASC LIMIT $1",
+            """
+            SELECT * FROM tournament_journal
+            WHERE sync_status <> 'error' AND (
+                sync_status IN ('pending', 'partial')
+                OR (sync_status = 'retry_wait'
+                    AND retry_count < 10
+                    AND (next_attempt_at IS NULL
+                         OR next_attempt_at <= now()))
+                OR (sync_status = 'processing'
+                    AND updated_at < now() - interval '15 minutes')
+                OR (sync_status IN ('pending', 'partial', 'synced')
+                    AND (audit_message_id IS NULL
+                         OR (kind = 'tournament' AND thread_id IS NULL)
+                         OR (kind = 'tournament'
+                             AND thread_id IS NOT NULL
+                             AND summary_message_id IS NULL)))
+            )
+            ORDER BY updated_at ASC LIMIT $1
+            """,
             limit,
+        )
+        return [_row_to_dict(r) for r in rows]
+
+
+async def list_deferred_retries() -> list[dict[str, Any]]:
+    """retry_wait-записи основных карточек с next_attempt_at
+    в будущем.
+
+    ``list_pending`` возвращает только «созревшие» записи —
+    отложенные retry после рестарта иначе теряются из очереди.
+    Этот метод отдаёт их вместе со временем попытки, чтобы
+    worker поставил их в кучу с правильной задержкой.
+    Карточки матчей отдельных строк не требуют: их обрабатывает
+    flush турнира.
+    """
+    from storage.db import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_table(conn)
+        rows = await conn.fetch(
+            """
+            SELECT tournament_id, next_attempt_at
+            FROM tournament_journal
+            WHERE kind = 'tournament'
+              AND sync_status = 'retry_wait'
+              AND retry_count < 10
+              AND next_attempt_at IS NOT NULL
+              AND next_attempt_at > now()
+            """,
         )
         return [_row_to_dict(r) for r in rows]
 
@@ -280,6 +353,11 @@ async def update_ids(
                 status = COALESCE($7, status),
                 sync_status = $8,
                 last_error = $9,
+                next_attempt_at = CASE WHEN $8 = 'retry_wait'
+                    THEN next_attempt_at ELSE NULL END,
+                retry_count = CASE WHEN $8 IN
+                    ('synced', 'pending', 'partial')
+                    THEN 0 ELSE retry_count END,
                 updated_at = now()
             WHERE id = $1
             """,
@@ -300,4 +378,97 @@ async def set_sync(entry_id: int, sync_status: str,
             "UPDATE tournament_journal SET sync_status = $2, "
             "last_error = $3, updated_at = now() WHERE id = $1",
             entry_id, sync_status, last_error,
+        )
+
+
+async def set_retry(entry_id: int, delay_seconds: float,
+                    last_error: str | None = None) -> None:
+    """Временная ошибка: статус retry_wait + время следующей
+    попытки. retry_count инкрементируется — после лимита
+    запись переходит в error (см. list_pending)."""
+    from storage.db import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_table(conn)
+        await conn.execute(
+            """
+            UPDATE tournament_journal SET
+                sync_status = 'retry_wait',
+                last_error = $2,
+                next_attempt_at = now() + make_interval(
+                    secs => $3::double precision),
+                retry_count = retry_count + 1,
+                updated_at = now()
+            WHERE id = $1
+            """,
+            entry_id, last_error, float(delay_seconds),
+        )
+
+
+async def mark_send_pending(entry_id: int, component: str) -> None:
+    """Отметить, что Discord-send компонента уже вызывался,
+    но его message_id ещё не сохранён.
+
+    Вызывается НЕПОСРЕДСТВЕННО перед channel.send: если процесс
+    упадёт между send и записью id (или Discord создаст
+    сообщение, а ответ потеряется), при следующем flush
+    запись найдёт существующую карточку в истории вместо
+    создания дубля.
+    """
+    from storage.db import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_table(conn)
+        await conn.execute(
+            """
+            UPDATE tournament_journal SET
+                pending_components = CASE
+                    WHEN pending_components IS NULL
+                         OR pending_components = '' THEN $2
+                    WHEN position(',' || $2 || ',' in
+                         ',' || pending_components || ',') > 0
+                        THEN pending_components
+                    ELSE pending_components || ',' || $2
+                END,
+                updated_at = now()
+            WHERE id = $1
+            """,
+            entry_id, str(component),
+        )
+
+
+async def clear_send_pending(entry_id: int, component: str) -> None:
+    """Снять отметку send-pending для компонента.
+
+    Вызывается когда message_id подтверждён в БД либо когда
+    Discord гарантированно НЕ создал сообщение (429/403/404).
+    """
+    from storage.db import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_table(conn)
+        await conn.execute(
+            """
+            UPDATE tournament_journal SET
+                pending_components = trim(both ',' from replace(
+                    ',' || pending_components || ',',
+                    ',' || $2 || ',', ',')),
+                updated_at = now()
+            WHERE id = $1
+            """,
+            entry_id, str(component),
+        )
+
+
+async def set_processing(entry_id: int) -> None:
+    """Отметить запись как обрабатываемую worker'ом."""
+    from storage.db import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_table(conn)
+        await conn.execute(
+            "UPDATE tournament_journal SET sync_status = 'processing', "
+            "updated_at = now() WHERE id = $1 "
+            "AND sync_status <> 'synced'",
+            entry_id,
         )

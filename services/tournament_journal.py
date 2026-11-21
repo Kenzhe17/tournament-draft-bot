@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import heapq
 import logging
+import random
 import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -66,6 +68,97 @@ _SIG_CACHE: dict[int, str] = {}
 _URL_CACHE: dict[str, tuple[str | None, float]] = {}
 _URL_CACHE_TTL = 300.0
 _RECOVERED = False
+
+# ---------------------------------------------------------------------------
+# Устойчивая очередь восстановления (worker + retry_wait)
+# ---------------------------------------------------------------------------
+#
+# Все (пере)публикации журналов проходят через единственный
+# worker: операции сериализованы, между турнирами — пауза,
+# временные ошибки Discord/PG переводят запись в retry_wait
+# с exponential backoff + jitter и persisted next_attempt_at.
+# Pending-состояние живёт в PostgreSQL — рестарт не теряет
+# очередь.
+
+_RECOVERY_HEAP: list[tuple[float, str]] = []  # (run_at monotonic, tid)
+_RECOVERY_QUEUED: set[str] = set()
+_RECOVERY_WORKER: asyncio.Task | None = None
+_PG_POLL_LAST = 0.0
+_PENDING_LAST_SCHEDULE: dict[str, float] = {}
+_RETRY_ATTEMPTS: dict[str, int] = {}
+_RECOVERY_STATS: dict[str, int] = {}
+
+_WORKER_INTERVAL = 1.0        # пауза между flush разных турниров
+_PG_POLL_SEC = 30.0           # как часто worker опрашивает PG
+                              # на отложенные retry_wait и
+                              # пропущенные pending-записи
+_PENDING_RESCAN_SEC = 120.0   # минимальный интервал повторной
+                              # постановки одного турнира из
+                              # периодического скана pending
+_RETRY_BASE_SEC = 30.0        # первый backoff
+_RETRY_MAX_SEC = 1800.0       # потолок backoff
+_RETRY_JITTER = 0.2           # ±20%
+_HISTORY_SCAN_LIMIT = 100     # сколько сообщений проверять
+                              # при поиске уже опубликованной
+                              # карточки (защита от дублей)
+
+
+class _RetryableJournalError(Exception):
+    """Временная ошибка (429/5xx/сеть/PG) — запись уходит
+    в retry_wait и будет повторена worker'ом."""
+
+
+class _PermanentJournalError(Exception):
+    """Постоянная ошибка (403/404/конфиг) — sync_status='error',
+    автоматический retry не выполняется."""
+
+
+class _InconclusiveJournalError(_RetryableJournalError):
+    """Поиск уже опубликованной карточки не дал результата,
+    хотя send ранее вызывался (pending_components/restart).
+
+    «Не нашли в последних N сообщениях» ≠ «карточки нет» —
+    новая отправка запрещена, запись уходит в retry_wait.
+    """
+
+
+async def _clear_pending_safe(entry_id: int, component: str) -> None:
+    """Снять pending_components без побочных эффектов —
+    ошибка очистки не должна маскировать исходную."""
+    try:
+        await journal_store.clear_send_pending(entry_id, component)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("journal: clear pending %s/%s failed: %s",
+                    entry_id, component, exc)
+
+
+def _pending_components(entry: dict | None) -> set[str]:
+    """Множество компонентов с неподтверждённым send."""
+    raw = str((entry or {}).get("pending_components") or "")
+    return {c for c in raw.split(",") if c}
+
+
+def _send_unconfirmed(entry: dict | None, component: str) -> bool:
+    """Мог ли send компонента уже выполниться без сохранённого
+    message_id?
+
+    Помимо отметки pending_components учитываем «наследие»
+    записей до введения отметок: retry_count/last_error/
+    промежуточные статусы означают, что flush уже доходил
+    до Discord-операций и id мог быть потерян.
+    """
+    if component in _pending_components(entry):
+        return True
+    if _pending_components(entry):
+        # Отметки есть, но этого компонента среди них нет —
+        # его send точно не вызывался.
+        return False
+    if int((entry or {}).get("retry_count") or 0) > 0:
+        return True
+    if (entry or {}).get("last_error"):
+        return True
+    return str((entry or {}).get("sync_status") or "") in (
+        "processing", "partial", "retry_wait")
 
 _PHASE_LABELS = {
     "qualifier": "ОТБОР",
@@ -787,11 +880,25 @@ async def _send_or_edit(
     message_id: int,
     view: discord.ui.LayoutView,
     sig_key: int,
+    entry_id: int | None = None,
+    component: str | None = None,
 ) -> int:
     """Отправить или отредактировать сообщение карточки.
 
-    Возвращает message_id (0 при ошибке). Идемпотентно: одинаковый
-    контент не вызывает edit; удалённое сообщение пересоздаётся.
+    ``entry_id``/``component`` — для нового send: перед
+    ``channel.send`` в БД ставится отметка pending_components,
+    чтобы при рестарте/потере ответа recovery сначала искал
+    уже созданное сообщение, а не отправлял дубль. Отметка
+    снимается, когда id подтверждён (вызывающий код) либо
+    когда Discord гарантированно не создал сообщение
+    (429/403/404).
+
+    Возвращает message_id. Идемпотентно: одинаковый контент
+    не вызывает edit; удалённое сообщение пересоздаётся.
+    Ошибки Discord классифицируются: временные (429/5xx/сеть)
+    → _RetryableJournalError, постоянные (403/404/4xx) →
+    _PermanentJournalError — «0 при ошибке» не возвращается,
+    чтобы вызывающий код не мог принять сбой за успех.
     """
     sig = _view_signature(view)
     now = time.monotonic()
@@ -833,6 +940,11 @@ async def _send_or_edit(
                 return message_id
             except discord.NotFound:
                 message_id = 0  # сообщение удалено — создаём новое
+        if entry_id and component:
+            # Отметка ДО send: crash между send и записью id
+            # не приведёт к дублю при следующем flush.
+            await journal_store.mark_send_pending(
+                entry_id, component)
         msg = await channel.send(
             view=view,
             allowed_mentions=discord.AllowedMentions.none(),
@@ -841,9 +953,104 @@ async def _send_or_edit(
         _VERIFY_TS[int(msg.id)] = now
         _SIG_CACHE[sig_key] = sig
         return int(msg.id)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("journal: send/edit failed: %s", exc)
-        return 0
+    except discord.Forbidden as exc:
+        if entry_id and component:
+            await _clear_pending_safe(entry_id, component)
+        logger.warning("journal: send/edit forbidden: %s", exc)
+        raise _PermanentJournalError(f"Discord 403: {exc}") from exc
+    except discord.NotFound as exc:
+        if entry_id and component:
+            await _clear_pending_safe(entry_id, component)
+        # Канал/ветка недоступны — постоянная ошибка конфигурации.
+        logger.warning("journal: send/edit not found: %s", exc)
+        raise _PermanentJournalError(f"Discord 404: {exc}") from exc
+    except discord.HTTPException as exc:
+        status = getattr(exc, "status", None)
+        retry_after = getattr(exc, "retry_after", None)
+        if status == 429 or (status is not None and status >= 500):
+            if status == 429 and entry_id and component:
+                # 429 — запрос отклонён до обработки:
+                # сообщение точно не создано, отметку снимаем.
+                await _clear_pending_safe(entry_id, component)
+            logger.info("journal: send/edit retryable %s: %s",
+                        status, exc)
+            err = _RetryableJournalError(f"Discord {status}: {exc}")
+            err.retry_after = retry_after  # type: ignore[attr-defined]
+            err.certain_absent = (status == 429)  # type: ignore[attr-defined]
+            raise err from exc
+        if entry_id and component:
+            await _clear_pending_safe(entry_id, component)
+        logger.warning("journal: send/edit http %s: %s", status, exc)
+        raise _PermanentJournalError(f"Discord {status}: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 — сеть/таймауты = временное
+        logger.info("journal: send/edit transient failure: %s", exc)
+        raise _RetryableJournalError(str(exc)) from exc
+
+
+async def _thread_candidates(message: discord.Message) -> list:
+    """Активные и заархивированные ветки, связанные с сообщением.
+
+    discord.py 2.7: ``guild.fetch_threads`` НЕ существует —
+    активные ветки берутся через ``await guild.active_threads()``,
+    архивные — через ``channel.archived_threads()`` родительского
+    текстового канала.
+    """
+    out: list = []
+    guild = getattr(message, "guild", None)
+    channel = getattr(message, "channel", None)
+    if guild is not None:
+        try:
+            out.extend(await guild.active_threads())
+        except Exception as exc:
+            logger.info("journal: active_threads failed: %s", exc)
+    if channel is not None:
+        try:
+            async for th in channel.archived_threads(limit=100):
+                out.append(th)
+        except Exception as exc:
+            logger.info("journal: archived_threads failed: %s", exc)
+    return out
+
+
+async def _find_thread_for_message(
+    message: discord.Message, name: str
+) -> discord.Thread | None:
+    """Найти существующую ветку журнала для сообщения.
+
+    Discord-модель ветки, созданной из сообщения:
+    ``thread.id == message.id`` (ветка наследует snowflake
+    породившего сообщения), ``thread.parent_id ==
+    message.channel.id`` (родитель — текстовый канал).
+    Поэтому главный идентификатор — совпадение id ветки
+    с id сообщения, а НЕ parent_id. Поиск по имени —
+    только fallback внутри того же родительского канала.
+    """
+    try:
+        candidates = await _thread_candidates(message)
+    except Exception as exc:
+        logger.warning("journal: thread candidates failed: %s", exc)
+        return None
+    mid = int(getattr(message, "id", 0) or 0)
+    chan = getattr(message, "channel", None)
+    chan_id = int(getattr(chan, "id", 0) or 0)
+    for th in candidates:
+        if (mid and int(getattr(th, "id", 0) or 0) == mid
+                and int(getattr(th, "parent_id", 0) or 0) == chan_id):
+            return th
+    for th in candidates:
+        if (chan_id
+                and int(getattr(th, "parent_id", 0) or 0) == chan_id
+                and getattr(th, "name", None) == name[:100]):
+            return th
+    return None
+
+
+async def _unarchive_thread(thread) -> None:
+    if getattr(thread, "archived", False):
+        try:
+            await thread.edit(archived=False)
+        except Exception as exc:
+            logger.warning("journal: unarchive thread failed: %s", exc)
 
 
 async def _ensure_thread(
@@ -851,10 +1058,13 @@ async def _ensure_thread(
 ) -> discord.Thread | None:
     """Создать ветку журнала или найти уже существующую.
 
-    Fallback: если create_thread падает (ветка уже есть, но
-    thread_id потерян/устарел), ищем активную ветку гильдии
-    по имени ``Журнал {tid}``.
+    Идемпотентно: ошибка 160004 (thread already exists), потерянный
+    ответ API после успешного создания или устаревший thread_id
+    приводят к поиску существующей ветки по parent_id/name —
+    повторное создание не выполняется. Временные ошибки
+    (429/5xx/сеть) пробрасываются как _RetryableJournalError.
     """
+    code = None
     try:
         thread = await message.create_thread(
             name=name[:100],
@@ -862,39 +1072,76 @@ async def _ensure_thread(
         )
         return thread
     except discord.HTTPException as exc:
-        logger.info("journal: create_thread %s: %s — ищем "
-                    "существующую", name, exc)
-    # Ветка могла существовать до потери thread_id —
-    # сначала активные, затем заархивированные Discord'ом.
-    try:
-        guild = message.guild
-        if guild is not None:
-            candidates = list(await guild.fetch_threads())
-            try:
-                async for th in guild.archived_threads(limit=100):
-                    candidates.append(th)
-            except Exception:
-                pass
-            for th in candidates:
-                if getattr(th, "name", None) == name[:100]:
-                    if getattr(th, "archived", False):
-                        try:
-                            await th.edit(archived=False)
-                        except Exception:
-                            pass
-                    return th
-    except Exception as exc:
-        logger.warning("journal: thread lookup failed: %s", exc)
+        status = getattr(exc, "status", None)
+        code = getattr(exc, "code", None)
+        if status == 429 or (status is not None and status >= 500):
+            logger.info("journal: create_thread retryable %s: %s",
+                        status, exc)
+            err = _RetryableJournalError(f"Discord {status}: {exc}")
+            err.retry_after = getattr(exc, "retry_after", None)  # type: ignore[attr-defined]
+            raise err from exc
+        if status in (403, 404) or code == 50001:
+            logger.warning("journal: create_thread permanent "
+                           "%s/%s: %s", status, code, exc)
+            raise _PermanentJournalError(
+                f"Discord {status}/{code}: {exc}") from exc
+        logger.info("journal: create_thread %s (code=%s) — ищем "
+                    "существующую", exc, code)
+    except Exception as exc:  # noqa: BLE001 — сеть/таймаут = временное
+        logger.info("journal: create_thread transient: %s", exc)
+        raise _RetryableJournalError(str(exc)) from exc
+
+    # Ветка могла существовать до потери thread_id или создаться
+    # при потерянном ответе — находим по parent_id, затем по имени.
+    found = await _find_thread_for_message(message, name)
+    if found is not None:
+        await _unarchive_thread(found)
+        return found
+    # 160004 «thread already exists», но поиск ничего не дал —
+    # маловероятно, но не создаём вслепую повторно: считаем
+    # временной ошибкой и отдаём на retry.
+    if code == 160004:
+        raise _RetryableJournalError(
+            "thread exists per Discord but lookup failed")
     return None
 
 
-async def _get_thread(bot: discord.Client, thread_id: int):
+async def _get_thread(
+    bot: discord.Client, thread_id: int,
+    *, expected_parent_id: int | None = None,
+    expected_message_id: int | None = None,
+):
+    """Получить ветку по id.
+
+    Проверки актуальности сохранённой ссылки:
+    - ``expected_parent_id`` — id РОДИТЕЛЬСКОГО КАНАЛА
+      (thread.parent_id == channel.id);
+    - ``expected_message_id`` — id ОСНОВНОЙ КАРТОЧКИ:
+      у ветки, созданной из сообщения, ``thread.id ==
+      message.id``. Ветка в том же канале, но от другого
+      сообщения — чужая, отбрасывается.
+    Несовпадение = устаревшая/чужая ссылка → None (ветка
+    будет найдена/создана через _ensure_thread)."""
     ch = bot.get_channel(thread_id)
     if ch is None:
         try:
             ch = await bot.fetch_channel(thread_id)
         except Exception:
             return None
+    pid = getattr(ch, "parent_id", None)
+    if (expected_parent_id is not None and pid is not None
+            and int(pid) != int(expected_parent_id)):
+        logger.info("journal: thread %s parent mismatch "
+                    "(%s != %s) — stale id", thread_id, pid,
+                    expected_parent_id)
+        return None
+    if (expected_message_id is not None
+            and int(getattr(ch, "id", 0) or 0)
+            != int(expected_message_id)):
+        logger.info("journal: thread %s not bound to main "
+                    "card %s — stale id", thread_id,
+                    expected_message_id)
+        return None
     if getattr(ch, "archived", False):
         try:
             await ch.edit(archived=False)
@@ -904,12 +1151,89 @@ async def _get_thread(bot: discord.Client, thread_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Идемпотентный поиск уже опубликованных карточек
+# ---------------------------------------------------------------------------
+
+
+def _message_visible_text(message) -> str:
+    """Весь видимый текст сообщения: content + Components V2.
+
+    Карточки журнала — LayoutView: текст живёт в TextDisplay
+    внутри components, message.content пуст.
+    """
+    parts: list[str] = []
+    content = getattr(message, "content", None)
+    if isinstance(content, str) and content:
+        parts.append(content)
+
+    def _walk(item):
+        c = getattr(item, "content", None)
+        if isinstance(c, str) and c:
+            parts.append(c)
+        for ch in getattr(item, "children", []) or []:
+            _walk(ch)
+
+    for comp in getattr(message, "components", []) or []:
+        _walk(comp)
+    return "\n".join(parts)
+
+
+async def _find_card_message(
+    channel, bot: discord.Client | None, markers: list[str],
+) -> Any:
+    """Найти в истории канала карточку журнала по маркерам.
+
+    Используется когда Discord-сообщение создано, но его id не
+    сохранился в PostgreSQL — вместо нового send принимаем
+    существующее сообщение (иначе получим дубль карточки).
+
+    Возвращает:
+    - Message — карточка найдена;
+    - None — поиск завершён, карточки нет;
+    - поднимает _RetryableJournalError/_PermanentJournalError —
+      поиск не удался, новый send запрещён (неизвестное
+      состояние → не создаём дубликат).
+    """
+    bot_id = getattr(getattr(bot, "user", None), "id", 0)
+    try:
+        history = channel.history(limit=_HISTORY_SCAN_LIMIT)
+        async for msg in history:
+            author = getattr(msg, "author", None)
+            if bot_id and getattr(author, "id", None) != bot_id:
+                continue
+            text = _message_visible_text(msg)
+            if text and all(m in text for m in markers):
+                return msg
+    except discord.Forbidden as exc:
+        raise _PermanentJournalError(
+            f"history forbidden: {exc}") from exc
+    except discord.NotFound as exc:
+        raise _PermanentJournalError(
+            f"history not found: {exc}") from exc
+    except discord.HTTPException as exc:
+        status = getattr(exc, "status", None)
+        if status == 429 or (status is not None and status >= 500):
+            raise _RetryableJournalError(
+                f"history {status}: {exc}") from exc
+        raise _PermanentJournalError(
+            f"history http {status}: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _RetryableJournalError(f"history failed: {exc}") from exc
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Основной flush одного турнира
 # ---------------------------------------------------------------------------
 
 
-async def _flush_tournament(tournament_id: str) -> None:
-    """Полная пересборка карточек журнала турнира (идемпотентно)."""
+async def _flush_tournament(tournament_id: str) -> str:
+    """Полная пересборка карточек журнала турнира (идемпотентно).
+
+    Возвращает итоговый sync_status: 'synced' | 'partial' |
+    'error'. Временные ошибки Discord/PG пробрасываются как
+    _RetryableJournalError — запись уходит в retry_wait.
+    """
     bot = _bot()
     if bot is None:
         return
@@ -930,9 +1254,19 @@ async def _flush_tournament(tournament_id: str) -> None:
             src_cid = int(evs[0].get("channel_id") or 0) if evs else 0
             main = await journal_store.upsert_main(
                 guild_id=gid, channel_id=src_cid, tournament_id=tid)
+        # Отметить обработку — при падении процесса запись
+        # «зависнет» в processing и будет подобрана list_pending
+        # как устаревшая.
+        try:
+            await journal_store.set_processing(int(main["id"]))
+        except Exception:
+            pass
     except Exception as exc:
+        # PG недоступен/сбой — временная ошибка: без подтверждённого
+        # состояния в БД никаких Discord-операций не выполняем.
         logger.error("journal: main entry failed %s: %s", tid, exc)
-        return
+        raise _RetryableJournalError(
+            f"journal store: {exc}") from exc
 
     tournament = await _load_tournament(tid)
     # channel_id источника — уточняем из турнира/событий.
@@ -962,16 +1296,34 @@ async def _flush_tournament(tournament_id: str) -> None:
         status_override=status_override,
         events_general=general,
     )
+    # Если id основной карточки не сохранён (Discord send прошёл,
+    # а запись в PG упала) — сначала ищем уже опубликованное
+    # сообщение в истории, иначе создадим дубль.
+    main_mid = int(main.get("audit_message_id") or 0)
+    if not main_mid and _send_unconfirmed(main, "main"):
+        # Send уже вызывался, но id не подтверждён: ищем
+        # карточку в истории. «Не нашли за 100 сообщений»
+        # ≠ «карточки нет» — новый send запрещён.
+        found = await _find_card_message(
+            channel, bot, [f"**ID:** `{tid}`"])
+        if found is None:
+            raise _InconclusiveJournalError(
+                f"main card lookup inconclusive for {tid}")
+        main_mid = int(found.id)
+        logger.info("journal: adopted existing main card %s "
+                    "for %s", main_mid, tid)
     new_main_mid = await _send_or_edit(
         channel,
-        message_id=int(main.get("audit_message_id") or 0),
+        message_id=main_mid,
         view=main_view,
         sig_key=int(main["id"]),
+        entry_id=int(main["id"]),
+        component="main",
     )
     if not new_main_mid:
         await journal_store.set_sync(
             int(main["id"]), "error", "main card publish failed")
-        return
+        return "error"
 
     # Обновить result_message_id если турнир известен.
     result_mid = int(getattr(tournament, "message_id", 0) or 0) if (
@@ -981,15 +1333,22 @@ async def _flush_tournament(tournament_id: str) -> None:
     # --- Ветка ---
     thread = None
     if thread_id:
-        thread = await _get_thread(bot, thread_id)
+        thread = await _get_thread(
+            bot, thread_id, expected_parent_id=int(channel.id),
+            expected_message_id=new_main_mid)
     if thread is None:
         try:
             msg = await channel.fetch_message(new_main_mid)
             thread = await _ensure_thread(
                 bot, msg, f"Журнал {tid}")
-        except Exception as exc:
-            logger.warning("journal: thread setup failed %s: %s",
+        except _PermanentJournalError as exc:
+            logger.warning("journal: thread setup permanent %s: %s",
                            tid, exc)
+            await journal_store.set_sync(
+                int(main["id"]), "error", str(exc)[:400])
+            return "error"
+        # _RetryableJournalError и неожиданные ошибки
+        # классифицируются в _flush_guarded → retry_wait.
 
     # --- Карточки матчей ---
     all_matches = (
@@ -1000,15 +1359,32 @@ async def _flush_tournament(tournament_id: str) -> None:
     match_by_key = {m["key"]: m for m in all_matches}
 
     summary_mid = int(main.get("summary_message_id") or 0)
+    match_failed = False
     if thread is not None:
         # Сводка общих событий — одно сообщение в ветке.
+        # При потерянном summary_message_id сначала ищем
+        # существующую сводку — не создаём дубль.
+        if not summary_mid and _send_unconfirmed(main, "summary"):
+            found = await _find_card_message(
+                thread, bot, ["СОБЫТИЯ ТУРНИРА", tid])
+            if found is None:
+                raise _InconclusiveJournalError(
+                    f"summary lookup inconclusive for {tid}")
+            summary_mid = int(found.id)
         summary_view = build_summary_card(tid, general)
-        summary_mid = await _send_or_edit(
-            thread,
-            message_id=summary_mid,
-            view=summary_view,
-            sig_key=int(main["id"]) * 10 + 1,
-        )
+        try:
+            summary_mid = await _send_or_edit(
+                thread,
+                message_id=summary_mid,
+                view=summary_view,
+                sig_key=int(main["id"]) * 10 + 1,
+                entry_id=int(main["id"]),
+                component="summary",
+            )
+        except _PermanentJournalError as exc:
+            logger.warning("journal: summary permanent %s: %s",
+                           tid, exc)
+            summary_mid = 0
 
         for mk in sorted(
                 match_keys,
@@ -1036,12 +1412,40 @@ async def _flush_tournament(tournament_id: str) -> None:
             card = await build_match_card(
                 tournament, m, by_match.get(mk, []),
                 tournament_id=tid, guild_id=gid)
-            mid = await _send_or_edit(
-                thread,
-                message_id=int(entry.get("audit_message_id") or 0),
-                view=card,
-                sig_key=int(entry["id"]),
-            )
+            # Потерянный audit_message_id → ищем карточку матча
+            # в истории ветки до send (защита от дублей).
+            m_mid = int(entry.get("audit_message_id") or 0)
+            if not m_mid and _send_unconfirmed(entry, "match"):
+                phase_, _, idx_ = mk.partition(":")
+                found = await _find_card_message(
+                    thread, bot,
+                    [f"**Матч:** `{tid}:{phase_}:{idx_}`"])
+                if found is None:
+                    raise _InconclusiveJournalError(
+                        f"match {mk} lookup inconclusive for {tid}")
+                m_mid = int(found.id)
+            try:
+                mid = await _send_or_edit(
+                    thread,
+                    message_id=m_mid,
+                    view=card,
+                    sig_key=int(entry["id"]),
+                    entry_id=int(entry["id"]),
+                    component="match",
+                )
+            except _PermanentJournalError as exc:
+                logger.warning("journal: match card permanent "
+                               "%s %s: %s", tid, mk, exc)
+                match_failed = True
+                try:
+                    await journal_store.set_sync(
+                        int(entry["id"]), "error", str(exc)[:400])
+                except Exception:
+                    pass
+                continue
+            if not mid:
+                match_failed = True
+                continue
             if mid and mid != int(entry.get("audit_message_id") or 0):
                 try:
                     await journal_store.update_ids(
@@ -1052,19 +1456,36 @@ async def _flush_tournament(tournament_id: str) -> None:
                 except Exception as exc:
                     # Не прерываем остальные карточки — запись
                     # матча останется pending и будет повторена.
+                    match_failed = True
                     logger.warning(
                         "journal: match ids update failed %s: %s",
                         mk, exc)
+                    continue
             elif mid:
                 await journal_store.set_sync(
                     int(entry["id"]), "synced")
+            if mid:
+                # id подтверждён — send-pending отметка больше
+                # не нужна: следующий flush будет редактировать.
+                await _clear_pending_safe(int(entry["id"]), "match")
 
     # --- Финализация записей ---
     # Честный статус: 'synced' только когда опубликовано ВСЁ —
     # карточка, ветка и сводка. Иначе 'partial': list_pending
     # подхватит запись после рестарта (thread_id IS NULL или
     # sync_status <> 'synced').
-    incomplete = thread is None or not summary_mid
+    # 'synced' — только когда подтверждено ВСЁ: карточка,
+    # ветка, сводка и КАЖДАЯ карточка матча. Любой сбой
+    # отдельного матча → 'partial' + диагностика в last_error.
+    missing = []
+    if thread is None:
+        missing.append("thread")
+    if not summary_mid:
+        missing.append("summary")
+    if match_failed:
+        missing.append("match")
+    final_status = "partial" if missing else "synced"
+    diag = ("incomplete: " + ",".join(missing)) if missing else None
     await journal_store.update_ids(
         int(main["id"]),
         audit_channel_id=int(channel.id),
@@ -1073,8 +1494,22 @@ async def _flush_tournament(tournament_id: str) -> None:
         result_message_id=result_mid or None,
         summary_message_id=summary_mid or None,
         status=("cancelled" if cancelled else None),
-        sync_status="partial" if incomplete else "synced",
+        sync_status=final_status,
+        last_error=diag,
     )
+    # Отправленные и подтверждённые id компоненты — снимаем
+    # send-pending отметки (часть могла остаться, если send
+    # прошёл, а flush ранее падал до финализации).
+    try:
+        if new_main_mid:
+            await journal_store.clear_send_pending(
+                int(main["id"]), "main")
+        if summary_mid:
+            await journal_store.clear_send_pending(
+                int(main["id"]), "summary")
+    except Exception as exc:  # noqa: BLE001
+        logger.info("journal: clear pending failed %s: %s",
+                    tid, exc)
     _URL_CACHE.pop(tid, None)
 
     # Если турнир завершён — добавить ссылку «Журнал турнира»
@@ -1084,22 +1519,258 @@ async def _flush_tournament(tournament_id: str) -> None:
     ) == "complete":
         await attach_result_link(tid)
 
+    return final_status
 
-async def _flush_guarded(tournament_id: str) -> None:
-    lock = _FLUSH_LOCKS.setdefault(tournament_id, asyncio.Lock())
+
+def _retry_delay(attempts: int, retry_after: float | None = None
+                 ) -> float:
+    """Exponential backoff + jitter; retry_after Discord имеет
+    приоритет (но не меньше backoff — не ддосим API)."""
+    base = min(_RETRY_BASE_SEC * (2 ** max(0, attempts - 1)),
+               _RETRY_MAX_SEC)
+    delay = base * (1 + random.uniform(-_RETRY_JITTER, _RETRY_JITTER))
+    if retry_after:
+        delay = max(delay, float(retry_after) + 1.0)
+    return delay
+
+
+async def _schedule_retry(tournament_id: str, exc: Exception) -> str:
+    """Перевести турнир в retry_wait и поставить в очередь.
+
+    Персистентно (next_attempt_at/retry_count в PG); после
+    _RETRY_MAX_ATTEMPTS запись становится 'error'.
+    """
+    tid = str(tournament_id)
+    attempts = _RETRY_ATTEMPTS.get(tid, 0) + 1
+    _RETRY_ATTEMPTS[tid] = attempts
+    retry_after = getattr(exc, "retry_after", None)
+    delay = _retry_delay(attempts, retry_after)
+    try:
+        main = await journal_store.get_main(tid)
+        if main is not None:
+            if attempts >= 10:
+                await journal_store.set_sync(
+                    int(main["id"]), "error",
+                    f"retry limit: {str(exc)[:300]}")
+                _RETRY_ATTEMPTS.pop(tid, None)
+                return "error"
+            await journal_store.set_retry(
+                int(main["id"]), delay, str(exc)[:400])
+    except Exception as store_exc:  # noqa: BLE001
+        # PG недоступен — состояние не сохранить, но in-memory
+        # retry всё равно планируем: при следующей попытке PG
+        # может уже отвечать.
+        logger.warning("journal: set_retry failed %s: %s",
+                       tid, store_exc)
+    schedule_recovery(tid, delay=delay)
+    logger.info("journal: %s → retry_wait in %.0fs (attempt %d): %s",
+                tid, delay, attempts, exc)
+    return "retry_wait"
+
+
+_RETRY_MAX_ATTEMPTS = 10
+
+
+async def _flush_guarded(tournament_id: str) -> str:
+    """Flush под per-tournament lock с классификацией ошибок.
+
+    Возвращает итоговый статус: 'synced' | 'partial' | 'retry_wait'
+    | 'error'. Никогда не бросает исключений наружу.
+    """
+    tid = str(tournament_id)
+    lock = _FLUSH_LOCKS.setdefault(tid, asyncio.Lock())
     async with lock:
         try:
-            await _flush_tournament(tournament_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("journal flush failed %s: %s",
-                         tournament_id, exc)
+            result = await _flush_tournament(tid)
+            _RECOVERY_STATS[result] = _RECOVERY_STATS.get(result, 0) + 1
+            if result in ("synced", "partial"):
+                _RETRY_ATTEMPTS.pop(tid, None)
+            return result
+        except _RetryableJournalError as exc:
+            result = await _schedule_retry(tid, exc)
+            _RECOVERY_STATS[result] = \
+                _RECOVERY_STATS.get(result, 0) + 1
+            return result
+        except _PermanentJournalError as exc:
+            logger.warning("journal flush permanent %s: %s", tid, exc)
             try:
-                main = await journal_store.get_main(tournament_id)
+                main = await journal_store.get_main(tid)
                 if main:
                     await journal_store.set_sync(
                         int(main["id"]), "error", str(exc)[:400])
             except Exception:
                 pass
+            _RECOVERY_STATS["error"] = \
+                _RECOVERY_STATS.get("error", 0) + 1
+            return "error"
+        except Exception as exc:  # noqa: BLE001
+            # Неожиданная ошибка — считаем временной: терять
+            # запись журнала хуже, чем повторить (attempts
+            # ограничены → со временем 'error').
+            logger.error("journal flush failed %s: %s", tid, exc)
+            result = await _schedule_retry(tid, exc)
+            _RECOVERY_STATS[result] = \
+                _RECOVERY_STATS.get(result, 0) + 1
+            return result
+
+
+# ---------------------------------------------------------------------------
+# Worker очереди восстановления
+# ---------------------------------------------------------------------------
+
+
+def schedule_recovery(tournament_id: str, *,
+                      delay: float = 0.0) -> None:
+    """Поставить турнир в очередь worker'а (dedup по tid).
+
+    delay — секунды до выполнения (для retry_wait); в PG
+    дублируется next_attempt_at для восстановления после рестарта.
+    """
+    tid = str(tournament_id)
+    if tid in _RECOVERY_QUEUED:
+        return
+    _RECOVERY_QUEUED.add(tid)
+    heapq.heappush(_RECOVERY_HEAP,
+                   (time.monotonic() + max(0.0, delay), tid))
+    _ensure_recovery_worker()
+
+
+def _ensure_recovery_worker() -> None:
+    global _RECOVERY_WORKER
+    if (_RECOVERY_WORKER is None
+            or _RECOVERY_WORKER.done()):
+        try:
+            _RECOVERY_WORKER = asyncio.create_task(
+                _recovery_worker())
+        except RuntimeError:
+            _RECOVERY_WORKER = None  # нет loop — pending в PG
+
+
+async def _poll_deferred_retries() -> int:
+    """Подхватить из PG retry_wait-записи с next_attempt_at
+    в будущем и поставить их в кучу с сохранённой задержкой.
+
+    Без этого отложенный retry терялся после рестарта:
+    list_pending отдаёт только «созревшие» записи.
+    Дедупликация — через _RECOVERY_QUEUED в schedule_recovery.
+    """
+    try:
+        rows = await journal_store.list_deferred_retries()
+    except Exception as exc:  # noqa: BLE001
+        logger.info("journal: deferred poll failed: %s", exc)
+        return 0
+    now = datetime.now(timezone.utc)
+    scheduled = 0
+    for row in rows:
+        tid = str(row.get("tournament_id") or "")
+        if not tid:
+            continue
+        delay = 0.0
+        na = row.get("next_attempt_at")
+        if isinstance(na, (int, float)):
+            # unix-epoch (test stores и пр.)
+            delay = max(0.0, float(na) - time.time())
+        elif na is not None:
+            if getattr(na, "tzinfo", None) is None:
+                na = na.replace(tzinfo=timezone.utc)
+            delay = max(0.0, (na - now).total_seconds())
+        schedule_recovery(tid, delay=delay)
+        scheduled += 1
+    return scheduled
+
+
+async def _poll_pending_recovery() -> int:
+    """Периодический rescan list_pending → постановка в очередь.
+
+    Закрывает сценарий «PG был недоступен при recover()»:
+    записи, пропущенные стартовым сканом, подхватываются
+    автоматически после восстановления соединения — без
+    рестарта и без повторного recover(). Повторная постановка
+    одного турнира ограничена _PENDING_RESCAN_SEC, чтобы
+        вечно-частичные записи не вызывали бесконечный flush.
+    """
+    try:
+        rows = await journal_store.list_pending(limit=200)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("journal: pending poll failed: %s", exc)
+        return 0
+    now = time.monotonic()
+    scheduled = 0
+    for row in rows:
+        tid = str(row.get("tournament_id") or "")
+        if not tid:
+            continue
+        last = _PENDING_LAST_SCHEDULE.get(tid, 0.0)
+        if now - last < _PENDING_RESCAN_SEC:
+            continue
+        _PENDING_LAST_SCHEDULE[tid] = now
+        schedule_recovery(tid)
+        scheduled += 1
+    return scheduled
+
+
+async def _recovery_worker() -> None:
+    """Единственный worker (пере)публикации журналов.
+
+    Сериализует flush'и: не более одной операции за раз,
+    пауза _WORKER_INTERVAL между турнирами — Discord API
+    не получает массовый поток запросов после рестарта.
+    Все публикации — и событийные, и recovery — проходят
+    через эту очередь.
+    """
+    global _PG_POLL_LAST
+    while True:
+        try:
+            if not _RECOVERY_HEAP:
+                now = time.monotonic()
+                if now - _PG_POLL_LAST >= _PG_POLL_SEC:
+                    _PG_POLL_LAST = now
+                    await _poll_deferred_retries()
+                    await _poll_pending_recovery()
+                await asyncio.sleep(0.5)
+                continue
+            run_at, tid = _RECOVERY_HEAP[0]
+            wait = run_at - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(min(wait, 5.0))
+                continue
+            heapq.heappop(_RECOVERY_HEAP)
+            _RECOVERY_QUEUED.discard(tid)
+            try:
+                await _flush_guarded(tid)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("journal worker flush %s: %s",
+                             tid, exc)
+            await asyncio.sleep(_WORKER_INTERVAL)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("journal recovery worker error: %s", exc)
+            await asyncio.sleep(5.0)
+
+
+async def _report_recovery_done() -> None:
+    """Дождаться опустошения очереди и залогировать итог
+    восстановления (checked/restored/partial/retry/error)."""
+    try:
+        # Ждём пока heap пуст и текущий flush завершён.
+        for _ in range(720):  # до ~1 часа с паузами по 5с
+            if not _RECOVERY_HEAP and not _RECOVERY_QUEUED:
+                await asyncio.sleep(2.0)
+                if not _RECOVERY_HEAP and not _RECOVERY_QUEUED:
+                    break
+            await asyncio.sleep(5.0)
+        stats = dict(_RECOVERY_STATS)
+        if stats:
+            logger.info(
+                "journal recover done: synced=%d partial=%d "
+                "retry_wait=%d error=%d",
+                stats.get("synced", 0), stats.get("partial", 0),
+                stats.get("retry_wait", 0), stats.get("error", 0))
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("journal recover report failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1156,7 +1827,10 @@ async def _debounced_flush(tournament_id: str) -> None:
                 break
             await asyncio.sleep(_DEBOUNCE_SEC)
         _DIRTY.pop(tournament_id, None)
-        await _flush_guarded(tournament_id)
+        # Публикация — только через единый recovery worker:
+        # сериализация и паузы применяются ко всем flush'ам,
+        # а не только к восстановлению после рестарта.
+        schedule_recovery(tournament_id)
     except asyncio.CancelledError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -1219,68 +1893,107 @@ async def attach_result_link(tournament_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def recover(bot: discord.Client | None = None) -> int:
+async def recover(bot: discord.Client | None = None) -> dict[str, int]:
     """Согласованность журнала после рестарта.
 
-    1. Догнать pending-записи (sync_status <> 'synced' или без
-       message_id) — по ним пересобираются карточки.
-    2. Для активных турниров в store — гарантировать наличие
-       записи журнала (создать карточку, если событие create
-       потерялось).
-    3. Для завершённых турниров — проверить ссылку на журнал
-       в итоговой карточке.
+    1. Собрать все pending-записи (sync_status <> 'synced' или
+       без message_id/thread_id/summary) и поставить их
+       турниры в очередь единого worker'а — без массовой
+       параллельной публикации.
+    2. Для активных турниров в store без записи журнала —
+       тоже в очередь.
+    3. Для завершённых — ссылка на журнал в итоговой карточке.
 
-    Не бросает исключений и не блокирует турнирную механику.
+    Возвращает статистику постановки в очередь
+    {checked, scheduled, active_created, links}. Фактические
+    итоги синхронизации логирует _report_recovery_done после
+    опустошения очереди. Не бросает исключений и не блокирует
+    турнирную механику.
     """
     global _RECOVERED
+    stats = {"checked": 0, "scheduled": 0, "deferred": 0,
+             "active_created": 0, "links": 0}
     if _RECOVERED:
-        return 0
+        return stats
     _RECOVERED = True
+    _RECOVERY_STATS.clear()
     if bot is not None:
         bind_bot(bot)
     if _bot() is None:
-        return 0
+        return stats
 
-    done = 0
+    tids: set[str] = set()
+    pending_scan_failed = False
     try:
-        pending = await journal_store.list_pending(limit=100)
+        pending = await journal_store.list_pending(limit=200)
     except Exception as exc:
-        logger.warning("journal recover: list_pending failed: %s", exc)
+        # PG недоступен: НЕ помечаем recover как выполненный —
+        # периодический _poll_pending_recovery в worker'е
+        # подхватит записи после восстановления соединения,
+        # а повторный вызов recover() тоже сможет отработать.
+        pending_scan_failed = True
+        logger.warning("journal recover: list_pending failed: %s",
+                       exc)
         pending = []
     for entry in pending:
         tid = str(entry.get("tournament_id") or "")
-        if not tid:
-            continue
-        try:
-            await _flush_guarded(tid)
-            done += 1
-        except Exception:
-            continue
+        if tid:
+            tids.add(tid)
+    stats["checked"] = len(pending)
 
-    # Активные турниры без записи журнала — создать.
+    # Активные турниры без записи журнала — тоже в очередь.
     try:
         for t in tournament_store.all():
             tid = str(t.id)
             try:
                 if await journal_store.get_main(tid) is None:
-                    _DIRTY[tid] = {"ts": time.monotonic()}
-                    asyncio.create_task(_flush_guarded(tid))
-                    done += 1
+                    tids.add(tid)
+                    stats["active_created"] += 1
             except Exception:
                 continue
     except Exception as exc:
-        logger.warning("journal recover: store scan failed: %s", exc)
+        logger.warning("journal recover: store scan failed: %s",
+                       exc)
 
-    # Завершённые — ссылка на журнал в итогах.
+    for tid in sorted(tids):
+        _PENDING_LAST_SCHEDULE[tid] = time.monotonic()
+        schedule_recovery(tid)
+        stats["scheduled"] += 1
+
+    # Отложенные retry_wait (next_attempt_at в будущем) —
+    # list_pending их не возвращает, поэтому ставим в кучу
+    # с сохранённой задержкой, иначе они потерялись бы.
+    try:
+        stats["deferred"] = await _poll_deferred_retries()
+    except Exception as exc:  # noqa: BLE001
+        logger.info("journal recover: deferred poll failed: %s",
+                    exc)
+        stats["deferred"] = 0
+
+    # Завершённые — ссылка на журнал в итогах (отдельная
+    # фоновая задача, не блокирует worker).
     try:
         for t in tournament_store.all():
             if str(getattr(getattr(t, "phase", ""), "value", "")) \
                     == "complete":
+                stats["links"] += 1
                 asyncio.create_task(attach_result_link(str(t.id)))
     except Exception:
         pass
 
-    if done:
-        logger.info("journal recover: %d записей синхронизировано",
-                    done)
-    return done
+    # Worker нужен всегда: в куче могут быть только
+    # отложенные retry, а idle-цикл периодически опрашивает
+    # PG на новые отложенные записи.
+    _ensure_recovery_worker()
+    if stats["scheduled"] or stats["deferred"] or stats["links"]:
+        try:
+            asyncio.create_task(_report_recovery_done())
+        except RuntimeError:
+            pass
+        logger.info("journal recover scheduled: %s", stats)
+    if pending_scan_failed:
+        # Стартовый скан не состоялся — разрешаем повторный
+        # recover() и полагаемся на периодический pending-poll
+        # worker'а для подхвата записей после восстановления PG.
+        _RECOVERED = False
+    return stats

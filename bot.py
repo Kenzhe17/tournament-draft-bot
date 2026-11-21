@@ -1193,11 +1193,11 @@ class TournamentBot(commands.Bot):
         # итогов ↔ журнал после рестарта.
         try:
             from services import tournament_journal
-            journal_done = await tournament_journal.recover(self)
-            if journal_done:
+            journal_stats = await tournament_journal.recover(self)
+            if journal_stats.get("scheduled"):
                 logger.info(
-                    "tournament journal recovery: %d записей",
-                    journal_done,
+                    "tournament journal recovery: %s",
+                    journal_stats,
                 )
         except Exception as e:
             logger.error(f"tournament journal recovery failed: {e}")
