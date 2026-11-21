@@ -228,8 +228,13 @@ class RoomModal(discord.ui.Modal):
         # Defer ДО любых запросов к store/БД/Discord: публикация карточки
         # и уведомления может занять секунды — без defer Discord отвечает
         # 10062 Unknown interaction.
+        # thinking=True ОБЯЗАТЕЛЕН: для modal_submit defer без thinking
+        # уходит как type-6 deferred_message_update БЕЗ ephemeral-флага —
+        # edit_original_response тогда перезаписывает публичное сообщение,
+        # из которого открыли модалку (инцидент: карточки турниров
+        # заменялись на «Изменение отменено.»).
         if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=True)
 
         room_id = (self.room_input.value or "").strip()
         password = (self.pass_input.value or "").strip()
@@ -328,9 +333,11 @@ async def _apply_room_edit(
     token: tuple[int, int, int],
 ) -> None:
     # Defer ДО чтения store и публикации — иначе Discord 10062.
-    # Confirm-карточка ephemeral — ответ должен остаться ephemeral.
+    # Это component-взаимодействие: defer() без thinking — type-6
+    # deferred_message_update, который обновляет confirm-карточку
+    # (ephemeral) на месте; ephemeral=True здесь ни на что не влияет.
     if not interaction.response.is_done():
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
 
     pending = _PENDING_EDITS.pop(token, None)
     if pending is None or time.time() - pending["ts"] > _PENDING_TTL:

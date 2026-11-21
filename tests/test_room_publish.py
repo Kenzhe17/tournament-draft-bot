@@ -314,3 +314,41 @@ def test_id_button_returns_room_id():
     # Без записи в store — «не найдены».
     asyncio.run(btn.callback(_IC()))
     assert "не найдены" in sent["content"]
+
+
+def test_room_modal_defer_uses_thinking_ephemeral():
+    """P0 regression: modal_submit defer БЕЗ thinking уходит как
+    type-6 deferred_message_update без ephemeral-флага —
+    edit_original_response перезаписывал публичную карточку
+    турнира («Изменение отменено.»). Должен быть thinking=True."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    t = _tournament()
+    m = iter_tournament_matches(t)[0]
+    modal = RoomModal(1, 2, t, m)
+
+    calls = {}
+
+    class _Resp:
+        def is_done(self):
+            return False
+
+        async def defer(self, **kw):
+            calls["defer"] = kw
+
+    class _Followup:
+        async def send(self, *a, **kw):
+            calls["followup"] = True
+
+    class _IC:
+        response = _Resp()
+        followup = _Followup()
+        guild_id = 1
+        channel_id = 2
+        user = type("U", (), {"id": 7})()
+        guild = None
+
+    asyncio.run(modal.on_submit(_IC()))
+    assert calls.get("defer") == {"ephemeral": True, "thinking": True}
+    assert calls.get("followup") is True  # пустые поля -> ранний выход
