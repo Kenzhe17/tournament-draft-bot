@@ -348,6 +348,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.vac")
         await self.load_extension("cogs.banner")
         await self.load_extension("cogs.banner_admin")
+        await self.load_extension("cogs.access")
 
         # Регистрация общих групп команд (/player, /economy, /games, ...)
         from cogs.groups import ROOT_GROUPS
@@ -527,6 +528,22 @@ class TournamentBot(commands.Bot):
             self.add_view(RoomCardTemplateView())
         except Exception as exc:
             logger.warning("Room card view registration failed: %s", exc)
+
+        # Кнопки «Подать/Отозвать заявку» на панели ротации доступа.
+        try:
+            from views.access_panel import AccessPanelView
+
+            self.add_view(AccessPanelView())
+        except Exception as exc:
+            logger.warning("Access panel view registration failed: %s", exc)
+
+        # Кнопки ЛС-инструкции новому владельцу «Доступа».
+        try:
+            from services.access_academy import AccessDmView
+
+            self.add_view(AccessDmView())
+        except Exception as exc:
+            logger.warning("Access DM view registration failed: %s", exc)
 
 
         # Set up error handler for app commands

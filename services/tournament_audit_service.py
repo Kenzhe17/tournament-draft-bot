@@ -94,6 +94,11 @@ class A:
     MM_RESULT_CONFIRM = "mm.result_confirm"
     # Магазин
     SHOP_NICKNAME_CHANGE = "shop.nickname_change"
+    # Ротация доступа
+    ACCESS_ROTATE = "access.rotate"
+    ACCESS_JOIN = "access.join"
+    ACCESS_LEAVE = "access.leave"
+    ACCESS_EXEMPT = "access.exempt"
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +223,10 @@ _ACTION_TITLES = {
     A.MM_KD_SUBMIT: "MM K/D ОТПРАВЛЕН",
     A.MM_RESULT_CONFIRM: "MM РЕЗУЛЬТАТ ПОДТВЕРЖДЁН",
     A.SHOP_NICKNAME_CHANGE: "СМЕНА НИКА (МАГАЗИН)",
+    A.ACCESS_ROTATE: "РОТАЦИЯ ДОСТУПА",
+    A.ACCESS_JOIN: "ЗАЯВКА НА ДОСТУП",
+    A.ACCESS_LEAVE: "ОТЗЫВ ЗАЯВКИ НА ДОСТУП",
+    A.ACCESS_EXEMPT: "ACCESS EXEMPT",
 }
 
 _SOURCE_LABELS = {
@@ -303,13 +312,18 @@ async def _publish(ev: dict[str, Any]) -> None:
     channel_id = _audit_channel_id()
     if not channel_id or _bot is None:
         return
-    # События турнира/комнаты/организаторов с tournament_id
+    # События управления организаторами не публикуются в канал
+    # журнала вообще — остаются только в PostgreSQL.
+    if (ev.get("source") == "organizer"
+            or str(ev.get("action", "")).startswith("organizer.")):
+        return
+    # События турнира/комнаты с tournament_id
     # публикуются ГРУППИРОВАННО в карточках журнала
     # (services/tournament_journal) — отдельные карточки в канал
     # не отправляем, чтобы не превращать его в поток действий.
     # События без турнира (MM, магазин, системные) — как раньше.
     if ev.get("tournament_id") and ev.get("source") in (
-            "tournament", "room", "organizer"):
+            "tournament", "room"):
         return
     channel = _bot.get_channel(channel_id)
     if channel is None:

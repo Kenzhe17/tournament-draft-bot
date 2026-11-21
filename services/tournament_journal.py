@@ -44,7 +44,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_JOURNAL_SOURCES = {"tournament", "room", "organizer"}
+# organizer.* события не публикуются в Discord-журнале —
+# они остаются только в PostgreSQL (расследование инцидентов).
+_JOURNAL_SOURCES = {"tournament", "room"}
+
+
+def _is_organizer_event(ev: dict[str, Any]) -> bool:
+    """Событие управления организаторами (скрыто из журнала)."""
+    return (
+        ev.get("source") == "organizer"
+        or str(ev.get("action", "")).startswith("organizer.")
+    )
 _DEBOUNCE_SEC = 3.0
 _MIN_EDIT_INTERVAL = 2.0
 _VERIFY_TTL = 3600.0  # реже проверять существование неизменённых карточек
@@ -193,16 +203,21 @@ async def _tournament_events(
     где исходный канал неизвестен).
     """
     try:
-        return await audit_store.list_events(
+        events = await audit_store.list_events(
             guild_id=guild_id,
             channel_id=channel_id,
             tournament_id=str(tournament_id),
             limit=limit,
+            exclude_organizer=True,
         )
     except Exception as exc:
         logger.warning("journal: events load failed %s: %s",
                        tournament_id, exc)
         return []
+    # organizer.* не показываем в карточках журнала (PG-записи
+    # сохраняются для аудита, но в Discord не выводятся).
+    # Фильтр на уровне SQL — до LIMIT; здесь — дополнительная защита.
+    return [e for e in events if not _is_organizer_event(e)]
 
 
 def _group_events(
@@ -1106,6 +1121,8 @@ def notify_event(ev: dict[str, Any]) -> None:
             # pending-события догонит flush_pending → notify повторится
             return
         if ev.get("source") not in _JOURNAL_SOURCES:
+            return
+        if _is_organizer_event(ev):
             return
         tid = ev.get("tournament_id")
         if not tid:
