@@ -21,6 +21,14 @@ def get_bot_instance():
     return _bot_instance
 
 
+class TournamentStateError(ValueError):
+    """Неконсистентное состояние турнира.
+
+    Безопасный отказ БЕЗ побочных эффектов: вызывающий код может
+    показать администратору понятную приватную ошибку, а данные
+    остаются восстановимыми из подтверждённых полей."""
+
+
 class TournamentSize(str, Enum):
     """Размер турнира."""
 
@@ -1459,13 +1467,40 @@ class Tournament:
         # Don't set phase to COMPLETE yet, wait for confirmation
 
     async def confirm_final_winner(self, team_index: int) -> None:
-        """Подтвердить победителя финала (идемпотентно)."""
+        """Подтвердить победителя финала (идемпотентно).
+
+        Полная валидация состояния — ДО побочных эффектов: при
+        неконсистентном финале бросает TournamentStateError, не
+        изменяя турнир (нет eliminate/winner/phase и внешних
+        уведомлений). Повторный вызов после COMPLETE — no-op,
+        поэтому ELO/награды/история не дублируются."""
         # Повторное подтверждение не должно перезаписывать результат
         # или запускать побочные эффекты завершения второй раз.
         if self.phase == TournamentPhase.COMPLETE:
             return
+        if self.phase != TournamentPhase.FINAL:
+            raise TournamentStateError(
+                "Финал ещё не сформирован — подтверждение невозможно")
+        # Self-heal: final_teams могли не сохраниться (рестарт между
+        # generate_final_from_semifinals и store.set) — восстанавливаем
+        # из подтверждённых semifinal_winners, новых данных не создаём.
+        if len(self.final_teams) < 2 and all(
+                w is not None for w in self.semifinal_winners):
+            self.final_teams = [w for w in self.semifinal_winners
+                                if w is not None][:2]
+        final_teams = list(self.final_teams[:2])
+        if len(final_teams) != 2 or final_teams[0] == final_teams[1]:
+            raise TournamentStateError(
+                "Состав финала неполный — результат не записан, "
+                "обратитесь к организатору")
+        if not isinstance(team_index, int) \
+                or not (0 <= team_index < len(self.teams)):
+            raise TournamentStateError("Некорректный индекс команды финала")
+        if team_index not in final_teams:
+            raise TournamentStateError(
+                "Указанная команда не участвует в финале")
         # Determine loser team
-        loser_idx = self.final_teams[0] if self.final_teams[1] == team_index else self.final_teams[1]
+        loser_idx = final_teams[0] if final_teams[1] == team_index else final_teams[1]
         
         # Mark loser as eliminated
         self.eliminate_team(loser_idx)

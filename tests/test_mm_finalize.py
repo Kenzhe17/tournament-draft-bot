@@ -23,7 +23,9 @@ import views.kd_input_view as kdv  # noqa: E402
 
 
 def _check_tournament() -> Tournament:
+    from models.tournament import TournamentPhase
     t = Tournament(guild_id=1, channel_id=500)
+    t.phase = TournamentPhase.FINAL
     t.teams = [
         {"players": ["P1", "P2", "P3", "P4"], "captain": "P1"},
         {"players": ["P5", "P6", "P7", "P8"], "captain": "P5"},
