@@ -9,12 +9,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 
 from storage.db import get_pool
 
 logger = logging.getLogger(__name__)
+
+# Ключ advisory lock для DDL banner-таблиц: защищает от гонки
+# CREATE TABLE IF NOT EXISTS между процессами/подключениями
+# (pg_type_typname_nsp_index duplicate key).
+_BANNER_DDL_LOCK_KEY = 0x42414E4E4552  # "BANNER"
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS banner_voice_daily (
@@ -52,14 +58,25 @@ CREATE TABLE IF NOT EXISTS banner_settings (
 
 class BannerStore:
     _tables_ready = False
+    _schema_lock = asyncio.Lock()
 
     async def _ensure(self) -> None:
         if self._tables_ready:
             return
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(_DDL)
-        self._tables_ready = True
+        async with self._schema_lock:
+            if self._tables_ready:
+                return
+            pool = await get_pool()
+            async with pool.acquire() as conn, conn.transaction():
+                # xact-level advisory lock: параллельные _ensure
+                # (в т.ч. из разных процессов) не выполняют DDL
+                # одновременно — устраняет duplicate key
+                # pg_type_typname_nsp_index при CREATE TABLE.
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock($1)",
+                    _BANNER_DDL_LOCK_KEY)
+                await conn.execute(_DDL)
+            self._tables_ready = True
 
     # ---------------- voice ----------------
 
