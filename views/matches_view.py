@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import discord
 from utils.design import compose, text_card
 
-from models.tournament import TournamentPhase, TournamentSize, FormationMode
+from models.tournament import TournamentPhase, TournamentSize, FormationMode, TournamentStateError
 from storage.json_store import store
 from storage.bet_store import bet_store
 from storage.user_balance_store import user_balance_store
@@ -500,7 +500,17 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         elif self.match_type == "semifinal":
             tournament.confirm_semifinal_winner(self.match_index, self.team_index)
         elif self.match_type == "final":
-            await tournament.confirm_final_winner(self.team_index)
+            try:
+                await tournament.confirm_final_winner(self.team_index)
+            except TournamentStateError as e:
+                try:
+                    if interaction.response.is_done():
+                        await interaction.followup.send(str(e), ephemeral=True)
+                    else:
+                        await interaction.response.send_message(str(e), ephemeral=True)
+                except Exception:
+                    pass
+                return
 
         store.set(tournament)
 

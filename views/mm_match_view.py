@@ -20,7 +20,7 @@ import re
 import discord
 
 from config import replace_emojis
-from models.tournament import Tournament, TournamentPhase
+from models.tournament import Tournament, TournamentPhase, TournamentStateError
 from storage.json_store import store
 from utils import kd_stat
 from utils.design.layouts import DesignView
@@ -1124,7 +1124,10 @@ async def _finalize_mm_match_locked(
 
     # 3. Победитель + завершение турнира
     store.set(tournament)
-    await tournament.confirm_final_winner(winning_team_index)
+    try:
+        await tournament.confirm_final_winner(winning_team_index)
+    except TournamentStateError as exc:
+        return False, str(exc)
 
     # 4. Зафиксировать состояние матча
     meta["state"] = "done"
