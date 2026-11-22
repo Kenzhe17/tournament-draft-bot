@@ -225,6 +225,15 @@ CASHCUP_ENABLED = os.getenv("CASHCUP_ENABLED", "0").strip().lower() in (
     "1", "true", "yes", "on",
 )
 
+# CASHCUP_TEST_ENABLED=0 (по умолчанию) не регистрирует /тест и его
+# persistent views. Тестовая панель работает только с таблицами
+# cashcup_test_* и никогда не трогает cashcup_tournaments. Включать
+# только на staging-окружении (hopeful-purpose), не на production.
+CASHCUP_TEST_ENABLED = os.getenv("CASHCUP_TEST_ENABLED", "0").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+
+
 # Публичные публикации CASH CUP: отдельные каналы для сетки турнира
 # и карточек матчей. 0 (по умолчанию) — публикации выключены, турнир
 # работает как раньше. ID НЕ зашиты в код: каждый контур (staging/
