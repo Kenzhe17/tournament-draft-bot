@@ -197,7 +197,7 @@ async def test_two_concurrent_finalizes_real_pg(pg_pool, monkeypatch):
     match_finalizations = 'done'."""
     import storage.db as dbmod
     import views.mm_match_view as mmv
-    from models.tournament import FormationMode, Tournament
+    from models.tournament import FormationMode, Tournament, TournamentPhase
     from types import SimpleNamespace
 
     prev = dbmod._pool
@@ -216,6 +216,7 @@ async def test_two_concurrent_finalizes_real_pg(pg_pool, monkeypatch):
             guild_id=gid, channel_id=555,
             formation_mode=FormationMode.RANDOM_AUTO,
         )
+        t.phase = TournamentPhase.FINAL
         t.teams = [
             {"players": [f"P{i}" for i in range(1, 5)], "captain": "P1"},
             {"players": [f"P{i}" for i in range(5, 9)], "captain": "P5"},

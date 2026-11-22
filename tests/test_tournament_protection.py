@@ -512,3 +512,87 @@ def test_completed_slot_released_via_archive(archive, orgs):
     assert archive.archive(old) is True
     # Слот освобождается store.delete — архив уже содержит данные
     assert archive.is_archived(str(old.id))
+
+
+# ---------------------------------------------------------------------------
+# P0.1: confirm_final_winner — валидация до побочных эффектов
+# ---------------------------------------------------------------------------
+
+from models.tournament import TournamentStateError
+
+
+def _final_tournament() -> Tournament:
+    t = _tournament()
+    t.phase = TournamentPhase.FINAL
+    t.final_teams = [0, 1]
+    t.teams = [{"captain": "A"}, {"captain": "B"}, {"captain": "C"}]
+    t.semifinal_winners = [0, 1]
+    return t
+
+
+@pytest.mark.asyncio
+async def test_confirm_final_winner_empty_final_teams():
+    """final_teams пуст, semifinal_winners подтверждены → self-heal."""
+    t = _final_tournament()
+    t.final_teams = []
+    await t.confirm_final_winner(0)
+    assert t.phase == TournamentPhase.COMPLETE
+    assert t.winner_team_index == 0
+    assert 1 in t.eliminated_teams
+
+
+@pytest.mark.asyncio
+async def test_confirm_final_winner_incomplete_no_heal():
+    """Нет подтверждённых semifinal_winners и final_teams → ошибка,
+    состояние не изменено."""
+    t = _final_tournament()
+    t.final_teams = []
+    t.semifinal_winners = [0, None]
+    with pytest.raises(TournamentStateError):
+        await t.confirm_final_winner(0)
+    assert t.phase == TournamentPhase.FINAL
+    assert t.winner_team_index is None
+    assert not t.eliminated_teams
+
+
+@pytest.mark.asyncio
+async def test_confirm_final_winner_single_element():
+    """final_teams из одного элемента (IndexError раньше) → ошибка."""
+    t = _final_tournament()
+    t.final_teams = [0]
+    t.semifinal_winners = [0, None]
+    with pytest.raises(TournamentStateError):
+        await t.confirm_final_winner(0)
+    assert t.phase == TournamentPhase.FINAL
+
+
+@pytest.mark.asyncio
+async def test_confirm_final_winner_team_not_in_final():
+    """Посторонняя команда не может стать чемпионом финала."""
+    t = _final_tournament()
+    with pytest.raises(TournamentStateError):
+        await t.confirm_final_winner(2)
+    assert t.phase == TournamentPhase.FINAL
+    assert not t.eliminated_teams
+
+
+@pytest.mark.asyncio
+async def test_confirm_final_winner_wrong_phase():
+    """Подтверждение вне фазы FINAL запрещено."""
+    t = _final_tournament()
+    t.phase = TournamentPhase.SEMIFINALS
+    with pytest.raises(TournamentStateError):
+        await t.confirm_final_winner(0)
+    assert t.phase == TournamentPhase.SEMIFINALS
+
+
+@pytest.mark.asyncio
+async def test_confirm_final_winner_already_complete():
+    """Повторное нажатие — no-op, результат не перезаписывается."""
+    t = _final_tournament()
+    await t.confirm_final_winner(0)
+    await t.confirm_final_winner(1)
+    assert t.winner_team_index == 0
+    assert t.phase == TournamentPhase.COMPLETE
+    assert 1 in t.eliminated_teams
+    assert 0 not in t.eliminated_teams
