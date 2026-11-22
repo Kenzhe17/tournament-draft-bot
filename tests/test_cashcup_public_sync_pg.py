@@ -78,6 +78,7 @@ class FakeMessage:
         self.id = FakeMessage._next
         self.channel = channel
         self.kwargs = kwargs
+        self.content = kwargs.get("content") or ""
         self.embeds = list(kwargs.get("embeds") or
                            ([kwargs["embed"]] if kwargs.get("embed") else []))
         self.deleted = False
@@ -85,6 +86,8 @@ class FakeMessage:
 
     async def edit(self, **kwargs):
         self.edit_calls.append(kwargs)
+        if "content" in kwargs:
+            self.content = kwargs["content"] or ""
         if "embeds" in kwargs:
             self.embeds = list(kwargs["embeds"])
         elif "embed" in kwargs:
@@ -331,6 +334,63 @@ class TestSync:
         assert await cog.sync_guild(G) is True
         rows = await pubstore.list_for_tournament(tid)
         assert all(r["status"] == "ok" for r in rows)
+
+    async def test_history_scan_failure_blocks_send(
+            self, pg_pool, discord_env):
+        """Ошибка чтения истории ≠ «публикации нет»: без надёжного
+        подтверждения отсутствие send запрещён (fail-closed)."""
+        cog, _guild, bch, mch = discord_env
+        state = await _running_tournament(8)
+        tid = state["tournament_id"]
+        # Строки публикаций без message_id — состояние «send был,
+        # ответ потерян». Канал содержит «сироту», но history
+        # недоступна → sync обязан отказать, а не создать дубль.
+        for m in state["bracket"]["matches"]:
+            await pubstore.ensure_row(tid, G, f"match:{m['id']}")
+        await pubstore.ensure_row(tid, G, "bracket")
+
+        async def _boom(limit=100):
+            raise discord.HTTPException(_Resp(), "history down")
+            yield  # pragma: no cover
+        mch.history = _boom
+        bch.history = _boom
+
+        assert await cog.sync_guild(G) is False
+        assert not mch.send_calls and not bch.send_calls
+        rows = await pubstore.list_for_tournament(tid)
+        assert all(r["status"] == "error" for r in rows)
+
+    async def test_lost_send_response_adopted_by_marker(
+            self, pg_pool, discord_env):
+        """Потерянный ответ channel.send: сообщение опубликовано,
+        message_id не сохранён → находится по footer-marker,
+        фактический id записывается, дубль не создаётся, pinged
+        выставляется по уже доставленному упоминанию."""
+        import services.cashcup_public_render as render
+        cog, _guild, _bch, mch = discord_env
+        state = await _running_tournament(8)
+        tid = state["tournament_id"]
+        m0 = state["bracket"]["matches"][0]
+        key = f"match:{m0['id']}"
+        card = render.match_card(state, m0)
+        # «Сирота»: send прошёл с пингом, ответ/запись потеряны.
+        orph = FakeMessage(mch, embed=card["embed"],
+                           content=card["content"] or "<@1> <@2>")
+        mch._messages[orph.id] = orph
+        await pubstore.ensure_row(tid, G, key)
+
+        assert await cog.sync_guild(G) is True
+        row = await pubstore.get(tid, key)
+        assert row["message_id"] == orph.id
+        assert row["channel_id"] == MATCH_CH
+        assert row["pinged"] is True
+        # Карточка m0 не отправлялась повторно — только edit сироты.
+        for call in mch.send_calls:
+            for emb in (call.get("embeds") or
+                        ([call["embed"]] if call.get("embed") else [])):
+                ft = getattr(getattr(emb, "footer", None), "text", "") or ""
+                assert f":{key}" not in ft
+        assert orph.edit_calls  # сообщение отредактировано на месте
 
     async def test_backfill_completed_tournament_no_pings(
             self, pg_pool, discord_env):

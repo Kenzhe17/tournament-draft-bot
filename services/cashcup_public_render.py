@@ -131,6 +131,7 @@ def bracket_embeds(state: dict) -> list[discord.Embed]:
     elif state.get("status") == "running":
         color = 0x5865F2
     first = True
+    overflow = False
     for title, lines in bracket_blocks(state):
         chunk: list[str] = []
         size = 0
@@ -146,9 +147,11 @@ def bracket_embeds(state: dict) -> list[discord.Embed]:
             chunks.append(chunk)
         for ci, part in enumerate(chunks):
             if len(embeds) >= MAX_EMBEDS:
-                # Практически недостижимо (34 матча ≈ 3к символов),
-                # но не обрезаем молча — добавляем явную пометку.
-                part = part + ["… further matches omitted — см. канал матчей"]
+                # Лимит Discord — 10 embeds. Не добавляем 11-й:
+                # фиксируем overflow и показываем явную пометку
+                # в пределах лимита (не молчаливое обрезание).
+                overflow = True
+                break
             t = title if ci == 0 else f"{title} ({ci + 1}/{len(chunks)})"
             e = discord.Embed(title=t,
                               description="\n".join(part)[:4096],
@@ -157,8 +160,24 @@ def bracket_embeds(state: dict) -> list[discord.Embed]:
                 e.set_footer(text=f"r!z3 CASH CUP · {state.get('tournament_id', '')}:bracket")
                 first = False
             embeds.append(e)
-            if len(embeds) >= MAX_EMBEDS:
-                return embeds
+        if overflow:
+            break
+    if overflow:
+        if len(embeds) < MAX_EMBEDS:
+            embeds.append(discord.Embed(
+                title="r!z3 CASH CUP · TOURNAMENT BRACKET",
+                description="Часть сетки не поместилась в лимит "
+                            "сообщения — все матчи доступны в канале "
+                            "карточек матчей.",
+                color=color))
+        else:
+            # Все 10 слотов заняты — дописываем пометку в последний
+            # embed, если она влезает в лимит описания.
+            last = embeds[-1]
+            note = "\n… further matches omitted — see match channel"
+            desc = last.description or ""
+            if len(desc) + len(note) <= 4096:
+                last.description = desc + note
     return embeds or [discord.Embed(
         title="r!z3 CASH CUP · TOURNAMENT BRACKET",
         description="Сетка отсутствует.", color=color)]

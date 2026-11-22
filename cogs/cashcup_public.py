@@ -245,6 +245,7 @@ class CashCupPublicCog(commands.Cog):
             return True
 
         msg = None
+        adopted = False  # сообщение найдено по marker, id ещё не в БД
         if row.get("message_id"):
             try:
                 msg = await channel.fetch_message(row["message_id"])
@@ -259,7 +260,18 @@ class CashCupPublicCog(commands.Cog):
         if msg is None:
             # При потерянном ответе/удалении — ищем ранее
             # опубликованное сообщение по маркеру в footer.
-            msg = await self._find_by_marker(channel, tid, key)
+            # Ошибка чтения истории ≠ «публикации нет»: без
+            # надёжного подтверждения отсутствие send запрещён,
+            # иначе получим дубль карточки.
+            try:
+                msg = await self._find_by_marker(channel, tid, key)
+            except Exception as exc:
+                logger.warning("CASHCUP pub history scan failed "
+                               "%s/%s: %s", tid, key, exc)
+                await pubstore.update(row["id"], bump_retry=True)
+                return False
+            if msg is not None:
+                adopted = True
 
         if msg is None:
             return await self._send_new(
@@ -267,16 +279,20 @@ class CashCupPublicCog(commands.Cog):
 
         if same_hash and due:
             # Верификация: сообщение живо, контент не изменился.
+            # При adoption фиксируем фактический message_id.
             await pubstore.update(
                 row["id"], status="ok", retry_count=0,
-                next_attempt_at=now + VERIFY_INTERVAL)
+                next_attempt_at=now + VERIFY_INTERVAL,
+                **({"channel_id": channel.id,
+                    "message_id": msg.id} if adopted else {}))
             return True
         if same_hash and not due:
             # Backoff/error-строка с живым сообщением — не дёргаем
             # Discord чаще next_attempt_at.
             return True
         return await self._edit_existing(
-            row, msg, desired, match_view, tid, guild_id)
+            row, msg, desired, match_view, tid, guild_id,
+            adopted=adopted)
 
     async def _send_new(self, row: dict, channel: discord.TextChannel,
                         key: str, desired: dict[str, Any],
@@ -301,7 +317,10 @@ class CashCupPublicCog(commands.Cog):
             kwargs["allowed_mentions"] = discord.AllowedMentions.none()
         try:
             msg = await channel.send(**kwargs)
-        except discord.HTTPException as exc:
+        except Exception as exc:
+            # Включая потерянный ответ после фактической отправки:
+            # сообщение-сирота будет найдено по marker на следующем
+            # sync — send повторять вслепую нельзя.
             logger.warning("CASHCUP pub send failed %s/%s: %s",
                            tid, key, exc)
             await pubstore.update(row["id"], bump_retry=True)
@@ -327,8 +346,16 @@ class CashCupPublicCog(commands.Cog):
 
     async def _edit_existing(self, row: dict, msg: discord.Message,
                              desired: dict[str, Any], match_view: bool,
-                             tid: str, guild_id: int) -> bool:
-        """Обновление существующей публикации на месте."""
+                             tid: str, guild_id: int, *,
+                             adopted: bool = False) -> bool:
+        """Обновление существующей публикации на месте.
+
+        При adoption (сообщение найдено по marker, id не был в БД)
+        сохраняем фактический message_id/channel_id. Если у
+        принятого сообщения уже был ping-контент (send прошёл,
+        а запись pinged упала) — фиксируем pinged=True, чтобы
+        пересоздание не пинговало повторно."""
+        had_ping_content = bool(getattr(msg, "content", "") or "")
         kwargs: dict[str, Any] = {"content": "",
                                   "allowed_mentions":
                                   discord.AllowedMentions.none()}
@@ -354,7 +381,11 @@ class CashCupPublicCog(commands.Cog):
             await pubstore.update(
                 row["id"], last_render_hash=desired["hash"],
                 status="ok", retry_count=0,
-                next_attempt_at=utcnow() + VERIFY_INTERVAL)
+                next_attempt_at=utcnow() + VERIFY_INTERVAL,
+                pinged=(True if had_ping_content
+                        else row.get("pinged")),
+                **({"channel_id": msg.channel.id,
+                    "message_id": msg.id} if adopted else {}))
         except Exception:
             logger.exception("CASHCUP pub hash save failed %s/%s",
                              tid, row["publication_key"])
@@ -366,16 +397,20 @@ class CashCupPublicCog(commands.Cog):
                               ) -> discord.Message | None:
         """Поиск ранее отправленного сообщения по маркеру
         '{tid}:{key}' в footer первого embed — восстановление после
-        потерянного ответа Discord без создания дубля."""
+        потерянного ответа Discord без создания дубля.
+
+        При HTTP-ошибке истории пробрасывает исключение — «не
+        удалось проверить» не равно «публикации нет»."""
         marker = f"{tid}:{key}"
-        try:
-            async for msg in channel.history(limit=HISTORY_SCAN_LIMIT):
-                for emb in msg.embeds:
-                    if emb.footer and emb.footer.text \
-                            and marker in emb.footer.text:
-                        return msg
-        except discord.HTTPException as exc:
-            logger.warning("CASHCUP pub history scan failed: %s", exc)
+        bot_id = getattr(getattr(self.bot, "user", None), "id", 0)
+        async for msg in channel.history(limit=HISTORY_SCAN_LIMIT):
+            author = getattr(msg, "author", None)
+            if bot_id and getattr(author, "id", None) != bot_id:
+                continue
+            for emb in msg.embeds:
+                if emb.footer and emb.footer.text \
+                        and marker in emb.footer.text:
+                    return msg
         return None
 
 

@@ -85,6 +85,20 @@ class TestBracketEmbeds:
         shown = text.count("`W") + text.count("`L") + text.count("`GF`")
         assert shown <= n  # при переполнении — явная пометка, не тишина
 
+    def test_hard_limit_never_exceeds_ten(self, monkeypatch):
+        """Даже при экстремальном объёме — не более 10 embeds
+        (раньше добавлялся 11-й → Discord отвергал сообщение)."""
+        state = _state(8)
+        monkeypatch.setattr(
+            render, "bracket_blocks",
+            lambda s: [("BIG", [f"match line {i} " + "x" * 200
+                                for i in range(400)])])
+        embeds = render.bracket_embeds(state)
+        assert len(embeds) <= render.MAX_EMBEDS == 10
+        assert len(embeds) == render.MAX_EMBEDS
+        last = embeds[-1].description or ""
+        assert "omitted" in last or "match channel" in last
+
 
 class TestMatchCard:
     def _card(self, state, mid="W1-1"):
