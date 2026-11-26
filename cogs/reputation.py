@@ -36,7 +36,7 @@ from storage.reputation_store import (
 )
 from utils.design import colors
 from utils.design.layouts import DesignView, profile_view
-from utils.permissions import is_admin
+from utils.permissions import is_bot_owner
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -508,7 +508,7 @@ class ReputationCog(commands.Cog):
 
     @reputation_group.command(name="history", description="История начислений репутации (админ)")
     @app_commands.describe(user="Участник сервера")
-    @is_admin()
+    @is_bot_owner()
     async def rep_history(
         self, interaction: discord.Interaction, user: discord.Member
     ) -> None:
@@ -583,7 +583,7 @@ class ReputationCog(commands.Cog):
         amount="Изменение REP (может быть отрицательным)",
         reason="Причина корректировки (не публикуется публично)",
     )
-    @is_admin()
+    @is_bot_owner()
     async def rep_adjust(
         self,
         interaction: discord.Interaction,
@@ -732,7 +732,7 @@ class ReputationCog(commands.Cog):
         name="invites_debug",
         description="Диагностика атрибуции приглашений (админ)",
     )
-    @is_admin()
+    @is_bot_owner()
     async def invites_debug(self, interaction: discord.Interaction) -> None:
         data = await reputation_store.get_invite_debug(interaction.guild_id)
         lines = ["**По attribution / статусу:**"]
