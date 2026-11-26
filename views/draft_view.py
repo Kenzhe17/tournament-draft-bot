@@ -64,9 +64,9 @@ class PlayerSelect(discord.ui.Select):
             return False
         if tournament.is_test:
             return True
-        from utils.cosmetics import clean_nickname
+        from utils.cosmetics import clean_tournament_nickname
 
-        return clean_nickname(user_name) == clean_nickname(expected)
+        return clean_tournament_nickname(user_name) == clean_tournament_nickname(expected)
 
     async def _ephemeral(self, interaction: discord.Interaction,
                          text: str) -> None:
@@ -110,9 +110,9 @@ class PlayerSelect(discord.ui.Select):
             tournament.captain_order[picker_pos]
         ]
         user_name = interaction.user.display_name
-        from utils.cosmetics import clean_nickname
+        from utils.cosmetics import clean_tournament_nickname
 
-        cleaned_captain_name = clean_nickname(expected_captain_name)
+        cleaned_captain_name = clean_tournament_nickname(expected_captain_name)
 
         def _is_current_picker() -> bool:
             """Ход капитана: по Discord user_id, fallback — по имени
@@ -126,7 +126,7 @@ class PlayerSelect(discord.ui.Select):
                 expected_uid = 0
             if expected_uid > 0:
                 return interaction.user.id == expected_uid
-            return clean_nickname(user_name) == cleaned_captain_name
+            return clean_tournament_nickname(user_name) == cleaned_captain_name
 
         # In test mode, allow anyone to pick
         if not tournament.is_test and not _is_current_picker():
@@ -177,8 +177,8 @@ class PlayerSelect(discord.ui.Select):
                     picker_ok = (
                         interaction.user.id == expected_uid
                         if expected_uid > 0
-                        else clean_nickname(interaction.user.display_name)
-                        == clean_nickname(expected)
+                        else clean_tournament_nickname(interaction.user.display_name)
+                        == clean_tournament_nickname(expected)
                     )
                     if not tournament.is_test and not picker_ok:
                         stale = f"Сейчас выбирает {expected}"
