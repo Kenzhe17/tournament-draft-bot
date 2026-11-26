@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Literal, Optional
 
@@ -94,6 +95,21 @@ async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float
         await interaction.delete_original_response()
     except discord.HTTPException:
         pass
+
+
+async def _delete_message_later(message: discord.Message, delay: float = 4.0) -> None:
+    """Удалить followup-сообщение через указанное время."""
+    await asyncio.sleep(delay)
+    try:
+        await message.delete()
+    except (discord.HTTPException, discord.NotFound):
+        pass
+
+
+# Каналы, в которых сейчас выполняется /tournament create.
+# Защита от параллельных вызовов: второй create до завершения
+# первого не должен публиковать дублирующую карточку турнира.
+_CREATE_IN_FLIGHT: set[tuple[int, int]] = set()
 
 
 async def _perform_tournament_delete(
@@ -279,46 +295,9 @@ class TournamentCog(commands.Cog):
                 # Поиск пустой, разблокировать канал
                 del LOCKED_CHANNELS[interaction.channel_id]
 
-        existing = store.get(interaction.guild_id, interaction.channel_id)
-        if existing:
-            # Проверяем фазу существующего турнира
-            if existing.phase != TournamentPhase.COMPLETE:
-                await interaction.response.send_message(
-                    replace_emojis("На этом канале уже есть активный турнир. Удалите его с помощью `/tournament delete`, чтобы создать новый."),
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-            # Завершённый турнир нельзя просто удалить — архивируем
-            # результаты/историю, затем освобождаем слот канала.
-            # Если архивация не удалась — слот НЕ освобождается:
-            # сообщаем организатору и прерываем создание, чтобы
-            # не потерять результаты предыдущего турнира.
-            from services import tournament_lifecycle
-            from services import tournament_audit_service as audit_svc
-            released = await tournament_lifecycle.release_completed_tournament(
-                interaction.guild, existing,
-                channel=interaction.channel,
-            )
-            if not released:
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "Не удалось сохранить архив завершённого "
-                        "турнира — слот канала НЕ освобождён. "
-                        "Новый турнир не создан, повторите попытку."
-                    ),
-                    ephemeral=True,
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-            await audit_svc.record_interaction(
-                interaction,
-                tournament_id=str(existing.id),
-                action=audit_svc.A.TOURNAMENT_ARCHIVED,
-                after={"phase": "complete", "winner": existing.winner_team_index},
-            )
-
-        # Validate size
+        # Валидация аргументов и состояния — до архивации и до defer:
+        # невалидный ввод не должен архивировать предыдущий турнир
+        # или занимать слот канала.
         try:
             tournament_size = TournamentSize(size)
         except ValueError:
@@ -343,100 +322,205 @@ class TournamentCog(commands.Cog):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        tournament = Tournament(
-            guild_id=interaction.guild_id,
-            channel_id=interaction.channel_id,
-            size=tournament_size,
-            formation_mode=formation_mode,
-            organizer_id=interaction.user.id,
-        )
-        embed = await build_setup_embed(tournament, interaction.guild)
-        view = self.bot.build_view_for_tournament(tournament)
-        self.bot._register_view(view)
-
-        # Диагностика кнопок: что реально уходит в сообщение
-        _composed = None
-        _debug = "n/a"
-        try:
-            from utils.design.adapter import _layout_debug, _view_rows
-            _rows = _view_rows(view) if view is not None else []
-            _composed = compose(embed, view)
-            _child_types = [
-                f"{type(c).__name__}({len(getattr(c, 'children', []) or [])})"
-                for c in (view.children if view is not None else [])
-            ]
-            _debug = (
-                f"view={type(view).__name__ if view else None} "
-                f"children={_child_types} "
-                f"rows={len(_rows)} | {_layout_debug(_composed)}"
+        existing = store.get(interaction.guild_id, interaction.channel_id)
+        if existing and existing.phase != TournamentPhase.COMPLETE:
+            await interaction.response.send_message(
+                replace_emojis("На этом канале уже есть активный турнир. Удалите его с помощью `/tournament delete`, чтобы создать новый."),
+                ephemeral=True
             )
-            logger.info("TOURNAMENT-CREATE %s", _debug)
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Initial ACK до долгих операций: архивация завершённого
+        # турнира, построение embed и публикация карточки могут
+        # занять >3с — без defer Discord отвечает 10062
+        # Unknown interaction.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        # Защита от параллельного создания в одном канале: повторный
+        # вызов до завершения первого не публикует дубликат карточки.
+        _create_key = (interaction.guild_id, interaction.channel_id)
+        if _create_key in _CREATE_IN_FLIGHT:
+            _dup = await interaction.followup.send(
+                replace_emojis(
+                    "Создание турнира в этом канале уже выполняется. "
+                    "Дождитесь завершения текущего запуска."
+                ),
+                ephemeral=True,
+            )
+            asyncio.create_task(_delete_message_later(_dup))
+            return
+        _CREATE_IN_FLIGHT.add(_create_key)
+
+        _t0 = time.monotonic()
+        published_message = None
+        stored = False
+        try:
+            if existing:
+                # Завершённый турнир нельзя просто удалить — архивируем
+                # результаты/историю, затем освобождаем слот канала.
+                # Если архивация не удалась — слот НЕ освобождается:
+                # сообщаем организатору и прерываем создание, чтобы
+                # не потерять результаты предыдущего турнира.
+                from services import tournament_lifecycle
+                from services import tournament_audit_service as audit_svc
+                released = await tournament_lifecycle.release_completed_tournament(
+                    interaction.guild, existing,
+                    channel=interaction.channel,
+                )
+                if not released:
+                    _msg = await interaction.followup.send(
+                        replace_emojis(
+                            "Не удалось сохранить архив завершённого "
+                            "турнира — слот канала НЕ освобождён. "
+                            "Новый турнир не создан, повторите попытку."
+                        ),
+                        ephemeral=True,
+                    )
+                    asyncio.create_task(_delete_message_later(_msg))
+                    return
+                await audit_svc.record_interaction(
+                    interaction,
+                    tournament_id=str(existing.id),
+                    action=audit_svc.A.TOURNAMENT_ARCHIVED,
+                    after={"phase": "complete", "winner": existing.winner_team_index},
+                )
+                logger.info(
+                    "TOURNAMENT-CREATE archive done %.2fs guild=%s channel=%s",
+                    time.monotonic() - _t0,
+                    interaction.guild_id, interaction.channel_id,
+                )
+
+            tournament = Tournament(
+                guild_id=interaction.guild_id,
+                channel_id=interaction.channel_id,
+                size=tournament_size,
+                formation_mode=formation_mode,
+                organizer_id=interaction.user.id,
+            )
+            embed = await build_setup_embed(tournament, interaction.guild)
+            view = self.bot.build_view_for_tournament(tournament)
+            self.bot._register_view(view)
+
+            # Диагностика кнопок: что реально уходит в сообщение
+            _composed = None
+            _debug = "n/a"
+            try:
+                from utils.design.adapter import _layout_debug, _view_rows
+                _rows = _view_rows(view) if view is not None else []
+                _composed = compose(embed, view)
+                _child_types = [
+                    f"{type(c).__name__}({len(getattr(c, 'children', []) or [])})"
+                    for c in (view.children if view is not None else [])
+                ]
+                _debug = (
+                    f"view={type(view).__name__ if view else None} "
+                    f"children={_child_types} "
+                    f"rows={len(_rows)} | {_layout_debug(_composed)}"
+                )
+                logger.info("TOURNAMENT-CREATE %s", _debug)
+            except Exception:
+                logger.exception("TOURNAMENT-CREATE diagnostics failed")
+
+            # Публикуем карточку до подтверждения пользователю:
+            # «Турнир создан» отправляется только после фактической
+            # публикации и сохранения в store.
+            published_message = await interaction.channel.send(
+                view=_composed if _composed is not None else compose(embed, view),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+
+            tournament.message_id = published_message.id
+            store.set(tournament)
+            stored = True
+
+            # Send notification to notification channel
+            await send_tournament_notification(tournament, interaction.guild, "Создан новый турнир")
+
+            # Add organizer to channel organizers
+            from storage.organizer_store import ChannelOrganizers, organizer_store
+            channel_orgs = organizer_store.get(interaction.guild_id, interaction.channel_id)
+            if not channel_orgs:
+                channel_orgs = ChannelOrganizers()
+            channel_orgs.organizer_id = interaction.user.id
+            channel_orgs.tournament_id = tournament.id
+            organizer_store.set(interaction.guild_id, interaction.channel_id, channel_orgs)
+
+            # Update organizer setup embed if it exists
+            from storage.organizer_store import organizer_store as org_store
+            from services.discord_cfg import channel_ids as _dc_ids2
+            for channel_id in _dc_ids2(interaction.guild_id,
+                                       "discord.tournament_channels",
+                                       TOURNAMENT_CHANNELS):
+                orgs = org_store.get(interaction.guild_id, channel_id)
+                if orgs and orgs.message_id:
+                    try:
+                        update_channel = interaction.guild.get_channel(channel_id)
+                        if update_channel:
+                            update_message = await update_channel.fetch_message(orgs.message_id)
+                            from views.organizer_view import build_multi_channel_embed, OrganizerManagementButton
+                            from discord.ui import View
+                            new_embed = build_multi_channel_embed(interaction.guild)
+                            new_view = View()
+                            new_view.add_item(OrganizerManagementButton(interaction.guild_id, channel_id, interaction.guild))
+                            await update_message.edit( view=compose(new_embed, new_view))
+                    except Exception:
+                        pass
+
+            logger.info(
+                "Турнир создан на сервере %s с размером %s и режимом %s "
+                "(create total %.2fs)",
+                interaction.guild_id, size, formation,
+                time.monotonic() - _t0,
+            )
+
+            from services import tournament_audit_service as audit_svc
+            await audit_svc.record_interaction(
+                interaction,
+                tournament_id=str(tournament.id),
+                action=audit_svc.A.TOURNAMENT_CREATE,
+                after={
+                    "size": size,
+                    "formation": formation,
+                    "phase": tournament.phase.value,
+                },
+            )
+
+            # Подтверждение — только после публикации и сохранения.
+            # allowed_mentions=none: embed содержит <@id> капитанов
+            # для кликабельности, но уведомления не рассылаются.
+            await interaction.followup.send(
+                replace_emojis(f"Турнир создан\n-# {_debug}"),
+                ephemeral=True,
+            )
         except Exception:
-            logger.exception("TOURNAMENT-CREATE diagnostics failed")
-
-        # Send ephemeral confirmation first
-        await interaction.response.send_message(
-            replace_emojis(f"Турнир создан\n-# {_debug}"),
-            ephemeral=True
-        )
-
-        # Send main tournament message through channel.send to unbind it.
-        # allowed_mentions=none: embed содержит <@id> капитанов/игроков
-        # для кликабельности, но уведомления не рассылаются.
-        message = await interaction.channel.send(
-            view=_composed if _composed is not None else compose(embed, view),
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-
-        tournament.message_id = message.id
-        store.set(tournament)
-
-        # Send notification to notification channel
-        await send_tournament_notification(tournament, interaction.guild, "Создан новый турнир")
-
-        # Add organizer to channel organizers
-        from storage.organizer_store import ChannelOrganizers, organizer_store
-        channel_orgs = organizer_store.get(interaction.guild_id, interaction.channel_id)
-        if not channel_orgs:
-            channel_orgs = ChannelOrganizers()
-        channel_orgs.organizer_id = interaction.user.id
-        channel_orgs.tournament_id = tournament.id
-        organizer_store.set(interaction.guild_id, interaction.channel_id, channel_orgs)
-
-        # Update organizer setup embed if it exists
-        from storage.organizer_store import organizer_store as org_store
-        from services.discord_cfg import channel_ids as _dc_ids2
-        for channel_id in _dc_ids2(interaction.guild_id,
-                                   "discord.tournament_channels",
-                                   TOURNAMENT_CHANNELS):
-            orgs = org_store.get(interaction.guild_id, channel_id)
-            if orgs and orgs.message_id:
+            logger.exception(
+                "TOURNAMENT-CREATE failed guild=%s channel=%s user=%s",
+                interaction.guild_id, interaction.channel_id,
+                interaction.user.id,
+            )
+            # Карточка опубликована, но турнир не сохранён —
+            # удаляем её, чтобы не осталось «мёртвого» сообщения
+            # с кнопками несуществующего турнира.
+            if published_message is not None and not stored:
                 try:
-                    update_channel = interaction.guild.get_channel(channel_id)
-                    if update_channel:
-                        update_message = await update_channel.fetch_message(orgs.message_id)
-                        from views.organizer_view import build_multi_channel_embed, OrganizerManagementButton
-                        from discord.ui import View
-                        new_embed = build_multi_channel_embed(interaction.guild)
-                        new_view = View()
-                        new_view.add_item(OrganizerManagementButton(interaction.guild_id, channel_id, interaction.guild))
-                        await update_message.edit( view=compose(new_embed, new_view))
+                    await published_message.delete()
                 except Exception:
-                    pass
-
-        logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
-
-        from services import tournament_audit_service as audit_svc
-        await audit_svc.record_interaction(
-            interaction,
-            tournament_id=str(tournament.id),
-            action=audit_svc.A.TOURNAMENT_CREATE,
-            after={
-                "size": size,
-                "formation": formation,
-                "phase": tournament.phase.value,
-            },
-        )
+                    logger.exception("TOURNAMENT-CREATE: не удалось удалить карточку %s", published_message.id)
+            try:
+                _err = await interaction.followup.send(
+                    replace_emojis(
+                        "Не удалось создать турнир — внутренняя ошибка. "
+                        "Если завершённый турнир был заархивирован, его "
+                        "результаты сохранены; повторите попытку."
+                    ),
+                    ephemeral=True,
+                )
+                asyncio.create_task(_delete_message_later(_err))
+            except Exception:
+                pass
+        finally:
+            _CREATE_IN_FLIGHT.discard(_create_key)
 
     @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_channel_organizer_decorator()
