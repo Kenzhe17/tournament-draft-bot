@@ -11,7 +11,7 @@ import discord
 from utils.design import compose
 from discord.ui import Modal, TextInput, View, Button, button
 
-from models.tournament import TournamentPhase
+from models.tournament import TournamentPhase, TournamentStateError
 
 if TYPE_CHECKING:
     from models.tournament import Tournament
@@ -1128,6 +1128,17 @@ class AdminConfirmView(View):
                 try:
                     await tournament.confirm_final_winner(winning_team_index)
                     logging.info(f"Final winner confirmed, phase={tournament.phase.value}, winner_team_index={tournament.winner_team_index}")
+                except TournamentStateError as e:
+                    import logging
+                    logging.error(f"Inconsistent final state: {e}")
+                    try:
+                        if interaction.response.is_done():
+                            await interaction.followup.send(str(e), ephemeral=True)
+                        else:
+                            await interaction.response.send_message(str(e), ephemeral=True)
+                    except Exception:
+                        pass
+                    return
                 except Exception as e:
                     import logging
                     logging.error(f"Error confirming final winner: {e}", exc_info=True)
