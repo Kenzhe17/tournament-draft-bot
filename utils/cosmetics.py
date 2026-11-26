@@ -65,6 +65,34 @@ def clean_nickname(text: str) -> str:
     return text
 
 
+def clean_tournament_nickname(text: str) -> str:
+    """Tournament-only visible name: strip decoration, never alter Discord nick.
+
+    This function is deliberately applied BEFORE adding purchased r!z3
+    cosmetics. Unicode/Cyrillic letters, numbers and meaningful interior
+    punctuation (e.g. r!z3) are preserved. Empty results require fallback
+    to another username or a user-id-based label at the call site.
+    """
+    import unicodedata
+
+    text = unicodedata.normalize("NFKC", str(text or ""))
+    # Avoid allowing a display name to impersonate a Discord mention.
+    text = re.sub(r"<@!?\d+>|<@&\d+>|<#\d+>", "", text)
+    text = re.sub(r"@(?:everyone|here)\b", "", text, flags=re.IGNORECASE)
+    text = clean_nickname(text)
+    text = "".join(
+        ch for ch in text
+        if not unicodedata.category(ch).startswith("C")
+    )
+    # Remove a short prefix clan tag, but not brackets inside the nickname.
+    text = re.sub(r"^\s*\[[^\[\]\n]{1,12}\]\s+(?=\S)", "", text)
+    text = re.sub(r"^\s*\([^()\n]{1,12}\)\s+(?=\S)", "", text)
+    # '- ! — (🏆) - ! k' -> 'k'; '° albi' -> 'albi'.
+    text = re.sub(r"^[^\w]+", "", text, flags=re.UNICODE)
+    text = re.sub(r"[^\w]+$", "", text, flags=re.UNICODE)
+    return " ".join(text.split())[:32]
+
+
 def display_name_for(guild_id: int, user_id: int, fallback: str = "") -> str:
     """Актуальное отображаемое имя игрока.
 
@@ -85,7 +113,9 @@ def display_name_for(guild_id: int, user_id: int, fallback: str = "") -> str:
             if member is not None:
                 name = (getattr(member, "display_name", "") or "").strip()
                 if name:
-                    return name
+                    cleaned = clean_tournament_nickname(name)
+                    if cleaned:
+                        return cleaned
         except Exception:
             pass
     name = (fallback or "").strip()
@@ -94,7 +124,9 @@ def display_name_for(guild_id: int, user_id: int, fallback: str = "") -> str:
     if name.startswith("<@"):
         name = ""
     if name:
-        return name
+        cleaned = clean_tournament_nickname(name)
+        if cleaned:
+            return cleaned
     return str(uid) if uid > 0 else ""
 
 
@@ -103,6 +135,11 @@ def format_player_name(guild_id: int, user_id: int, base_name: str) -> str:
 
     Формат: **[TAG]** Name ICON (жирный тег)
     """
+    # Очистка только базового имени, ДО добавления купленных тегов.
+    base_name = clean_tournament_nickname(base_name) or (
+        f"Игрок-{int(user_id) % 10000:04d}" if int(user_id or 0) > 0
+        else "Игрок"
+    )
     # Получить экипированную косметику
     cosmetics = inventory_store.get_equipped_cosmetics(guild_id, user_id)
 

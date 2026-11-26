@@ -402,9 +402,13 @@ class JoinBRButton(Button):
             )
             return
 
-        from utils.cosmetics import clean_nickname
-        user_name = clean_nickname(interaction.user.display_name)
+        from utils.cosmetics import clean_tournament_nickname
         user_id = interaction.user.id
+        user_name = (
+            clean_tournament_nickname(interaction.user.display_name)
+            or clean_tournament_nickname(interaction.user.name)
+            or f"Игрок-{user_id % 10000:04d}"
+        )
 
         # VAC — временная блокировка участия в турнирах
         from services import vac_service
@@ -693,14 +697,16 @@ class RegisterTeamButton(Button):
         tournament.registered_teams.append(team.team_id)
 
         # Add team members to players list for role distribution (check for duplicates)
-        from utils.cosmetics import clean_nickname
+        from utils.cosmetics import clean_tournament_nickname
         for member_id in team.members:
             # Check if already in players list
             already_registered = any(p["id"] == member_id for p in tournament.players)
             if not already_registered:
                 member = interaction.guild.get_member(member_id)
                 if member:
-                    clean_name = clean_nickname(member.display_name)
+                    clean_name = (clean_tournament_nickname(member.display_name)
+                                  or clean_tournament_nickname(member.name)
+                                  or f"Игрок-{member_id % 10000:04d}")
                     tournament.players.append({"name": clean_name, "id": member_id})
                     print(f"Added player to tournament: {clean_name} (ID: {member_id})")
                 else:
@@ -3315,7 +3321,12 @@ class TeamNameButton(Button):
             return
 
         # Find which team the user is captain of
-        user_name = interaction.user.display_name
+        from utils.cosmetics import clean_tournament_nickname
+        user_name = (
+            clean_tournament_nickname(interaction.user.display_name)
+            or clean_tournament_nickname(interaction.user.name)
+            or f"Игрок-{interaction.user.id % 10000:04d}"
+        )
         team_index = None
         for i, team in enumerate(tournament.teams):
             if team.get("captain") == user_name:

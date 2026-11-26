@@ -500,17 +500,18 @@ def _unique_player_name(
     Если display_name уже занят ДРУГИМ пользователем, добавляем
     короткий числовой суффикс — идентичность остаётся по user_id.
     """
-    base = (base or "").strip() or str(user_id)
+    from utils.cosmetics import clean_tournament_nickname
+    base = clean_tournament_nickname(base) or f"Игрок-{user_id % 10000:04d}"
     taken = tournament.all_players | set(tournament.players_pool)
     if base not in taken:
         return base
     if tournament.player_user_ids.get(base, 0) == user_id:
         return base
     tag = f"·{user_id % 10000:04d}"
-    candidate = f"{base} {tag}"
+    candidate = f"{base[:25].rstrip()} {tag}"
     n = 2
     while candidate in taken:
-        candidate = f"{base} {tag}-{n}"
+        candidate = f"{base[:max(1, 32-len(tag)-len(str(n))-2)].rstrip()} {tag}-{n}"
         n += 1
     return candidate
 

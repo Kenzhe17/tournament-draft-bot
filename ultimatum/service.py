@@ -18,6 +18,7 @@ import asyncpg
 import discord
 
 from storage.db import get_pool
+from utils.cosmetics import clean_tournament_nickname
 from storage.vac_store import vac_store
 from ultimatum.bracket import (
     Format, MatchStatus, Slot, TEMPLATES, entrant_count,
@@ -184,7 +185,11 @@ class UltService:
                         VALUES ($1, $2, $3::jsonb)
                         """,
                         tournament.id, [user.id],
-                        __import__("json").dumps([user.display_name]),
+                        __import__("json").dumps([
+                            clean_tournament_nickname(user.display_name)
+                            or clean_tournament_nickname(user.name)
+                            or f"Игрок-{user.id % 10000:04d}"
+                        ]),
                     )
                     await conn.execute(
                         """
@@ -336,7 +341,9 @@ class UltService:
                     RETURNING id
                     """,
                     tournament.id, captain.id, partner.id,
-                    partner.display_name, str(INVITE_TTL_SECONDS),
+                    (clean_tournament_nickname(partner.display_name)
+                     or f"Игрок-{partner.id % 10000:04d}"),
+                    str(INVITE_TTL_SECONDS),
                 )
                 await conn.execute(
                     """
@@ -447,8 +454,20 @@ class UltService:
                         "дуэт не может быть подтверждён."
                     )
 
-                names = [f"<@{invite.captain_id}>", f"<@{user.id}>"]
-                # Берём display_name через bot если доступен — иначе mention
+                guild = getattr(user, "guild", None)
+                captain_member = (
+                    guild.get_member(invite.captain_id) if guild else None
+                )
+                captain_nick = (
+                    getattr(captain_member, "display_name", "")
+                    if captain_member else ""
+                )
+                names = [
+                    clean_tournament_nickname(captain_nick)
+                    or f"Игрок-{invite.captain_id % 10000:04d}",
+                    clean_tournament_nickname(user.display_name)
+                    or f"Игрок-{user.id % 10000:04d}",
+                ]
                 eid = await conn.fetchval(
                     """
                     INSERT INTO ult2_entrants

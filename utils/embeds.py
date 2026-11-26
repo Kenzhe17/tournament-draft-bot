@@ -9,7 +9,7 @@ from config import ORGANIZER_THUMBNAIL_URL, replace_emojis, get_emoji
 from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase, TournamentSize
 from storage.bet_store import bet_store
 from storage.player_stats_store import player_stats_store
-from utils.cosmetics import format_player_name
+from utils.cosmetics import format_player_name, clean_tournament_nickname
 
 # Helper функции для визуальных улучшений
 def get_rarity_color(rarity: str) -> discord.Color:
@@ -1180,7 +1180,7 @@ async def build_winner_embed(
     # Get winning team captain name and full roster
     winning_team = tournament.teams[idx] if idx < len(tournament.teams) else {}
     captain_name = winning_team.get("captain", "Unknown")
-    winner_team_name = tournament.team_names.get(idx, captain_name)  # Сохранить имя победителя
+    winner_team_name = tournament.team_names.get(idx) or clean_tournament_nickname(captain_name)  # без мусорного ника капитана
 
     # Build full roster string
     players = []
@@ -1309,7 +1309,7 @@ async def build_winner_embed(
     team_list = ""
     for team_idx, team_data in enumerate(tournament.teams):
         captain = team_data.get("captain", f"П{team_idx + 1}")
-        team_name = tournament.team_names.get(team_idx, captain)
+        team_name = tournament.team_names.get(team_idx) or clean_tournament_nickname(captain)
         players = []
         for circle in range(1, 5):
             player = team_data.get(f"circle{circle}", "")
@@ -1522,7 +1522,10 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
             # Ultimatum Elo players are dicts with 'discord_id' and 'elo'
             uid = player.get('discord_id')
-            username = player.get('username') or (f"<@{uid}>" if uid else "Unknown")
+            username = (
+                clean_tournament_nickname(player.get('username') or "")
+                or (f"Игрок-{int(uid) % 10000:04d}" if uid else "Unknown")
+            )
             elo = player.get('elo', 0)
 
             line = f"{rank_emoji} {username} — {elo} Elo"

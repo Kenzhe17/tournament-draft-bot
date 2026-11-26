@@ -214,17 +214,17 @@ async def test_nick_change_keeps_identity(env):
 
 
 @pytest.mark.asyncio
-async def test_unicode_emoji_nick_preserved(env):
-    """Ник с Unicode/эмодзи сохраняется как есть, Discord-ник
-    не редактируется."""
+async def test_unicode_emoji_nick_cleaned(env):
+    """Косметика в исходном Discord-нике не попадает в турнир,
+    а имя в Discord не редактируется."""
     t = _tournament()
     _use_store(env, t)
     u = _user(4001, "Player😀🔥")
 
     await _join_circle(env, t, 1, u)
 
-    assert t.circle1 == ["Player😀🔥"]
-    assert t.player_user_ids["Player😀🔥"] == 4001
+    assert t.circle1 == ["Player"]
+    assert t.player_user_ids["Player"] == 4001
     u.edit.assert_not_awaited()
 
 
