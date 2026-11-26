@@ -295,3 +295,44 @@ async def test_on_pick_empty_values(monkeypatch):
     select._values = []
     await select.callback(interaction)
     interaction.response.send_message.assert_awaited()
+
+
+# ---------------------------------------------- tournament nickname cleanup
+
+def test_clean_tournament_nickname_examples():
+    assert cosmetics.clean_tournament_nickname("° albi") == "albi"
+    assert cosmetics.clean_tournament_nickname("- ! — (🏆) - ! k") == "k"
+    assert cosmetics.clean_tournament_nickname("un1ovedone 🎀") == "un1ovedone"
+    assert cosmetics.clean_tournament_nickname("[TEAM] Nurs") == "Nurs"
+    assert cosmetics.clean_tournament_nickname("r!z3") == "r!z3"
+    assert cosmetics.clean_tournament_nickname("Mad1kk") == "Mad1kk"
+    assert cosmetics.clean_tournament_nickname("🎀🏆") == ""
+
+
+def test_format_player_name_cleans_only_base_and_keeps_shop_tag(shop_env):
+    shop_env["items"]["tag_vip"] = _tag_item()
+    shop_env["equipped"][(GID, 555)] = [
+        PlayerCosmetic(GID, 555, "tag_vip", equipped=True),
+    ]
+    assert cosmetics.format_player_name(GID, 555, "° albi 🎀") == "**[VIP]** albi"
+
+
+def test_unique_clean_names_keep_distinct_ids():
+    t = _tournament()
+    first = sv._unique_player_name(t, "° albi", 1234)
+    t.circle1.append(first)
+    t.player_user_ids[first] = 1234
+    second = sv._unique_player_name(t, "🏆 albi", 9999)
+    assert first == "albi"
+    assert second != first
+    assert second.startswith("albi ")
+    assert t.player_user_ids[first] == 1234
+
+
+def test_live_display_name_cleaned(monkeypatch):
+    member = SimpleNamespace(display_name="° albi 🎀")
+    guild = SimpleNamespace(get_member=lambda uid: member if uid == 42 else None)
+    bot = SimpleNamespace(get_guild=lambda gid: guild)
+    import models.tournament as mt
+    monkeypatch.setattr(mt, "_bot_instance", bot)
+    assert cosmetics.display_name_for(GID, 42, "OldNick") == "albi"
