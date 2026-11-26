@@ -1047,6 +1047,13 @@ class CashCupCog(commands.Cog):
                 # вызове, т.к. _boards_ok останется False.
                 if not await self._sync_board(state, channel):
                     failures += 1
+                    continue
+                try:
+                    from cogs.cashcup_public import schedule_sync
+                    schedule_sync(self.bot, guild.id)
+                except Exception:
+                    logger.debug("CASH CUP public sync schedule failed",
+                                 exc_info=True)
             except Exception:
                 failures += 1
                 logger.exception("CASH CUP board restore failed guild=%s",
@@ -1784,9 +1791,14 @@ class CashCupCog(commands.Cog):
                         tid: str | None = None) -> None:
         await self.pause(interaction, (v[0] or "").strip(), tid=tid)
 
-    async def show_match_card(self, interaction: discord.Interaction, match_id: str) -> None:
+    async def show_match_card(self, interaction: discord.Interaction, match_id: str,
+                              *, tid: str | None = None) -> None:
         await _defer(interaction)
-        state = await cashcup_store.active(interaction.guild_id) or await cashcup_store.latest(interaction.guild_id)
+        if tid:
+            state = await cashcup_store.get(interaction.guild_id, tid)
+        else:
+            state = (await cashcup_store.active(interaction.guild_id)
+                     or await cashcup_store.latest(interaction.guild_id))
         if not state or not state.get("bracket"):
             await self._reply(interaction, "Сетка ещё не сформирована")
             return
@@ -1919,6 +1931,14 @@ class CashCupCog(commands.Cog):
         self._state_cache[interaction.guild_id] = (
             time.monotonic(), result[0])
         await self._refresh(interaction.guild_id, result[0])
+        # Публичные каналы (сетка/карточки матчей) — post-commit,
+        # в фоне; ошибки публикации не влияют на результат мутации.
+        try:
+            from cogs.cashcup_public import schedule_sync
+            schedule_sync(self.bot, interaction.guild_id)
+        except Exception:
+            logger.debug("CASH CUP public sync schedule failed",
+                         exc_info=True)
         return result
 
     @cashcup.command(name="create", description="Создать CASH CUP (организатор)")
