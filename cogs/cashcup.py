@@ -297,6 +297,215 @@ def _teams_render(state: dict, page: int) -> tuple[str, int, int]:
     return "\n".join(lines)[:1950], page, pages
 
 
+# ---------- /alert: уведомление капитанов о незаполненных данных ----------
+
+# /alert cooldown отсутствует by design: рассылка только вручную.
+
+# Человекочитаемые причины для публичного отчёта (без FF UID).
+_ALERT_PROB_LABELS = {
+    "не заполнен Free Fire UID": "не указан Free Fire UID",
+    "нет игрового ника": "не указан ник Free Fire",
+    "не указан регион": "не указан регион",
+    "не указано устройство": "не указано устройство",
+    "FF API не подтверждён": "FF API не подтвердил аккаунт",
+}
+
+_ALERT_HEADER = (
+    "### r!z3 CASH CUP — ПРОВЕРКА СОСТАВОВ\n\n"
+    "**Капитаны, внимание!** Для допуска к турниру все участники "
+    "команды должны заполнить данные Free Fire и пройти проверку "
+    "ADMIN."
+)
+
+_ALERT_FOOTER = (
+    "### Как пройти проверку\n\n"
+    "1. Откройте карточку **CASH CUP**.\n"
+    "2. Нажмите **«Мои данные»**.\n"
+    "3. Нажмите **«Обновить данные»**.\n"
+    "4. Укажите ваш **Free Fire UID**, регион и устройство "
+    "(`mobile` или `pc`).\n"
+    "5. Отправьте форму и дождитесь проверки Free Fire API.\n"
+    "6. После заполнения всех данных дождитесь подтверждения "
+    "**ADMIN**.\n\n"
+    "**Важно:** каждый участник заполняет данные самостоятельно. "
+    "Капитан обязан убедиться, что все игроки команды прошли "
+    "процедуру.\n\n"
+    "**Команда допускается к турниру только после выполнения "
+    "всех обязательных проверок.**"
+)
+
+
+_MENTION_MARKUP_RE = re.compile(r"<(?=[#@!:])")
+
+
+def _esc(text: str) -> str:
+    """Escape пользовательского текста: markdown + ВСЕ виды
+    упоминаний (@everyone/@here/<@id>/<@!id>/<@&role>/<#chan>/<:emoji:>)."""
+    out = discord.utils.escape_markdown(str(text))
+    out = discord.utils.escape_mentions(out)
+    # Ломаем mention/emoji-разметку zero-width пробелом после '<'.
+    return _MENTION_MARKUP_RE.sub("<" + chr(0x200b), out)
+
+
+def _alert_member_issue(p: dict) -> tuple[str, bool]:
+    """(текст проблемы, нужно ли действие игрока).
+
+    Если заполнены все данные и осталось только ожидание ADMIN —
+    показываем отдельно: повторно вводить данные не нужно.
+    """
+    probs = _member_problems(p)
+    fill = [pr for pr in probs if pr != "ожидает подтверждения ADMIN"]
+    if not fill:
+        if probs:
+            return "данные заполнены, ожидает проверки ADMIN", False
+        return "", False
+    text = ", ".join(dict.fromkeys(
+        _ALERT_PROB_LABELS.get(pr, pr) for pr in fill))
+    return text, True
+
+
+def _alert_report(state: dict) -> dict:
+    """Read-only отчёт /alert по командам: блоки, капитаны,
+    участники, которым нужно действие, счётчик готовых."""
+    teams = state.get("teams") or []
+    blocks: list[str] = []
+    captains: list[int] = []
+    actors: list[int] = []
+    ready = 0
+    for t in teams:
+        diag = _team_diag(state, t)
+        cap = t.get("captain")
+        if cap:
+            captains.append(int(cap))
+        # Активные <@id> в блоках НЕТ — все пинги идут только из
+        # roll-call вверху отчёта (ровно один на получателя).
+        cap_nick = next(
+            (str(p.get("nick") or "") for p in t.get("members") or []
+             if int(p.get("discord_id") or 0) == int(cap or 0)), "")
+        cap_label = _esc(cap_nick) if cap_nick else f"#{cap}"
+        lines = [f"**{_esc(_label(t))}** — капитан {cap_label}", ""]
+        issues: list[str] = []
+        for p in t.get("members") or []:
+            text, needs = _alert_member_issue(p)
+            if text:
+                # И игрокам, и ожидающим ADMIN — безопасный текст
+                # без <@id>: пинг уже дан в roll-call (actors) или
+                # не положен (admin-pending).
+                who = _esc(str(p.get("nick") or "участник"))
+                issues.append(f"- {who} — {text}")
+                if needs:
+                    actors.append(int(p["discord_id"]))
+        # Структурные проблемы (дубли UID/Discord, состав, >2 ПК,
+        # cross-team) — из существующей диагностики, без изменений.
+        issues += [f"- {sp}" for sp in diag["structural"]]
+        lines += issues or [
+            "Все обязательные данные заполнены и проверены."]
+        # «Готова» здесь означает только заполненность данных —
+        # финальные проверки (_validate_teams: теги, VAC) делаются
+        # при /cashcup start, поэтому гарантированный допуск не
+        # заявляем.
+        status_label = (
+            "Данные заполнены" if diag["status"] == _STATUS_READY
+            else diag["status"])
+        lines += ["",
+                  f"Статус: **{status_label} — "
+                  f"{diag['admin']}/{diag['members']} подтверждено**"]
+        blocks.append("\n".join(lines))
+        if diag["status"] == _STATUS_READY:
+            ready += 1
+    return {
+        "blocks": blocks,
+        "captains": list(dict.fromkeys(captains)),
+        "actors": list(dict.fromkeys(actors)),
+        "ready": ready,
+        "total": len(teams),
+    }
+
+
+def _alert_roll_lines(title: str, ids: list[int]) -> list[str]:
+    """Строки ролл-колла упоминаний (≤15 на строку)."""
+    ids = list(dict.fromkeys(int(i) for i in ids if i))
+    lines = []
+    for i in range(0, len(ids), 15):
+        chunk = " ".join(f"<@{u}>" for u in ids[i:i + 15])
+        lines.append(f"**{title}:** {chunk}")
+    return lines
+
+
+def _alert_payload(state: dict, guild_id: int
+                   ) -> tuple[list[str], list[int], dict]:
+    """Строки публичного уведомления, id для allowed_mentions
+    и сводка отчёта. Реальные FF UID не выводятся."""
+    report = _alert_report(state)
+    lines = [_ALERT_HEADER, ""]
+    lines += _alert_roll_lines("Капитаны", report["captains"])
+    # Капитан, которому также нужно заполнить данные, уже
+    # упомянут в roll-call капитанов — второй пинг не создаём.
+    actors_only = [a for a in report["actors"]
+                   if a not in set(report["captains"])]
+    lines += _alert_roll_lines(
+        "Требуется заполнить данные", actors_only)
+    lines.append("")
+    for block in report["blocks"]:
+        lines += block.split("\n") + [""]
+    cid, mid = state.get("channel_id"), state.get("message_id")
+    if cid and mid:
+        lines.append(
+            "[Актуальная карточка CASH CUP]"
+            f"(https://discord.com/channels/{guild_id}/{cid}/{mid})")
+    else:
+        lines.append(
+            "⚠️ Актуальная карточка турнира не найдена — "
+            "обратитесь к ADMIN.")
+    lines += ["", _ALERT_FOOTER]
+    mention_ids = list(dict.fromkeys(
+        report["captains"] + report["actors"]))
+    return lines, mention_ids, report
+
+
+def _pack_lines(lines: list[str], limit: int = 1900) -> list[str]:
+    """Упаковка строк в сообщения ≤limit без обрезания блоков:
+    при переполнении текст продолжается следующим сообщением."""
+    msgs: list[str] = []
+    cur = ""
+    for ln in lines:
+        candidate = (cur + "\n" + ln) if cur else ln
+        if len(candidate) > limit and cur:
+            msgs.append(cur)
+            cur = ln
+        else:
+            cur = candidate
+        while len(cur) > limit:
+            msgs.append(cur[:limit])
+            cur = cur[limit:]
+    if cur:
+        msgs.append(cur)
+    # Discord: ≤100 уникальных user mentions на сообщение —
+    # разбиваем слишком плотные чанки по границам строк.
+    out: list[str] = []
+    for msg in msgs:
+        parts = msg.split("\n")
+        buf = ""
+        for part in parts:
+            cand = (buf + "\n" + part) if buf else part
+            if _mention_ids(cand) > 100 and buf:
+                out.append(buf)
+                buf = part
+            else:
+                buf = cand
+        if buf:
+            out.append(buf)
+    return out
+
+
+_MENTION_RE = re.compile(r"<@(!?)(\d+)>")
+
+
+def _mention_ids(text: str) -> int:
+    """Число уникальных user ID в тексте (без @everyone/@here/roles)."""
+    return len({m.group(2) for m in _MENTION_RE.finditer(text)})
+
+
 class TeamsView(discord.ui.View):
     """Пагинация списка команд (эфемерно, правит то же сообщение)."""
 
@@ -771,6 +980,12 @@ class CashCupCog(commands.Cog):
         # открывающие Modal (send_modal нельзя после defer),
         # проверяют свежесть карточки без ожидания PostgreSQL.
         self._state_cache: dict[int, tuple[float, dict | None]] = {}
+        # /alert: per-guild lock против параллельных рассылок.
+        self._alert_locks: dict[int, asyncio.Lock] = {}
+        # (signature отчёта, {sha1 отправленных чанков}, complete)
+        # — защита от дублей при частичной публикации; в памяти,
+        # после рестарта автоматическое восстановление не ведётся.
+        self._alert_sent: dict[int, tuple[str, set, bool]] = {}
 
     def _board_lock(self, guild_id: int) -> asyncio.Lock:
         return self._board_locks.setdefault(guild_id, asyncio.Lock())
@@ -1739,6 +1954,226 @@ class CashCupCog(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none())
         await cashcup_store.set_message(interaction.guild_id, msg.id)
         await self._reply(interaction, "Карточка турнира опубликована повторно")
+
+    def _alert_lock(self, guild_id: int) -> asyncio.Lock:
+        return self._alert_locks.setdefault(guild_id, asyncio.Lock())
+
+    @app_commands.command(
+        name="alert",
+        description="Уведомить капитанов о неподтверждённых игроках Cash Cup")
+    @app_commands.guild_only()
+    @app_commands.describe(
+        preview="Показать отчёт только ADMIN, без публикации и пингов")
+    async def alert(self, interaction: discord.Interaction,
+                    preview: bool = False) -> None:
+        """Публичное уведомление капитанов о незаполненных данных.
+
+        Только CASH CUP ADMIN. Публикует отчёт в канал карточки
+        регистрации; состояние турнира не изменяется. Без
+        cooldown — только ручные вызовы ADMIN; per-guild lock
+        сериализует параллельные запросы.
+        """
+        if not interaction.guild or not _is_cashcup_admin(interaction.user):
+            await self._reply(interaction, "Недостаточно прав")
+            return
+        await _defer(interaction)
+        guild_id = interaction.guild_id
+        try:
+            async with self._alert_lock(guild_id):
+                state = await cashcup_store.active(guild_id)
+                if not state or state.get("status") != "registration":
+                    await self._reply(
+                        interaction,
+                        "Нет активного CASH CUP на регистрации — "
+                        "уведомление не публикуется.")
+                    return
+                lines, mention_ids, report = _alert_payload(
+                    state, guild_id)
+                chunks = _pack_lines(lines)
+                if preview:
+                    await self._reply(interaction, chunks[0])
+                    for extra in chunks[1:]:
+                        await interaction.followup.send(
+                            extra, ephemeral=True,
+                            allowed_mentions=discord.AllowedMentions.none())
+                    return
+                if report["total"] == 0:
+                    await self._reply(
+                        interaction,
+                        "Нет зарегистрированных команд — "
+                        "уведомлять некого.")
+                    return
+                if report["ready"] == report["total"]:
+                    await self._reply(
+                        interaction,
+                        f"Все команды готовы ({report['ready']}/"
+                        f"{report['total']}) — уведомление не требуется.")
+                    return
+                # Cooldown отсутствует: /alert — строго ручной
+                # инструмент ADMIN, повторный вызов сразу после
+                # завершённой рассылки формирует новый отчёт.
+                # Защита от гонок — только per-guild lock выше.
+                # Повторная проверка статуса перед публикацией.
+                # публикацией: состав/статус могли измениться.
+                fresh = await cashcup_store.active(guild_id)
+                if not fresh \
+                        or fresh.get("status") != "registration" \
+                        or fresh.get("tournament_id") \
+                        != state.get("tournament_id"):
+                    await self._reply(
+                        interaction,
+                        "Состояние турнира изменилось — "
+                        "уведомление отменено.")
+                    return
+                # Актуальность: отчёт и упоминания пересобираются
+                # из СВЕЖЕГО состояния — за время проверок игроки
+                # могли заполнить данные или ADMIN подтвердить состав.
+                lines, mention_ids, report = _alert_payload(
+                    fresh, guild_id)
+                chunks = _pack_lines(lines)
+                if report["total"] == 0:
+                    await self._reply(
+                        interaction, "Нет команд — отменено.")
+                    return
+                if report["ready"] == report["total"]:
+                    await self._reply(
+                        interaction,
+                        f"Все команды готовы ({report['ready']}/"
+                        f"{report['total']}) — публикация отменена, "
+                        "cooldown не израсходован.")
+                    return
+                channel = interaction.guild.get_channel(
+                    fresh.get("channel_id"))
+                if channel is None:
+                    try:
+                        channel = await interaction.guild.fetch_channel(
+                            fresh["channel_id"])
+                    except Exception:
+                        channel = None
+                if channel is None:
+                    await self._reply(
+                        interaction,
+                        "Канал карточки CASH CUP недоступен — "
+                        "уведомление не опубликовано.")
+                    return
+                # Dedup частичной публикации: храним подпись отчёта
+                # и хэши уже отправленных чанков — повторный вызов
+                # не дублирует доставленные сообщения.
+                import hashlib
+                sig = hashlib.sha1(
+                    "\n".join(lines).encode()).hexdigest()
+                sent_map = getattr(self, "_alert_sent", None)
+                if sent_map is None:
+                    sent_map = self._alert_sent = {}
+                prev = sent_map.get(guild_id)
+                dedup = prev
+                # Дедуп действует только для НЕЗАВЕРШЁННОЙ
+                # публикации того же отчёта: после полного
+                # уведомления или при изменении отчёта — свежая
+                # рассылка без пропусков.
+                sig_changed_partial = bool(
+                    prev and prev[0] != sig and not prev[2])
+                if dedup and (dedup[0] != sig or dedup[2]):
+                    dedup = None
+                sent_hashes = set(dedup[1]) if dedup else set()
+                # Активные получатели пингов: капитаны всех команд
+                # + игроки, которым нужно заполнить данные.
+                ping_ids = set(report["captains"]) | set(report["actors"])
+                sent = 0
+                failed_at = None
+                for idx, chunk in enumerate(chunks):
+                    chash = hashlib.sha1(chunk.encode()).hexdigest()
+                    if chash in sent_hashes:
+                        sent += 1
+                        continue
+                    # allowed_mentions — ТОЛЬКО целевые
+                    # получатели, реально упомянутые в этом
+                    # сообщении, ≤100, без roles/@everyone/@here.
+                    ids = sorted(
+                        {int(u) for u in re.findall(r"<@(\d+)>", chunk)}
+                        & ping_ids)[:100]
+                    if len(ids) >= 100:
+                        logger.warning(
+                            "cashcup alert chunk %s has %s pings",
+                            idx, len(ids))
+                    mentions = discord.AllowedMentions(
+                        everyone=False, roles=False, replied_user=False,
+                        users=[discord.Object(id=u) for u in ids])
+                    try:
+                        await channel.send(
+                            chunk, allowed_mentions=mentions)
+                        sent_hashes.add(chash)
+                        sent += 1
+                    except discord.HTTPException as exc:
+                        failed_at = idx
+                        logger.warning(
+                            "cashcup alert send failed guild=%s "
+                            "chunk=%s/%s: %s",
+                            guild_id, idx + 1, len(chunks), exc)
+                        break
+                sent_map[guild_id] = (
+                    sig, sent_hashes, sent >= len(chunks))
+                logger.info(
+                    "cashcup alert guild=%s admin=%s tournament=%s "
+                    "teams=%s ready=%s mentions=%s messages=%s",
+                    guild_id, interaction.user.id,
+                    state.get("tournament_id"), report["total"],
+                    report["ready"], len(mention_ids), sent)
+                try:
+                    from services import tournament_audit_service as audit_svc
+                    await audit_svc.record_interaction(
+                        interaction,
+                        channel_id=state.get("channel_id"),
+                        tournament_id=str(state.get("tournament_id") or ""),
+                        action="cashcup_alert",
+                        source="cashcup",
+                        after={
+                            "teams": report["total"],
+                            "ready": report["ready"],
+                            "mentions": len(mention_ids),
+                            "messages": sent,
+                        },
+                    )
+                except Exception as exc:
+                    logger.warning("cashcup alert audit failed: %s", exc)
+                if sent == 0:
+                    await self._reply(
+                        interaction,
+                        "Не удалось опубликовать уведомление — "
+                        "проверьте права бота в канале карточки. "
+                        "Повторите /alert вручную.")
+                    return
+                total_chunks = len(chunks)
+                prefix = (
+                    "Примечание: предыдущая рассылка была "
+                    "неполной — её части относились к старому "
+                    "состоянию.\n" if sig_changed_partial else "")
+                if failed_at is not None or sent < total_chunks:
+                    await self._reply(
+                        interaction,
+                        prefix +
+                        f"Уведомление опубликовано ЧАСТИЧНО: "
+                        f"сообщений {sent}/{total_chunks}, "
+                        f"команд {report['total']}, "
+                        f"готово {report['ready']}. "
+                        f"Повторный /alert не продублирует "
+                        f"отправленные части, пока отчёт не изменится.")
+                    return
+                await self._reply(
+                    interaction,
+                    prefix +
+                    f"Уведомление опубликовано: команд "
+                    f"{report['total']}, готово {report['ready']}, "
+                    f"упоминаний {len(mention_ids)}, "
+                    f"сообщений {sent}.")
+        except CashCupError as exc:
+            await self._reply(interaction, str(exc))
+        except Exception:
+            logger.exception("cashcup alert failed guild=%s", guild_id)
+            await self._reply(
+                interaction,
+                "Ошибка при формировании уведомления — "
+                "повторите позже.")
 
     async def leave(self, interaction: discord.Interaction, *,
                     tid: str | None = None):

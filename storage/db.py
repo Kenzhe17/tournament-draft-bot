@@ -36,6 +36,11 @@ async def get_pool() -> asyncpg.Pool:
     """
     global _pool
     if _pool is None:
+        if not DATABASE_URL:
+            # Без DATABASE_URL asyncpg ушёл бы на localhost с
+            # пользователем ОС — отказываем сразу, без сетевых
+            # попыток. Вызывающий код ловит Exception как раньше.
+            raise RuntimeError("DATABASE_URL is not configured")
         _pool = await asyncpg.create_pool(
             DATABASE_URL,
             min_size=_env_int("PG_POOL_MIN", 2),
