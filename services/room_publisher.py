@@ -39,11 +39,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_RULES_LABELS = {
-    "kazakhstan": "Kazakhstan",
-    "brazil": "Brazil",
-}
-
 # Persistent-кнопка «ID» на карточке комнаты.
 # custom_id: rcard:id:{gid}:{cid}:{tid}:{phase}:{idx}
 T_ROOM_ID = re.compile(
@@ -94,13 +89,6 @@ def _match_teams(
     return t1, t2
 
 
-def _rules_label(tournament: "Tournament") -> str:
-    ruleset = (getattr(tournament, "ruleset", "") or "").strip()
-    if not ruleset:
-        return ""
-    return _RULES_LABELS.get(ruleset.lower(), ruleset)
-
-
 # ---------------------------------------------------------------------------
 # CV2-карточка «КОМНАТА ОТКРЫТА»
 # ---------------------------------------------------------------------------
@@ -124,14 +112,11 @@ def build_room_card_view(
     t1, t2 = _match_teams(tournament, m)
     name1 = _team_display_name(tournament, m["teams"][0])
     name2 = _team_display_name(tournament, m["teams"][1])
-    rules = _rules_label(tournament)
 
     view = DesignView(timeout=None)
     view.text("## КОМНАТА ОТКРЫТА")
     view.text(f"**{name1}**\n{_roster_mentions(tournament, t1)}")
     view.text(f"**{name2}**\n{_roster_mentions(tournament, t2)}")
-    if rules:
-        view.text(f"**Правила:** {rules}")
     view.text(f"**Пароль:** `{room.get('password', '')}`")
     view.row(discord.ui.Button(
         style=discord.ButtonStyle.primary,
