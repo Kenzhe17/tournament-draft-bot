@@ -14,7 +14,7 @@ from services.banner.publisher import (
     build_banner_for_day, publish_day_banner, yesterday_almaty,
 )
 from storage.banner_store import banner_store
-from utils.permissions import is_admin
+from utils.permissions import is_admin, is_bot_owner
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class BannerAdminCog(commands.Cog):
     # ------------------------------------------------------------------
 
     @banner_group.command(name="preview", description="Предпросмотр баннера (только PNG, без публикации)")
-    @is_admin()
+    @is_bot_owner()
     async def banner_preview(
         self, interaction: discord.Interaction,
         day: str | None = None,
@@ -86,7 +86,7 @@ class BannerAdminCog(commands.Cog):
         await interaction.followup.send(msg, ephemeral=True)
 
     @banner_group.command(name="status", description="Статус автообновления баннера")
-    @is_admin()
+    @is_bot_owner()
     async def banner_status(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
         guild = interaction.guild
@@ -117,7 +117,7 @@ class BannerAdminCog(commands.Cog):
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
     @banner_group.command(name="leaderboard", description="Топ-5 активности за день")
-    @is_admin()
+    @is_bot_owner()
     async def banner_leaderboard(
         self, interaction: discord.Interaction,
         day: str | None = None,
