@@ -84,6 +84,12 @@ class FakeChannel:
                 NS(status=404, reason="Not Found", message="nf"), "nf")
         return msg
 
+    def history(self, limit: int = 100):
+        async def _gen():
+            for m in reversed(list(self.messages.values())[-limit:]):
+                yield m
+        return _gen()
+
 
 class FakeGuild:
     def __init__(self, gid=1, channels=()):

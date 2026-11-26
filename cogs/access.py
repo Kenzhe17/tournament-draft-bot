@@ -94,14 +94,20 @@ async def _edit_panel_message(message, view) -> None:
 
 
 async def _retry_429(coro_factory):
-    """Один повтор при Discord 429 (retry_after), иначе проброс."""
+    """Один повтор при Discord 429 с ПОЛНЫМ retry_after.
+
+    discord.py сам ждёт retry_after внутри HTTP-слоя; если
+    исключение всё же дошло сюда — ждём честное время,
+    а не обрезаем до 5 секунд (преждевременный повтор только
+    усугубляет rate-limit).
+    """
     try:
         return await coro_factory()
     except discord.HTTPException as exc:
         if getattr(exc, "status", None) != 429:
             raise
-        delay = min(float(getattr(exc, "retry_after", 1.0) or 1.0), 5.0)
-        await asyncio.sleep(delay)
+        delay = float(getattr(exc, "retry_after", 1.0) or 1.0)
+        await asyncio.sleep(delay + 0.25)
         return await coro_factory()
 
 
@@ -170,7 +176,14 @@ async def _ensure_panel_locked(guild: discord.Guild) -> bool:
         # ищем уже опубликованную панель в закреплённом канале,
         # чтобы не отправить второе сообщение после сбоя
         # сохранения message_id.
-        found = await rot.find_panel_message(channel)
+        found, search_complete = await rot.find_panel_message(channel)
+        if found is None and not search_complete:
+            # Поиск панели не удался/неполный — НЕЛЬЗЯ отправлять
+            # новую: рискуем создать дубликат действующей панели.
+            logger.warning(
+                "access: panel search incomplete channel=%s — "
+                "skipping send", channel.id)
+            return False
         if found is not None:
             try:
                 await _retry_429(lambda: _edit_panel_message(
