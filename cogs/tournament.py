@@ -845,7 +845,7 @@ class TournamentCog(commands.Cog):
         """Показать интерактивную справку."""
         embed = discord.Embed(
             title=f"СПРАВКА ПО КОМАНДАМ",
-            description=f" **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n **Выберите категорию в меню ниже:**\nТурниры — Топ, Battle Royale, Ультиматум и Ranked Matchmaking\nПрофиль — Карточка игрока, ранг и история матчей\nСоциальное — Репутация, брак и дни рождения\nЭкономика — Баланс, сейф, переводы и криминал\nМагазин — Покупка предметов и инвентарь\nПитомцы — RPG-питомцы сами\nМини-игры — Казино-игры на монеты\nСистема рангов — Ранги, уровни и ELO\nОрганизаторам — Турниры, инфо-центр и баннер\nПравила сервера — Свод правил и регламент",
+            description=f" **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n **Выберите категорию в меню ниже:**\nТурниры — Топ, Battle Royale, Ультиматум и Ranked Matchmaking\nПрофиль — Карточка игрока, ранг и история матчей\nСоциальное — Репутация, брак и дни рождения\nЭкономика — Баланс, сейф, переводы и криминал\nМагазин — Покупка предметов и инвентарь\nПитомцы — RPG-питомцы сами\nМини-игры — Игры с дилером и игры на монеты\nСистема рангов — Ранги, уровни и ELO\nОрганизаторам — Турниры, инфо-центр и баннер\nПравила сервера — Свод правил и регламент",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         view = HelpGuideView(current=None)
@@ -1128,12 +1128,11 @@ class TournamentCog(commands.Cog):
 
     #     await interaction.response.send_modal(RouletteModal(interaction.guild_id, interaction.user.id))
 
-    # @app_commands.command(name="blackjack", description="Блэкджек")
-    # async def blackjack(self, interaction: discord.Interaction) -> None:
-    #     """Блэкджек."""
-    #     from games.blackjack import BlackjackModal
+    @games_group.command(name="blackjack", description="Сыграть в блэкджек против дилера без ставок")
+    async def blackjack(self, interaction: discord.Interaction) -> None:
+        from games.blackjack import start_blackjack
 
-    #     await interaction.response.send_modal(BlackjackModal(interaction.guild_id, interaction.user.id))
+        await start_blackjack(interaction)
 
     # @app_commands.command(name="slots", description="Слоты")
     # async def slots(self, interaction: discord.Interaction) -> None:
@@ -2954,7 +2953,7 @@ class TournamentCog(commands.Cog):
             "debug_emoji",
         ])
         bind_commands(server_group, self, ["role", "welcome", "check2fa"])
-        bind_commands(games_group, self, ["list"])
+        bind_commands(games_group, self, ["list", "blackjack"])
 
         # Сбросить старые кастомные ники: stats.name = Discord display_name
         asyncio.create_task(self._sync_profile_names())
@@ -3223,17 +3222,17 @@ def _help_category_embed(value: str) -> discord.Embed | None:
         return discord.Embed(
             title="РАЗДЕЛ: МИНИ-ИГРЫ",
             description=(
-                f" **Казино-игры на монеты**\n\n"
+                f" **Игры с дилером и игры на монеты**\n\n"
                 f" **Доступные команды:**\n"
                 f"{dot}  `/games list` — Меню всех игр\n"
                 f"{dot}  `/games coin_flip` — Монетка `(1.6x)`\n"
                 f"{dot}  `/games dice_roll` — Кубик 1-6 `(4.8x)`\n"
                 f"{dot}  `/games guess_number` — Число 1-100 `(2.5x)`\n"
                 f"{dot}  `/games high_low` — Выше или ниже `(до 3.7x)`\n"
+                f"{dot}  `/games blackjack` — Блэкджек против дилера (без ставок)\n"
                 f"{dot}  `/games roulette` — Рулетка `(1.6x-30x)`\n"
                 f"{dot}  `/games mathquiz` — Математическая дуэль\n"
                 f"{dot}  `/games stats` — Статистика казино `(админ)`\n\n"
-                f" Все игры с честными шансами и лимитом ставки.\n"
                 + footer
             ),
             color=gray,
@@ -3309,7 +3308,7 @@ _HELP_OPTIONS = [
     discord.SelectOption(label="Экономика", description="Баланс, сейф, переводы и криминал", value="economy"),
     discord.SelectOption(label="Магазин", description="Покупка предметов и инвентарь", value="shop"),
     discord.SelectOption(label="Питомцы", description="RPG-питомцы с способностями", value="pets"),
-    discord.SelectOption(label="Мини-игры", description="Казино-игры на монеты", value="games"),
+    discord.SelectOption(label="Мини-игры", description="Игры с дилером и игры на монеты", value="games"),
     discord.SelectOption(label="Система рангов", description="Ранги, уровни и ELO", value="ranks"),
     discord.SelectOption(label="Организаторам", description="Турниры, инфо-центр и баннер", value="organizers"),
 ]
