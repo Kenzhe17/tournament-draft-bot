@@ -98,7 +98,20 @@ class TeamCog(commands.Cog):
                         pass
                     break
 
-        await team_store.delete(team.team_id)
+        ok = await team_store.delete(team.team_id)
+        if not ok:
+            embed = discord.Embed(
+                title="Не удалось удалить команду",
+                description=(
+                    f" Команда **{team.team_name}** не была "
+                    "удалена (ошибка базы данных). Попробуйте "
+                    "позже или обратитесь к администратору."
+                ),
+                color=discord.Color.from_rgb(235, 100, 100)
+            )
+            await interaction.followup.send(
+                view=compose(embed), ephemeral=True)
+            return
 
         embed = discord.Embed(
             title=f"Команда удалена",
