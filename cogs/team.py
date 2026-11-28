@@ -47,14 +47,16 @@ class TeamCog(commands.Cog):
             team_name = f"{base_name} {counter}"
             counter += 1
 
-        # Create team
+        # Create team — пароль хранится PBKDF2-хешем (rollback-compat
+        # с Squad Hub: plaintext не записывается в БД).
         team = Team(
             team_id="",
             team_name=team_name,
-            password=password,
+            password="",
             captain_id=interaction.user.id,
             guild_id=interaction.guild_id
         )
+        team.set_password(password)
 
         await team_store.create(team)
 

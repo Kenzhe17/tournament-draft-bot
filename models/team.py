@@ -2,10 +2,44 @@
 
 from __future__ import annotations
 
+import hashlib
+import secrets
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+
+
+def hash_password(password: str) -> str:
+    """PBKDF2-хеш пароля команды: pbkdf2$iter$salt$hash (hex).
+
+    Rollback-compat (Squad Hub): пароль хранится хешем в колонке
+    ``password_hash``; plaintext-колонка ``password`` остаётся
+    пустой. Хеш совместим с форматом Squad Hub 2.0 — повторное
+    обновление до Squad Hub читает его без миграции."""
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), bytes.fromhex(salt),
+        120_000)
+    return f"pbkdf2$120000${salt}${dk.hex()}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    """Проверить пароль против хеша. Legacy-формат (сырой текст)
+    принимается на переходный период — старые команды до
+    миграции Squad Hub хранят plaintext."""
+    if not stored:
+        return False
+    if not stored.startswith("pbkdf2$"):
+        return secrets.compare_digest(password, stored)
+    try:
+        _, iters, salt, expected = stored.split("$", 3)
+        dk = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"),
+            bytes.fromhex(salt), int(iters))
+        return secrets.compare_digest(dk.hex(), expected)
+    except (ValueError, TypeError):
+        return False
 
 
 @dataclass
@@ -18,6 +52,7 @@ class Team:
     captain_id: int
     guild_id: int
     members: list[int] = field(default_factory=list)  # List of user IDs
+    password_hash: str = ""  # PBKDF2-хеш (Squad Hub совместимость)
     created_at: str = ""
     status_message_id: int | None = None  # Message ID of the status embed
 
@@ -36,6 +71,7 @@ class Team:
             "team_id": self.team_id,
             "team_name": self.team_name,
             "password": self.password,
+            "password_hash": self.password_hash,
             "captain_id": self.captain_id,
             "guild_id": self.guild_id,
             "members": self.members,
@@ -50,6 +86,7 @@ class Team:
             team_id=data.get("team_id", ""),
             team_name=data.get("team_name", ""),
             password=data.get("password", ""),
+            password_hash=data.get("password_hash", "") or "",
             captain_id=data.get("captain_id", 0),
             guild_id=data.get("guild_id", 0),
             members=data.get("members", []),
@@ -104,3 +141,15 @@ class Team:
     def member_count(self) -> int:
         """Получить количество членов команды."""
         return len(self.members)
+
+    def check_password(self, password: str) -> bool:
+        """Проверить пароль вступления: хеш (Squad Hub) или
+        legacy plaintext — без восстановления plaintext."""
+        return verify_password(
+            password, self.password_hash or self.password)
+
+    def set_password(self, password: str) -> None:
+        """Установить пароль: хранится только PBKDF2-хеш,
+        plaintext не сохраняется."""
+        self.password_hash = hash_password(password)
+        self.password = ""

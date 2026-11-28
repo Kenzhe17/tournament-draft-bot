@@ -237,7 +237,10 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
             if self.status_view:
                 self.status_view.team = current_team
 
-        if self.password.value != self.team.password:
+        # Rollback-compat: пароль может храниться PBKDF2-хешем
+        # (миграция Squad Hub) — проверяем через check_password,
+        # plaintext не восстанавливается.
+        if not self.team.check_password(self.password.value):
             await interaction.response.send_message(
                 replace_emojis("Неверный пароль!"),
                 ephemeral=True
@@ -420,7 +423,9 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
             if self.status_view:
                 self.status_view.team = current_team
 
-        self.team.password = self.new_password.value
+        # Rollback-compat: новый пароль хранится PBKDF2-хешем —
+        # plaintext не записывается (совместимо с Squad Hub).
+        self.team.set_password(self.new_password.value)
         success = await team_store.update_team(self.team)
         if not success:
             await interaction.response.send_message(
@@ -440,7 +445,7 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
 
         embed = discord.Embed(
             title=f"Пароль изменен",
-            description=f" Новый пароль: ||{self.team.password}||",
+            description=" Новый пароль сохранён (хранится хеш).",
             color=discord.Color.from_rgb(114, 137, 218)
         )
 

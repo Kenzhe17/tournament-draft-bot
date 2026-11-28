@@ -24,8 +24,31 @@ class TeamStore:
     def __init__(self) -> None:
         self._teams: dict[str, Team] = {}  # team_id -> Team
         self._use_postgres = bool(DATABASE_URL)
+        # None — ещё не проверяли; True/False — есть ли колонка
+        # password_hash (появляется после миграции Squad Hub).
+        self._has_pw_hash: bool | None = None
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self._load()
+
+    async def _password_hash_column(self, conn) -> bool:
+        """Есть ли колонка teams.password_hash (Squad Hub миграция)."""
+        if self._has_pw_hash is None:
+            try:
+                self._has_pw_hash = bool(await conn.fetchval(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name='teams' "
+                    "AND column_name='password_hash')"))
+            except Exception:
+                self._has_pw_hash = False
+        return self._has_pw_hash
+
+    @staticmethod
+    def _pw_hash_from_row(row) -> str:
+        """password_hash из asyncpg Record; '' если колонки нет."""
+        try:
+            return row["password_hash"] or ""
+        except (KeyError, IndexError):
+            return ""
 
     def _load(self) -> None:
         """Загрузить все команды из хранилища."""
@@ -71,6 +94,7 @@ class TeamStore:
                         "team_id": row["team_id"],
                         "team_name": row["team_name"],
                         "password": row["password"],
+                        "password_hash": self._pw_hash_from_row(row),
                         "captain_id": row["captain_id"],
                         "guild_id": row["guild_id"],
                         "members": row["members"],
@@ -112,18 +136,35 @@ class TeamStore:
                     except ValueError:
                         created_at = datetime.now()
 
-                await conn.execute("""
-                    INSERT INTO teams (team_id, team_name, password, captain_id, guild_id, members, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (team_id) DO UPDATE SET
-                        team_name = EXCLUDED.team_name,
-                        password = EXCLUDED.password,
-                        captain_id = EXCLUDED.captain_id,
-                        guild_id = EXCLUDED.guild_id,
-                        members = EXCLUDED.members,
-                        created_at = EXCLUDED.created_at
-                """, team.team_id, team.team_name, team.password, team.captain_id,
-                    team.guild_id, team.members, created_at)
+                has_hash = await self._password_hash_column(conn)
+                if has_hash:
+                    await conn.execute("""
+                        INSERT INTO teams (team_id, team_name, password, password_hash, captain_id, guild_id, members, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        ON CONFLICT (team_id) DO UPDATE SET
+                            team_name = EXCLUDED.team_name,
+                            password = EXCLUDED.password,
+                            password_hash = EXCLUDED.password_hash,
+                            captain_id = EXCLUDED.captain_id,
+                            guild_id = EXCLUDED.guild_id,
+                            members = EXCLUDED.members,
+                            created_at = EXCLUDED.created_at
+                    """, team.team_id, team.team_name, team.password,
+                        team.password_hash, team.captain_id,
+                        team.guild_id, team.members, created_at)
+                else:
+                    await conn.execute("""
+                        INSERT INTO teams (team_id, team_name, password, captain_id, guild_id, members, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        ON CONFLICT (team_id) DO UPDATE SET
+                            team_name = EXCLUDED.team_name,
+                            password = EXCLUDED.password,
+                            captain_id = EXCLUDED.captain_id,
+                            guild_id = EXCLUDED.guild_id,
+                            members = EXCLUDED.members,
+                            created_at = EXCLUDED.created_at
+                    """, team.team_id, team.team_name, team.password, team.captain_id,
+                        team.guild_id, team.members, created_at)
         except Exception as exc:
             logger.error("Ошибка сохранения команды в PostgreSQL: %s", exc)
 
@@ -179,7 +220,7 @@ class TeamStore:
                 pool = await get_pool()
                 async with pool.acquire() as conn:
                     row = await conn.fetchrow("""
-                        SELECT team_id, team_name, password, captain_id, guild_id, members, created_at
+                        SELECT *
                         FROM teams
                         WHERE team_id = $1
                     """, team_id)
@@ -188,6 +229,7 @@ class TeamStore:
                             team_id=row['team_id'],
                             team_name=row['team_name'],
                             password=row['password'],
+                            password_hash=self._pw_hash_from_row(row),
                             captain_id=row['captain_id'],
                             guild_id=row['guild_id'],
                             members=row['members'],
