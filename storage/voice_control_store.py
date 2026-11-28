@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS voice_control_restrictions (
     state TEXT NOT NULL DEFAULT 'pending_apply'
         CHECK (state IN ('pending_apply','active','pending_release',
                          'released','expired','conflict','failed')),
+    -- Доставка Discord API: not_dispatched | dispatch_started |
+    -- outcome_unknown | confirmed_applied. NULL у legacy-строк
+    -- трактуется контекстно (см. _MIGRATIONS backfill).
+    delivery_state TEXT,
     request_key TEXT,
     created_by BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -143,6 +147,18 @@ ALTER TABLE voice_control_modes
     ADD COLUMN IF NOT EXISTS user_limit_before INTEGER;
 CREATE INDEX IF NOT EXISTS vc_restrictions_pending_idx
     ON voice_control_restrictions(state, claim_until);
+ALTER TABLE voice_control_restrictions
+    ADD COLUMN IF NOT EXISTS delivery_state TEXT;
+-- Backfill delivery_state для строк, созданных до появления колонки:
+-- active — apply был подтверждён; pending/conflict — исход неизвестен
+-- (консервативно); терминальные — dispatch не применялся.
+UPDATE voice_control_restrictions SET delivery_state='confirmed_applied'
+    WHERE delivery_state IS NULL AND state='active';
+UPDATE voice_control_restrictions SET delivery_state='outcome_unknown'
+    WHERE delivery_state IS NULL
+      AND state IN ('pending_apply','pending_release','conflict');
+UPDATE voice_control_restrictions SET delivery_state='not_dispatched'
+    WHERE delivery_state IS NULL;
 """
 
 _MODE_FIELDS = ("speaker_mode", "auto_mute", "closed", "name_override",
@@ -378,7 +394,9 @@ class VoiceControlStore:
                               kind: str, origin: str, *, reason: str = "",
                               expires_at=None, request_key: str | None = None,
                               created_by: int = 0,
-                              state: str = "pending_apply") -> dict[str, Any] | None:
+                              state: str = "pending_apply",
+                              delivery_state: str = "not_dispatched",
+                              ) -> dict[str, Any] | None:
         """Идемпотентно по request_key. Возвращает None при дубле.
         Новые записи стартуют в pending_apply — переход в active
         только после подтверждённого Discord API."""
@@ -387,11 +405,11 @@ class VoiceControlStore:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO voice_control_restrictions
-                   (guild_id,channel_id,user_id,kind,origin,reason,expires_at,request_key,created_by,state)
-                   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                   (guild_id,channel_id,user_id,kind,origin,reason,expires_at,request_key,created_by,state,delivery_state)
+                   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
                    ON CONFLICT DO NOTHING RETURNING *""",
                 guild_id, channel_id, user_id, kind, origin, reason,
-                expires_at, request_key, created_by, state,
+                expires_at, request_key, created_by, state, delivery_state,
             )
             # ON CONFLICT без target не ловит частичный уникальный индекс —
             # дубли request_key отсекаем явно.
@@ -429,38 +447,58 @@ class VoiceControlStore:
 
     async def set_state(self, guild_id: int, restriction_id: int, state: str, *,
                         actor_id: int = 0,
-                        from_states: tuple[str, ...] | None = None) -> dict[str, Any] | None:
-        """CAS-переход состояния. from_states=None — безусловный."""
+                        from_states: tuple[str, ...] | None = None,
+                        expected_claim_token: str | None = None,
+                        ) -> dict[str, Any] | None:
+        """CAS-переход состояния. from_states=None — безусловный.
+        expected_claim_token: переход разрешён только если запись
+        захвачена именно этим токеном — устаревший worker не может
+        завершить или освободить claim нового worker."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
+            sql = """UPDATE voice_control_restrictions
+                   SET state=$3,
+                       released_at=CASE WHEN $3 IN ('released','expired','conflict','failed')
+                                        THEN now() ELSE released_at END,
+                       released_by=CASE WHEN $3 IN ('released','expired','conflict','failed')
+                                        THEN $4 ELSE released_by END,
+                       claim_token=NULL, claim_until=NULL
+                   WHERE guild_id=$1 AND id=$2"""
+            args: list[Any] = [guild_id, restriction_id, state, actor_id]
             if from_states:
-                row = await conn.fetchrow(
-                    """UPDATE voice_control_restrictions
-                       SET state=$3,
-                           released_at=CASE WHEN $3 IN ('released','expired','conflict','failed')
-                                            THEN now() ELSE released_at END,
-                           released_by=CASE WHEN $3 IN ('released','expired','conflict','failed')
-                                            THEN $4 ELSE released_by END,
-                           claim_token=NULL, claim_until=NULL
-                       WHERE guild_id=$1 AND id=$2 AND state = ANY($5::text[])
-                       RETURNING *""",
-                    guild_id, restriction_id, state, actor_id, list(from_states),
-                )
-            else:
-                row = await conn.fetchrow(
-                    """UPDATE voice_control_restrictions
-                       SET state=$3,
-                           released_at=CASE WHEN $3 IN ('released','expired','conflict','failed')
-                                            THEN now() ELSE released_at END,
-                           released_by=CASE WHEN $3 IN ('released','expired','conflict','failed')
-                                            THEN $4 ELSE released_by END,
-                           claim_token=NULL, claim_until=NULL
-                       WHERE guild_id=$1 AND id=$2
-                       RETURNING *""",
-                    guild_id, restriction_id, state, actor_id,
-                )
+                args.append(list(from_states))
+                sql += f" AND state = ANY(${len(args)}::text[])"
+            if expected_claim_token is not None:
+                args.append(expected_claim_token)
+                sql += f" AND claim_token=${len(args)}"
+            row = await conn.fetchrow(sql + " RETURNING *", *args)
             return _dict(row)
+
+    async def mark_delivery(self, guild_id: int, restriction_id: int,
+                            delivery_state: str) -> None:
+        """Зафиксировать стадию доставки Discord API для записи."""
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE voice_control_restrictions SET delivery_state=$3 "
+                "WHERE guild_id=$1 AND id=$2",
+                guild_id, restriction_id, delivery_state,
+            )
+
+    async def restriction_by_id(self, guild_id: int,
+                                restriction_id: int) -> dict[str, Any] | None:
+        """Свежая запись по ID — без ограничений выборки, для повторной
+        проверки под блокировкой."""
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return _dict(await conn.fetchrow(
+                "SELECT * FROM voice_control_restrictions "
+                "WHERE guild_id=$1 AND id=$2",
+                guild_id, restriction_id,
+            ))
 
     async def claim_pending(self, state: str, worker: str, *,
                             limit: int = 50, lease_seconds: int = 120,
@@ -487,15 +525,25 @@ class VoiceControlStore:
             )
         return [dict(r) for r in rows]
 
-    async def release_claim(self, restriction_id: int) -> None:
+    async def release_claim(self, restriction_id: int,
+                            token: str | None = None) -> None:
+        """Освободить claim. С token — только свой: устаревший worker
+        не снимает claim нового владельца."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE voice_control_restrictions SET claim_token=NULL, claim_until=NULL "
-                "WHERE id=$1",
-                restriction_id,
-            )
+            if token is None:
+                await conn.execute(
+                    "UPDATE voice_control_restrictions SET claim_token=NULL, "
+                    "claim_until=NULL WHERE id=$1",
+                    restriction_id,
+                )
+            else:
+                await conn.execute(
+                    "UPDATE voice_control_restrictions SET claim_token=NULL, "
+                    "claim_until=NULL WHERE id=$1 AND claim_token=$2",
+                    restriction_id, token,
+                )
 
     async def pending_states(self) -> dict[str, int]:
         """Счётчики незавершённых операций — для emergency dry-run."""
@@ -511,21 +559,25 @@ class VoiceControlStore:
 
     async def release_restriction(self, guild_id: int, restriction_id: int, *,
                                   actor_id: int = 0,
-                                  final_state: str = "released") -> dict[str, Any] | None:
+                                  final_state: str = "released",
+                                  expected_claim_token: str | None = None,
+                                  ) -> dict[str, Any] | None:
         """Терминальное состояние после подтверждённой очистки.
-        final_state='expired' сохраняет информацию о таймере."""
+        final_state='expired' сохраняет информацию о таймере.
+        expected_claim_token — CAS по claim (см. set_state)."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn, conn.transaction():
-            row = await conn.fetchrow(
-                """UPDATE voice_control_restrictions
+            sql = """UPDATE voice_control_restrictions
                    SET state=$4, released_at=now(), released_by=$3,
                        claim_token=NULL, claim_until=NULL
                    WHERE guild_id=$1 AND id=$2
-                     AND state IN ('active','pending_apply','pending_release')
-                   RETURNING *""",
-                guild_id, restriction_id, actor_id, final_state,
-            )
+                     AND state IN ('active','pending_apply','pending_release')"""
+            args: list[Any] = [guild_id, restriction_id, actor_id, final_state]
+            if expected_claim_token is not None:
+                args.append(expected_claim_token)
+                sql += f" AND claim_token=${len(args)}"
+            row = await conn.fetchrow(sql + " RETURNING *", *args)
             return _dict(row)
 
     async def expire_due_restrictions(self, limit: int = 200) -> list[dict[str, Any]]:
@@ -539,7 +591,8 @@ class VoiceControlStore:
                    SET state='pending_release', claim_token=NULL, claim_until=NULL
                    WHERE id IN (
                        SELECT id FROM voice_control_restrictions
-                       WHERE state='active' AND expires_at IS NOT NULL AND expires_at<=now()
+                       WHERE state IN ('active','pending_apply')
+                         AND expires_at IS NOT NULL AND expires_at<=now()
                        ORDER BY expires_at LIMIT $1
                        FOR UPDATE SKIP LOCKED)
                    RETURNING *""",

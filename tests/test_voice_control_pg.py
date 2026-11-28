@@ -16,6 +16,7 @@ pgserver = pytest.importorskip("pgserver")
 asyncpg = pytest.importorskip("asyncpg")
 
 import storage.db as dbmod
+from storage import moderation_store as modstore
 from storage import voice_control_store as vstore
 
 
@@ -35,11 +36,15 @@ async def pg_pool(pg_uri):
     dbmod._pool = pool
     store = vstore.VoiceControlStore()
     await store.ensure()
+    await modstore.moderation_store.ensure()
     async with pool.acquire() as conn:
         for t in ("voice_control_events", "voice_control_ops",
                   "voice_control_overwrites", "voice_control_restrictions",
                   "voice_control_exceptions", "voice_control_speakers",
-                  "voice_control_modes", "voice_control_settings"):
+                  "voice_control_modes", "voice_control_settings",
+                  "moderation_events", "moderation_cases",
+                  "moderation_reports", "moderation_appeals",
+                  "moderation_settings"):
             await conn.execute(f"DELETE FROM {t}")
     try:
         yield store
@@ -241,3 +246,79 @@ async def test_guild_isolation_pg(pg_pool):
     assert all(r["guild_id"] == 1
                for r in await pg_pool.restrictions(1))
     assert len(await pg_pool.restrictions(2)) >= 1
+
+
+@pytest.mark.asyncio
+async def test_delivery_state_lifecycle_pg(pg_pool):
+    """P0.2: delivery_state персистится и меняется mark_delivery."""
+    r = await pg_pool.add_restriction(
+        1, 10, 98, "server_mute", "manual", created_by=2)
+    assert r["delivery_state"] == "not_dispatched"
+    await pg_pool.mark_delivery(1, r["id"], "dispatch_started")
+    row = await pg_pool.restriction_by_id(1, r["id"])
+    assert row["delivery_state"] == "dispatch_started"
+    await pg_pool.mark_delivery(1, r["id"], "outcome_unknown")
+    await pg_pool.mark_delivery(1, r["id"], "confirmed_applied")
+    row = await pg_pool.restriction_by_id(1, r["id"])
+    assert row["delivery_state"] == "confirmed_applied"
+    assert row["state"] == "pending_apply"
+
+
+@pytest.mark.asyncio
+async def test_claim_token_cas_pg(pg_pool):
+    """P0.5: set_state/release_restriction с expected_claim_token —
+    чужой token не завершает переход; release_claim по token."""
+    r = await pg_pool.add_restriction(
+        1, 10, 99, "server_mute", "manual", created_by=2,
+        state="pending_release")
+    batch = await pg_pool.claim_pending("pending_release", "w1", limit=10)
+    assert any(x["id"] == r["id"] for x in batch)
+    # Неверный token — переход отклонён.
+    assert await pg_pool.set_state(
+        1, r["id"], "released", expected_claim_token="w2") is None
+    assert await pg_pool.release_restriction(
+        1, r["id"], expected_claim_token="w2") is None
+    # Верный token — переход проходит.
+    row = await pg_pool.set_state(
+        1, r["id"], "pending_apply",
+        from_states=("pending_release",),
+        expected_claim_token="w1")
+    assert row is not None and row["state"] == "pending_apply"
+    # release_claim чужим token не снимает claim.
+    await pg_pool.claim_pending("pending_apply", "w3", limit=10)
+    await pg_pool.release_claim(r["id"], "w1")
+    row = await pg_pool.restriction_by_id(1, r["id"])
+    assert row["claim_token"] == "w3"
+    await pg_pool.release_claim(r["id"], "w3")
+    row = await pg_pool.restriction_by_id(1, r["id"])
+    assert row["claim_token"] is None
+
+
+@pytest.mark.asyncio
+async def test_moderation_voice_state_survives_flood_pg(pg_pool):
+    """P0.1/R1: >100 событий ДРУГИХ пользователей не вытесняют
+    действующее модерационное наказание target'а."""
+    db = modstore.moderation_store
+    target, other = 500, 501
+    # Действующий мут target'а.
+    await db.event(1, 1, "voice.mute.applied",
+                   detail={"target_id": target, "value": True})
+    # 150 событий мута других пользователей — позже по id.
+    for i in range(150):
+        await db.event(1, 1, "voice.mute.applied",
+                       detail={"target_id": other + i, "value": True})
+    st = await db.voice_state(1, target, "mute")
+    assert st["status"] == "active"
+    # Запрошенная, но не подтверждённая операция → unknown.
+    await db.event(1, 1, "voice.mute.requested",
+                   detail={"target_id": target, "value": False})
+    st = await db.voice_state(1, target, "mute")
+    assert st["status"] == "unknown"
+    # Подтверждённое снятие → inactive.
+    await db.event(1, 1, "voice.mute.applied",
+                   detail={"target_id": target, "value": False})
+    st = await db.voice_state(1, target, "mute")
+    assert st["status"] == "inactive"
+    # Другой field не смешивается.
+    st = await db.voice_state(1, target, "deafen")
+    assert st["status"] == "none"

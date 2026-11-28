@@ -934,13 +934,12 @@ class VoiceControlCog(commands.Cog):
                 return
             mode = await vc.db.mode(guild.id, channel.id)
             new_value = not (mode and mode.get("auto_mute"))
-            await vc.db.put_mode(guild.id, channel.id, auto_mute=new_value)
-            await vc.log_event(guild.id, member.id, "voice.auto_mute",
-                               channel_id=channel.id,
-                               detail={"enabled": new_value})
+            result = await vc.set_auto_mute(channel, member, new_value)
             await self._flash(interaction, panel,
                               "Автомут новых участников "
-                              + ("включён." if new_value else "выключен."))
+                              + ("включён." if new_value else "выключен.")
+                              + (f" Снято ограничений: {result['released']}."
+                                 if result.get("released") else ""))
             return
         if action == "extra_rename":
             await interaction.response.send_modal(RenameModal(panel, self))

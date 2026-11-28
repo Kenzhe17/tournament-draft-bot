@@ -134,16 +134,25 @@ class FakeStore:
     async def add_restriction(self, guild_id, channel_id, user_id, kind,
                               origin, *, reason="", expires_at=None,
                               request_key=None, created_by=0,
-                              state="pending_apply"):
+                              state="pending_apply", delivery_state=None):
         if request_key:
             for r in self.restrictions_rows:
                 if r["request_key"] == request_key:
                     return dict(r) if r["state"] == "active" else None
+        if delivery_state is None:
+            # Backfill-семантика миграции: active — подтверждён,
+            # pending/conflict — неизвестно, терминальные — не было.
+            delivery_state = ("confirmed_applied" if state == "active"
+                              else "outcome_unknown"
+                              if state in ("pending_apply",
+                                           "pending_release", "conflict")
+                              else "not_dispatched")
         row = {
             "id": self._next_id, "guild_id": guild_id,
             "channel_id": channel_id, "user_id": user_id, "kind": kind,
             "origin": origin, "reason": reason, "expires_at": expires_at,
-            "state": state, "request_key": request_key,
+            "state": state, "delivery_state": delivery_state,
+            "request_key": request_key,
             "created_by": created_by,
             "created_at": datetime.now(UTC),
             "released_at": None, "released_by": None,
@@ -170,11 +179,15 @@ class FakeStore:
         return out[:limit]
 
     async def set_state(self, guild_id, restriction_id, state, *,
-                        actor_id=0, from_states=None):
+                        actor_id=0, from_states=None,
+                        expected_claim_token=None):
         for r in self.restrictions_rows:
             if r["guild_id"] != guild_id or r["id"] != restriction_id:
                 continue
             if from_states and r["state"] not in from_states:
+                return None
+            if expected_claim_token is not None \
+                    and r.get("claim_token") != expected_claim_token:
                 return None
             r["state"] = state
             if state in TERMINAL_STATES:
@@ -185,29 +198,49 @@ class FakeStore:
             return dict(r)
         return None
 
+    async def mark_delivery(self, guild_id, restriction_id, delivery_state):
+        for r in self.restrictions_rows:
+            if r["guild_id"] == guild_id and r["id"] == restriction_id:
+                r["delivery_state"] = delivery_state
+                return
+
+    async def restriction_by_id(self, guild_id, restriction_id):
+        for r in self.restrictions_rows:
+            if r["guild_id"] == guild_id and r["id"] == restriction_id:
+                return dict(r)
+        return None
+
     async def claim_pending(self, state, worker, *, limit=50,
                             lease_seconds=120, after_id=0):
+        # Семантика PG: запись доступна, если claim_until истёк или
+        # пуст — переходы состояний сбрасывают claim.
+        now = datetime.now(UTC)
         out = []
         for r in sorted(self.restrictions_rows, key=lambda x: x["id"]):
             if r["state"] != state or r["id"] <= after_id:
                 continue
-            if r["id"] in self._claimed:
-                continue
+            cu = r.get("claim_until")
+            if cu is not None:
+                if cu.tzinfo is None:
+                    cu = cu.replace(tzinfo=UTC)
+                if cu > now:
+                    continue
             r["claim_token"] = worker
-            r["claim_until"] = datetime.now(UTC) + timedelta(
-                seconds=lease_seconds)
-            self._claimed.add(r["id"])
+            r["claim_until"] = now + timedelta(seconds=lease_seconds)
             out.append(dict(r))
             if len(out) >= limit:
                 break
         return out
 
-    async def release_claim(self, restriction_id):
-        self._claimed.discard(restriction_id)
+    async def release_claim(self, restriction_id, token=None):
         for r in self.restrictions_rows:
             if r["id"] == restriction_id:
+                if token is not None and r.get("claim_token") != token:
+                    return
                 r["claim_token"] = None
                 r["claim_until"] = None
+                self._claimed.discard(restriction_id)
+                return
 
     async def pending_states(self):
         counts = {}
@@ -218,10 +251,14 @@ class FakeStore:
         return counts
 
     async def release_restriction(self, guild_id, restriction_id, *,
-                                  actor_id=0, final_state="released"):
+                                  actor_id=0, final_state="released",
+                                  expected_claim_token=None):
         for r in self.restrictions_rows:
             if (r["guild_id"] == guild_id and r["id"] == restriction_id
                     and r["state"] in ACTIVE_STATES + ("pending_release",)):
+                if expected_claim_token is not None \
+                        and r.get("claim_token") != expected_claim_token:
+                    return None
                 r["state"] = final_state
                 r["released_at"] = datetime.now(UTC)
                 r["released_by"] = actor_id
@@ -234,8 +271,8 @@ class FakeStore:
         now = datetime.now(UTC)
         out = []
         for r in sorted(self.restrictions_rows, key=lambda x: x["id"]):
-            if (r["state"] == "active" and r["expires_at"]
-                    and r["expires_at"] <= now):
+            if (r["state"] in ("active", "pending_apply")
+                    and r["expires_at"] and r["expires_at"] <= now):
                 r["state"] = "pending_release"
                 r["claim_token"] = None
                 r["claim_until"] = None
@@ -987,7 +1024,8 @@ async def test_restart_after_apply_before_commit(env):
 
     rec = await vc.db.add_restriction(
         GUILD_ID, ch.id, target.id, "server_mute", vc.ORIGIN_MANUAL,
-        created_by=ACTOR_ID, state="pending_apply")
+        created_by=ACTOR_ID, state="pending_apply",
+        delivery_state="dispatch_started")
     bot = NS(get_guild=lambda gid: g)
     stats = await vc.sweep_timers(bot)
     assert stats["pending_apply"] >= 1
@@ -1000,7 +1038,8 @@ async def test_restart_after_apply_before_commit(env):
 
 @pytest.mark.asyncio
 async def test_restart_at_pending_release(env):
-    """6. Перезапуск при pending_release → sweeper завершает очистку."""
+    """6. Перезапуск при pending_release (delivery подтверждён)
+    → sweeper завершает очистку."""
     g = env.guild
     ch = make_channel(10, g, "General")
     make_member(ACTOR_ID, g, ch)
@@ -1008,7 +1047,8 @@ async def test_restart_at_pending_release(env):
 
     rec = await vc.db.add_restriction(
         GUILD_ID, ch.id, target.id, "server_mute", vc.ORIGIN_MANUAL,
-        created_by=ACTOR_ID, state="pending_release")
+        created_by=ACTOR_ID, state="pending_release",
+        delivery_state="confirmed_applied")
     bot = NS(get_guild=lambda gid: g)
     await vc.sweep_timers(bot)
     row = await vc.db.restrictions(GUILD_ID, user_id=target.id,
@@ -1016,6 +1056,50 @@ async def test_restart_at_pending_release(env):
     ours = next(r for r in row if r["id"] == rec["id"])
     assert ours["state"] == "released"
     assert not target.voice.mute
+
+
+@pytest.mark.asyncio
+async def test_pending_release_unknown_delivery_no_blind_unmute(env):
+    """P0.2: pending_release с outcome_unknown и установленным флагом —
+    НЕ выполняем слепой unmute: фиксируем conflict, мут сохраняется."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch, muted=True)
+
+    rec = await vc.db.add_restriction(
+        GUILD_ID, ch.id, target.id, "server_mute", vc.ORIGIN_MANUAL,
+        created_by=ACTOR_ID, state="pending_release",
+        delivery_state="outcome_unknown")
+    bot = NS(get_guild=lambda gid: g)
+    await vc.sweep_timers(bot)
+    row = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                   active_only=False)
+    ours = next(r for r in row if r["id"] == rec["id"])
+    assert ours["state"] == "conflict"
+    assert target.voice.mute  # чужой/неопределённый флаг не тронут
+
+
+@pytest.mark.asyncio
+async def test_pending_release_not_dispatched_no_unmute(env):
+    """P0.2: not_dispatched — API гарантированно не вызывался,
+    запись завершается без Discord unmute."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch, muted=True)  # «чужой» флаг
+
+    rec = await vc.db.add_restriction(
+        GUILD_ID, ch.id, target.id, "server_mute", vc.ORIGIN_MANUAL,
+        created_by=ACTOR_ID, state="pending_release",
+        delivery_state="not_dispatched")
+    bot = NS(get_guild=lambda gid: g)
+    await vc.sweep_timers(bot)
+    row = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                   active_only=False)
+    ours = next(r for r in row if r["id"] == rec["id"])
+    assert ours["state"] == "released"
+    assert target.voice.mute  # флаг не принадлежал нам — сохранён
 
 
 @pytest.mark.asyncio
@@ -1067,9 +1151,10 @@ async def test_timer_plus_speaker_mode_stacking(env):
 
 
 @pytest.mark.asyncio
-async def test_transition_between_two_managed_channels(env):
-    """8. Переход между двумя управляемыми войсами: флаг —
-    guild-level, ограничение канала A остаётся валидным."""
+async def test_transition_to_plain_channel_releases(env):
+    """8a. P0.3: массовый мут в A → переход в ОБЫЧНЫЙ войс B —
+    старый channel-scoped mute НЕ переносится: ограничение A
+    завершается, флаг снимается."""
     g = env.guild
     ch_a = make_channel(10, g, "A")
     ch_b = make_channel(11, g, "B")
@@ -1078,17 +1163,56 @@ async def test_transition_between_two_managed_channels(env):
 
     await vc.apply_restriction(target, ch_a, "server_mute",
                                vc.ORIGIN_MANUAL, actor=actor)
-    await target.move_to(ch_b)
     assert target.voice.mute
+    await target.move_to(ch_b)
+    await vc.reconcile_member(target)
+    assert not target.voice.mute
+    rows = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                    active_only=False)
+    ours = next(r for r in rows if r["channel_id"] == ch_a.id)
+    assert ours["state"] in TERMINAL_STATES
+
+
+@pytest.mark.asyncio
+async def test_transition_between_two_managed_channels(env):
+    """8b. Speaker mode в A → speaker mode в B: ограничение A
+    завершается, ограничение B создаётся — флаг остаётся
+    покрытым на всём переходе."""
+    g = env.guild
+    ch_a = make_channel(10, g, "A")
+    ch_b = make_channel(11, g, "B")
+    actor = make_member(ACTOR_ID, g, ch_a)
+    target = make_member(70, g, ch_a)
+    speaker_b = make_member(80, g, ch_b)
+
+    await vc.apply_restriction(target, ch_a, "server_mute",
+                               vc.ORIGIN_MANUAL, actor=actor)
+    await vc.start_speaker_mode(ch_b, actor, speakers=[speaker_b])
+    await target.move_to(ch_b)
     await vc.reconcile_member(target)
     assert target.voice.mute
     rows = await vc.db.restrictions(GUILD_ID, user_id=target.id,
                                     active_only=True)
-    assert any(r["channel_id"] == ch_a.id for r in rows)
+    ours_b = [r for r in rows if r["channel_id"] == ch_b.id
+              and r["origin"] == vc.ORIGIN_SPEAKER]
+    assert ours_b, "ограничение канала B не создано"
+    # Старое ограничение A завершено.
+    all_rows = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                        active_only=False)
+    ours_a = next(r for r in all_rows if r["channel_id"] == ch_a.id)
+    assert ours_a["state"] in TERMINAL_STATES
 
-    await target.move_to(ch_a)
+    # Отключение от войса: все ограничения завершаются, unmute
+    # вызван (voice=None — флаг не наблюдаем, проверяем вызов edit).
+    await target.move_to(None)
+    target.edit.reset_mock()
     await vc.reconcile_member(target)
-    assert target.voice.mute
+    unmuted = any(c.kwargs.get("mute") is False
+                  for c in target.edit.await_args_list)
+    assert unmuted
+    all_rows = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                        active_only=False)
+    assert all(r["state"] in TERMINAL_STATES for r in all_rows)
 
 
 # ----------------------------------------------------------------------
@@ -1262,6 +1386,262 @@ async def test_apply_restriction_dedup_and_stack(env):
     rows = await vc.db.restrictions(GUILD_ID, user_id=target.id,
                                     active_only=True)
     assert len(rows) == 2
+
+
+# ----------------------------------------------------------------------
+# RC2 — P0.1–P0.7 blockers: delivery states, channel scope, claims,
+# feature flag, stacking, reconciliation safety
+# ----------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_stale_before_dispatch_never_unmutes_foreign(env, monkeypatch):
+    """3. StaleTargetError ДО API dispatch → чужой mute → recovery.
+    Запись not_dispatched→failed, Discord unmute не вызывается."""
+    g = env.guild
+    ch_a = make_channel(10, g, "A")
+    make_channel(11, g, "B")
+    make_member(ACTOR_ID, g, ch_a)
+    target = make_member(70, g, ch_a)
+
+    # Первая проверка канала — True, проверка внутри API-вызова —
+    # False (участник «ушёл» между проверкой и dispatch).
+    calls = {"n": 0}
+    real = vc._in_expected_channel
+
+    def flaky(member, expected):
+        calls["n"] += 1
+        return calls["n"] == 1
+
+    monkeypatch.setattr(vc, "_in_expected_channel", flaky)
+    with pytest.raises(vc.StaleTargetError):
+        await vc.apply_restriction(target, ch_a, "server_mute",
+                                   vc.ORIGIN_MANUAL, actor_id=ACTOR_ID)
+    monkeypatch.setattr(vc, "_in_expected_channel", real)
+
+    row = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                   active_only=False)
+    ours = row[0]
+    assert ours["state"] == "failed"
+    assert ours["delivery_state"] == "not_dispatched"
+    assert not target.edit.await_count or all(
+        c.kwargs.get("mute") is not True
+        for c in target.edit.await_args_list)
+
+    # Позднее на участнике появляется «чужой» мут — recovery его
+    # не снимает: запись уже терминальна, sweep её не трогает.
+    target.voice.mute = True
+    bot = NS(get_guild=lambda gid: g)
+    await vc.sweep_timers(bot)
+    assert target.voice.mute
+
+
+@pytest.mark.asyncio
+async def test_pending_apply_flag_off_goes_to_cleanup(env, monkeypatch):
+    """8. Pending apply при feature flag OFF: применение НЕ
+    выполняется — безопасный переход в pending_release."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch)
+
+    rec = await vc.db.add_restriction(
+        GUILD_ID, ch.id, target.id, "server_mute", vc.ORIGIN_MANUAL,
+        created_by=ACTOR_ID, state="pending_apply",
+        delivery_state="outcome_unknown")
+    monkeypatch.setattr(config, "VOICE_CONTROL_ENABLED", False)
+    bot = NS(get_guild=lambda gid: g)
+    await vc.sweep_timers(bot)
+    assert not target.voice.mute
+    row = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                   active_only=False)
+    ours = next(r for r in row if r["id"] == rec["id"])
+    # flag off → pending_release → outcome_unknown + флаг не стоит →
+    # released без unmute.
+    assert ours["state"] == "released"
+
+
+@pytest.mark.asyncio
+async def test_sweep_and_manual_release_race(env):
+    """9. Sweep и ручной release одновременно: одна терминальная
+    запись, флаг снят ровно один раз логически."""
+    import asyncio
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    actor = make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch)
+
+    rec = await vc.apply_restriction(target, ch, "server_mute",
+                                     vc.ORIGIN_MANUAL, actor=actor)
+    restriction = rec["restriction"]
+    bot = NS(get_guild=lambda gid: g)
+    # принудительно в pending_release, чтобы sweep его подхватил
+    await vc.db.set_state(GUILD_ID, restriction["id"], "pending_release")
+
+    await asyncio.gather(
+        vc.release_restriction(restriction, actor=actor),
+        vc.sweep_timers(bot),
+    )
+    row = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                   active_only=False)
+    ours = next(r for r in row if r["id"] == restriction["id"])
+    assert ours["state"] in TERMINAL_STATES
+    assert not target.voice.mute
+
+
+@pytest.mark.asyncio
+async def test_claim_lease_expiry_blocks_stale_worker(env):
+    """10. Истечение claim lease во время обработки: worker со
+    старым token не завершает переход и не снимает чужой claim."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch, muted=True)
+    rec = await vc.db.add_restriction(
+        GUILD_ID, ch.id, target.id, "server_mute", vc.ORIGIN_MANUAL,
+        created_by=ACTOR_ID, state="pending_release",
+        delivery_state="confirmed_applied")
+
+    batch = await vc.db.claim_pending("pending_release", "w-old",
+                                      limit=10)
+    assert len(batch) == 1
+    # Лиз «истёк», запись перехвачена новым worker'ом.
+    for r in env.store.restrictions_rows:
+        if r["id"] == rec["id"]:
+            r["claim_token"] = "w-new"
+            r["claim_until"] = datetime.now(UTC) + timedelta(seconds=60)
+
+    # Старый worker пытается завершить — claim не его.
+    await vc.finish_pending_release(batch[0], claim_token="w-old")
+    fresh = await vc.db.restriction_by_id(GUILD_ID, rec["id"])
+    assert fresh["state"] == "pending_release"
+    assert fresh["claim_token"] == "w-new"
+    # И не может снять чужой claim.
+    await vc.db.release_claim(rec["id"], "w-old")
+    fresh = await vc.db.restriction_by_id(GUILD_ID, rec["id"])
+    assert fresh["claim_token"] == "w-new"
+
+
+@pytest.mark.asyncio
+async def test_auto_mute_disable_releases_only_own(env):
+    """12. Активный автомут → отключение режима: свои ограничения
+    завершаются, таймер/массовый мут остаются."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    actor = make_member(ACTOR_ID, g, ch)
+    auto_user = make_member(70, g, ch)
+    timer_user = make_member(71, g, ch)
+
+    await vc.db.put_mode(GUILD_ID, ch.id, auto_mute=True)
+    await vc.apply_auto_mute(auto_user, ch)
+    assert auto_user.voice.mute
+    await vc.apply_restriction(timer_user, ch, "server_mute",
+                               vc.ORIGIN_TIMER, actor=actor,
+                               expires_at=datetime.now(UTC)
+                               + timedelta(minutes=5))
+
+    result = await vc.set_auto_mute(ch, actor, False)
+    assert result["released"] >= 1
+    assert not auto_user.voice.mute
+    assert timer_user.voice.mute
+    rows = await vc.db.restrictions(GUILD_ID, user_id=timer_user.id,
+                                    active_only=True)
+    assert any(r["origin"] == vc.ORIGIN_TIMER for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_unknown_moderation_state_no_restore(env):
+    """13. Unknown moderation state → reconcile НЕ восстанавливает
+    mute (консервативно)."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    actor = make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch)
+
+    rec = await vc.apply_restriction(target, ch, "server_mute",
+                                     vc.ORIGIN_MANUAL, actor=actor)
+    target.voice.mute = False  # флаг снят стороной
+    env.mod.set(GUILD_ID, target.id, "mute", "unknown")
+
+    await vc.reconcile_member(target)
+    assert not target.voice.mute
+    row = await vc.db.restriction_by_id(GUILD_ID, rec["restriction"]["id"])
+    assert row["state"] == "active"  # без конфликта — транзиентно
+
+
+@pytest.mark.asyncio
+async def test_disconnect_reconnect_other_channel(env):
+    """7. Полный disconnect → reconnect в другой канал: mute из A
+    не переносится, при входе в B без режимов флаг снят."""
+    g = env.guild
+    ch_a = make_channel(10, g, "A")
+    ch_b = make_channel(11, g, "B")
+    actor = make_member(ACTOR_ID, g, ch_a)
+    target = make_member(70, g, ch_a)
+
+    await vc.apply_restriction(target, ch_a, "server_mute",
+                               vc.ORIGIN_MANUAL, actor=actor)
+    await target.move_to(None)
+    await vc.reconcile_member(target)
+    rows = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                    active_only=True)
+    assert rows == []
+
+    await target.move_to(ch_b)
+    await vc.reconcile_member(target)
+    assert not target.voice.mute
+
+
+@pytest.mark.asyncio
+async def test_deafen_stacking_and_channel_scope(env):
+    """14. Server deafen: стек timer+manual и channel-scope при
+    переходе в обычный канал."""
+    g = env.guild
+    ch_a = make_channel(10, g, "A")
+    ch_b = make_channel(11, g, "B")
+    actor = make_member(ACTOR_ID, g, ch_a)
+    target = make_member(70, g, ch_a)
+
+    await vc.apply_restriction(target, ch_a, "server_deafen",
+                               vc.ORIGIN_TIMER, actor=actor,
+                               expires_at=datetime.now(UTC)
+                               + timedelta(minutes=5))
+    await vc.apply_restriction(target, ch_a, "server_deafen",
+                               vc.ORIGIN_MANUAL, actor=actor)
+    rows = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                    active_only=True)
+    assert len([r for r in rows if r["kind"] == "server_deafen"]) == 2
+    assert target.voice.deaf
+
+    # Переход в обычный канал: deafen-ограничения A завершаются,
+    # флаг снимается (has_other_active пуст).
+    await target.move_to(ch_b)
+    await vc.reconcile_member(target)
+    assert not target.voice.deaf
+
+
+@pytest.mark.asyncio
+async def test_same_origin_dedup_per_channel(env):
+    """P0.6: одинаковый origin в разных каналах — НЕ дубль;
+    в одном канале — дубль."""
+    g = env.guild
+    ch_a = make_channel(10, g, "A")
+    ch_b = make_channel(11, g, "B")
+    actor = make_member(ACTOR_ID, g, ch_a)
+    target = make_member(70, g, ch_a)
+
+    await vc.apply_restriction(target, ch_a, "server_mute",
+                               vc.ORIGIN_MANUAL, actor=actor)
+    # Переход в B и повторное ручное ограничение там — новая запись.
+    await target.move_to(ch_b)
+    r2 = await vc.apply_restriction(target, ch_b, "server_mute",
+                                    vc.ORIGIN_MANUAL, actor=actor)
+    assert not r2.get("skipped")
+    rows = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                    active_only=True)
+    assert len(rows) == 2
+    # Дубль в том же канале B — пропускается.
+    r3 = await vc.apply_restriction(target, ch_b, "server_mute",
+                                    vc.ORIGIN_MANUAL, actor=actor)
+    assert r3.get("skipped") == "already_restricted"
 
 
 # ----------------------------------------------------------------------
