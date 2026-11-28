@@ -164,3 +164,36 @@ jobs:
           -e VOICE_CONTROL_ENABLED=1
           -v /tmp/vc_smoke.py:/tmp/vc_smoke.py:ro
           riz3-vc-smoke python /tmp/vc_smoke.py
+  docker-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build bot image
+        run: docker build -t riz3-bot:ci .
+      - name: Runtime smoke — imports, DynamicItem, PNG render
+        # Production Discord-токен НЕ используется: только локальные
+        # импорты, регистрация dynamic items и генерация PNG-стола.
+        run: |
+          docker run --rm -i --entrypoint python riz3-bot:ci - <<'PY'
+          import games.blackjack
+          import storage.blackjack_store
+          import views.blackjack_view as bv
+          from utils.blackjack_render import render_round
+          assert bv.BlackjackActionButton is not None
+          import re
+          rx = re.compile(bv._ACTION_RE)
+          assert rx.fullmatch("bj2:hit:" + "a" * 32 + ":v1")
+          png = render_round(
+              [("A", "♠"), ("K", "♥"), ("Q", "♦")],
+              [("10", "♣"), ("9", "♠"), ("5", "♥")],
+              reveal_dealer=True, stake=500, outcome="win")
+          assert png and png[:8] == b"\x89PNG\r\n\x1a\n", "PNG render failed"
+          # все масти должны рендериться без ошибок
+          suits = ["♠", "♥", "♦", "♣"]
+          for s in suits:
+              p = render_round([("A", s)], [("2", "♠")],
+                               reveal_dealer=True, stake=0)
+              assert p and p[:8] == b"\x89PNG\r\n\x1a\n", f"suit {s} failed"
+          print("docker smoke OK:", len(png), "bytes")
+          PY

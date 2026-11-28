@@ -34,6 +34,8 @@ from utils.design import compose
 class FakeResponse:
     def __init__(self):
         self.messages = []
+        self.edits = []
+        self.modals = []
         self.deferred = False
         self.defer_kwargs = None
 
@@ -41,11 +43,28 @@ class FakeResponse:
         return self.deferred
 
     async def defer(self, **kwargs):
+        if self.deferred:
+            raise discord.InteractionResponded(self)
         self.deferred = True
         self.defer_kwargs = kwargs
 
+    def _check_open(self):
+        # как в discord.py: после defer/edit_message/send_* второй
+        # первичный ответ на тот же interaction запрещён
+        if self.deferred or self.edits or self.modals or self.messages:
+            raise discord.InteractionResponded(self)
+
     async def send_message(self, *args, **kwargs):
+        self._check_open()
         self.messages.append((args, kwargs))
+
+    async def edit_message(self, *args, **kwargs):
+        self._check_open()
+        self.edits.append((args, kwargs))
+
+    async def send_modal(self, modal):
+        self._check_open()
+        self.modals.append(modal)
 
 
 class FakeFollowup:
@@ -235,7 +254,7 @@ async def test_publish_discord_failure_keeps_pending_and_retry_same_snapshot(
 
     # повтор: Discord починился — тот же снимок, без второго сообщения
     channel.fail = False
-    await btn.callback(inter)
+    await btn.callback(_interaction(guild))
     assert len(channel.message.edits) == 1  # edit того же message_id
     assert t.phase == BRTournamentPhase.RESULTS
     assert t.results_snapshot == snap1
@@ -251,7 +270,7 @@ async def test_double_publish_is_idempotent(patched_store):
     btn = PublishResultsButton(1, 2, t.id)
 
     await btn.callback(inter)
-    await btn.callback(inter)  # повторный клик
+    await btn.callback(_interaction(guild))  # повторный клик — новый interaction
     # вторая публикация не делает второй edit и не падает
     assert len(channel.message.edits) == 1
     assert t.phase == BRTournamentPhase.RESULTS
@@ -329,8 +348,8 @@ async def test_commit_save_failure_allows_retry(monkeypatch, patched_store):
     assert any("сохранение не удалось" in str(m[0][0])
                for m in inter.response.messages)
 
-    # повторный клик: тот же снимок, коммит успешен
-    await btn.callback(inter)
+    # повторный клик: тот же снимок, коммит успешен (новый interaction)
+    await btn.callback(_interaction(guild))
     assert t.phase == BRTournamentPhase.RESULTS
     assert t.results_snapshot is not None
     assert len(channel.message.edits) == 2  # edit идемпотентен по message_id
@@ -784,7 +803,8 @@ async def test_resume_restores_card_when_purged(patched_store):
 
     ok = await resume_pending_publish(t, FakeClient(guild))
     assert ok is False
-    assert len(channel.message.edits) == 2
+    # purge: карточка не трогается вообще — удалённую не воскрешаем
+    assert len(channel.message.edits) == 0
 
 
 @pytest.mark.asyncio

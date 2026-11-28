@@ -179,9 +179,15 @@ class GameSelect(Select):
             status_text = "В разработке"
 
         if game.id == "blackjack":
-            game_details = " Команда: `/games blackjack`\n Режим: без ставок\n"
-            if GAMES_CHANNEL_ID:
-                game_details = f" Канал: <#{GAMES_CHANNEL_ID}>\n" + game_details
+            game_details = (
+                f" Канал: <#{GAMES_CHANNEL_ID}>\n"
+                f" Команда: `/games blackjack`\n"
+                f" Режим: ставки {game.min_bet:,}–{game.max_bet:,} или бесплатно\n"
+                f" Категория: {category_info['name']}\n"
+                f" Выплата: победа/блэкджек 2×, ничья у дилера, оба BJ — возврат\n"
+                f" Мин. ставка: {game.min_bet} {get_emoji('money')}\n"
+                f" Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n"
+            )
         else:
             game_details = (
                 f" Канал: <#{GAMES_CHANNEL_ID}>\n"
