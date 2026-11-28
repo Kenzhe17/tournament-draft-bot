@@ -940,11 +940,14 @@ class BlackjackStore:
         """Админ: пометить карточку к повторному отображению.
 
         НЕ трогает активную render-операцию (card_render_op/
-        started_at/verify_after): in-flight Discord HTTP edit
-        завершается штатно под своим op_id — параллельный edit
-        не запускается. card_rendered=-1 гарантирует, что после
-        завершения текущего рендера (или по lease-recovery)
-        ближайший sync перерисует актуальное состояние.
+        started_at): in-flight Discord HTTP edit завершается штатно
+        под своим op_id — параллельный edit не запускается.
+        card_rendered=-1 форсирует ближайший sync; дополнительно
+        card_verify_after = now()+lease гарантирует, что finish
+        активной операции (которая перезаписывает card_rendered
+        подтверждённой версией) НЕ поглотит запрос resync —
+        отложенная ре-верификация актуального состояния
+        отрендерит карточку ещё раз после окна операции.
         Финансовый результат не изменяется; закрытая карточка
         перерисовывается без кнопок (build_game_view + card_closed).
         """
@@ -952,10 +955,13 @@ class BlackjackStore:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """UPDATE blackjack_rounds
-                   SET card_rendered=-1, updated_at=now()
+                   SET card_rendered=-1,
+                       card_verify_after = now() + make_interval(
+                           secs => $2),
+                       updated_at=now()
                    WHERE round_id=$1 AND message_id IS NOT NULL
                    RETURNING round_id""",
-                round_id,
+                round_id, RENDER_LEASE_SECONDS,
             )
             return row is not None
 

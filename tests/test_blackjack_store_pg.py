@@ -1680,3 +1680,34 @@ async def test_concurrent_balance_change_and_settlement(pg_pool,
     ledger = await bj.blackjack_store.get_dispute_ledger(rid)
     assert any(e["op"] == "payout" for e in ledger)
     assert await _balance() >= 0  # баланс консистентен, без overflow
+
+
+@pytest.mark.asyncio
+async def test_resync_survives_finish_of_active_op(pg_pool):
+    """Defect: resync во время активного рендера не должен
+    теряться при finish(ok) — card_verify_after гарантирует
+    отложенный повторный рендер актуального состояния."""
+    rid = await _delivered_round(pg_pool)
+    await bj.blackjack_store.apply_action(rid, "hit")  # version+1
+    assert await bj.blackjack_store.claim_card_render(rid, "op-r") is True
+    assert await bj.blackjack_store.request_card_resync(rid) is True
+    # активный op завершается успешно — подтверждает card_claim
+    assert await bj.blackjack_store.finish_card_render(
+        rid, "op-r", True) is True
+    stored = await bj.blackjack_store.get_round(rid)
+    # card_rendered подтверждён, но resync НЕ потерян:
+    # отложенная верификация ещё в будущем
+    assert stored.card_rendered == stored.version
+    assert stored.card_verify_after is not None
+    assert stored.card_verify_after > datetime.now(UTC)
+    # когда verify_after наступает — карточка снова в sync-очереди,
+    # даже при card_rendered == version
+    async with pg_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE blackjack_rounds SET card_verify_after=now() "
+            "WHERE round_id=$1", rid)
+    pending = await bj.blackjack_store.list_needing_sync()
+    assert any(s.round_id == rid for s in pending)
+    # claim разрешён по verify_after (rendered == version)
+    assert await bj.blackjack_store.claim_card_render(
+        rid, "op-verify") is True
