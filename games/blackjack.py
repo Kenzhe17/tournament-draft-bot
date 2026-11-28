@@ -60,7 +60,12 @@ def _bet_limits(guild_id: int) -> tuple[int, int]:
         from services.settings_service import settings_service
         lo = int(settings_service.peek(guild_id, "economy.blackjack_min_bet"))
         hi = int(settings_service.peek(guild_id, "economy.blackjack_max_bet"))
-        if 0 <= lo <= hi <= 10**9:
+        # Абсолютный технический максимум BET_MAX (10000): финансовая
+        # гарантия выплаты рассчитана на него. Ставка 0 — это бесплатный
+        # режим и лимитами не управляется, поэтому платный минимум не
+        # может быть ниже BET_MIN. Некорректная конфигурация
+        # (hi > BET_MAX, lo > hi, вне диапазона) → fallback на дефолт.
+        if BET_MIN <= lo <= hi <= BET_MAX:
             return lo, hi
     except Exception:
         logger.debug("blackjack bet limits fallback", exc_info=True)
@@ -209,8 +214,8 @@ async def deal_round(
             except Exception:
                 logger.debug("blackjack fail-notify failed", exc_info=True)
 
-    if stake < 0 or stake > 10**9:
-        await _fail("Некорректная ставка.")
+    if stake < 0 or stake > BET_MAX:
+        await _fail(f"Некорректная ставка (максимум {BET_MAX:,}).")
         return
     lo, hi = _bet_limits(guild_id)
     if stake > 0:

@@ -30,12 +30,48 @@ HARD_BALANCE_LIMIT = 2_100_000_000  # < INTEGER max 2 147 483 647
 
 
 def _max_balance() -> int:
-    """Dynamic cap (economy.max_balance) → config fallback."""
+    """Dynamic cap (economy.max_balance) → config fallback.
+
+    Эффективный потолок любого НЕ-гарантированного кредита
+    ограничен SAFE_BALANCE_CAP: CHECK-ограничение БД и так не
+    даёт balance > HARD_BALANCE_LIMIT, а blackjack-гарантия
+    (balance + obligation ≤ HARD) доказуема только пока
+    не-гарантированные кредиты ≤ SAFE_CAP. Значения
+    economy.max_balance выше SAFE_CAP ранее приводили к
+    CHECK-violation вместо понятного clamping — теперь это
+    безопасный потолок. Гарантированные blackjack-выплаты
+    (cap_exempt) этот лимит не используют.
+    """
     try:
         from services.settings_service import settings_service
-        return int(settings_service.peek(None, "economy.max_balance"))
+        return min(int(settings_service.peek(None, "economy.max_balance")),
+                   SAFE_BALANCE_CAP)
     except Exception:  # noqa: BLE001
-        return MAX_BALANCE
+        return min(MAX_BALANCE, SAFE_BALANCE_CAP)
+
+
+async def _payout_obligation(conn, guild_id: int, user_id: int) -> int:
+    """Обязательство будущей гарантированной выплаты blackjack:
+    2×stake активной платной раздачи (0 — если её нет).
+
+    Одна активная раздача на (guild,user) — частичный UNIQUE INDEX
+    blackjack_one_active, поэтому obligation ≤ 2×BET_MAX = 20 000.
+    Возвращает 0, если таблица ещё не создана (миграция не применена)
+    или соединение не asyncpg-совместимо (тестовые fake'ы без
+    fetchval — в реальном PG любая ошибка запроса и так абортит tx).
+    """
+    try:
+        exists = await conn.fetchval(
+            "SELECT to_regclass('blackjack_rounds') IS NOT NULL")
+        if not exists:
+            return 0
+        return int(await conn.fetchval(
+            "SELECT COALESCE(SUM(stake),0)*2 FROM blackjack_rounds "
+            "WHERE guild_id=$1 AND user_id=$2 "
+            "AND status='active' AND stake>0",
+            guild_id, user_id) or 0)
+    except AttributeError:
+        return 0
 
 
 class DecayTracker:
@@ -532,13 +568,30 @@ class UserBalanceStore:
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
-            async with pool.acquire() as conn:
+            async with pool.acquire() as conn, conn.transaction():
+                await self._ensure_row(conn, guild_id, user_id)
+                # Гарантия выплат blackjack: set_balance не имеет права
+                # выставить баланс так, чтобы будущая settlement-выплата
+                # (≤ 2×stake активной платной раздачи, cap-exempt) уперлась
+                # в HARD_BALANCE_LIMIT → BalanceOverflow и зависшая
+                # раздача. Row-lock на user_balance сериализует с
+                # blackjack debit/credit: новый bet не может
+                # закоммититься, пока мы держим блокировку.
+                await conn.fetchrow(
+                    "SELECT balance FROM user_balance "
+                    "WHERE guild_id=$1 AND user_id=$2 FOR UPDATE",
+                    guild_id, user_id)
+                obligation = await _payout_obligation(
+                    conn, guild_id, user_id)
+                if balance + obligation > HARD_BALANCE_LIMIT:
+                    raise ValueError(
+                        "Balance cannot exceed hard limit "
+                        f"{HARD_BALANCE_LIMIT} with active payout "
+                        f"obligation {obligation}")
                 await conn.execute(
                     """
-                    INSERT INTO user_balance (guild_id, user_id, balance)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET balance = $3
+                    UPDATE user_balance SET balance = $3
+                    WHERE guild_id = $1 AND user_id = $2
                     """,
                     guild_id, user_id, balance
                 )

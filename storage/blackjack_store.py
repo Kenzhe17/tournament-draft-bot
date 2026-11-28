@@ -24,6 +24,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from games.blackjack_engine import (
+    BET_MAX,
     TURN_TIMEOUT_SECONDS,
     Round,
     deserialize_round,
@@ -429,6 +430,12 @@ class BlackjackStore:
         """
         if stake < 0:
             raise ValueError("stake must be >= 0")
+        # Абсолютный технический максимум: гарантия выплаты
+        # (balance + stake <= SAFE_BALANCE_CAP → 2×stake <=
+        # HARD_BALANCE_LIMIT) доказана только для stake <= BET_MAX.
+        # Конфиг economy.blackjack_max_bet не может его превысить.
+        if stake > BET_MAX:
+            raise ValueError(f"stake exceeds technical max {BET_MAX}")
         round_id = uuid.uuid4().hex
         deadline = datetime.now(UTC) + timedelta(
             seconds=TURN_TIMEOUT_SECONDS
@@ -931,16 +938,21 @@ class BlackjackStore:
 
     async def request_card_resync(self, round_id: str) -> bool:
         """Админ: пометить карточку к повторному отображению.
-        Сбрасывает render-счётчики и активную операцию — ближайший
-        проход sweeper (list_needing_sync) перерисует актуальное
-        состояние."""
+
+        НЕ трогает активную render-операцию (card_render_op/
+        started_at/verify_after): in-flight Discord HTTP edit
+        завершается штатно под своим op_id — параллельный edit
+        не запускается. card_rendered=-1 гарантирует, что после
+        завершения текущего рендера (или по lease-recovery)
+        ближайший sync перерисует актуальное состояние.
+        Финансовый результат не изменяется; закрытая карточка
+        перерисовывается без кнопок (build_game_view + card_closed).
+        """
         pool = await self._pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """UPDATE blackjack_rounds
-                   SET card_claim=-1, card_rendered=-1,
-                       card_render_op=NULL, card_render_started_at=NULL,
-                       card_verify_after=NULL, updated_at=now()
+                   SET card_rendered=-1, updated_at=now()
                    WHERE round_id=$1 AND message_id IS NOT NULL
                    RETURNING round_id""",
                 round_id,

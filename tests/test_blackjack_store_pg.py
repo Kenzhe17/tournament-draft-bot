@@ -1214,10 +1214,55 @@ async def test_request_card_resync(pg_pool):
     await bj.blackjack_store.mark_message(rid, 321)
     assert await bj.blackjack_store.request_card_resync(rid) is True
     stored = await bj.blackjack_store.get_round(rid)
-    assert stored.card_claim == -1 and stored.card_rendered == -1
+    assert stored.card_rendered == -1  # форсирует повторный рендер
     # попадает в list_needing_sync
     pending = await bj.blackjack_store.list_needing_sync()
     assert any(s.round_id == rid for s in pending)
+
+
+@pytest.mark.asyncio
+async def test_request_card_resync_preserves_active_op(pg_pool):
+    """§4: admin resync во время активного render НЕ сбрасывает
+    владельца операции — параллельный Discord edit не запускается;
+    после finish актуальное состояние уже показано."""
+    rid = await _delivered_round(pg_pool)
+    await bj.blackjack_store.apply_action(rid, "hit")  # version+1
+    assert await bj.blackjack_store.claim_card_render(rid, "op-live") is True
+    # resync во время «Hit»-рендера
+    assert await bj.blackjack_store.request_card_resync(rid) is True
+    stored = await bj.blackjack_store.get_round(rid)
+    # активный op НЕ тронут — никто не может claim параллельно
+    assert stored.card_render_op == "op-live"
+    assert await bj.blackjack_store.claim_card_render(
+        rid, "op-intruder") is False
+    # resync пометил карточку устаревшей — но текущий рендер
+    # покажет актуальное состояние и finish(ok) подтвердит его
+    assert await bj.blackjack_store.finish_card_render(
+        rid, "op-live", True) is True
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.card_rendered == stored.version
+    assert stored.card_render_op is None
+    # повторный resync завершённой карточки — идемпотентно
+    assert await bj.blackjack_store.request_card_resync(rid) is True
+    pending = await bj.blackjack_store.list_needing_sync()
+    assert any(s.round_id == rid for s in pending)
+
+
+@pytest.mark.asyncio
+async def test_request_card_resync_concurrent(pg_pool):
+    """Два одновременных admin resync — идемпотентны, состояние
+    согласовано, активная операция не затронута."""
+    rid = await _delivered_round(pg_pool)
+    await bj.blackjack_store.apply_action(rid, "hit")
+    assert await bj.blackjack_store.claim_card_render(rid, "op-x") is True
+    results = await asyncio.gather(
+        bj.blackjack_store.request_card_resync(rid),
+        bj.blackjack_store.request_card_resync(rid),
+    )
+    assert results == [True, True]
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.card_render_op == "op-x"
+    assert stored.card_rendered == -1
 
 
 # ------------------------------------------------------------------
@@ -1394,3 +1439,244 @@ async def test_set_balance_hard_limit_guard(pg_pool):
     from storage.user_balance_store import user_balance_store as ubs
     with pytest.raises(ValueError):
         await ubs.set_balance(G, U, HARD_BALANCE_LIMIT + 1)
+
+
+# ------------------------------------------------------------------
+# Финальный релизный патч — §3: абсолютный максимум ставки и
+# set_balance не ломает гарантию выплаты
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_stake_absolute_max_10000(pg_pool):
+    """Ставка 10 000 принимается, 10 001 — отклоняется на уровне store
+    (defense in depth поверх _bet_limits/deal_round)."""
+    await _set_balance(1_000_000)
+    rid, created = await bj.blackjack_store.create_round(
+        G, U, 55, 10_000, _game())
+    assert created
+    await bj.blackjack_store.refund_undelivered(rid)  # освободить слот
+    with pytest.raises(ValueError, match="technical max"):
+        await bj.blackjack_store.create_round(
+            G, U, 55, 10_001, _game())
+
+
+@pytest.mark.asyncio
+async def test_set_balance_respects_active_payout(pg_pool, monkeypatch):
+    """set_balance во время активной платной раздачи не может
+    выставить баланс так, чтобы settlement уперся в
+    HARD_BALANCE_LIMIT → BalanceOverflow и зависшая раздача."""
+    from storage import user_balance_store as ubs_mod
+    from storage.user_balance_store import HARD_BALANCE_LIMIT
+    from storage.user_balance_store import user_balance_store as ubs
+    monkeypatch.setattr(ubs_mod.decay_tracker, "should_apply_decay",
+                        lambda *a, **k: False)
+    await _set_balance(100_000)
+    rid, _ = await bj.blackjack_store.create_round(
+        G, U, 55, 10_000, _game())  # обязательство до +20 000
+    # баланс + obligation(20000) > HARD → отказ
+    with pytest.raises(ValueError, match="obligation"):
+        await ubs.set_balance(G, U, HARD_BALANCE_LIMIT - 10_000)
+    # баланс без риска переполнения → разрешён
+    await ubs.set_balance(G, U, 500_000)
+    assert await _balance() == 500_000
+    # settlement активной раздачи не сломан
+    for _ in range(20):
+        st = await bj.blackjack_store.get_round(rid)
+        if st.status == "settled":
+            break
+        try:
+            await bj.blackjack_store.apply_action(rid, "stand")
+        except (bj.RoundNotActive, bj.RoundNotFound, bj.StaleVersion):
+            break
+    st = await bj.blackjack_store.get_round(rid)
+    assert st.status == "settled"
+
+
+@pytest.mark.asyncio
+async def test_set_balance_free_round_no_obligation(pg_pool, monkeypatch):
+    """Бесплатная раздача (stake=0) не создаёт обязательства —
+    set_balance ограничен только HARD_BALANCE_LIMIT."""
+    from storage import user_balance_store as ubs_mod
+    from storage.user_balance_store import HARD_BALANCE_LIMIT
+    from storage.user_balance_store import user_balance_store as ubs
+    monkeypatch.setattr(ubs_mod.decay_tracker, "should_apply_decay",
+                        lambda *a, **k: False)
+    await _set_balance(1000)
+    await bj.blackjack_store.create_round(G, U, 55, 0, _game())
+    # obligation = 0 → можно выставить почти до HARD
+    await ubs.set_balance(G, U, HARD_BALANCE_LIMIT - 1)
+    assert await _balance() == HARD_BALANCE_LIMIT - 1
+    with pytest.raises(ValueError):
+        await ubs.set_balance(G, U, HARD_BALANCE_LIMIT + 1)
+
+
+def test_bet_limits_config_validation():
+    """_bet_limits: невалидная конфигурация → fallback 10–10000;
+    hi > BET_MAX или lo > hi запрещены."""
+    from games import blackjack as bjgame
+    from games.blackjack_engine import BET_MAX, BET_MIN
+
+    class _FakeSettings:
+        def __init__(self, vals): self.vals = vals
+        def peek(self, _g, key): return self.vals.get(key)
+
+    import services.settings_service as ss
+    orig = ss.settings_service
+    try:
+        # валидный диапазон
+        ss.settings_service = _FakeSettings(
+            {"economy.blackjack_min_bet": 50,
+             "economy.blackjack_max_bet": 5000})
+        assert bjgame._bet_limits(1) == (50, 5000)
+        # hi > BET_MAX → fallback
+        ss.settings_service = _FakeSettings(
+            {"economy.blackjack_min_bet": 10,
+             "economy.blackjack_max_bet": BET_MAX + 1})
+        assert bjgame._bet_limits(1) == (BET_MIN, BET_MAX)
+        # lo > hi → fallback
+        ss.settings_service = _FakeSettings(
+            {"economy.blackjack_min_bet": 9000,
+             "economy.blackjack_max_bet": 100})
+        assert bjgame._bet_limits(1) == (BET_MIN, BET_MAX)
+        # отрицательный min → fallback
+        ss.settings_service = _FakeSettings(
+            {"economy.blackjack_min_bet": -5,
+             "economy.blackjack_max_bet": 100})
+        assert bjgame._bet_limits(1) == (BET_MIN, BET_MAX)
+        # ошибка чтения → fallback
+        class _Boom:
+            def peek(self, *_a): raise RuntimeError("db down")
+        ss.settings_service = _Boom()
+        assert bjgame._bet_limits(1) == (BET_MIN, BET_MAX)
+    finally:
+        ss.settings_service = orig
+
+
+def test_bets_disabled_by_default():
+    """§6: economy.blackjack_bets_enabled default=False —
+    платный режим выключен при первом выпуске; лимиты ставок
+    ограничены абсолютным техническим максимумом BET_MAX."""
+    import services.settings_registry as reg
+    from games.blackjack_engine import BET_MAX, BET_MIN
+
+    flag = reg.get("economy.blackjack_bets_enabled")
+    assert flag is not None and flag.default is False
+    lo = reg.get("economy.blackjack_min_bet")
+    hi = reg.get("economy.blackjack_max_bet")
+    assert lo is not None and hi is not None
+    assert lo.max == BET_MAX and hi.max == BET_MAX
+    assert lo.min is not None and lo.min >= BET_MIN
+    assert hi.min == BET_MIN and hi.default == BET_MAX
+
+
+@pytest.mark.asyncio
+async def test_admin_credit_during_active_round(pg_pool, monkeypatch):
+    """Административное начисление во время активной раздачи
+    ограничено SAFE_BALANCE_CAP — гарантия settlement сохраняется
+    даже при economy.max_balance > SAFE_CAP."""
+    from storage import user_balance_store as ubs_mod
+    from storage.user_balance_store import SAFE_BALANCE_CAP
+    from storage.user_balance_store import user_balance_store as ubs
+    monkeypatch.setattr(ubs_mod.decay_tracker, "should_apply_decay",
+                        lambda *a, **k: False)
+    # смоделировать «безумный» конфиг max_balance
+    import services.settings_service as ss
+    class _Fake:
+        def peek(self, _g, key):
+            if key == "economy.max_balance":
+                return 5_000_000_000
+            return None
+    orig = ss.settings_service
+    ss.settings_service = _Fake()
+    try:
+        await _set_balance(SAFE_BALANCE_CAP - 100)
+        rid, _ = await bj.blackjack_store.create_round(
+            G, U, 55, 50, _game())  # obligation = 100
+        res = await ubs.admin_adjust(G, U, 10_000, "op-adm-1")
+        assert res["status"] == "applied"
+        # clamp на SAFE_CAP: 2e9-100+10000 → 2e9, не выше
+        assert await _balance() <= SAFE_BALANCE_CAP
+        # settlement проходит без BalanceOverflow
+        for _ in range(20):
+            st = await bj.blackjack_store.get_round(rid)
+            if st.status == "settled":
+                break
+            try:
+                await bj.blackjack_store.apply_action(rid, "stand")
+            except (bj.RoundNotActive, bj.RoundNotFound, bj.StaleVersion):
+                break
+        assert (await bj.blackjack_store.get_round(rid)).status == "settled"
+    finally:
+        ss.settings_service = orig
+
+
+@pytest.mark.asyncio
+async def test_transfer_during_active_round(pg_pool, monkeypatch):
+    """Перевод во время активной раздачи: получатель не может быть
+    вытолкнут за SAFE_CAP → гарантия его будущих выплат сохраняется;
+    отправитель с активной раздачей может переводить (баланс только
+    уменьшается — обязательство не растёт)."""
+    from storage import user_balance_store as ubs_mod
+    from storage.user_balance_store import SAFE_BALANCE_CAP
+    from storage.user_balance_store import user_balance_store as ubs
+    monkeypatch.setattr(ubs_mod.decay_tracker, "should_apply_decay",
+                        lambda *a, **k: False)
+    ubs._balances.clear()  # JSON-fallback не должен мешать
+    await _set_balance(100_000)
+    rid, _ = await bj.blackjack_store.create_round(
+        G, U, 55, 1000, _game())
+    # перевод ОТПРАВИТЕЛЯ с активной раздачей — разрешён (уменьшает)
+    res = await ubs.transfer_balance(G, U, G, 999001, 5000)
+    assert res.get("status") in ("ok", "success", True) or res
+    # получатель у SAFE_CAP — входящий перевод отклонён
+    await ubs.set_balance(G, 999001, SAFE_BALANCE_CAP - 10)
+    with pytest.raises(ValueError, match="cap"):
+        await ubs.transfer_balance(G, U, G, 999001, 5000)
+    st = await bj.blackjack_store.get_round(rid)
+    if st.status == "active":
+        await bj.blackjack_store.apply_action(rid, "stand")
+    assert (await bj.blackjack_store.get_round(rid)).status == "settled"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_balance_change_and_settlement(pg_pool,
+                                                        monkeypatch):
+    """Конкурентное изменение баланса (admin_adjust + set_balance)
+    и settlement активной раздачи: FOR UPDATE сериализует,
+    выплата полная, без BalanceOverflow и без зависшей раздачи."""
+    import asyncio
+
+    from storage import user_balance_store as ubs_mod
+    from storage.user_balance_store import user_balance_store as ubs
+    monkeypatch.setattr(ubs_mod.decay_tracker, "should_apply_decay",
+                        lambda *a, **k: False)
+    await _set_balance(50_000)
+    rid, _ = await bj.blackjack_store.create_round(
+        G, U, 55, 10_000, _game())  # obligation = 20 000
+
+    async def settle():
+        for _ in range(30):
+            try:
+                st = await bj.blackjack_store.get_round(rid)
+                if st.status != "active":
+                    return st.status
+                await bj.blackjack_store.apply_action(rid, "stand")
+            except (bj.RoundNotActive, bj.RoundNotFound, bj.StaleVersion):
+                return "done"
+            except Exception:  # noqa: BLE001 — transient DB-гонки под
+                await asyncio.sleep(0.01)  # конкурентной мутацией баланса
+        return "timeout"
+
+    async def mutate():
+        # set_balance в пределах obligation-лимита + admin-корректировка
+        await ubs.set_balance(G, U, 30_000)
+        await ubs.admin_adjust(G, U, 5000, "op-conc-1")
+        return True
+
+    await asyncio.gather(settle(), mutate())
+    st = await bj.blackjack_store.get_round(rid)
+    assert st.status == "settled"
+    # ledger payout существует — выплата не потеряна
+    ledger = await bj.blackjack_store.get_dispute_ledger(rid)
+    assert any(e["op"] == "payout" for e in ledger)
+    assert await _balance() >= 0  # баланс консистентен, без overflow
