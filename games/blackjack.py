@@ -649,6 +649,14 @@ async def sweep_once() -> int:
     list_needing_sync — карточки с неподтверждённым рендером
     (ошибка Discord API, рестарт между settle и edit).
     """
+    # Чистое окружение: sweeper не создаёт таблицы сам — без
+    # ensure_schema каждый проход падал бы с UndefinedTableError
+    # до первой раздачи. Идемпотентно (флаг после первого успеха).
+    try:
+        await blackjack_store.ensure_schema()
+    except Exception:
+        logger.warning("blackjack ensure_schema failed",
+                       exc_info=True)
     client = _client
     if client is not None:
         try:
@@ -681,6 +689,15 @@ async def recover_active(client: discord.Client) -> int:
     запуске."""
     global _client
     _client = client
+    # Схема до recover/sweeper: на чистом окружении read-пути
+    # (list_active, list_undelivered, expire_due) не создают
+    # таблицы — без ensure_schema старт падал бы с
+    # UndefinedTableError. Идемпотентно.
+    try:
+        await blackjack_store.ensure_schema()
+    except Exception:
+        logger.warning("blackjack ensure_schema failed",
+                       exc_info=True)
     try:
         active = await blackjack_store.list_active()
     except Exception:

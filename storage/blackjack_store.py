@@ -287,7 +287,27 @@ class BlackjackStore:
         if self._schema_ready:
             return
         await conn.execute(_SCHEMA_DDL)
-        self._schema_ready = True
+        # Внутри транзакции caller'а флаг НЕ ставим: rollback tx
+        # откатил бы и CREATE TABLE, а «готовая» схема осталась бы
+        # только в памяти — все последующие операции падали бы с
+        # UndefinedTableError до рестарта. Вне tx (ensure_schema
+        # на старте, autocommit) кэш безопасен.
+        if not conn.is_in_transaction():
+            self._schema_ready = True
+
+    async def ensure_schema(self) -> None:
+        """Идемпотентная инициализация схемы на старте.
+
+        Read-пути (sweeper/recover) не создают таблицы сами — без
+        этого вызова на чистом окружении каждый проход падал бы с
+        UndefinedTableError до первой раздачи. После первого
+        успеха _schema_ready делает вызов no-op без соединения.
+        """
+        if self._schema_ready:
+            return
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_schema(conn)
 
     def _pool(self):
         from storage.db import get_pool
