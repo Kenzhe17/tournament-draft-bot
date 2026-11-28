@@ -157,7 +157,11 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
         apply = AsyncMock(return_value=updated)
         with patch.object(bv.blackjack_store, "get_round",
                           AsyncMock(return_value=stored)), \
-             patch.object(bv.blackjack_store, "apply_action", apply):
+             patch.object(bv.blackjack_store, "apply_action", apply), \
+             patch.object(bv.blackjack_store, "claim_card_render",
+                          AsyncMock(return_value=True)), \
+             patch.object(bv.blackjack_store, "finish_card_render",
+                          AsyncMock()):
             await bv.handle_round_action(inter, "hit", stored.round_id, 1)
             apply.assert_awaited_once_with(
                 stored.round_id, "hit", expected_version=1)
@@ -174,7 +178,9 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
         apply = AsyncMock(side_effect=bv.StaleVersion("x"))
         with patch.object(bv.blackjack_store, "get_round",
                           AsyncMock(return_value=stored)), \
-             patch.object(bv.blackjack_store, "apply_action", apply):
+             patch.object(bv.blackjack_store, "apply_action", apply), \
+             patch.object(bv.blackjack_store, "claim_card_render",
+                          AsyncMock(return_value=False)):
             await bv.handle_round_action(inter, "hit", stored.round_id, 0)
             apply.assert_awaited_once_with(
                 stored.round_id, "hit", expected_version=0)
@@ -190,7 +196,9 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(bv.blackjack_store, "get_round",
                           AsyncMock(return_value=stored)), \
              patch.object(bv.blackjack_store, "apply_action",
-                          AsyncMock(side_effect=bv.RoundNotActive("x"))):
+                          AsyncMock(side_effect=bv.RoundNotActive("x"))), \
+             patch.object(bv.blackjack_store, "claim_card_render",
+                          AsyncMock(return_value=False)):
             await bv.handle_round_action(inter, "hit", stored.round_id, 1)
         inter.followup.send.assert_awaited_once()
         self.assertTrue(
@@ -198,10 +206,19 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_close_edits_message_without_state_change(self):
         stored = _stored(phase="done", outcome=OUT_WIN)
+        stored.card_closed = False
         inter = _interaction(user_id=1)
+        mark_closed = AsyncMock()
         with patch.object(bv.blackjack_store, "get_round",
-                          AsyncMock(return_value=stored)):
+                          AsyncMock(return_value=stored)), \
+             patch.object(bv.blackjack_store, "mark_card_closed",
+                          mark_closed), \
+             patch.object(bv.blackjack_store, "claim_card_render",
+                          AsyncMock(return_value=True)), \
+             patch.object(bv.blackjack_store, "finish_card_render",
+                          AsyncMock()):
             await bv.handle_round_action(inter, "close", stored.round_id, 1)
+        mark_closed.assert_awaited_once_with(stored.round_id)
         inter.edit_original_response.assert_awaited_once()
 
     async def test_close_blocked_when_card_transferred(self):
@@ -235,16 +252,17 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
         inter.edit_original_response.assert_not_awaited()
         inter.followup.send.assert_awaited_once()
 
-    async def test_again_without_message_id_sends_new_card(self):
-        """§6/§5: 'delivered' без message_id → reuse=None → новая
-        карточка вместо fetch_message(None) → ложный failed+refund."""
+    async def test_again_creates_confirm_for_new_round(self):
+        """«Сыграть ещё» → ephemeral ConfirmStakeView; новая раздача
+        получит НОВОЕ публичное сообщение (reuse упразднён)."""
         stored = _stored(phase="done", outcome=OUT_WIN, message_id=None)
         inter = _interaction(user_id=1)
         with patch.object(bv.blackjack_store, "get_round",
                           AsyncMock(return_value=stored)):
             await bv.handle_round_action(inter, "again", stored.round_id, 1)
         view = inter.followup.send.call_args.kwargs["view"]
-        self.assertIsNone(view.reuse)
+        self.assertIsInstance(view, bv.ConfirmStakeView)
+        self.assertFalse(hasattr(view, "reuse"))
 
 
 class MenuTests(unittest.IsolatedAsyncioTestCase):

@@ -839,3 +839,275 @@ async def test_reconcile_finds_marker_after_restart_pg(pg_pool):
     stored = await bj.blackjack_store.get_round(rid)
     assert stored.delivery_state == "delivered"
     assert stored.message_id == 7777
+
+
+# ------------------------------------------------------------------
+# Сериализация рендера карточек — §4
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_card_render_claim_single_winner(pg_pool):
+    """Два параллельных рендера одной версии → один claim;
+    устаревшая версия отсекается до Discord HTTP."""
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 0, _game())
+    await bj.blackjack_store.mark_message(rid, 555)  # claim=rendered=version
+    stored = await bj.blackjack_store.get_round(rid)
+    ver = stored.version
+    results = await asyncio.gather(
+        bj.blackjack_store.claim_card_render(rid, ver + 1),
+        bj.blackjack_store.claim_card_render(rid, ver + 1),
+    )
+    assert sorted(results) == [False, True]
+    # более новая версия клеймится, но не наоборот
+    assert await bj.blackjack_store.claim_card_render(rid, ver) is False
+    assert await bj.blackjack_store.claim_card_render(rid, ver + 2) is True
+
+
+@pytest.mark.asyncio
+async def test_card_render_finish_ok_and_fail_release(pg_pool):
+    """finish(ok) → rendered=version; finish(fail) → claim откатывается
+    к rendered → повторная попытка возможна (самолечение sweeper)."""
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 0, _game())
+    await bj.blackjack_store.mark_message(rid, 555)
+    stored = await bj.blackjack_store.get_round(rid)
+    v = stored.version + 1
+    assert await bj.blackjack_store.claim_card_render(rid, v) is True
+    # ошибка Discord → release
+    await bj.blackjack_store.finish_card_render(rid, v, False)
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.card_rendered == stored.version  # не продвинулся
+    assert stored.card_claim == stored.card_rendered
+    # повторный claim той же версии успешен
+    assert await bj.blackjack_store.claim_card_render(rid, v) is True
+    await bj.blackjack_store.finish_card_render(rid, v, True)
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.card_rendered == v
+    # list_needing_sync больше не содержит карточку
+    pending = await bj.blackjack_store.list_needing_sync()
+    assert all(s.round_id != rid for s in pending)
+
+
+@pytest.mark.asyncio
+async def test_list_needing_sync_only_stale_cards(pg_pool):
+    """Только карточки с claim < version попадают в догонку."""
+    await _set_balance(1000)
+    rid_ok, _ = await bj.blackjack_store.create_round(
+        G, U + 1, 55, 0, _game())
+    await bj.blackjack_store.mark_message(rid_ok, 1)
+    rid_stale, _ = await bj.blackjack_store.create_round(
+        G + 2, U + 2, 55, 0, _game())
+    await bj.blackjack_store.mark_message(rid_stale, 2)
+    # сымитировать несинхронизированный render: claim < version
+    await bj.blackjack_store.apply_action(rid_stale, "hit")
+    # apply_action не трогает card_claim → claim(старая) < version
+    pending = await bj.blackjack_store.list_needing_sync()
+    ids = {s.round_id for s in pending}
+    assert rid_stale in ids
+    assert rid_ok not in ids
+
+
+@pytest.mark.asyncio
+async def test_mark_card_closed_persists(pg_pool):
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 0, _game())
+    await bj.blackjack_store.mark_card_closed(rid)
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.card_closed is True
+
+
+# ------------------------------------------------------------------
+# Очередь reconcile — §5
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_undelivered_queue_excludes_refunded_and_void(pg_pool):
+    """refunded/void не попадают в list_undelivered и не блокируют
+    очередь новых раздач."""
+    await _set_balance(10000)
+    # refunded: платная раздача без доставки → refund
+    refunded = []
+    for i in range(5):
+        r, _ = await bj.blackjack_store.create_round(
+            G, U + 100 + i, 55, 100, _game())
+        assert await bj.blackjack_store.refund_undelivered(r) is True
+        refunded.append(r)
+    # void: бесплатная раздача без доставки → void
+    v, _ = await bj.blackjack_store.create_round(G, U + 200, 55, 0, _game())
+    assert await bj.blackjack_store.refund_undelivered(v) is True
+    # новая 'pending' раздача старше grace — должна попасть в очередь
+    rid, _ = await bj.blackjack_store.create_round(G, U + 300, 55, 100, _game())
+    await _old_round(pg_pool, rid)
+    # refunded/void тоже «старим» — они НЕ должны вернуться
+    for r in refunded + [v]:
+        await _old_round(pg_pool, r)
+    cutoff = datetime.now(UTC) - timedelta(seconds=120)
+    rounds = await bj.blackjack_store.list_undelivered(cutoff, limit=50)
+    ids = {s.round_id for s in rounds}
+    assert rid in ids
+    for r in refunded + [v]:
+        assert r not in ids
+
+
+@pytest.mark.asyncio
+async def test_settled_undelivered_still_reconciles(pg_pool):
+    """Мгновенный natural (settled сразу) без message_id —
+    reconcile обязан найти доставку, статус 'settled' не исключает."""
+    from games import blackjack as bjgame
+    await _set_balance(1000)
+    game = Round.deal_deck([("A", "♠"), ("K", "♥"),
+                            ("Q", "♦"), ("J", "♣"),
+                            ("10", "♠"), ("9", "♥")])
+    rid, created = await bj.blackjack_store.create_round(
+        G, U, 55, 500, game)
+    assert created
+    stored = await bj.blackjack_store.get_round(rid)
+    if stored.status == "active":
+        pytest.skip("deal не дал natural — тест не показателен")
+    await bj.blackjack_store.mark_delivery(rid, "unknown")
+    await _old_round(pg_pool, rid)
+    msg = _FakeMessage(8888, f"-# ref {rid}")
+    handled = await bjgame.reconcile_undelivered(
+        _FakeClient(_FakeChannel([msg])))
+    assert handled == 1
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.message_id == 8888
+    assert stored.status == "settled"  # выплата не тронута
+
+
+# ------------------------------------------------------------------
+# Спорные раздачи — §6
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_dispute_lifecycle_recheck_resolve_compensate(pg_pool):
+    """disputed → list → recheck → disputed → resolve;
+    compensate идемпотентен по op_id, не трогает карты/исход."""
+    from games import blackjack as bjgame
+    await _set_balance(1000)
+    rid = await _mk_unknown(pg_pool, stake=500)
+    # довести до disputed
+    monkey_max = bjgame.MAX_RECONCILE_ATTEMPTS
+    client = _FakeClient(_FakeChannel([_FakeMessage(1, "nothing")]))
+    for _ in range(monkey_max):
+        await bjgame.reconcile_undelivered(client)
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "disputed"
+    # список спорных
+    disputed = await bj.blackjack_store.list_disputed()
+    assert any(s.round_id == rid for s in disputed)
+    ledger = await bj.blackjack_store.get_dispute_ledger(rid)
+    assert any(o["op"] == "stake" for o in ledger)
+    # повторная проверка → обратно в очередь
+    assert await bj.blackjack_store.recheck_delivery(rid) is True
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "unknown"
+    assert stored.reconcile_attempts == 0
+    # ещё MAX попыток reconcile → снова disputed
+    for _ in range(monkey_max):
+        await bjgame.reconcile_undelivered(client)
+    assert (await bj.blackjack_store.get_round(rid)).delivery_state == "disputed"
+    # resolve без финансовых изменений — до компенсации
+    assert await bj.blackjack_store.resolve_dispute(
+        rid, 42, "manual review done") is True
+    assert all(s.round_id != rid
+               for s in await bj.blackjack_store.list_disputed())
+    # компенсация: первый раз applied, повтор — duplicate
+    r1 = await bj.blackjack_store.compensate_dispute(
+        rid, actor_id=42, op_id="op-12345", amount=500,
+        reason="lost delivery confirmed by admin")
+    assert r1["status"] == "applied"
+    assert await _balance() == 5000  # 4500 + 500
+    r2 = await bj.blackjack_store.compensate_dispute(
+        rid, actor_id=42, op_id="op-12345", amount=500,
+        reason="retry")
+    assert r2["status"] == "duplicate"
+    assert await _balance() == 5000  # без повторного начисления
+    ledger = await bj.blackjack_store.get_dispute_ledger(rid)
+    comp = [o for o in ledger if o["op"].startswith("admin_comp:")]
+    assert len(comp) == 1 and comp[0]["amount"] == 500
+
+
+@pytest.mark.asyncio
+async def test_request_card_resync(pg_pool):
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 0, _game())
+    await bj.blackjack_store.mark_message(rid, 321)
+    assert await bj.blackjack_store.request_card_resync(rid) is True
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.card_claim == -1 and stored.card_rendered == -1
+    # попадает в list_needing_sync
+    pending = await bj.blackjack_store.list_needing_sync()
+    assert any(s.round_id == rid for s in pending)
+
+
+# ------------------------------------------------------------------
+# Decay: DB marks — rollback-safe, no double-apply — §7
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_decay_mark_rolls_back_with_transaction(pg_pool):
+    """Tx с decay, завершившаяся rollback → отметка откачена:
+    следующая операция применяет decay заново (не «сгорает»),
+    а повторный decay за день не применяется."""
+    from storage import user_balance_store as ubs_mod
+    from storage.user_balance_store import DECAY_PERCENT, DECAY_THRESHOLD
+    from storage.user_balance_store import user_balance_store as ubs
+    start = int(DECAY_THRESHOLD * 2)          # 20000 > порога 10000
+    decayed = start - int(start * DECAY_PERCENT)  # 19000
+    await _set_balance(start)
+    pool = pg_pool
+    # marks-таблица не чистится фикстурой — сбрасываем для (G,U)
+    async with pool.acquire() as conn:
+        await ubs_mod._ensure_decay_marks(conn)
+        await conn.execute(
+            "DELETE FROM user_decay_marks "
+            "WHERE guild_id=$1 AND user_id=$2", G, U)
+    # файловый legacy-гейт тоже сбрасываем для детерминизма
+    ubs_mod.decay_tracker._processed_users.discard(f"{G}:{U}")
+    # tx1: decay + намеренный rollback
+    with pytest.raises(RuntimeError):
+        async with pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT balance FROM user_balance "
+                "WHERE guild_id=$1 AND user_id=$2 FOR UPDATE", G, U)
+            bal = await ubs._apply_decay(conn, G, U, row["balance"])
+            assert bal == decayed  # decay применён внутри tx
+            raise RuntimeError("rollback")
+    # tx откачена: balance и отметка — как до tx. Чтение баланса
+    # само применяет decay (это и есть «следующая операция») —
+    # доказывает, что отметка откатилась и decay не потерян.
+    assert await _balance() == decayed
+    # tx2: decay за день уже применён — повторно НЕ списывается
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            "SELECT balance FROM user_balance "
+            "WHERE guild_id=$1 AND user_id=$2 FOR UPDATE", G, U)
+        bal = await ubs._apply_decay(conn, G, U, row["balance"])
+        assert bal == row["balance"] == decayed
+    # tx3: идемпотентно — тот же результат
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            "SELECT balance FROM user_balance "
+            "WHERE guild_id=$1 AND user_id=$2 FOR UPDATE", G, U)
+        bal = await ubs._apply_decay(conn, G, U, row["balance"])
+        assert bal == decayed
+
+
+@pytest.mark.asyncio
+async def test_blackjack_credit_hard_ceiling(pg_pool, monkeypatch):
+    """cap_exempt гарантирует выплату, но не переполняет INTEGER:
+    баланс у потолка 2e9 → начисление обрезается потолком, а не
+    переполнением колонки ( unreachable в реальной игре)."""
+    from storage import user_balance_store as ubs
+    monkeypatch.setattr(ubs.decay_tracker, "should_apply_decay",
+                        lambda *a, **k: False)
+    await _set_balance(1_999_999_000)
+    rid, _ = await bj.blackjack_store.create_round(
+        G, U, 55, 1000, _game())
+    await bj.blackjack_store.apply_action(rid, "stand")
+    bal = await _balance()
+    # 1999999000 - 1000 + min(2000, headroom) = ровно 2e9 потолок
+    assert bal <= 2_000_000_000
+    assert bal <= 2_147_483_647  # INTEGER max — переполнения нет

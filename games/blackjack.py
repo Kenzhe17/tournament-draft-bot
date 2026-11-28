@@ -129,10 +129,8 @@ async def show_bet_menu(
     guild_id: int,
     user_id: int,
     channel_id: int,
-    reuse: tuple[int, int] | None = None,
 ) -> None:
-    """Ephemeral меню ставки. ``reuse`` — (channel_id, message_id)
-    публичного сообщения предыдущей раздачи для edit вместо нового.
+    """Ephemeral меню ставки. Правила видны до списания.
 
     PG-запросы перед ответом → defer(ephemeral) при необходимости,
     затем followup. Работает и из slash, и из deferred component
@@ -161,7 +159,7 @@ async def show_bet_menu(
         logger.exception("blackjack balance read failed")
         await _note("Не удалось прочитать баланс. Попробуйте позже.")
         return
-    view = BetMenuView(guild_id, user_id, channel_id, balance, reuse=reuse)
+    view = BetMenuView(guild_id, user_id, channel_id, balance)
     await interaction.followup.send(
         view=view, ephemeral=True,
         allowed_mentions=discord.AllowedMentions.none())
@@ -174,10 +172,13 @@ async def deal_round(
     user_id: int,
     channel_id: int,
     stake: int,
-    reuse: tuple[int, int] | None = None,
     op_id: str | None = None,
 ) -> None:
     """Подтверждённая ставка → атомарное списание + раздача + доставка.
+
+    Одна раздача = одно НОВОЕ публичное сообщение: message_id никогда
+    не переиспользуется между round_id — предыдущая карточка остаётся
+    историей результата и не может быть перезаписана новой игрой.
 
     ``op_id`` делает подтверждение идемпотентным: повторный вызов с
     тем же op_id (двойной клик, retry) возвращает существующий round_id
@@ -283,24 +284,14 @@ async def deal_round(
         return
 
     # Pre-send: всё, что может доказуемо НЕ дойти до Discord.
-    channel = None
-    target_msg = None
+    # Всегда НОВОЕ публичное сообщение — reuse message_id запрещён.
     try:
-        if reuse is not None:
-            ch_id, msg_id = reuse
-            channel = interaction.client.get_channel(ch_id)
-            if channel is None:
-                channel = await interaction.client.fetch_channel(ch_id)
-            target_msg = await channel.fetch_message(msg_id)
-        kwargs = {"view": view, "allowed_mentions": discord.AllowedMentions.none()}
-        if reuse is not None:
-            if png is not None:
-                kwargs["attachments"] = [png]
-        else:
-            kwargs["ephemeral"] = False
-            kwargs["wait"] = True
-            if png is not None:
-                kwargs["files"] = [png]
+        kwargs = {"view": view,
+                  "ephemeral": False,
+                  "wait": True,
+                  "allowed_mentions": discord.AllowedMentions.none()}
+        if png is not None:
+            kwargs["files"] = [png]
     except Exception:
         # Discord ещё не вызывался → доставка доказуемо не состоялась
         logger.warning("blackjack pre-send failed for %s", round_id,
@@ -313,34 +304,12 @@ async def deal_round(
         await _refund_and_fail(interaction, round_id, _fail)
         return
 
-    # Передача карточки новой раздаче — ДО редактирования: старые
-    # обработчики прошлой раздачи сразу теряют право её править.
-    if reuse is not None:
-        try:
-            await blackjack_store.detach_message(
-                ch_id, msg_id, except_round_id=round_id)
-        except Exception:
-            logger.exception("blackjack detach_message failed %s",
-                             round_id)
-            try:
-                await blackjack_store.mark_delivery(
-                    round_id, "failed", attempt_id)
-            except Exception:
-                logger.debug("blackjack mark failed-state failed",
-                             exc_info=True)
-            await _refund_and_fail(interaction, round_id, _fail)
-            return
-
     # Граница отправки: с этого момента исход HTTP-вызова неизвестен.
     delivered = False
     sent_id = None
     try:
-        if reuse is not None:
-            await target_msg.edit(**kwargs)
-            sent_id = target_msg.id
-        else:
-            msg = await interaction.followup.send(**kwargs)
-            sent_id = msg.id if msg is not None else None
+        msg = await interaction.followup.send(**kwargs)
+        sent_id = msg.id if msg is not None else None
         delivered = sent_id is not None
     except Exception:
         logger.warning("blackjack deal delivery failed for %s",
@@ -548,29 +517,52 @@ async def reconcile_undelivered(client: discord.Client) -> int:
     return handled
 
 
-async def _sync_card(client: discord.Client, round_id: str) -> bool:
-    """Перерисовать публичную карточку актуальным состоянием БД.
+async def sync_round_card(client: discord.Client, round_id: str) -> bool:
+    """Единая точка серверного обновления публичной карточки
+    (sweeper / recovery / повторная синхронизация).
 
-    Guards: round существует, message_id записан и принадлежит
-    именно этой раздаче (detach_message мог уже передать карточку
-    новой раздаче). Рендер — от свежего fetch, поэтому последняя
-    запись всегда отражает актуальную версию состояния.
+    Сериализация через claim_card_render CAS по version: только
+    актуальный рендерер выполняет Discord HTTP; порядок завершения
+    запросов не важен — устаревший claim отсекается до отправки,
+    свежий вид всегда строится из актуального состояния БД.
+    При ошибке Discord API claim откатывается — следующий проход
+    повторит (list_needing_sync). Финансовое состояние не трогается.
     """
     from views.blackjack_view import build_game_view
     try:
         stored = await blackjack_store.get_round(round_id)
         if stored is None or stored.message_id is None:
             return False
-        channel = client.get_channel(stored.channel_id)
-        if channel is None:
-            channel = await client.fetch_channel(stored.channel_id)
-        msg = await channel.fetch_message(stored.message_id)
-        view, png = build_game_view(stored)
-        kwargs = {"view": view,
-                  "allowed_mentions": discord.AllowedMentions.none()}
-        if png is not None:
-            kwargs["attachments"] = [png]
-        await msg.edit(**kwargs)
+        if not await blackjack_store.claim_card_render(
+                stored.round_id, stored.version):
+            return False
+        try:
+            channel = client.get_channel(stored.channel_id)
+            if channel is None:
+                channel = await client.fetch_channel(stored.channel_id)
+            msg = await channel.fetch_message(stored.message_id)
+            view, png = build_game_view(stored)
+            kwargs = {"view": view,
+                      "allowed_mentions": discord.AllowedMentions.none()}
+            if png is not None:
+                kwargs["attachments"] = [png]
+            await msg.edit(**kwargs)
+        except Exception:
+            try:
+                await blackjack_store.finish_card_render(
+                    stored.round_id, stored.version, False)
+            except Exception:
+                logger.exception("blackjack finish_card_render(fail) %s",
+                                 round_id)
+            logger.info("blackjack card sync edit failed %s", round_id,
+                        exc_info=True)
+            return False
+        try:
+            await blackjack_store.finish_card_render(
+                stored.round_id, stored.version, True)
+        except Exception:
+            logger.exception("blackjack finish_card_render(ok) %s",
+                             round_id)
         return True
     except Exception:
         logger.info("blackjack card sync skipped %s", round_id,
@@ -578,12 +570,51 @@ async def _sync_card(client: discord.Client, round_id: str) -> bool:
         return False
 
 
+async def render_round_card(
+    interaction: discord.Interaction, stored
+) -> bool:
+    """Та же сериализация для deferred component-interaction:
+    публичная карточка обновляется через edit_original_response
+    под claim-CAS (hit/stand/close/stale-refresh)."""
+    from views.blackjack_view import build_game_view
+    try:
+        if not await blackjack_store.claim_card_render(
+                stored.round_id, stored.version):
+            return False
+        view, f = build_game_view(stored)
+        kwargs = {"view": view,
+                  "allowed_mentions": discord.AllowedMentions.none()}
+        if f is not None:
+            kwargs["attachments"] = [f]
+        await interaction.edit_original_response(**kwargs)
+    except Exception:
+        try:
+            await blackjack_store.finish_card_render(
+                stored.round_id, stored.version, False)
+        except Exception:
+            logger.exception("blackjack finish_card_render(fail) %s",
+                             stored.round_id)
+        logger.info("blackjack interaction card edit failed %s",
+                    stored.round_id, exc_info=True)
+        return False
+    try:
+        await blackjack_store.finish_card_render(
+            stored.round_id, stored.version, True)
+    except Exception:
+        logger.exception("blackjack finish_card_render(ok) %s",
+                         stored.round_id)
+    return True
+
+
 async def sweep_once() -> int:
-    """Один проход: reconcile доставки → тайм-аут → обновление карт.
+    """Один проход: reconcile доставки → тайм-аут → догонка карточек.
 
     Reconcile идёт ПЕРВЫМ: доказанно недоставленные раздачи
     возвращаются до того, как expire_due мог бы рассчитать их
     как обычную игру (expire_due также исключает pending/failed).
+    Затем expire_due → sync затронутых карт, и отдельный проход
+    list_needing_sync — карточки с неподтверждённым рендером
+    (ошибка Discord API, рестарт между settle и edit).
     """
     client = _client
     if client is not None:
@@ -598,7 +629,16 @@ async def sweep_once() -> int:
         settled = []
     for stored in settled:
         if client is not None:
-            await _sync_card(client, stored.round_id)
+            await sync_round_card(client, stored.round_id)
+    if client is not None:
+        try:
+            pending = await blackjack_store.list_needing_sync()
+        except Exception:
+            logger.warning("blackjack list_needing_sync failed",
+                           exc_info=True)
+            pending = []
+        for stored in pending:
+            await sync_round_card(client, stored.round_id)
     return len(settled)
 
 
@@ -615,7 +655,7 @@ async def recover_active(client: discord.Client) -> int:
         active = []
     n = 0
     for stored in active:
-        if await _sync_card(client, stored.round_id):
+        if await sync_round_card(client, stored.round_id):
             n += 1
     if n:
         logger.info("blackjack: восстановлено %d активных раздач", n)

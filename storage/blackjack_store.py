@@ -56,6 +56,12 @@ CREATE TABLE IF NOT EXISTS blackjack_rounds (
     delivery_attempt TEXT,
     reconcile_attempts INTEGER NOT NULL DEFAULT 0,
     last_reconcile_at TIMESTAMPTZ,
+    card_rendered INTEGER NOT NULL DEFAULT -1,
+    card_claim INTEGER NOT NULL DEFAULT -1,
+    card_closed BOOLEAN NOT NULL DEFAULT FALSE,
+    dispute_resolved_at TIMESTAMPTZ,
+    dispute_resolved_by BIGINT,
+    dispute_note TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     settled_at TIMESTAMPTZ
@@ -70,10 +76,34 @@ ALTER TABLE blackjack_rounds
     ADD COLUMN IF NOT EXISTS reconcile_attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE blackjack_rounds
     ADD COLUMN IF NOT EXISTS last_reconcile_at TIMESTAMPTZ;
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS card_rendered INTEGER NOT NULL DEFAULT -1;
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS card_claim INTEGER NOT NULL DEFAULT -1;
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS card_closed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS dispute_resolved_at TIMESTAMPTZ;
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS dispute_resolved_by BIGINT;
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS dispute_note TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS blackjack_one_active
     ON blackjack_rounds (guild_id, user_id) WHERE status = 'active';
 CREATE UNIQUE INDEX IF NOT EXISTS blackjack_op_id
     ON blackjack_rounds (op_id) WHERE op_id IS NOT NULL;
+-- Очередь reconcile: только недоставленные финально-необработанные
+-- раздачи (refunded/void исключены — они не должны занимать LIMIT).
+CREATE INDEX IF NOT EXISTS blackjack_undelivered_idx
+    ON blackjack_rounds (last_reconcile_at ASC NULLS FIRST, created_at)
+    WHERE message_id IS NULL
+      AND status IN ('active','settled')
+      AND delivery_state IN
+          ('pending','sending','unknown','failed','delivered');
+-- Самолечение карточек: claim отстаёт от version → нужен re-render.
+CREATE INDEX IF NOT EXISTS blackjack_card_sync_idx
+    ON blackjack_rounds (updated_at)
+    WHERE message_id IS NOT NULL AND card_claim < version;
 CREATE TABLE IF NOT EXISTS blackjack_ledger (
     id BIGSERIAL PRIMARY KEY,
     round_id TEXT NOT NULL,
@@ -127,6 +157,15 @@ class StoredRound:
     op_id: str | None = None
     delivery_state: str = "pending"
     # pending|sending|delivered|unknown|failed|disputed
+    card_rendered: int = -1   # версия состояния, подтверждённо показанная
+    card_claim: int = -1      # версия, захваченная для рендера
+    card_closed: bool = False  # «Закрыть»: кнопки сняты, результат виден
+    delivery_attempt: str | None = None  # attempt_id текущего claim
+    reconcile_attempts: int = 0
+    last_reconcile_at: datetime | None = None
+    dispute_resolved_at: datetime | None = None
+    dispute_resolved_by: int | None = None
+    dispute_note: str | None = None
     created_at: datetime | None = None
     settled_at: datetime | None = None
 
@@ -173,6 +212,21 @@ def _row_to_round(row: Any) -> StoredRound:
         # .get — устойчивость к строкам, созданным до ALTER-миграции
         op_id=row.get("op_id"),
         delivery_state=row.get("delivery_state") or "pending",
+        card_rendered=(
+            int(row["card_rendered"]) if row.get("card_rendered") is not None
+            else -1),
+        card_claim=(
+            int(row["card_claim"]) if row.get("card_claim") is not None
+            else -1),
+        card_closed=bool(row.get("card_closed", False)),
+        delivery_attempt=row.get("delivery_attempt"),
+        reconcile_attempts=int(row.get("reconcile_attempts", 0) or 0),
+        last_reconcile_at=row.get("last_reconcile_at"),
+        dispute_resolved_at=row.get("dispute_resolved_at"),
+        dispute_resolved_by=(
+            int(row["dispute_resolved_by"])
+            if row.get("dispute_resolved_by") is not None else None),
+        dispute_note=row.get("dispute_note"),
         created_at=row["created_at"],
         settled_at=row["settled_at"],
     )
@@ -201,20 +255,11 @@ class BlackjackStore:
 
     @staticmethod
     async def _apply_decay_in_tx(conn, guild_id: int, user_id: int, balance: int) -> int:
-        """Дневной decay — та же логика, что UserBalanceStore._apply_decay."""
-        from storage.user_balance_store import (
-            DECAY_PERCENT,
-            DECAY_THRESHOLD,
-            decay_tracker,
-        )
-        if balance > DECAY_THRESHOLD and decay_tracker.should_apply_decay(guild_id, user_id):
-            balance -= int(balance * DECAY_PERCENT)
-            await conn.execute(
-                "UPDATE user_balance SET balance=$1 WHERE guild_id=$2 AND user_id=$3",
-                balance, guild_id, user_id,
-            )
-            decay_tracker.mark_processed(guild_id, user_id)
-        return balance
+        """Дневной decay — делегирован UserBalanceStore._apply_decay
+        (DB marks user_decay_marks: rollback-safe, multi-process safe)."""
+        from storage.user_balance_store import user_balance_store
+        return await user_balance_store._apply_decay(
+            conn, guild_id, user_id, balance)
 
     @classmethod
     async def _debit_in_tx(cls, conn, guild_id: int, user_id: int, stake: int, round_id: str) -> None:
@@ -263,7 +308,14 @@ class BlackjackStore:
         balance = await BlackjackStore._apply_decay_in_tx(
             conn, guild_id, user_id, row["balance"]
         )
-        cap = _max_balance() if not cap_exempt else 10**15
+        # user_balance.balance — INTEGER (max 2 147 483 647). cap_exempt
+        # гарантирует полную выплату, но не имеет права переполнить
+        # колонку даже теоретически (параллельные переводы/начисления
+        # во время активной раздачи). Потолок 2e9 недостижим в
+        # реальной игре (макс. выплата 20k) — защита от overflow,
+        # а не ограничение выигрыша. BIGINT-миграция — отдельным
+        # согласованным планом, глобальный MAX_BALANCE не меняется.
+        cap = _max_balance() if not cap_exempt else 2_000_000_000
         add = min(amount, max(0, cap - balance))
         new_balance = balance + add
         await conn.execute(
@@ -569,12 +621,17 @@ class BlackjackStore:
             return row is not None
 
     async def mark_message(self, round_id: str, message_id: int) -> None:
-        """Доставка подтверждена: message_id + delivery_state='delivered'."""
+        """Доставка подтверждена: message_id + delivery_state='delivered'.
+
+        Содержимое карточки — текущее состояние версии ``version``,
+        поэтому рендер-счётчики сразу выставляются в неё: sweeper
+        не будет считать только что отправленную карту «устаревшей»."""
         pool = await self._pool()
         async with pool.acquire() as conn:
             await conn.execute(
                 """UPDATE blackjack_rounds
                    SET message_id=$2, delivery_state='delivered',
+                       card_rendered=version, card_claim=version,
                        updated_at=now()
                    WHERE round_id=$1 AND message_id IS NULL""",
                 round_id, message_id,
@@ -657,6 +714,202 @@ class BlackjackStore:
                 round_id,
             )
 
+    # ---------------- сериализация рендера карточки ----------------
+    #
+    # claim/finish — lock-free CAS по version: только редактор с
+    # НАИБОЛЬШЕЙ версией получает право на HTTP-правку. Порядок
+    # завершения HTTP-запросов не важен: устаревший claim отсекается
+    # до отправки, а свежий вид всегда рендерится из актуального
+    # состояния БД. Работает в нескольких процессах (PG CAS).
+
+    async def claim_card_render(self, round_id: str, version: int) -> bool:
+        """Захватить право рендера версии ``version`` карточки.
+
+        Атомарно: card_claim < version → card_claim = version.
+        True — этот обработчик единственный актуальный рендерер;
+        обязан вызвать finish_card_render после Discord-правки.
+        """
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """UPDATE blackjack_rounds SET card_claim=$2, updated_at=now()
+                   WHERE round_id=$1 AND card_claim < $2
+                   RETURNING round_id""",
+                round_id, version,
+            )
+            return row is not None
+
+    async def finish_card_render(
+        self, round_id: str, version: int, ok: bool
+    ) -> None:
+        """Завершить захваченный рендер.
+
+        ok=True → card_rendered=version (карточка актуальна).
+        ok=False → card_claim откатывается к card_rendered: следующий
+        sync (sweeper/recovery/действие игрока) повторит попытку —
+        финансовое состояние при этом не трогается.
+        """
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            if ok:
+                await conn.execute(
+                    """UPDATE blackjack_rounds SET card_rendered=$2,
+                           updated_at=now()
+                       WHERE round_id=$1 AND card_claim=$2""",
+                    round_id, version,
+                )
+            else:
+                await conn.execute(
+                    """UPDATE blackjack_rounds
+                       SET card_claim=card_rendered, updated_at=now()
+                       WHERE round_id=$1 AND card_claim=$2""",
+                    round_id, version,
+                )
+
+    async def mark_card_closed(self, round_id: str) -> None:
+        """«Закрыть»: карточка больше не показывает кнопки.
+        Флаг в БД — повторные sync не вернут кнопки."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE blackjack_rounds SET card_closed=TRUE, "
+                "updated_at=now() WHERE round_id=$1",
+                round_id,
+            )
+
+    async def list_needing_sync(self, limit: int = 25) -> list[StoredRound]:
+        """Карточки, у которых claim отстал от version — рендер
+        не подтверждён (ошибка Discord API, рестарт до edit).
+        Самолечение: sweeper периодически догоняет отображение."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM blackjack_rounds
+                   WHERE message_id IS NOT NULL
+                     AND card_claim < version
+                     AND status IN ('active','settled')
+                   ORDER BY updated_at ASC
+                   LIMIT $1""",
+                limit,
+            )
+            return [_row_to_round(r) for r in rows]
+
+    async def request_card_resync(self, round_id: str) -> bool:
+        """Админ: пометить карточку к повторному отображению.
+        Сбрасывает render-счётчики — ближайший проход sweeper
+        (list_needing_sync) перерисует актуальное состояние."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """UPDATE blackjack_rounds
+                   SET card_claim=-1, card_rendered=-1, updated_at=now()
+                   WHERE round_id=$1 AND message_id IS NOT NULL
+                   RETURNING round_id""",
+                round_id,
+            )
+            return row is not None
+
+    # ---------------- спорные раздачи (admin) ----------------
+
+    async def list_disputed(self) -> list[StoredRound]:
+        """Неоднозначная доставка, ожидающая решения администратора."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM blackjack_rounds
+                   WHERE delivery_state='disputed'
+                     AND dispute_resolved_at IS NULL
+                   ORDER BY created_at ASC""",
+            )
+            return [_row_to_round(r) for r in rows]
+
+    async def get_dispute_ledger(self, round_id: str) -> list[dict]:
+        """Ledger-операции раздачи для админ-диагностики."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT op, amount, created_at FROM blackjack_ledger
+                   WHERE round_id=$1 ORDER BY id""",
+                round_id,
+            )
+            return [dict(r) for r in rows]
+
+    async def recheck_delivery(self, round_id: str) -> bool:
+        """Админ: вернуть раздачу в очередь reconcile.
+
+        Сбрасывает счётчик попыток и решение спора — следующий
+        проход sweeper снова проверит доставку по маркеру."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """UPDATE blackjack_rounds
+                   SET delivery_state='unknown', reconcile_attempts=0,
+                       last_reconcile_at=NULL,
+                       dispute_resolved_at=NULL, dispute_resolved_by=NULL,
+                       dispute_note=NULL, updated_at=now()
+                   WHERE round_id=$1 AND delivery_state='disputed'
+                   RETURNING round_id""",
+                round_id,
+            )
+            return row is not None
+
+    async def resolve_dispute(
+        self, round_id: str, actor_id: int, note: str
+    ) -> bool:
+        """Админ: закрыть спор БЕЗ финансовых изменений."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """UPDATE blackjack_rounds
+                   SET dispute_resolved_at=now(), dispute_resolved_by=$2,
+                       dispute_note=$3, updated_at=now()
+                   WHERE round_id=$1 AND delivery_state='disputed'
+                     AND dispute_resolved_at IS NULL
+                   RETURNING round_id""",
+                round_id, actor_id, note[:500],
+            )
+            return row is not None
+
+    async def compensate_dispute(
+        self, round_id: str, actor_id: int, op_id: str,
+        amount: int, reason: str,
+    ) -> dict:
+        """Админ-компенсация: идемпотентная ledger-операция.
+
+        Одна tx: blackjack_ledger op='admin_comp:<op_id>' (UNIQUE →
+        повтор невозможен) + cap-exempt credit + отметка решения
+        спора с актёром/причиной. Карты, исход и исходная выплата
+        НЕ меняются — только дополнительное начисление.
+        """
+        if amount <= 0:
+            raise ValueError("amount must be positive")
+        pool = await self._pool()
+        async with pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT * FROM blackjack_rounds WHERE round_id=$1 "
+                "FOR UPDATE",
+                round_id,
+            )
+            if row is None:
+                raise RoundNotFound(round_id)
+            ledger_op = f"admin_comp:{op_id}"
+            inserted = await self._ledger(conn, round_id, ledger_op, amount)
+            if not inserted:
+                return {"status": "duplicate"}
+            await self._credit_in_tx(
+                conn, int(row["guild_id"]), int(row["user_id"]),
+                amount, cap_exempt=True,
+            )
+            await conn.execute(
+                """UPDATE blackjack_rounds
+                   SET dispute_resolved_at=now(), dispute_resolved_by=$2,
+                       dispute_note=$3, updated_at=now()
+                   WHERE round_id=$1""",
+                round_id, actor_id,
+                f"compensation +{amount}: {reason}"[:500],
+            )
+            return {"status": "applied", "amount": amount}
+
     async def list_undelivered(
         self, older_than: datetime, limit: int = 50
     ) -> list[StoredRound]:
@@ -670,6 +923,7 @@ class BlackjackStore:
             rows = await conn.fetch(
                 """SELECT * FROM blackjack_rounds
                    WHERE message_id IS NULL
+                     AND status IN ('active','settled')
                      AND delivery_state IN
                          ('pending','sending','unknown','failed','delivered')
                      AND created_at < $1

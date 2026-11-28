@@ -153,7 +153,11 @@ def build_game_view(stored) -> tuple[DesignView, discord.File | None]:
 
     rid = stored.round_id
     ver = stored.version
-    if done:
+    if stored.card_closed:
+        # «Закрыть»: результат сохранён, кнопки сняты навсегда
+        # (card_closed в БД — повторный sync их не вернёт).
+        pass
+    elif done:
         view.row(
             _btn("Сыграть ещё", "success", _cid("again", rid, ver)),
             _btn("Изменить ставку", "secondary", _cid("change", rid, ver)),
@@ -256,23 +260,13 @@ async def handle_round_action(
 
 
 async def _refresh_public(interaction, stored) -> None:
-    """Перерисовать публичную карточку после stale/ошибки (deferred ctx)."""
+    """Актуализировать публичную карточку после stale/ошибки —
+    через единый claim-CAS рендер (games.blackjack.sync_round_card)."""
+    from games.blackjack import sync_round_card
     try:
-        fresh = await blackjack_store.get_round(stored.round_id)
-        if fresh is None or fresh.message_id is None:
-            return
-        channel = interaction.client.get_channel(fresh.channel_id)
-        if channel is None:
-            channel = await interaction.client.fetch_channel(fresh.channel_id)
-        msg = await channel.fetch_message(fresh.message_id)
-        view, f = build_game_view(fresh)
-        kwargs = {"view": view,
-                  "allowed_mentions": discord.AllowedMentions.none()}
-        if f is not None:
-            kwargs["attachments"] = [f]
-        await msg.edit(**kwargs)
+        await sync_round_card(interaction.client, stored.round_id)
     except Exception:
-        logger.info("blackjack stale-refresh edit failed",
+        logger.info("blackjack stale-refresh sync failed",
                     exc_info=True)
 
 
@@ -288,21 +282,18 @@ async def _handle_play(interaction, stored, action: str, ver: int) -> None:
             interaction, "Кто-то уже сходил — состояние обновлено.")
         await _refresh_public(interaction, stored)
         return
-    view, f = build_game_view(updated)
-    # Ownership guard: если карточка уже передана новой раздаче
-    # (detach_message обнулил message_id), НЕ редактируем её —
-    # финансовый результат сохранён, актуальное состояние
-    # новой раздачи не будет перезаписано устаревшим.
+    # Ownership guard: если карточка уже не принадлежит этой
+    # раздаче (message_id изменился), НЕ редактируем её.
     imid = getattr(getattr(interaction, "message", None), "id", None)
     if imid is not None and updated.message_id != imid:
         logger.info("blackjack play edit skipped: card transferred %s",
                     stored.round_id)
         await _ephemeral(interaction, "Раздача завершена — карта обновлена.")
         return
-    kwargs = {"view": view, "allowed_mentions": discord.AllowedMentions.none()}
-    if f is not None:
-        kwargs["attachments"] = [f]
-    await interaction.edit_original_response(**kwargs)
+    # Единая сериализованная точка редактирования (claim-CAS):
+    # устаревший параллельный sync не перезапишет более новый вид.
+    from games.blackjack import render_round_card
+    await render_round_card(interaction, updated)
 
 
 async def _handle_close(interaction, stored, ver: int) -> None:
@@ -322,11 +313,13 @@ async def _handle_close(interaction, stored, ver: int) -> None:
         await _ephemeral(
             interaction, "Эта карточка уже используется другой раздачей.")
         return
-    view = DesignView(title="BLACKJACK", timeout=None)
-    view.lines("Раздача закрыта. Спасибо за игру!")
-    await interaction.edit_original_response(
-        view=view, attachments=[], allowed_mentions=discord.AllowedMentions.none()
-    )
+    # card_closed в БД — кнопки не вернутся ни при одном sync;
+    # результат раздачи остаётся видимым.
+    await blackjack_store.mark_card_closed(stored.round_id)
+    fresh = await blackjack_store.get_round(stored.round_id)
+    if fresh is not None:
+        from games.blackjack import render_round_card
+        await render_round_card(interaction, fresh)
 
 
 async def _handle_again(interaction, stored, *, same_stake: bool) -> None:
@@ -336,13 +329,9 @@ async def _handle_again(interaction, stored, *, same_stake: bool) -> None:
     if stored.status != "settled":
         await _ephemeral(interaction, "Новая раздача доступна после завершения текущей.")
         return
-    # reuse только при реально записанном message_id — 'delivered'
-    # без id (редкий сбой mark_message) → новая карточка, а не
-    # fetch_message(None) → ложный failed+refund новой ставки.
-    reuse = (
-        (stored.channel_id, stored.message_id)
-        if stored.message_id is not None else None
-    )
+    # Одна раздача = одна карточка: повторная игра ВСЕГДА создаёт
+    # новое публичное сообщение — message_id не переиспользуется,
+    # прежняя карточка остаётся историей результата.
     # interaction уже deferred → ephemeral через followup
     kwargs = {"ephemeral": True,
               "allowed_mentions": discord.AllowedMentions.none()}
@@ -350,14 +339,13 @@ async def _handle_again(interaction, stored, *, same_stake: bool) -> None:
         stake = stored.stake
         view = ConfirmStakeView(
             interaction.guild_id, interaction.user.id, stored.channel_id,
-            stake, reuse=reuse,
+            stake,
         )
         await interaction.followup.send(view=view, **kwargs)
     else:
         await show_bet_menu(
             interaction, guild_id=interaction.guild_id,
             user_id=interaction.user.id, channel_id=stored.channel_id,
-            reuse=reuse,
         )
 
 
@@ -372,12 +360,11 @@ def _balance_text(balance: int) -> str:
 class BetMenuView(DesignView):
     """Ephemeral меню выбора ставки. Правила видны до списания."""
 
-    def __init__(self, guild_id, user_id, channel_id, balance, reuse=None):
+    def __init__(self, guild_id, user_id, channel_id, balance):
         super().__init__(title="BLACKJACK — выбор ставки", timeout=300)
         self.guild_id = guild_id
         self.user_id = user_id
         self.channel_id = channel_id
-        self.reuse = reuse  # (channel_id, message_id) для edit вместо нового msg
 
         self.lines(
             _balance_text(balance),
@@ -411,13 +398,12 @@ class BetMenuView(DesignView):
     async def _pick(self, interaction, stake: int):
         await interaction.response.edit_message(
             view=ConfirmStakeView(
-                self.guild_id, self.user_id, self.channel_id, stake,
-                reuse=self.reuse),
+                self.guild_id, self.user_id, self.channel_id, stake),
             allowed_mentions=discord.AllowedMentions.none())
 
     async def _custom(self, interaction):
         await interaction.response.send_modal(
-            BetModal(self.guild_id, self.user_id, self.channel_id, self.reuse))
+            BetModal(self.guild_id, self.user_id, self.channel_id))
 
 
 def _bound_button(label, style, callback) -> discord.ui.Button:
@@ -432,12 +418,11 @@ class BetModal(discord.ui.Modal, title="Своя ставка"):
     stake = discord.ui.TextInput(
         label="Ставка (10–10 000)", placeholder="например, 250", max_length=6)
 
-    def __init__(self, guild_id, user_id, channel_id, reuse=None):
+    def __init__(self, guild_id, user_id, channel_id):
         super().__init__()
         self.guild_id = guild_id
         self.user_id = user_id
         self.channel_id = channel_id
-        self.reuse = reuse
 
     async def on_submit(self, interaction):
         raw = self.stake.value.strip().replace(" ", "").replace(",", "")
@@ -450,22 +435,20 @@ class BetModal(discord.ui.Modal, title="Своя ставка"):
             return
         await interaction.response.edit_message(
             view=ConfirmStakeView(
-                self.guild_id, self.user_id, self.channel_id, stake,
-                reuse=self.reuse),
+                self.guild_id, self.user_id, self.channel_id, stake),
             allowed_mentions=discord.AllowedMentions.none())
 
 
 class ConfirmStakeView(DesignView):
     """Финальное подтверждение: отдельное нажатие + новая проверка баланса."""
 
-    def __init__(self, guild_id, user_id, channel_id, stake, reuse=None,
+    def __init__(self, guild_id, user_id, channel_id, stake,
                  op_id: str | None = None):
         super().__init__(title="Подтверждение ставки", timeout=120)
         self.guild_id = guild_id
         self.user_id = user_id
         self.channel_id = channel_id
         self.stake = stake
-        self.reuse = reuse
         # идемпотентность подтверждения: один op_id на экземпляр
         # подтверждения → двойной клик/повтор не спишет ставку дважды
         self.op_id = op_id or uuid.uuid4().hex
@@ -499,12 +482,12 @@ class ConfirmStakeView(DesignView):
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
         await interaction.response.edit_message(
             view=BetMenuView(self.guild_id, self.user_id, self.channel_id,
-                             balance, reuse=self.reuse),
+                             balance),
             allowed_mentions=discord.AllowedMentions.none())
 
     async def _confirm(self, interaction):
         from games.blackjack import deal_round
         await deal_round(
             interaction, guild_id=self.guild_id, user_id=self.user_id,
-            channel_id=self.channel_id, stake=self.stake, reuse=self.reuse,
+            channel_id=self.channel_id, stake=self.stake,
             op_id=self.op_id)
