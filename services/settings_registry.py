@@ -346,6 +346,11 @@ _reg(key="events.growing_burn_max_seconds", type="int", default=40,
      module="events", scope="both", min=1, max=300,
      permission="settings.manage",
      description="Макс. скрытый дедлайн сгорания «Растущего куша» (сек)")
+_reg(key="events.item_dup_compensation_coins", type="int", default=100,
+     module="events", scope="both", min=0, max=10**6,
+     permission="settings.manage",
+     description="Компенсация монетами при выпадении предмета, "
+                 "который уже есть у победителя (0 = без компенсации)")
 
 # ------------------------------------------------------------------
 # Валидация значений по реестру.

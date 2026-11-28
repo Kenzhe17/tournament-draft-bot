@@ -8,7 +8,11 @@
               источник EVENT — журнал и rep_balance синхронно);
 - ``item``  — фиксированный ID предмета магазина, выбранный ДО
   публикации карточки; выдача в инвентарь идемпотентна по
-  item_id (повторная выдача того же предмета — no-op).
+  item_id. Дубликат (предмет уже в инвентаре) разрешается
+  компенсацией монетами ``events.item_dup_compensation_coins``
+  через отдельный идемпотентный grant_key ``<key>:comp`` —
+  «пустая» награда успехом не объявляется, экономика не меняется
+  молча (сумма настраивается в Control Center).
 
 Выбор приза — ДО публикации карточки и ДО создания события:
 тип по весам ``events.reward_weights``, сумма по диапазонам
@@ -217,13 +221,20 @@ def _inventory_file_has(guild_id: int, user_id: int,
 
 
 async def _settle_item(guild_id: int, user_id: int,
-                       item_id: str) -> None:
+                       item_id: str,
+                       comp_key: str | None = None,
+                       comp_amount: int = 0) -> None:
     """Выдать предмет в инвентарь идемпотентно.
 
     Политика дублей (прозрачная): предметы магазина не стакаются —
     если у игрока УЖЕ есть этот item_id (durable-проверка по файлу),
-    обязательство считается исполненным (no-op, без конвертации
-    в валюту — новых семантик не вводим).
+    обязательство разрешается компенсацией монетами
+    ``comp_amount`` по ключу ``comp_key`` (add_balance_once —
+    своя exactly-once запись в event_rewards не нужна: ключ
+    идемпотентности живёт в user_balance ledger). Компенсация
+    настраивается ``events.item_dup_compensation_coins``; при 0 —
+    no-op «уже есть = исполнено» (осознанная политика, предмет у
+    игрока фактически есть — награда не пустая).
 
     «Фантомный» дубль (add_cosmetic вернул False, но в файле
     предмета нет — остаток неудачного save) лечится принудительной
@@ -245,7 +256,19 @@ async def _settle_item(guild_id: int, user_id: int,
 
     owned = _inventory_file_has(guild_id, user_id, item_id)
     if owned is True:
-        return  # уже в инвентаре — политика дублей: no-op
+        if comp_key and comp_amount > 0:
+            from storage.user_balance_store import (
+                user_balance_store)
+            if not user_balance_store._use_db:
+                raise RuntimeError(
+                    "item dup compensation requires PostgreSQL")
+            await user_balance_store.add_balance_once(
+                guild_id, user_id, comp_amount, comp_key)
+            logger.info(
+                "event item dup compensated: guild=%s user=%s "
+                "item=%s +%s coins", guild_id, user_id,
+                item_id, comp_amount)
+        return  # дубль разрешён (компенсация или no-op-политика)
     if owned is None:
         raise RuntimeError("inventory file unreadable")
 
@@ -321,7 +344,11 @@ async def apply_reward(row: dict[str, Any],
         item_id = row.get("item_id")
         if not item_id:
             raise RuntimeError("item reward without item_id")
-        await _settle_item(gid, uid, str(item_id))
+        comp = int(event_config._peek(
+            gid, "events.item_dup_compensation_coins", 100) or 0)
+        await _settle_item(gid, uid, str(item_id),
+                           comp_key=f"{key}:comp",
+                           comp_amount=max(0, comp))
         return
 
     raise RuntimeError(f"unknown event reward kind: {kind}")

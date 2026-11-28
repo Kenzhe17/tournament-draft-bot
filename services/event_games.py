@@ -29,7 +29,8 @@
     ``choice:<uid>`` — выбор (chests → int, minority → "red"/"blue")
     ``roll:<uid>``   — кубик (int 1..100)
     ``click:<uid>``  — unix-время последнего клика (last_click)
-    ``claim:<uid>``  — unix-время клейма (growing)
+    ``gclaim``       — {"uid","elapsed"} единственный клейм (growing);
+                       ``claim:<uid>`` — legacy-формат до gclaim
     ``winner``       — int user_id (игры «первый верный»)
     ``answer``       — str (опционально, для отображения)
 
@@ -432,19 +433,30 @@ def compute_outcome(game: str, cfg: dict[str, Any],
                 "detail": f"макс. бросок {best}, лидеров: {len(leaders)}"}
 
     if game == "growing":
-        claims = {int(str(k)[6:]): float(v) for k, v in actions.items()
-                  if k.startswith("claim:")}
-        if not claims:
-            return {**none, "reason": "burned",
-                    "detail": "куш сгорел — никто не успел"}
-        # Победитель — самый ранний валидный клейм.
-        uid = min(claims, key=claims.get)
+        # Глобальный атомарный ключ ``gclaim`` = {"uid","elapsed"}:
+        # первый валидный клейм фиксируется must_absent-гардом
+        # на уровне PG — два одновременных клейма разных игроков
+        # не могут оба пройти. ``claim:<uid>`` — legacy-формат
+        # для событий, начатых до введения gclaim.
+        gc = actions.get("gclaim")
+        if isinstance(gc, dict) and gc.get("uid") is not None:
+            uid = int(gc["uid"])
+            elapsed = float(gc.get("elapsed") or 0.0)
+        else:
+            claims = {int(str(k)[6:]): float(v)
+                      for k, v in actions.items()
+                      if k.startswith("claim:")}
+            if not claims:
+                return {**none, "reason": "burned",
+                        "detail": "куш сгорел — никто не успел"}
+            uid = min(claims, key=claims.get)
+            elapsed = claims[uid]
         burn = float(cfg.get("burn_after", 0.0))
-        # claim:<uid> хранит ts клейма; валидность проверена при
-        # записи (now < start+burn). Пересчитываем сумму на момент
+        # Валидность клейма проверена при записи (now < start+burn
+        # и до close_at по PG-гарду). Пересчитываем сумму на момент
         # клейма: prize.start→amount за duration.
         dur = float(GAME_DEFS["growing"]["duration"])
-        payout = growing_value(prize, claims[uid], dur)
+        payout = growing_value(prize, elapsed, dur)
         return {"winners": [uid], "reason": "claimed",
                 "payout": payout,
                 "detail": f"клейм на {payout}"}

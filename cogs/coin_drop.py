@@ -253,6 +253,9 @@ class _EventSession:
         self.actions = _json_field(row, "actions") or {}
         self.message_id = row.get("message_id")
         self.lock = asyncio.Lock()
+        # Сериализует refresh и final edit карточки — иначе
+        # «живой» снапшот мог перезаписать финальный результат.
+        self.card_lock = asyncio.Lock()
         self.finished = False
         self.message: discord.Message | None = None
         self.task: asyncio.Task | None = None
@@ -348,6 +351,27 @@ def _game_instructions(game: str) -> str:
     }.get(game, "")
 
 
+def _components_have_marker(components, marker: str,
+                            cid_prefix: str) -> bool:
+    """Рекурсивный поиск маркера карточки в дереве Components V2:
+    TextDisplay с ``marker`` в content или кнопка с custom_id
+    ``cid_prefix*`` (persistent se2:*)."""
+    stack = list(components or [])
+    while stack:
+        comp = stack.pop()
+        cid = getattr(comp, "custom_id", None)
+        if isinstance(cid, str) and cid.startswith(cid_prefix):
+            return True
+        txt = getattr(comp, "content", None)
+        if isinstance(txt, str) and marker in txt:
+            return True
+        stack.extend(getattr(comp, "children", None) or [])
+        accessory = getattr(comp, "accessory", None)
+        if accessory is not None:
+            stack.append(accessory)
+    return False
+
+
 def _actions_summary(game: str, actions: dict[str, Any]) -> dict[str, int]:
     """Счётчики для публичной карточки (без раскрытия секретов)."""
     out: dict[str, int] = {}
@@ -358,16 +382,18 @@ def _actions_summary(game: str, actions: dict[str, Any]) -> dict[str, int]:
         out["choices"] = sum(
             1 for k in actions if k.startswith("choice:"))
     elif game == "minority":
-        out["red"] = sum(1 for k, v in actions.items()
-                         if k.startswith("choice:") and v == "red")
-        out["blue"] = sum(1 for k, v in actions.items()
-                          if k.startswith("choice:") and v == "blue")
+        # Распределение голосов СКРЫТО до завершения — публично
+        # только суммарное число участников.
+        out["participants"] = sum(
+            1 for k in actions if k.startswith("choice:"))
     elif game == "dice":
         out["rolls"] = sum(1 for k in actions if k.startswith("roll:"))
     elif game == "last_click":
         out["clicks"] = sum(1 for k in actions if k.startswith("click:"))
     elif game == "growing":
-        out["claims"] = sum(1 for k in actions if k.startswith("claim:"))
+        out["claims"] = (1 if "gclaim" in actions else
+                         sum(1 for k in actions
+                             if k.startswith("claim:")))
     return out
 
 
@@ -414,7 +440,7 @@ def _build_card(session: _EventSession,
         elif game == "chests":
             desc += f"\n\n Выбрали сундук: **{summ['choices']}**"
         elif game == "minority":
-            desc += (f"\n\n 🔴 {summ['red']}  —  🔵 {summ['blue']}")
+            desc += f"\n\n Участников: **{summ['participants']}**"
         elif game == "dice":
             desc += f"\n\n Бросков: **{summ['rolls']}**"
         elif game == "last_click":
@@ -733,6 +759,11 @@ class CoinDropCog(commands.Cog):
             cfg = event_games.make_config(game, prize, settings, rng)
             start_ts = time.time()
             cfg["started_ts"] = start_ts
+            # Кулдаун фиксируется в config: при сбое между
+            # публикацией карточки и mark_started он будет
+            # восстановлен на finish тем же окном.
+            cfg["cooldown_s"] = int(
+                settings.get("cooldown_minutes", 15)) * 60
             deadline_ts = event_games.public_deadline(
                 game, cfg, start_ts)
             close_ts = event_games.close_deadline(
@@ -777,7 +808,9 @@ class CoinDropCog(commands.Cog):
 
         async with self._drop_lock:
             # Кулдаун и last_type — только после успешной публикации.
-            cooldown_s = int(settings.get("cooldown_minutes", 15)) * 60
+            cooldown_s = int(session.config.get("cooldown_s")
+                             or settings.get("cooldown_minutes", 15)
+                             * 60)
             await event_store.mark_started(
                 gid, cid,
                 datetime.now(timezone.utc) + timedelta(seconds=cooldown_s),
@@ -860,20 +893,37 @@ class CoinDropCog(commands.Cog):
             except Exception:
                 pass
         # message_id потерян (крах между send и записью) —
-        # ищем карточку по footer-маркеру в свежих сообщениях.
+        # ищем карточку по маркеру. Components V2 не даёт
+        # embeds: маркер ищем и в footer эмбеда (legacy), и в
+        # дереве компонентов — TextDisplay с текстом ``se2:{eid}``
+        # или кнопка с custom_id ``se2:{eid}:*``. Окно — до 100
+        # сообщений, не «последние 25».
         try:
             marker = f"se2:{session.event_id}"
-            async for m in channel.history(limit=25):
+            cid_prefix = f"se2:{session.event_id}:"
+            async for m in channel.history(limit=100):
+                author = getattr(m, "author", None)
+                if author is not None and \
+                        getattr(author, "bot", False) is not True:
+                    continue
+                found = False
                 for emb in getattr(m, "embeds", []) or []:
                     if (getattr(emb, "footer", None)
                             and emb.footer.text == marker):
-                        session.message = m
-                        try:
-                            await event_store.set_message_id(
-                                session.event_id, m.id)
-                        except Exception:
-                            pass
-                        return m
+                        found = True
+                        break
+                if not found:
+                    found = _components_have_marker(
+                        getattr(m, "components", None),
+                        marker, cid_prefix)
+                if found:
+                    session.message = m
+                    try:
+                        await event_store.set_message_id(
+                            session.event_id, m.id)
+                    except Exception:
+                        pass
+                    return m
         except Exception:
             pass
         return None
@@ -886,6 +936,11 @@ class CoinDropCog(commands.Cog):
         edit не должен перезаписываться «живым» снапшотом."""
         if session.finished:
             return
+        async with session.card_lock:
+            await self._refresh_card_locked(session, force=force)
+
+    async def _refresh_card_locked(self, session: _EventSession,
+                                   force: bool) -> None:
         now = time.time()
         if not force and now - session.last_card_edit < \
                 _CARD_EDIT_MIN_INTERVAL:
@@ -973,17 +1028,37 @@ class CoinDropCog(commands.Cog):
         """
         eid = session.event_id
         if not already_settled:
+            # Outcome вычисляется из АТОМАРНО зафиксированного
+            # снимка actions: settle() берёт строку FOR UPDATE,
+            # вызывает builder внутри транзакции и только потом
+            # переводит в settling — патчи либо попали в снимок,
+            # либо отклонены PG-гардом state='active'.
+            holder: dict[str, Any] = {}
+
+            def _outcome_builder(row: dict[str, Any]) -> dict[str, Any]:
+                computed = event_games.compute_outcome(
+                    str(row.get("game_type") or session.game),
+                    _json_field(row, "config") or session.config,
+                    _json_field(row, "actions")
+                    or session.actions or {},
+                    _json_field(row, "prize") or session.prize,
+                    time.time())
+                holder["outcome"] = computed
+                return computed
+
             try:
                 settled = await event_store.settle(
-                    eid,
-                    {"outcome": outcome, "reason": reason,
-                     "settled_ts": time.time()})
+                    eid, _outcome_builder)
             except Exception:
                 # PG недоступен — остаёмся 'active', свипер
                 # просроченных повторит финализацию.
                 logger.exception("event settle failed id=%s", eid)
                 self._unregister_session(session)
                 return
+            if settled is not None and holder.get("outcome"):
+                # Авторитетный outcome — из снимка БД, а не из
+                # possibly-устаревшего session.actions.
+                outcome = holder["outcome"]
             if settled is None:
                 # Уже settling/finished: если settling — обязаны
                 # использовать СОХРАНЁННЫЙ outcome (не наш RNG).
@@ -1061,6 +1136,24 @@ class CoinDropCog(commands.Cog):
             self._unregister_session(session)
             return
 
+        # Восстановление кулдауна/last_type: если процесс упал
+        # между публикацией карточки и mark_started, channel_state
+        # мог не записаться. Окно считается от started_ts из
+        # config — то же, что и при штатном mark_started.
+        try:
+            cooldown_s = int(session.config.get("cooldown_s")
+                             or 15 * 60)
+            if cooldown_s > 0:
+                await event_store.mark_started(
+                    session.guild_id, session.channel_id,
+                    datetime.fromtimestamp(
+                        session.start_ts + cooldown_s,
+                        timezone.utc),
+                    session.game, session.event_id)
+        except Exception:
+            logger.warning("channel state backfill failed id=%s",
+                           session.event_id)
+
         await self._edit_final_card(session, outcome, grant_status)
         self._unregister_session(session)
         logger.info("event finished id=%s game=%s reason=%s "
@@ -1076,10 +1169,17 @@ class CoinDropCog(commands.Cog):
         stored = _json_field(row, "result") or {}
         outcome = stored.get("outcome")
         if not isinstance(outcome, dict) or not outcome:
-            # Legacy settling без outcome — безопасно закрываем
-            # без выплат (обязательств не было).
-            outcome = {"winners": [], "reason": "no_winner",
-                       "payout": None, "detail": "resume"}
+            # Settling без валидного сохранённого outcome НЕ
+            # закрываем: finish() отклонит переход, а
+            # синтезированный «no_winner» скрыл бы рассинхрон.
+            # Оставляем в settling — критический лог для
+            # ручного разбора (не должно возникать: settle()
+            # всегда пишет outcome).
+            logger.critical(
+                "settling event %s has no stored outcome — "
+                "manual reconciliation required",
+                row.get("event_id"))
+            return
         session = _EventSession.from_row(row)
         reason = str(stored.get("reason") or "resume")
         await self._settle_and_finish(session, outcome, reason,
@@ -1088,6 +1188,16 @@ class CoinDropCog(commands.Cog):
     async def _edit_final_card(self, session: _EventSession,
                                outcome: dict[str, Any],
                                grant_status: str) -> None:
+        """Сериализовано с refresh через session.card_lock —
+        финальный результат не может быть перезаписан
+        «живым» снапшотом карточки."""
+        async with session.card_lock:
+            await self._edit_final_card_inner(
+                session, outcome, grant_status)
+
+    async def _edit_final_card_inner(self, session: _EventSession,
+                                     outcome: dict[str, Any],
+                                     grant_status: str) -> None:
         """Edit исходной карточки: финальный результат, кнопки
         убраны. Чужие сообщения не трогаем — только message_id
         события. Повторные попытки при сбое Discord; исход
@@ -1348,8 +1458,12 @@ class CoinDropCog(commands.Cog):
             return
 
         if game == "minority" and action in ("red", "blue"):
-            # Перевыбор разрешён до дедлайна (последний выбор важен).
-            await _persist({f"choice:{uid}": action})
+            # Перевыбор разрешён до дедлайна (последний выбор важен),
+            # но результат _persist() проверяется — выбор
+            # подтверждается только после записи в PG.
+            if not await _persist({f"choice:{uid}": action}):
+                await _deny("Временная ошибка — попробуйте ещё раз.")
+                return
             side = "красных" if action == "red" else "синих"
             await _ack(f"Вы за {side}. Выбор можно изменить до конца.")
             await self._refresh_card(session)
@@ -1376,13 +1490,18 @@ class CoinDropCog(commands.Cog):
             if now >= burn_ts:
                 await _deny("Куш уже сгорел — поздно.")
                 return
-            ckey = f"claim:{uid}"
-            if any(k.startswith("claim:") for k in actions):
+            # Глобальный атомарный ключ: первый клейм фиксируется
+            # must_absent-гардом на уровне PG — два simultaneous
+            # клейма разных игроков не могут оба сохраниться
+            # (в отличие от per-user ключей claim:<uid>).
+            if "gclaim" in actions or any(
+                    k.startswith("claim:") for k in actions):
                 await _deny("Куш уже забран другим игроком!")
                 return
             elapsed = max(0.0, now - session.start_ts)
-            if not await _persist({ckey: elapsed},
-                                  must_absent=[ckey]):
+            if not await _persist(
+                    {"gclaim": {"uid": uid, "elapsed": elapsed}},
+                    must_absent=["gclaim"]):
                 await _deny("Временная ошибка — попробуйте ещё раз.")
                 return
             await self._finish_event(session, "claimed",
@@ -1479,15 +1598,31 @@ class CoinDropCog(commands.Cog):
                     return
                 accepted = cfg.get("accepted") or []
                 correct = event_games.answer_matches(text, accepted)
-                # Одна попытка — фиксируем даже неверный ответ
-                # (must_absent — попытка не перезаписывается в PG).
+                if correct:
+                    # Атомарно ОДНИМ патчем: потребление попытки +
+                    # победитель. must_absent по обоим ключам —
+                    # либо всё фиксируется, либо ничего (нет
+                    # состояния «попытка сожжена, победитель
+                    # потерян» и наоборот).
+                    if not await _persist(
+                            {gkey: 1, "winner": uid},
+                            must_absent=[gkey, "winner"]):
+                        await _deny("Победитель уже найден — "
+                                    "событие завершено.")
+                        return
+                    await self._finish_event(session, "correct_answer",
+                                             locked=True)
+                    await _deny("Верно! Вы победили — "
+                                "смотрите карточку.")
+                    return
+                # Неверно — фиксируем попытку (must_absent —
+                # попытка не перезаписывается в PG).
                 if not await _persist({gkey: 1},
                                       must_absent=[gkey]):
                     await _deny("Временная ошибка — попробуйте ещё раз.")
                     return
-                if not correct:
-                    await _deny("Неверно — попытка использована.")
-                    return
+                await _deny("Неверно — попытка использована.")
+                return
             elif game == "word":
                 accepted = cfg.get("accepted") or []
                 correct = event_games.answer_matches(text, accepted)

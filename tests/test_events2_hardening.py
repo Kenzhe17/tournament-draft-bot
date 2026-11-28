@@ -101,11 +101,19 @@ def _msg(edit_side_effect=None):
 def _no_event_db(monkeypatch):
     monkeypatch.setattr(coin_drop.event_store, "get",
                         AsyncMock(return_value=None))
+    def _fake_settle(eid, res):
+        payload = res({}) if callable(res) else res
+        outcome = (payload.get("outcome")
+                   if isinstance(payload, dict)
+                   and "outcome" in payload else payload)
+        return {"event_id": eid, "state": "settling",
+                "result": {"outcome": outcome}}
     monkeypatch.setattr(
         coin_drop.event_store, "settle",
-        AsyncMock(side_effect=lambda eid, res: {
-            "event_id": eid, "state": "settling", "result": res}))
+        AsyncMock(side_effect=_fake_settle))
     monkeypatch.setattr(coin_drop.event_store, "mark_card_edit",
+                        AsyncMock())
+    monkeypatch.setattr(coin_drop.event_store, "mark_started",
                         AsyncMock())
     monkeypatch.setattr(coin_drop.event_store, "list_settling",
                         AsyncMock(return_value=[]))
@@ -126,9 +134,13 @@ async def test_settle_persists_outcome_before_grant():
 
     async def _settle(eid, res):
         order.append("settle")
-        assert "outcome" in res and res["outcome"]["winners"]
+        computed = res({}) if callable(res) else res
+        outcome = (computed.get("outcome")
+                   if isinstance(computed, dict)
+                   and "outcome" in computed else computed)
+        assert outcome and outcome.get("winners")
         return {"event_id": eid, "state": "settling",
-                "result": res}
+                "result": {"outcome": outcome}}
 
     async def _grant(*a, **kw):
         order.append("grant")
@@ -190,8 +202,12 @@ async def test_two_competing_finalizers_single_finish():
     async def _settle(eid, res):
         settle_calls.append(eid)
         if len(settle_calls) == 1:
+            payload = res({}) if callable(res) else res
+            outcome = (payload.get("outcome")
+                       if isinstance(payload, dict)
+                       and "outcome" in payload else payload)
             return {"event_id": eid, "state": "settling",
-                    "result": res}
+                    "result": {"outcome": outcome}}
         return None  # второй видит: уже settling
 
     stored = {"outcome": {"winners": [2], "reason": "dice",
@@ -595,16 +611,48 @@ def _item_env(tmp_path, monkeypatch, inv, owned=False):
 
 
 @pytest.mark.asyncio
-async def test_item_already_in_inventory_is_satisfied(tmp_path,
-                                                    monkeypatch):
+async def test_item_already_in_inventory_is_compensated(tmp_path,
+                                                        monkeypatch):
     """Дубль предмета: durable-файл уже содержит item_id →
-    обязательство исполнено (no-op), без ошибки."""
+    компенсация монетами по ключу ``<grant_key>:comp``
+    (add_balance_once — свой exactly-once ledger)."""
+    import storage.user_balance_store as ubs
     inv = _FakeInv()
     er = _item_env(tmp_path, monkeypatch, inv, owned=True)
+    credited = AsyncMock()
+    monkeypatch.setattr(ubs.user_balance_store, "_use_db", True)
+    monkeypatch.setattr(ubs.user_balance_store, "add_balance_once",
+                        credited)
     await er.apply_reward({"grant_key": "event:item:dup",
                            "kind": "item", "guild_id": 1,
                            "user_id": 42, "amount": 0,
                            "item_id": "sword"})
+    credited.assert_awaited_once_with(
+        1, 42, 100, "event:item:dup:comp")
+
+
+@pytest.mark.asyncio
+async def test_item_dup_compensation_idempotent_and_zero(tmp_path,
+                                                         monkeypatch):
+    """Компенсация 0 (настройка) → чистый no-op без вызова
+    баланса; повторный apply_reward не дублирует компенсацию —
+    ключ ``:comp`` идемпотентен на уровне user_balance ledger."""
+    import storage.user_balance_store as ubs
+    inv = _FakeInv()
+    er = _item_env(tmp_path, monkeypatch, inv, owned=True)
+    credited = AsyncMock()
+    monkeypatch.setattr(ubs.user_balance_store, "_use_db", True)
+    monkeypatch.setattr(ubs.user_balance_store, "add_balance_once",
+                        credited)
+    monkeypatch.setattr(
+        "services.event_config._peek",
+        lambda gid, key, default: 0 if "compensation" in key
+        else default)
+    await er.apply_reward({"grant_key": "event:item:dup0",
+                           "kind": "item", "guild_id": 1,
+                           "user_id": 42, "amount": 0,
+                           "item_id": "sword"})
+    credited.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -681,3 +729,270 @@ async def test_item_phantom_dup_recovered(tmp_path, monkeypatch):
                            "user_id": 42, "amount": 0,
                            "item_id": "sword"})
     assert inv._loaded
+
+
+# ======================= Final-hardening: новые сценарии
+
+@pytest.mark.asyncio
+async def test_growing_claim_uses_global_atomic_key():
+    """Первый клейм «Растущего куша» — ОДИН глобальный ключ
+    ``gclaim`` с must_absent: два simultaneous клейма разных
+    игроков не могут оба сохраниться в PG."""
+    cog = _cog()
+    s = _session("growing",
+                 prize={"type": "coins", "amount": 500, "start": 100,
+                        "item_id": None},
+                 config={"started_ts": time.time(),
+                         "burn_after": 30.0},
+                 end_in=45.0)
+    s.message = _msg()
+    cog._register_session(s)
+    patches = []
+
+    async def _patch(eid, patch, must_absent=None):
+        # Имитация PG must_absent по gclaim.
+        if "gclaim" in patch:
+            if any("gclaim" in k for k in patches):
+                return False
+            patches.append(patch)
+            return True
+        return True
+
+    finished = []
+
+    async def _finish(sess, reason, locked=False):
+        finished.append(reason)
+
+    with patch.object(coin_drop.event_store, "patch_actions",
+                      new=AsyncMock(side_effect=_patch)), \
+         patch.object(cog, "_finish_event",
+                      new=AsyncMock(side_effect=_finish)):
+        i1 = _interaction(1, cid="se2:abcd1234:claim")
+        i2 = _interaction(2, cid="se2:abcd1234:claim")
+        await cog.handle_button(i1, "claim")
+        await cog.handle_button(i2, "claim")
+    assert len(patches) == 1
+    assert patches[0]["gclaim"]["uid"] == 1
+    assert finished == ["claimed"]
+    assert "уже забран" in i2.followup.sent[-1][0]
+
+
+@pytest.mark.asyncio
+async def test_growing_outcome_reads_gclaim():
+    """compute_outcome: gclaim {"uid","elapsed"} — единственный
+    источник победителя; legacy claim:<uid> — fallback."""
+    from services import event_games
+    prize = {"type": "coins", "amount": 500, "start": 100,
+             "item_id": None}
+    cfg = {"burn_after": 40.0}
+    out = event_games.compute_outcome(
+        "growing", cfg, {"gclaim": {"uid": 5, "elapsed": 10.0}},
+        prize, 0)
+    assert out["winners"] == [5]
+    assert out["payout"] == event_games.growing_value(
+        prize, 10.0, 45)
+    out2 = event_games.compute_outcome(
+        "growing", cfg, {"claim:8": 3.0}, prize, 0)
+    assert out2["winners"] == [8]
+    out3 = event_games.compute_outcome("growing", cfg, {}, prize, 0)
+    assert out3["winners"] == [] and out3["reason"] == "burned"
+
+
+def test_minority_card_hides_vote_distribution():
+    """Меньшинство: публичная карточка показывает только суммарное
+    число участников — red/blue распределение скрыто."""
+    s = _session("minority",
+                 actions={"choice:1": "red", "choice:2": "red",
+                          "choice:3": "blue"})
+    embed = coin_drop._build_card(s)
+    desc = embed.description or ""
+    assert "Участников: **3**" in desc
+    assert "🔴" not in desc and "🔵" not in desc
+    summ = coin_drop._actions_summary("minority", s.actions)
+    assert summ == {"participants": 3}
+
+
+@pytest.mark.asyncio
+async def test_minority_persist_failure_denies_choice():
+    """minority: _persist() == False → выбор НЕ подтверждён,
+    пользователь получает ошибку (выбор не «засчитан»)."""
+    cog = _cog()
+    s = _session("minority")
+    s.message = _msg()
+    cog._register_session(s)
+    i = _interaction(1, cid="se2:abcd1234:red")
+    with patch.object(coin_drop.event_store, "patch_actions",
+                      new=AsyncMock(return_value=False)):
+        await cog.handle_button(i, "red")
+    assert "Временная ошибка" in i.followup.sent[-1][0]
+    assert not any(k.startswith("choice:") for k in s.actions)
+
+
+@pytest.mark.asyncio
+async def test_guess_number_atomic_attempt_and_winner():
+    """guess_number: верный ответ фиксирует попытку И победителя
+    ОДНИМ атомарным patch_actions (must_absent по обоим)."""
+    cog = _cog()
+    s = _session("guess_number",
+                 config={"started_ts": time.time(),
+                         "accepted": ["17"]})
+    s.message = _msg()
+    cog._register_session(s)
+    calls = []
+
+    async def _patch(eid, patch, must_absent=None):
+        calls.append((patch, must_absent))
+        return True
+
+    with patch.object(coin_drop.event_store, "patch_actions",
+                      new=AsyncMock(side_effect=_patch)), \
+         patch.object(coin_drop.event_store, "finish",
+                      new=AsyncMock(return_value={"state": "f"})), \
+         patch("cogs.coin_drop.grant_event_reward",
+               new=AsyncMock(return_value="credited")):
+        i = _interaction(7)
+        await cog.handle_modal_answer(i, "abcd1234", "guess_number",
+                                      "17")
+    assert len(calls) == 1
+    patch_, absent = calls[0]
+    assert patch_ == {"guess:7": 1, "winner": 7}
+    assert set(absent) == {"guess:7", "winner"}
+
+
+@pytest.mark.asyncio
+async def test_guess_number_wrong_answer_consumes_attempt():
+    """Неверный ответ guess_number — одна попытка, без winner."""
+    cog = _cog()
+    s = _session("guess_number",
+                 config={"started_ts": time.time(),
+                         "accepted": ["17"]})
+    s.message = _msg()
+    cog._register_session(s)
+    calls = []
+
+    async def _patch(eid, patch, must_absent=None):
+        calls.append(patch)
+        return True
+
+    with patch.object(coin_drop.event_store, "patch_actions",
+                      new=AsyncMock(side_effect=_patch)):
+        i = _interaction(7)
+        await cog.handle_modal_answer(i, "abcd1234", "guess_number",
+                                      "3")
+    assert calls == [{"guess:7": 1}]
+    assert s.finished is False
+    assert "попытка использована" in i.followup.sent[-1][0]
+
+
+@pytest.mark.asyncio
+async def test_finish_backfills_cooldown_and_last_type():
+    """Крэш между публикацией карточки и mark_started: finish
+    восстанавливает cooldown_until (от started_ts) и
+    last_event_type в event_channel_state."""
+    cog = _cog()
+    start = time.time() - 5
+    s = _session("speed", actions={"winner": 5},
+                 config={"started_ts": start, "cooldown_s": 900})
+    s.message = _msg()
+    cog._register_session(s)
+    with patch.object(coin_drop.event_store, "finish",
+                      new=AsyncMock(return_value={"state": "f"})), \
+         patch("cogs.coin_drop.grant_event_reward",
+               new=AsyncMock(return_value="credited")), \
+         patch.object(coin_drop.event_store, "mark_started",
+                      new=AsyncMock()) as mark:
+        await cog._finish_event(s, "first_click")
+    mark.assert_awaited()
+    args = mark.await_args.args
+    assert args[0] == 1 and args[1] == 200
+    until = args[2]
+    assert until.tzinfo is not None
+    # cooldown_until ≈ started_ts + 900s
+    assert abs(until.timestamp() - (start + 900)) < 2
+    assert args[3] == "speed" and args[4] == s.event_id
+
+
+@pytest.mark.asyncio
+async def test_settling_without_outcome_never_closed():
+    """settling без валидного outcome в result → событие НЕ
+    закрывается (finish не вызывается), критический лог."""
+    cog = _cog()
+    row = {
+        "event_id": "bad00001", "guild_id": 1, "channel_id": 200,
+        "game_type": "speed",
+        "prize": {"type": "coins", "amount": 100, "item_id": None},
+        "config": {"started_ts": time.time() - 100},
+        "actions": {}, "state": "settling",
+        "result": {"reason": "timeout"},  # нет outcome!
+        "deadline_at": datetime.now(timezone.utc)
+        - timedelta(seconds=5),
+        "close_at": None, "message_id": 555,
+    }
+    with patch.object(coin_drop.event_store, "finish",
+                      new=AsyncMock()) as fin, \
+         patch("cogs.coin_drop.grant_event_reward",
+               new=AsyncMock()):
+        await cog._resume_settling(row)
+    fin.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_card_recovered_via_cv2_components():
+    """Components V2: embeds пусты — карточка находится по
+    дереву компонентов (TextDisplay с маркером / custom_id
+    se2:{eid}:*)."""
+    cog = _cog()
+    s = _session(event_id="beef0001")
+    s.message_id = None
+
+    td = SimpleNamespace(content="-# se2:beef0001")
+    btn = SimpleNamespace(custom_id="se2:beef0001:claim")
+    row = SimpleNamespace(children=[btn])
+    container = SimpleNamespace(children=[td, row])
+    found = SimpleNamespace(id=777, embeds=[],
+                            components=[container],
+                            author=SimpleNamespace(bot=True))
+
+    class _Chan:
+        async def fetch_message(self, mid):
+            raise Exception("gone")
+
+        async def history(self, limit=100):
+            yield found
+            yield SimpleNamespace(id=2, embeds=[], components=[],
+                                  author=SimpleNamespace(bot=True))
+
+    class _Guild:
+        def get_channel(self, cid):
+            return _Chan()
+
+        async def fetch_channel(self, cid):
+            return _Chan()
+
+    cog.bot.get_guild = lambda gid: _Guild()
+    with patch.object(coin_drop.event_store, "set_message_id",
+                      new=AsyncMock()):
+        msg = await cog._resolve_card_message(s)
+    assert msg is found
+
+
+@pytest.mark.asyncio
+async def test_refresh_and_final_edit_serialized():
+    """refresh и final edit разделяют session.card_lock:
+    «живой» снапшот не может вклиниться между settle и
+    финальной правкой карточки."""
+    cog = _cog()
+    s = _session("speed", actions={"winner": 5})
+    s.message = _msg()
+    cog._register_session(s)
+    await s.card_lock.acquire()
+    try:
+        task = asyncio.get_running_loop().create_task(
+            cog._refresh_card(s, force=True))
+        await asyncio.sleep(0.05)
+        s.message.edit.assert_not_awaited()
+    finally:
+        s.card_lock.release()
+    await task
+    s.message.edit.assert_awaited()
+

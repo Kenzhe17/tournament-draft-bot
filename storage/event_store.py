@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS spontaneous_events (
 """
 INDEX_DDL = """
 DROP INDEX IF EXISTS spontaneous_events_one_active;
-CREATE UNIQUE INDEX spontaneous_events_one_active
+CREATE UNIQUE INDEX IF NOT EXISTS spontaneous_events_one_active
 ON spontaneous_events (guild_id, channel_id)
 WHERE state IN ('active', 'settling')
 """
@@ -87,9 +87,16 @@ class EventStore:
 
     async def _ensure_ddl(self, conn) -> None:
         if not self._ddl_done:
-            await conn.execute(DDL)
-            await conn.execute(INDEX_DDL)
-            await conn.execute(CHANNEL_DDL)
+            # Advisory lock сериализует DDL между процессами:
+            # DROP+CREATE UNIQUE INDEX иначе может гоняться
+            # и оставить канал без защиты от двойных active.
+            await conn.execute("SELECT pg_advisory_lock(727001)")
+            try:
+                await conn.execute(DDL)
+                await conn.execute(INDEX_DDL)
+                await conn.execute(CHANNEL_DDL)
+            finally:
+                await conn.execute("SELECT pg_advisory_unlock(727001)")
             self._ddl_done = True
 
     # ---------------------------------------------------------- события
@@ -247,10 +254,20 @@ class EventStore:
             return row is not None
 
     async def settle(self, event_id: str,
-                     result: dict[str, Any]
+                     outcome: Any
                      ) -> dict[str, Any] | None:
         """Атомарно перевести active → settling, зафиксировав
-        вычисленный outcome в ``result`` ДО начисления наград.
+        outcome в ``result`` ДО начисления наград.
+
+        ``outcome`` — либо готовый dict, либо callable
+        ``builder(row) -> dict``, вызываемый ВНУТРИ транзакции
+        после ``SELECT ... FOR UPDATE``. Это гарантирует, что
+        outcome вычислен из того же атомарно зафиксированного
+        снимка ``actions``, который заморожен переходом в
+        settling: конкурирующий ``patch_actions`` либо успеет
+        до блокировки строки (и попадёт в снимок), либо будет
+        отклонён PG-гардом ``state='active'`` — потерянных
+        действий и «ответа на устаревший снимок» нет.
 
         None — событие уже settling/finished/отсутствует:
         единственный финализатор, случайный победитель не
@@ -259,24 +276,46 @@ class EventStore:
         pool = await self._pool()
         async with pool.acquire() as conn:
             await self._ensure_ddl(conn)
-            row = await conn.fetchrow(
-                """
-                UPDATE spontaneous_events
-                SET state = 'settling',
-                    result = $2::jsonb
-                WHERE event_id = $1 AND state = 'active'
-                RETURNING *
-                """,
-                event_id, json.dumps(result, ensure_ascii=False),
-            )
-            return dict(row) if row else None
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT * FROM spontaneous_events "
+                    "WHERE event_id = $1 FOR UPDATE",
+                    event_id,
+                )
+                if row is None or row["state"] != "active":
+                    return None
+                data = dict(row)
+                computed = (outcome(data) if callable(outcome)
+                            else outcome)
+                payload = {
+                    "outcome": computed,
+                    "settled_ts": datetime.now(timezone.utc)
+                    .isoformat(),
+                }
+                await conn.execute(
+                    "UPDATE spontaneous_events "
+                    "SET state = 'settling', result = $2::jsonb "
+                    "WHERE event_id = $1",
+                    event_id,
+                    json.dumps(payload, ensure_ascii=False),
+                )
+                data["state"] = "settling"
+                data["result"] = payload
+                return data
 
     async def finish(self, event_id: str, state: str,
                      result: dict[str, Any] | None = None
                      ) -> dict[str, Any] | None:
-        """Атомарно закрыть событие (settling→finished,
-        active→cancelled). None — уже закрыто другим процессом
-        (единственный финализатор карточки)."""
+        """Атомарно закрыть событие. Переходы строгие:
+
+        - ``finished`` — только из ``settling`` и только когда в
+          сохранённом ``result`` уже есть валидный ``outcome``
+          (обязательство по выплате зафиксировано до grant);
+        - ``cancelled`` — только из ``active`` (отказ до
+          начислений, например недоставленная карточка).
+
+        None — переход недопустим или событие уже закрыто другим
+        процессом (единственный финализатор карточки)."""
         pool = await self._pool()
         async with pool.acquire() as conn:
             await self._ensure_ddl(conn)
@@ -287,7 +326,12 @@ class EventStore:
                     result = $3::jsonb,
                     finished_at = now()
                 WHERE event_id = $1
-                  AND state IN ('active', 'settling')
+                  AND (
+                    ($2 = 'finished' AND state = 'settling'
+                     AND COALESCE(result, '{}'::jsonb) ? 'outcome')
+                    OR
+                    ($2 = 'cancelled' AND state = 'active')
+                  )
                 RETURNING *
                 """,
                 event_id, state,
@@ -313,10 +357,13 @@ class EventStore:
                 event_id, status,
             )
 
-    async def list_failed_cards(self, within_seconds: int = 1800
+    async def list_failed_cards(self, within_seconds: int = 86400
                                 ) -> list[dict[str, Any]]:
         """Недавно завершённые события, у которых финальная
-        правка карточки не подтверждена — кандидаты на retry."""
+        правка карточки не подтверждена — кандидаты на retry.
+        Окно 24ч: восстановление финального состояния карточки
+        не прекращается через 30 минут — нерешённые строки
+        продолжают логироваться свипером как ошибки."""
         pool = await self._pool()
         async with pool.acquire() as conn:
             await self._ensure_ddl(conn)

@@ -21,12 +21,22 @@ def _no_event_db(monkeypatch):
     monkeypatch.setattr(coin_drop.event_store, "get",
                         AsyncMock(return_value=None))
     # settle() по умолчанию «успешен»: state→settling, outcome
-    # сохранён (как реальный UPDATE ... RETURNING).
+    # вычисляется из builder(row) как в реальном UPDATE
+    # ... FOR UPDATE (мок вызывает builder с пустой строкой —
+    # cog-фолбэки подставляют поля сессии).
+    def _fake_settle(eid, res):
+        payload = res({}) if callable(res) else res
+        outcome = (payload.get("outcome")
+                   if isinstance(payload, dict)
+                   and "outcome" in payload else payload)
+        return {"event_id": eid, "state": "settling",
+                "result": {"outcome": outcome}}
     monkeypatch.setattr(
         coin_drop.event_store, "settle",
-        AsyncMock(side_effect=lambda eid, res: {
-            "event_id": eid, "state": "settling", "result": res}))
+        AsyncMock(side_effect=_fake_settle))
     monkeypatch.setattr(coin_drop.event_store, "mark_card_edit",
+                        AsyncMock())
+    monkeypatch.setattr(coin_drop.event_store, "mark_started",
                         AsyncMock())
 
 

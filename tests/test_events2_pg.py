@@ -102,7 +102,12 @@ async def test_event_store_one_active_per_channel(pg_pool):
         {"type": "coins", "amount": 100, "item_id": None},
         {}, _deadline())
     assert row3 is not None
-    # После finish слот освобождается.
+    # После settle+finish слот освобождается (finished только
+    # из settling с сохранённым outcome — строгое переходы).
+    settled = await store.settle(
+        "evt00001", {"winners": [], "reason": "test",
+                     "payout": None, "detail": ""})
+    assert settled is not None
     closed = await store.finish("evt00001", "finished",
                                 {"reason": "test"})
     assert closed is not None
@@ -131,6 +136,9 @@ async def test_event_store_actions_patch_and_finish(pg_pool):
         actions = json.loads(actions)
     assert actions == {"p:11": 1, "p:22": 1, "p:33": 1}
     # patch после finish не применяется (state='active' в WHERE)
+    await store.settle("evt00010", {"winners": [],
+                                    "reason": "test",
+                                    "payout": None, "detail": ""})
     await store.finish("evt00010", "finished", {"winners": [11]})
     await store.patch_actions("evt00010", {"p:44": 1})
     row = await store.get("evt00010")
@@ -209,6 +217,75 @@ async def test_patch_actions_pg_guards(pg_pool):
 
 
 @pytest.mark.asyncio
+async def test_finish_rejects_invalid_transitions(pg_pool):
+    """Строгие переходы: active→finished запрещён (нет
+    обязательства), settling→cancelled запрещён, finished без
+    outcome в result отклоняется."""
+    store = es.event_store
+    await store.create(
+        "evt00060", 7, 700, "speed",
+        {"type": "coins", "amount": 100, "item_id": None},
+        {}, _deadline())
+    # active → finished напрямую: отказ.
+    assert await store.finish("evt00060", "finished",
+                              {"outcome": {}}) is None
+    row = await store.get("evt00060")
+    assert row["state"] == "active"
+    # cancelled из active — разрешён (send_failed).
+    await store.create(
+        "evt00062", 7, 701, "speed",
+        {"type": "coins", "amount": 100, "item_id": None},
+        {}, _deadline())
+    assert await store.finish("evt00062", "cancelled",
+                              {"reason": "send_failed"}) is not None
+    # settling → cancelled: отказ.
+    await store.settle("evt00060", {"winners": [],
+                                    "reason": "t", "payout": None,
+                                    "detail": ""})
+    assert await store.finish("evt00060", "cancelled") is None
+    # settling → finished с outcome в result — разрешён.
+    assert await store.finish("evt00060", "finished",
+                              {"grant": "none"}) is not None
+
+
+@pytest.mark.asyncio
+async def test_settle_uses_atomic_actions_snapshot(pg_pool):
+    """settle(builder): outcome вычисляется из снимка actions,
+    зафиксированного FOR UPDATE — патч, пришедший «между», не
+    теряется и не попадает в чужой итог."""
+    store = es.event_store
+    await store.create(
+        "evt00070", 8, 800, "speed",
+        {"type": "coins", "amount": 100, "item_id": None},
+        {}, _deadline())
+    await store.patch_actions("evt00070", {"winner": 42})
+    seen = {}
+
+    def builder(row):
+        import json as _j
+        acts = row["actions"]
+        if isinstance(acts, str):
+            acts = _j.loads(acts)
+        seen["actions"] = dict(acts)
+        return {"winners": [int(acts["winner"])],
+                "reason": "first_click", "payout": 100,
+                "detail": ""}
+
+    settled = await store.settle("evt00070", builder)
+    assert settled is not None
+    assert seen["actions"].get("winner") == 42
+    row = await store.get("evt00070")
+    res = row["result"]
+    if isinstance(res, str):
+        import json
+        res = json.loads(res)
+    assert res["outcome"]["winners"] == [42]
+    # Патч после settle отклонён PG-гардом — снимок финален.
+    assert await store.patch_actions(
+        "evt00070", {"p:1": 1}) is False
+
+
+@pytest.mark.asyncio
 async def test_settle_state_machine(pg_pool):
     """active → settling → finished: settle атомарен и хранит
     outcome; settling держит слот канала; patch закрыт."""
@@ -219,8 +296,7 @@ async def test_settle_state_machine(pg_pool):
         {}, _deadline())
     outcome = {"winners": [9], "reason": "raffle",
                "payout": 100, "detail": ""}
-    settled = await store.settle(
-        "evt00050", {"outcome": outcome, "reason": "timeout"})
+    settled = await store.settle("evt00050", outcome)
     assert settled is not None and settled["state"] == "settling"
     # Повторный settle — None (единственный финализатор).
     assert await store.settle("evt00050", {"outcome": {}}) is None
@@ -325,3 +401,44 @@ async def test_apply_reward_item_missing_catalog_retries(pg_pool):
            "item_id": "no_such_item"}
     with pytest.raises(Exception):
         await event_rewards.apply_reward(row)
+
+
+@pytest.mark.asyncio
+async def test_apply_reward_item_real_inventory_and_dup_comp(
+        pg_pool, tmp_path, monkeypatch):
+    """Item-награда на реальном InventoryStore (JSON-файл):
+    выдача подтверждается файлом, повтор — без дубля, а дубль
+    разрешается компенсацией монетами через add_balance_once
+    (реальный PG ledger, ключ ``<grant_key>:comp``)."""
+    import json
+    from types import SimpleNamespace
+    import storage.shop_store as ss
+
+    item = SimpleNamespace(id="sword", name="Меч", is_active=True)
+    monkeypatch.setattr(ss.shop_store, "get_item",
+                        lambda iid: item if iid == "sword" else None)
+    inv_file = tmp_path / "player_inventory.json"
+    inv_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(ss, "INVENTORY_FILE", inv_file)
+    ss.inventory_store.load()  # подхватить tmp-файл
+
+    row = {"grant_key": "event:item:real", "kind": "item",
+           "guild_id": 1, "user_id": 42, "amount": 0,
+           "item_id": "sword"}
+    await event_rewards.apply_reward(row)
+    await event_rewards.apply_reward(row)  # дубль → comp +100
+    data = json.loads(inv_file.read_text(encoding="utf-8"))
+    assert len(data.get("1:42", [])) == 1
+
+    # Компенсация зачислена ровно один раз (ключ :comp в
+    # match_coin_grants ledger), повторные apply — без дубля.
+    async with pg_pool.acquire() as conn:
+        grant = await conn.fetchrow(
+            "SELECT amount FROM match_coin_grants "
+            "WHERE match_id = 'event:item:real:comp' "
+            "AND user_id = 42")
+    assert grant is not None and int(grant["amount"]) == 100
+    bal = await user_balance_store.get_balance(1, 42)
+    await event_rewards.apply_reward(row)
+    await event_rewards.apply_reward(row)
+    assert await user_balance_store.get_balance(1, 42) == bal
