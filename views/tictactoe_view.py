@@ -8,7 +8,7 @@ from discord.ui import Modal, TextInput, View, Button, button
 from games.tictactoe import TicTacToeGame
 
 
-class TicTacToeBetModal(Modal, title="❌⭕ Крестики-Нолики"):
+class TicTacToeBetModal(Modal, title="Крестики-Нолики"):
     """Modal для ввода ставки."""
 
     bet = TextInput(label="Ставка (монеты)", placeholder="Введите сумму ставки", min_length=1, max_length=10)
@@ -25,20 +25,20 @@ class TicTacToeBetModal(Modal, title="❌⭕ Крестики-Нолики"):
         try:
             bet = int(self.bet.value)
         except ValueError:
-            await interaction.response.send_message(replace_emojis("❌ Введите корректную ставку!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Введите корректную ставку!"), ephemeral=True)
             return
 
         if bet < 20:
-            await interaction.response.send_message(replace_emojis("❌ Минимальная ставка: 20 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Минимальная ставка: 20 🪙"), ephemeral=True)
             return
 
         if bet > 500:
-            await interaction.response.send_message(replace_emojis("❌ Максимальная ставка: 500 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Максимальная ставка: 500 🪙"), ephemeral=True)
             return
 
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
         if balance < bet:
-            await interaction.response.send_message(replace_emojis("❌ Недостаточно монет!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Недостаточно монет!"), ephemeral=True)
             return
 
         # Списать ставку
@@ -49,7 +49,7 @@ class TicTacToeBetModal(Modal, title="❌⭕ Крестики-Нолики"):
 
         # Создать embed
         embed = discord.Embed(
-            title="❌⭕ Крестики-Нолики",
+            title="Крестики-Нолики",
             description="Вы играете за X. Выберите клетку (0-8)!",
             color=discord.Color.blue()
         )
@@ -71,19 +71,19 @@ class TicTacToeGameView(View):
         self.bet = bet
         self.game = game
 
-    @button(label="Сделать ход", style=discord.ButtonStyle.primary, emoji="🎯")
+    @button(label="Сделать ход", style=discord.ButtonStyle.primary)
     async def make_move(self, interaction: discord.Interaction, button: Button) -> None:
         """Открыть modal для выбора клетки."""
         modal = TicTacToeMoveModal(self.guild_id, self.user_id, self.bet, self.game)
         await interaction.response.send_modal(modal)
 
-    @button(label="Сдаться", style=discord.ButtonStyle.danger, emoji="🏳️")
+    @button(label="Сдаться", style=discord.ButtonStyle.danger)
     async def give_up(self, interaction: discord.Interaction, button: Button) -> None:
         """Сдаться и потерять ставку."""
         self.game.game_over = True
         embed = discord.Embed(
-            title="❌⭕ Крестики-Нолики",
-            description="😢 Вы сдались!",
+            title="Крестики-Нолики",
+            description="Вы сдались!",
             color=discord.Color.red()
         )
         embed.add_field(name="Потеряно", value=f"{self.bet} 🪙", inline=False)
@@ -91,7 +91,7 @@ class TicTacToeGameView(View):
         await interaction.response.edit_message( view=compose(embed, None))
 
 
-class TicTacToeMoveModal(Modal, title=replace_emojis("🎯 Выберите клетку")):
+class TicTacToeMoveModal(Modal, title="Выберите клетку"):
     """Modal для выбора клетки."""
 
     position = TextInput(label="Клетка (0-8)", placeholder="Введите число от 0 до 8", min_length=1, max_length=1)
@@ -110,7 +110,7 @@ class TicTacToeMoveModal(Modal, title=replace_emojis("🎯 Выберите кл
         try:
             position = int(self.position.value)
         except ValueError:
-            await interaction.response.send_message(replace_emojis("❌ Введите число от 0 до 8!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Введите число от 0 до 8!"), ephemeral=True)
             return
 
         result, message = self.game.make_move(position)
@@ -118,13 +118,13 @@ class TicTacToeMoveModal(Modal, title=replace_emojis("🎯 Выберите кл
         # Создать embed
         if result == "win":
             color = discord.Color.gold() if self.game.winner == "X" else discord.Color.red()
-            title = "🎉 Победа!" if self.game.winner == "X" else "🤖 Бот победил!"
+            title = "Победа!" if self.game.winner == "X" else "🤖 Бот победил!"
         elif result == "draw":
             color = discord.Color.greyple()
-            title = "🤝 Ничья!"
+            title = "Ничья!"
         else:
             color = discord.Color.blue()
-            title = "❌⭕ Крестики-Нолики"
+            title = "Крестики-Нолики"
 
         embed = discord.Embed(
             title=title,

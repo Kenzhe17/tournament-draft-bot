@@ -168,7 +168,7 @@ class Tournament:
 
     # Выбранные правила матча (BRAZIL/KAZAKHSTAN) — голосование
     # после «Старт» в /tournament create, до формирования команд.
-    ruleset: str = ""
+    ruleset: str = "kazakhstan"  # r!z3 CLASSIC: только Kazakhstan
     rules_vote: dict = field(default_factory=dict)
     captains: list[str] = field(default_factory=list)  # Display names
     circle1: list[str] = field(default_factory=list)  # Captain circle (display names)
@@ -266,6 +266,11 @@ class Tournament:
 
     # Match IDs whose ELO was already awarded (idempotency guard)
     processed_elo_matches: set[str] = field(default_factory=set)
+
+    # Турнирные награды (distribute_earnings) уже начислены —
+    # защита от двойной выплаты при повторном подтверждении финала
+    # после рестарта между начислением и сохранением состояния.
+    earnings_awarded: bool = False
 
     # OCR-сессии результатов матчей (скриншот → ручное сопоставление игроков)
     # key: "{match_type}_{match_index}"
@@ -545,6 +550,41 @@ class Tournament:
                 logging.info(f"  Kept existing user_id for {name}: {existing_id} (not overwriting with {user_id})")
 
         return True
+
+    def player_name_for_uid(self, user_id: int) -> str | None:
+        """Отображаемое имя игрока по Discord user_id (или None)."""
+        for name, uid in self.player_user_ids.items():
+            if uid == user_id:
+                return name
+        return None
+
+    def remove_player_uid(self, user_id: int) -> bool:
+        """Удалить игрока по Discord user_id из кругов и players_pool.
+
+        В отличие от remove_player (поиск по имени без учёта регистра)
+        оперирует точной записью player_user_ids — идентичность
+        по user_id, одинаковые display_name не затрагиваются.
+        """
+        name = self.player_name_for_uid(user_id)
+        if name is None:
+            return False
+
+        removed = False
+        for circle in range(1, 5):
+            circle_players = self.circle_list(circle)
+            if name in circle_players:
+                circle_players.remove(name)
+                self.set_circle_list(circle, circle_players)
+                removed = True
+
+        if name in self.players_pool:
+            self.players_pool.remove(name)
+            removed = True
+
+        if removed and name in self.player_user_ids:
+            del self.player_user_ids[name]
+
+        return removed
 
     def remove_player(self, name: str) -> bool:
         """Удалить игрока из любого круга и команды. Возвращает True если найден и удален."""
@@ -1179,8 +1219,8 @@ class Tournament:
                         #         f" **Капитаны:** {', '.join(captain_mentions)}\n\n"
                         #         f" **ВАЖНО:** Не забудьте заполнить статистику матчей!\n"
                         #         f" После каждого матча нажмите на результат и введите:\n"
-                        #         f"{replace_emojis('a_dot_smaller')} Убийства (kills) для каждой команды\n"
-                        #         f"{replace_emojis('a_dot_smaller')} Это необходимо для правильного расчета ELO и статистики\n\n"
+                        #         f"Убийства (kills) для каждой команды\n"
+                        #         f"Это необходимо для правильного расчета ELO и статистики\n\n"
                         #         f" Удачи в турнире! "
                         #     )
                         #     import asyncio
@@ -1419,7 +1459,11 @@ class Tournament:
         # Don't set phase to COMPLETE yet, wait for confirmation
 
     async def confirm_final_winner(self, team_index: int) -> None:
-        """Подтвердить победителя финала."""
+        """Подтвердить победителя финала (идемпотентно)."""
+        # Повторное подтверждение не должно перезаписывать результат
+        # или запускать побочные эффекты завершения второй раз.
+        if self.phase == TournamentPhase.COMPLETE:
+            return
         # Determine loser team
         loser_idx = self.final_teams[0] if self.final_teams[1] == team_index else self.final_teams[1]
         
@@ -1687,6 +1731,7 @@ class Tournament:
             "mm_search_channel_id": self.mm_search_channel_id,
             "mm_preset_channel_id": self.mm_preset_channel_id,
             "processed_elo_matches": list(self.processed_elo_matches),
+            "earnings_awarded": self.earnings_awarded,
             "match_channels": self.match_channels,
             "match_cards": self.match_cards,
             "ocr_sessions": self.ocr_sessions,
@@ -1754,6 +1799,7 @@ class Tournament:
             mm_search_channel_id=data.get("mm_search_channel_id", 0),
             mm_preset_channel_id=data.get("mm_preset_channel_id", 0),
             processed_elo_matches=set(data.get("processed_elo_matches", [])),
+            earnings_awarded=bool(data.get("earnings_awarded", False)),
             match_channels=data.get("match_channels", {}),
             match_cards=data.get("match_cards", {}),
             ocr_sessions=data.get("ocr_sessions", {}),

@@ -45,19 +45,16 @@ class MatchHistoryStore:
                 bet_amount INTEGER DEFAULT 0,
                 bet_win INTEGER DEFAULT 0,
                 bet_team TEXT DEFAULT '',
-                assists INTEGER DEFAULT 0,
-                damage INTEGER DEFAULT 0,
                 duration_seconds INTEGER DEFAULT 0
             )
         """)
 
-        # Add K/D/A + damage columns for Hall of Fame records
-        for col in ("assists", "damage", "duration_seconds"):
-            try:
-                await conn.execute(
-                    f"ALTER TABLE match_history ADD COLUMN IF NOT EXISTS {col} INTEGER DEFAULT 0")
-            except Exception:
-                pass
+        # duration_seconds per match
+        try:
+            await conn.execute(
+                "ALTER TABLE match_history ADD COLUMN IF NOT EXISTS duration_seconds INTEGER DEFAULT 0")
+        except Exception:
+            pass
 
         # Create index for match_history queries
         await conn.execute("""
@@ -118,7 +115,7 @@ class MatchHistoryStore:
                                match_type, match_index, team_index, team_name,
                                teammates, opponent_team_index, opponent_team_name,
                                opponents, kills, deaths, result, elo_change,
-                               bet_amount, bet_win, bet_team, assists, damage,
+                               bet_amount, bet_win, bet_team,
                                duration_seconds
                         FROM match_history
                         WHERE guild_id = $1 AND user_id = $2
@@ -149,8 +146,6 @@ class MatchHistoryStore:
                             bet_amount=row.get("bet_amount", 0),
                             bet_win=row.get("bet_win", 0),
                             bet_team=row.get("bet_team", ""),
-                            assists=row.get("assists", 0) or 0,
-                            damage=row.get("damage", 0) or 0,
                             duration_seconds=row.get("duration_seconds", 0) or 0
                         )
                         for row in rows
@@ -174,6 +169,71 @@ class MatchHistoryStore:
         matches = await self.get(guild_id, user_id)
         return matches[:limit]
 
+    async def get_by_match(self, guild_id: int, match_id: str) -> List[MatchHistory]:
+        """Все записи одного матча (для журнала: ELO/счёт по игрокам).
+
+        match_id — формат ``{tournament_id}_{match_type}_{index}``.
+        """
+        if self._use_db:
+            from storage.db import get_pool
+            import json
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                try:
+                    rows = await conn.fetch(
+                        """
+                        SELECT guild_id, user_id, match_id, tournament_id, date,
+                               match_type, match_index, team_index, team_name,
+                               teammates, opponent_team_index, opponent_team_name,
+                               opponents, kills, deaths, result, elo_change,
+                               bet_amount, bet_win, bet_team,
+                               duration_seconds
+                        FROM match_history
+                        WHERE guild_id = $1 AND match_id = $2
+                        ORDER BY user_id
+                        """,
+                        guild_id, match_id
+                    )
+                    return [
+                        MatchHistory(
+                            guild_id=row["guild_id"],
+                            user_id=row["user_id"],
+                            match_id=row["match_id"],
+                            tournament_id=row["tournament_id"],
+                            date=row["date"],
+                            match_type=row["match_type"],
+                            match_index=row["match_index"],
+                            team_index=row["team_index"],
+                            team_name=row["team_name"],
+                            teammates=json.loads(row["teammates"]) if isinstance(row["teammates"], str) else row["teammates"],
+                            opponent_team_index=row["opponent_team_index"],
+                            opponent_team_name=row["opponent_team_name"],
+                            opponents=json.loads(row["opponents"]) if isinstance(row["opponents"], str) else row["opponents"],
+                            kills=row["kills"],
+                            deaths=row["deaths"],
+                            result=row["result"],
+                            elo_change=row["elo_change"],
+                            bet_amount=row.get("bet_amount", 0),
+                            bet_win=row.get("bet_win", 0),
+                            bet_team=row.get("bet_team", ""),
+                            duration_seconds=row.get("duration_seconds", 0) or 0
+                        )
+                        for row in rows
+                    ]
+                except Exception as e:
+                    if "does not exist" in str(e):
+                        await self._create_table(conn)
+                        return []
+                    raise
+        else:
+            out: List[MatchHistory] = []
+            for h in self._history.values():
+                out.extend(
+                    m for m in h.matches
+                    if m.match_id == match_id
+                    and m.guild_id == guild_id)
+            return out
+
     async def add(self, match: MatchHistory) -> None:
         """Добавить запись о матче в историю."""
         if self._use_db:
@@ -189,9 +249,9 @@ class MatchHistoryStore:
                          match_type, match_index, team_index, team_name,
                          teammates, opponent_team_index, opponent_team_name,
                          opponents, kills, deaths, result, elo_change,
-                         bet_amount, bet_win, bet_team, assists, damage,
+                         bet_amount, bet_win, bet_team,
                          duration_seconds)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
                         ON CONFLICT DO NOTHING
                         """,
                         match.guild_id, match.user_id, match.match_id, match.tournament_id,
@@ -199,8 +259,7 @@ class MatchHistoryStore:
                         match.team_name, json.dumps(match.teammates), match.opponent_team_index,
                         match.opponent_team_name, json.dumps(match.opponents), match.kills, match.deaths,
                         match.result, match.elo_change, match.bet_amount, match.bet_win,
-                        match.bet_team, getattr(match, "assists", 0) or 0,
-                        getattr(match, "damage", 0) or 0,
+                        match.bet_team,
                         getattr(match, "duration_seconds", 0) or 0
                     )
                 except Exception as e:
@@ -214,9 +273,9 @@ class MatchHistoryStore:
                              match_type, match_index, team_index, team_name,
                              teammates, opponent_team_index, opponent_team_name,
                              opponents, kills, deaths, result, elo_change,
-                             bet_amount, bet_win, bet_team, assists, damage,
+                             bet_amount, bet_win, bet_team,
                              duration_seconds)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
                             ON CONFLICT DO NOTHING
                             """,
                             match.guild_id, match.user_id, match.match_id, match.tournament_id,
@@ -224,8 +283,7 @@ class MatchHistoryStore:
                             match.team_name, json.dumps(match.teammates), match.opponent_team_index,
                             match.opponent_team_name, json.dumps(match.opponents), match.kills, match.deaths,
                             match.result, match.elo_change, match.bet_amount, match.bet_win,
-                            match.bet_team, getattr(match, "assists", 0) or 0,
-                            getattr(match, "damage", 0) or 0,
+                            match.bet_team,
                             getattr(match, "duration_seconds", 0) or 0
                         )
                     else:
@@ -254,29 +312,17 @@ class MatchHistoryStore:
                 "win_rate": 0.0,
                 "total_kills": 0,
                 "total_deaths": 0,
-                "total_assists": 0,
-                "total_damage": 0,
                 "kd_ratio": 0.0,
-                "kda_ratio": 0.0,
-                "avg_kills": 0.0,
-                "avg_damage": 0.0
+                "avg_kills": 0.0
             }
 
         wins = sum(1 for m in recent_matches if m.result == "win")
         losses = sum(1 for m in recent_matches if m.result == "loss")
         total_kills = sum(m.kills for m in recent_matches)
         total_deaths = sum(m.deaths for m in recent_matches)
-        total_assists = sum(getattr(m, "assists", 0) for m in recent_matches)
-        total_damage = sum(getattr(m, "damage", 0) for m in recent_matches)
 
         kd_ratio = total_kills / total_deaths if total_deaths > 0 else 0.0
-        kda_ratio = (
-            (total_kills + total_assists) / total_deaths
-            if total_deaths > 0
-            else float(total_kills + total_assists)
-        )
         avg_kills = total_kills / len(recent_matches) if recent_matches else 0.0
-        avg_damage = total_damage / len(recent_matches) if recent_matches else 0.0
         win_rate = (wins / len(recent_matches) * 100) if recent_matches else 0.0
 
         return {
@@ -286,12 +332,8 @@ class MatchHistoryStore:
             "win_rate": win_rate,
             "total_kills": total_kills,
             "total_deaths": total_deaths,
-            "total_assists": total_assists,
-            "total_damage": total_damage,
             "kd_ratio": kd_ratio,
-            "kda_ratio": kda_ratio,
             "avg_kills": avg_kills,
-            "avg_damage": avg_damage
         }
 
 

@@ -1,5 +1,6 @@
-"""Пометка про скриншот 16:9 показывается только в фазах
-отбор/полуфинал/финал, а не в embed настройки (/tournament create)."""
+"""Classic layout: в карточках турнира нет инструкции про скриншоты
+16:9 и нет поля «Правила матча» — ни в настройке, ни в фазах
+отбор/полуфинал/финал. Результаты вводятся вручную (K/D)."""
 
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import utils.embeds as embeds
 from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase
 
-RULE = "Скриншот результатов загружает только капитан"
+FORBIDDEN = ("Скриншот", "скриншот", "16:9", "Правила матча")
 
 
 class _FakeStatsStore:
@@ -51,35 +52,43 @@ def _tournament() -> Tournament:
     return t
 
 
+def _assert_clean(embed) -> None:
+    text = (embed.description or "")
+    for f in embed.fields:
+        text += "\n" + (f.name or "") + "\n" + (f.value or "")
+    for bad in FORBIDDEN:
+        assert bad not in text, f"found {bad!r} in embed"
+
+
 @pytest.mark.asyncio
-async def test_setup_embed_has_no_screenshot_rule():
+async def test_setup_embed_has_no_rules_or_screenshot():
     t = _tournament()
     embed = await embeds.build_setup_embed(t, _guild())
-    assert RULE not in (embed.description or "")
+    _assert_clean(embed)
 
 
 @pytest.mark.asyncio
-async def test_qualifiers_embed_has_screenshot_rule():
+async def test_qualifiers_embed_has_no_rules_or_screenshot():
     t = _tournament()
     t.phase = TournamentPhase.QUALIFIERS
     t.qualifier_matches = [(0, 1), (2, 3)]
     embed = await embeds.build_qualifiers_embed(t, _guild())
-    assert RULE in (embed.description or "")
+    _assert_clean(embed)
 
 
 @pytest.mark.asyncio
-async def test_semifinals_embed_has_screenshot_rule():
+async def test_semifinals_embed_has_no_rules_or_screenshot():
     t = _tournament()
     t.phase = TournamentPhase.SEMIFINALS
     t.semifinal_matches = [(0, 1)]
     embed = await embeds.build_semifinals_embed(t, _guild())
-    assert RULE in (embed.description or "")
+    _assert_clean(embed)
 
 
 @pytest.mark.asyncio
-async def test_final_embed_has_screenshot_rule():
+async def test_final_embed_has_no_rules_or_screenshot():
     t = _tournament()
     t.phase = TournamentPhase.FINAL
     t.final_teams = [0, 1]
     embed = await embeds.build_final_embed(t, _guild())
-    assert RULE in (embed.description or "")
+    _assert_clean(embed)

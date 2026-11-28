@@ -249,16 +249,10 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
-        # K/D/A + damage stats for KDA-based Skill Rating
-        try:
-            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_assists INTEGER DEFAULT 0")
-        except asyncpg.DuplicateColumnError:
-            pass
-
-        try:
-            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_damage INTEGER DEFAULT 0")
-        except asyncpg.DuplicateColumnError:
-            pass
+        # Удаление легаси-колонок assists/damage (классика r!z3 — только K/D)
+        for _col in ("total_assists", "total_damage"):
+            await conn.execute(
+                f"ALTER TABLE player_stats DROP COLUMN IF EXISTS {_col}")
 
         # Create user_balance table for economy system
         await conn.execute("""
@@ -269,6 +263,17 @@ async def init_db() -> None:
                 PRIMARY KEY (guild_id, user_id)
             )
         """)
+        # Backstop от переполнения INTEGER: любой путь записи баланса
+        # (blackjack, переводы, arcade, админка, будущий код) не может
+        # превысить HARD_BALANCE_LIMIT — tx откатывается целиком.
+        # NOT VALID: без полного скана таблицы, действует на новые
+        # записи сразу. Лимит < INTEGER max с запасом.
+        await conn.execute(
+            "ALTER TABLE user_balance DROP CONSTRAINT IF EXISTS "
+            "user_balance_hard_cap")
+        await conn.execute(
+            "ALTER TABLE user_balance ADD CONSTRAINT user_balance_hard_cap "
+            "CHECK (balance <= 2100000000) NOT VALID")
 
         # Create user_bank table for bank system
         await conn.execute("""
@@ -359,6 +364,12 @@ async def init_db() -> None:
                 PRIMARY KEY (guild_id, user_id)
             )
         """)
+        await conn.execute(
+            "ALTER TABLE user_balance DROP CONSTRAINT IF EXISTS "
+            "user_balance_hard_cap")
+        await conn.execute(
+            "ALTER TABLE user_balance ADD CONSTRAINT user_balance_hard_cap "
+            "CHECK (balance <= 2100000000) NOT VALID")
 
         # Create bets table for betting system
         await conn.execute("""
@@ -515,6 +526,48 @@ async def init_db() -> None:
             )
         """)
 
+        # Durable-операции покупок магазина (SHOP 2.0)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS shop_operations (
+                op_id TEXT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                kind TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                price INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL,
+                payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS shop_operations_pending_idx
+            ON shop_operations (status)
+            WHERE status IN ('reserved', 'charged', 'unknown')
+        """)
+
+        # Расходуемый баланс REP (SHOP 2.0 dual-currency)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_balance (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                balance INTEGER NOT NULL DEFAULT 0,
+                earned_total INTEGER NOT NULL DEFAULT 0,
+                spent_total INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_balance_grants (
+                grant_key TEXT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                amount INTEGER NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+
         # Reset betting statistics (migration)
         migration_run = await conn.fetchval(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'db_migrations')"
@@ -613,6 +666,16 @@ async def init_db() -> None:
             from ultimatum import ULTIMATUM_SCHEMA, ELO_SCHEMA
             await conn.execute(ULTIMATUM_SCHEMA)
             await conn.execute(ELO_SCHEMA)
+            # Разовый перенос старого Solo ELO в ult_elo_ratings
+            # (ON CONFLICT DO NOTHING — идемпотентно, история
+            # elo_history остаётся в легаси-таблице).
+            try:
+                from ultimatum.elo import ult_elo_store
+                migrated = await ult_elo_store.migrate_legacy_solo()
+                if migrated:
+                    logger.info("Migrated %d legacy ultimatum ELO rows", migrated)
+            except Exception as e:
+                logger.warning("Legacy ultimatum ELO migration skipped: %s", e)
             logger.info("Ultimatum tables initialized successfully")
         except ImportError as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -670,10 +733,13 @@ async def init_db() -> None:
             )
         """)
 
-        # K/D/A + damage per match (Hall of Fame per-match records)
-        for _col in ("assists", "damage", "duration_seconds"):
+        # duration_seconds per match; легаси-колонки assists/damage удалены
+        for _col in ("duration_seconds",):
             await conn.execute(
                 f"ALTER TABLE match_history ADD COLUMN IF NOT EXISTS {_col} INTEGER DEFAULT 0")
+        for _col in ("assists", "damage"):
+            await conn.execute(
+                f"ALTER TABLE match_history DROP COLUMN IF EXISTS {_col}")
 
         # Режим матча (normal / no_ruin)
         await conn.execute(
@@ -1109,3 +1175,11 @@ async def init_db() -> None:
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
         """)
+
+        # Squad Hub 2.0: команды, приглашения, заявки, LFG, аудит
+        try:
+            from storage.squad_schema import ensure_squad_schema
+            await ensure_squad_schema(conn)
+        except Exception as e:
+            logger.error(f"Error ensuring squad schema: {e}", exc_info=True)
+            raise

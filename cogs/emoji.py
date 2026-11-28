@@ -35,7 +35,7 @@ class EmojiCog(commands.Cog):
         )
         await interaction.response.send_message(
             content=(
-                f"✅ Эмодзи на сервере: **{len(emojis)}**.\n"
+                f"Эмодзи на сервере: **{len(emojis)}**.\n"
                 "Файл `emoji_ids.py` — формат для `EMOJI_IDS` в `utils/design/emojis.py`."
             ),
             file=file,

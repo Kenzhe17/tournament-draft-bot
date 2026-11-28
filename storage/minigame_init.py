@@ -228,12 +228,12 @@ async def initialize_minigames() -> None:
                 "id": "blackjack",
                 "command_name": "blackjack",
                 "name": "Блэкджек",
-                "description": "Классический блэкджек. Наберите 21 или больше чем дилер. (В разработке)",
+                "description": "Блэкджек 2.0 против дилера. Ставки 10–10 000, выплата 2×, или бесплатно.",
                 "category": "casino",
                 "difficulty": "medium",
-                "min_bet": 50,
-                "max_bet": 2000,
-                "multiplier": 3.0,
+                "min_bet": 10,
+                "max_bet": 10000,
+                "multiplier": 2.0,
                 "is_pvp": False,
                 "is_pve": True,
             },
@@ -540,18 +540,10 @@ async def initialize_minigames() -> None:
                 """
                 INSERT INTO minigames (id, command_name, name, description, category, difficulty, min_bet, max_bet, multiplier, is_pvp, is_pve, is_active)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE)
-                ON CONFLICT (id) DO UPDATE SET
-                    command_name = EXCLUDED.command_name,
-                    name = EXCLUDED.name,
-                    description = EXCLUDED.description,
-                    category = EXCLUDED.category,
-                    difficulty = EXCLUDED.difficulty,
-                    min_bet = EXCLUDED.min_bet,
-                    max_bet = EXCLUDED.max_bet,
-                    multiplier = EXCLUDED.multiplier,
-                    is_pvp = EXCLUDED.is_pvp,
-                    is_pve = EXCLUDED.is_pve,
-                    is_active = TRUE
+                -- Control Center: существующие строки НЕ перезаписываем —
+                -- каталог редактируется через панель (is_active,
+                -- ставки, множители). Сидим только отсутствующие id.
+                ON CONFLICT (id) DO NOTHING
                 """,
                 game["id"],
                 game.get("command_name", game["id"]),

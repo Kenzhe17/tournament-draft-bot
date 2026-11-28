@@ -196,7 +196,7 @@ class VacCog(commands.Cog):
                     hits.append(getattr(t, "channel_id", "?"))
             if hits:
                 return [
-                    ("⚠️ Игрок участвует в активном турнире "
+                    ("Игрок участвует в активном турнире "
                      f"(каналы {', '.join(map(str, hits))}) — "
                      "решение о текущем участии за организатором.")
                 ]

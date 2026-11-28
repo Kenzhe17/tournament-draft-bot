@@ -14,13 +14,21 @@ from models.tournament import TournamentPhase
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
 from utils.embeds import build_embed_for_phase
-from utils.permissions import is_org_check
-from views.room_buttons import RoomButton, AdminRoomsButton
+from utils.permissions import can_manage_channel_tournament
 
 if TYPE_CHECKING:
     from bot import TournamentBot
 
 logger = logging.getLogger(__name__)
+
+
+def _team_stats_filled(tournament, match_id: str, team_index: int) -> bool:
+    """Все игроки команды внесли K/D в temp_match_stats."""
+    from views.matches_view import team_roster_names
+
+    stats = tournament.temp_match_stats.get(match_id, {})
+    roster = team_roster_names(tournament, team_index)
+    return bool(roster) and all(p in stats for p in roster)
 
 
 class FinalWinnerButton(discord.ui.Button):
@@ -37,9 +45,9 @@ class FinalWinnerButton(discord.ui.Button):
         self.team_index = team_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not is_org_check(interaction.user, interaction.guild):
+        if not can_manage_channel_tournament(interaction.user, interaction.guild, self.channel_id):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут фиксировать результаты."),
+                replace_emojis("Только организаторы (роль 'org') могут фиксировать результаты."),
                 ephemeral=True,
             )
             return
@@ -47,21 +55,21 @@ class FinalWinnerButton(discord.ui.Button):
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament or tournament.phase != TournamentPhase.FINAL:
             await interaction.response.send_message(
-                replace_emojis("❌ Финал не активен."),
+                replace_emojis("Финал не активен."),
                 ephemeral=True,
             )
             return
 
         if self.team_index not in tournament.final_teams:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверная команда."),
+                replace_emojis("Неверная команда."),
                 ephemeral=True,
             )
             return
 
         if tournament.final_pending_winner is not None:
             await interaction.response.send_message(
-                replace_emojis("❌ Результат финала уже выбран. Ожидается заполнение статистики."),
+                replace_emojis("Результат финала уже выбран. Ожидается заполнение статистики."),
                 ephemeral=True,
             )
             return
@@ -72,7 +80,7 @@ class FinalWinnerButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.send_message(
-            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику."),
+            replace_emojis("Победитель выбран. Капитаны команд могут заполнить статистику."),
             ephemeral=True,
         )
 
@@ -83,8 +91,9 @@ class FinalView(discord.ui.View):
     def __init__(self, guild_id: int, channel_id: int, final_teams: list[int], tournament):
         super().__init__(timeout=None)
 
-        # Admin-панель (победитель/статистика/комнаты) убрана —
-        # результаты идут через OCR-скриншот, комнаты — через RoomButton
+        # Панель организатора: победитель / статистика (r!z3 CLASSIC)
+        from views.matches_view import AdminPanelSelect
+        self.add_item(AdminPanelSelect(guild_id, channel_id, tournament, "final"))
 
         # Team name button disabled - no team name changes allowed
         # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
@@ -92,19 +101,24 @@ class FinalView(discord.ui.View):
         #     from views.matches_view import TeamNameButton
         #     self.add_item(TeamNameButton(guild_id, tournament))
 
-        # Add room button for final (only if not filled)
-        if not tournament.final_room:
-            team_a = final_teams[0]
-            team_b = final_teams[1]
-            team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-            team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-            captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-            captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-            name_a = tournament.team_names.get(team_a, captain_a)
-            name_b = tournament.team_names.get(team_b, captain_b)
+        # Ставки на финал
+        from views.bet_views import BetButton, ViewBetsButton
+        final_matches = [(final_teams[0], final_teams[1])]
+        self.add_item(BetButton(guild_id, channel_id, tournament, final_matches, "final"))
+        self.add_item(ViewBetsButton(guild_id, channel_id, tournament, final_matches, "final"))
 
-            self.add_item(RoomButton("final", 0, team_a, team_b, name_a, name_b, is_admin=False))
+        # Кнопки капитанов «Заполнить K/D» — пока команда не внесла статистику
+        from views.match_stats_view import CaptainFillButton
+        if tournament.phase == TournamentPhase.FINAL:
+            match_id = f"{tournament.id}_final_0"
+            if not _team_stats_filled(tournament, match_id, final_teams[0]):
+                self.add_item(CaptainFillButton(
+                    guild_id, channel_id, tournament, "final", 0, final_teams[0]))
+            if not _team_stats_filled(tournament, match_id, final_teams[1]):
+                self.add_item(CaptainFillButton(
+                    guild_id, channel_id, tournament, "final", 0, final_teams[1]))
 
-        # Скриншот финала загружается только рабочей карточкой
-        # матча в канале результатов — кнопки «📸 Финал» в
-        # публичной сетке нет.
+        # Данные комнат (ID/пароль Free Fire) — участники и организаторы
+        from views.room_view import room_buttons
+        for btn in room_buttons(guild_id, channel_id):
+            self.add_item(btn)

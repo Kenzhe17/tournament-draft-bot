@@ -49,6 +49,14 @@ async def _resolve_channel_id(guild_id: int) -> int:
             return int(saved)
         except (TypeError, ValueError):
             pass
+    try:
+        from services.settings_service import settings_service
+        dynamic = int(settings_service.peek(
+            guild_id, "discord.rep_log_channel_id") or 0)
+        if dynamic:
+            return dynamic
+    except Exception:  # noqa: BLE001
+        pass
     return REP_LOG_CHANNEL_ID
 
 

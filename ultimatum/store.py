@@ -1,650 +1,739 @@
-"""PostgreSQL store for Ultimatum Solo Tournament System."""
+"""PostgreSQL store для «Ультиматум» 2.0 (ult2_* таблицы).
 
+Источник истины — PostgreSQL. In-memory Bracket используется
+для шаблонов/симуляций; живой турнир полностью восстанавливается
+из ult2_* таблиц после перезапуска.
+"""
+
+from __future__ import annotations
+
+import json
 import logging
 import uuid
-from datetime import datetime
-from typing import Optional, List
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Optional
 
 import asyncpg
 
 from storage.db import get_pool
-from ultimatum.models import (
-    Tournament, Player, Match, Round, Ranking,
-    MatchHistory, AuditLog, Vote,
-    TournamentStatus, PlayerStatus, MatchStatus, MatchType, RoundStatus
-)
+from ultimatum.bracket import Format, MatchStatus, Slot, TEMPLATES
 
 logger = logging.getLogger(__name__)
 
+ACTIVE_STATUSES = ("REGISTRATION", "IN_PROGRESS")
+FINISHED_STATUSES = ("COMPLETED", "CANCELLED")
+
+
+def _uid() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+@dataclass
+class UltTournament:
+    id: str
+    format: Format
+    guild_id: int
+    name: str
+    status: str = "REGISTRATION"
+    is_open: bool = False
+    channel_id: int = 0
+    message_id: int = 0
+    bracket_message_id: int = 0
+    created_by: int = 0
+    is_test: bool = False
+    created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    champion_entrant_id: Optional[int] = None
+
+
+@dataclass
+class UltEntrant:
+    id: int
+    tournament_id: str
+    seed: Optional[int]
+    member_ids: list[int]
+    member_names: list[str]
+    wins: int = 0
+    losses: int = 0
+    status: str = "ACTIVE"
+    final_place: Optional[int] = None
+    place_group: Optional[str] = None
+
+    def label(self) -> str:
+        if len(self.member_ids) == 1:
+            return self.member_names[0] if self.member_names else f"<{self.member_ids[0]}>"
+        if self.member_names:
+            return " & ".join(self.member_names)
+        return " & ".join(f"<{m}>" for m in self.member_ids)
+
+
+@dataclass
+class UltMatch:
+    id: int
+    tournament_id: str
+    key: str
+    bracket: str
+    round_name: str
+    gf_part: int
+    status: str
+    side_a_src: str
+    side_b_src: str
+    entrant_a: Optional[int] = None
+    entrant_b: Optional[int] = None
+    winner_entrant: Optional[int] = None
+    loser_entrant: Optional[int] = None
+    room_id: Optional[str] = None
+    room_password: Optional[str] = None
+    room_updated_by: Optional[int] = None
+    room_updated_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
+@dataclass
+class UltVote:
+    id: int
+    match_id: int
+    user_id: int
+    voter_entrant: Optional[int]
+    voted_entrant: int
+    created_at: Optional[datetime] = None
+
+
+@dataclass
+class DuoInvite:
+    id: int
+    tournament_id: str
+    captain_id: int
+    partner_id: Optional[int]
+    partner_name: str
+    status: str
+    message_id: int
+    expires_at: datetime
+    created_at: Optional[datetime] = None
+
+
+def _tournament_from_row(r) -> UltTournament:
+    return UltTournament(
+        id=r["id"], format=Format(r["format"]), guild_id=r["guild_id"],
+        name=r["name"], status=r["status"], is_open=r["is_open"],
+        channel_id=r["channel_id"], message_id=r["message_id"],
+        bracket_message_id=r["bracket_message_id"], created_by=r["created_by"],
+        created_at=r["created_at"], started_at=r["started_at"],
+        completed_at=r["completed_at"],
+        champion_entrant_id=r["champion_entrant_id"],
+        is_test=bool(r.get("is_test", False)),
+    )
+
+
+def _decode_names(value) -> list[str]:
+    """member_names хранится как JSONB — asyncpg отдаёт str."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except Exception:
+            return []
+    return list(value or [])
+
+
+def _entrant_from_row(r) -> UltEntrant:
+    return UltEntrant(
+        id=r["id"], tournament_id=r["tournament_id"], seed=r["seed"],
+        member_ids=[int(x) for x in (r["member_ids"] or [])],
+        member_names=_decode_names(r["member_names"]),
+        wins=r["wins"], losses=r["losses"], status=r["status"],
+        final_place=r["final_place"], place_group=r["place_group"],
+    )
+
+
+def _match_from_row(r) -> UltMatch:
+    return UltMatch(
+        id=r["id"], tournament_id=r["tournament_id"], key=r["key"],
+        bracket=r["bracket"], round_name=r["round_name"],
+        gf_part=r["gf_part"], status=r["status"],
+        side_a_src=r["side_a_src"], side_b_src=r["side_b_src"],
+        entrant_a=r["entrant_a"], entrant_b=r["entrant_b"],
+        winner_entrant=r["winner_entrant"], loser_entrant=r["loser_entrant"],
+        room_id=r["room_id"], room_password=r["room_password"],
+        room_updated_by=r["room_updated_by"], room_updated_at=r["room_updated_at"],
+        created_at=r["created_at"], completed_at=r["completed_at"],
+    )
+
+
+def slot_to_str(slot: Slot) -> str:
+    return f"{slot.kind}:{slot.ref}"
+
+
+def str_to_slot(src: str) -> Slot:
+    kind, _, ref = src.partition(":")
+    return Slot(kind, ref)
+
 
 class UltimatumStore:
-    """Store for Ultimatum tournament data."""
+    """CRUD для ult2_* таблиц."""
+
+    # ---------------- ТУРНИРЫ ----------------
 
     async def create_tournament(
-        self,
-        name: str,
-        guild_id: int,
-        created_by: int
-    ) -> Tournament:
-        """Create a new tournament."""
+        self, fmt: Format, guild_id: int, name: str, created_by: int,
+        channel_id: int = 0, is_open: bool = False, is_test: bool = False,
+    ) -> UltTournament:
+        tid = _uid()
         pool = await get_pool()
-        tournament_id = str(uuid.uuid4())
-
         async with pool.acquire() as conn:
-            await conn.execute(
+            row = await conn.fetchrow(
                 """
-                INSERT INTO ultimatum_tournaments (id, name, guild_id, status, is_open, created_by)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO ult2_tournaments
+                    (id, format, guild_id, name, status, is_open,
+                     channel_id, created_by, is_test)
+                VALUES ($1,$2,$3,$4,'REGISTRATION',$5,$6,$7,$8)
+                RETURNING *
                 """,
-                tournament_id, name, guild_id, TournamentStatus.DRAFT.value, False, created_by
+                tid, fmt.value, guild_id, name, is_open, channel_id,
+                created_by, is_test,
             )
+        return _tournament_from_row(row)
 
-        return Tournament(
-            id=tournament_id,
-            name=name,
-            guild_id=guild_id,
-            status=TournamentStatus.DRAFT,
-            is_open=False,
-            created_by=created_by,
-            created_at=datetime.now()
-        )
-
-    async def get_tournament(self, tournament_id: str) -> Optional[Tournament]:
-        """Get tournament by ID."""
+    async def get_tournament(self, tid: str) -> Optional[UltTournament]:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM ultimatum_tournaments WHERE id = $1",
-                tournament_id
+            r = await conn.fetchrow(
+                "SELECT * FROM ult2_tournaments WHERE id=$1", tid
             )
-            if not row:
-                return None
-            return Tournament(
-                id=row["id"],
-                name=row["name"],
-                guild_id=row["guild_id"],
-                status=TournamentStatus(row["status"]),
-                current_round=row["current_round"],
-                is_open=row.get("is_open", False),
-                created_at=row["created_at"],
-                started_at=row["started_at"],
-                completed_at=row["completed_at"],
-                created_by=row["created_by"],
-            )
+        return _tournament_from_row(r) if r else None
 
-    async def get_active_tournament(self, guild_id: int) -> Optional[Tournament]:
-        """Get active tournament for guild."""
+    async def get_active_tournament(
+        self, guild_id: int, fmt: Format
+    ) -> Optional[UltTournament]:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
+            r = await conn.fetchrow(
                 """
-                SELECT * FROM ultimatum_tournaments
-                WHERE guild_id = $1 AND status IN ($2, $3, $4, $5, $6, $7)
+                SELECT * FROM ult2_tournaments
+                WHERE guild_id=$1 AND format=$2
+                  AND status = ANY($3::text[])
                 ORDER BY created_at DESC LIMIT 1
                 """,
-                guild_id,
-                TournamentStatus.REGISTRATION.value,
-                TournamentStatus.READY.value,
-                TournamentStatus.IN_PROGRESS.value,
-                TournamentStatus.ROUND_IN_PROGRESS.value,
-                TournamentStatus.ROUND_COMPLETED.value,
-                TournamentStatus.GRAND_FINAL.value,
+                guild_id, fmt.value, list(ACTIVE_STATUSES),
             )
-            if not row:
-                return None
-            return Tournament(
-                id=row["id"],
-                name=row["name"],
-                guild_id=row["guild_id"],
-                status=TournamentStatus(row["status"]),
-                current_round=row["current_round"],
-                is_open=row.get("is_open", False),
-                created_at=row["created_at"],
-                started_at=row["started_at"],
-                completed_at=row["completed_at"],
-                created_by=row["created_by"],
-            )
+        return _tournament_from_row(r) if r else None
 
-    async def update_tournament_status(
-        self,
-        tournament_id: str,
-        status: TournamentStatus,
-        current_round: Optional[int] = None
-    ) -> None:
-        """Update tournament status."""
+    async def list_history(
+        self, guild_id: int, fmt: Optional[Format] = None, limit: int = 10
+    ) -> list[UltTournament]:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            if current_round is not None:
-                await conn.execute(
+            if fmt is None:
+                rows = await conn.fetch(
                     """
-                    UPDATE ultimatum_tournaments
-                    SET status = $1, current_round = $2
-                    WHERE id = $3
+                    SELECT * FROM ult2_tournaments
+                    WHERE guild_id=$1 AND status='COMPLETED'
+                    ORDER BY completed_at DESC NULLS LAST LIMIT $2
                     """,
-                    status.value, current_round, tournament_id
+                    guild_id, limit,
                 )
             else:
-                await conn.execute(
+                rows = await conn.fetch(
                     """
-                    UPDATE ultimatum_tournaments
-                    SET status = $1
-                    WHERE id = $2
+                    SELECT * FROM ult2_tournaments
+                    WHERE guild_id=$1 AND format=$2 AND status='COMPLETED'
+                    ORDER BY completed_at DESC NULLS LAST LIMIT $3
                     """,
-                    status.value, tournament_id
+                    guild_id, fmt.value, limit,
                 )
+        return [_tournament_from_row(r) for r in rows]
 
-    async def add_player(
-        self,
-        tournament_id: str,
-        discord_id: int,
-        username: str
-    ) -> Player:
-        """Add player to tournament."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            try:
-                await conn.execute(
-                    """
-                    INSERT INTO ultimatum_players (tournament_id, discord_id, username, wins, losses, status)
-                    VALUES ($1, $2, $3, 0, 0, $4)
-                    """,
-                    tournament_id, discord_id, username, PlayerStatus.ACTIVE.value
-                )
-            except asyncpg.UniqueViolationError:
-                raise ValueError("Player already registered in this tournament")
-
-        return Player(
-            tournament_id=tournament_id,
-            discord_id=discord_id,
-            username=username,
-            wins=0,
-            losses=0,
-            status=PlayerStatus.ACTIVE,
-            created_at=datetime.now()
-        )
-
-    async def get_players(self, tournament_id: str) -> List[Player]:
-        """Get all players in tournament."""
+    async def list_active_all(self) -> list[UltTournament]:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT * FROM ultimatum_players
-                WHERE tournament_id = $1
-                ORDER BY id
+                SELECT * FROM ult2_tournaments
+                WHERE status = ANY($1::text[])
+                ORDER BY created_at
                 """,
-                tournament_id
+                list(ACTIVE_STATUSES),
             )
-            return [
-                Player(
-                    id=row["id"],
-                    tournament_id=row["tournament_id"],
-                    discord_id=row["discord_id"],
-                    username=row["username"],
-                    wins=row["wins"],
-                    losses=row["losses"],
-                    status=PlayerStatus(row["status"]),
-                    final_place=row["final_place"],
-                    elimination_round=row.get("elimination_round"),  # Use .get() for migration safety
-                    created_at=row["created_at"],
-                )
-                for row in rows
-            ]
+        return [_tournament_from_row(r) for r in rows]
 
-    async def get_active_players(self, tournament_id: str) -> List[Player]:
-        """Get active (not eliminated) players."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT * FROM ultimatum_players
-                WHERE tournament_id = $1 AND status = $2
-                ORDER BY id
-                """,
-                tournament_id, PlayerStatus.ACTIVE.value
-            )
-            return [
-                Player(
-                    id=row["id"],
-                    tournament_id=row["tournament_id"],
-                    discord_id=row["discord_id"],
-                    username=row["username"],
-                    wins=row["wins"],
-                    losses=row["losses"],
-                    status=PlayerStatus(row["status"]),
-                    final_place=row["final_place"],
-                    elimination_round=row.get("elimination_round"),  # Use .get() for migration safety
-                    created_at=row["created_at"],
-                )
-                for row in rows
-            ]
-
-    async def get_player_by_discord_id(
-        self,
-        tournament_id: str,
-        discord_id: int
-    ) -> Optional[Player]:
-        """Get player by Discord ID."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT * FROM ultimatum_players
-                WHERE tournament_id = $1 AND discord_id = $2
-                """,
-                tournament_id, discord_id
-            )
-            if not row:
-                return None
-            return Player(
-                id=row["id"],
-                tournament_id=row["tournament_id"],
-                discord_id=row["discord_id"],
-                username=row["username"],
-                wins=row["wins"],
-                losses=row["losses"],
-                status=PlayerStatus(row["status"]),
-                final_place=row["final_place"],
-                elimination_round=row.get("elimination_round"),  # Use .get() for migration safety
-                created_at=row["created_at"],
-            )
-
-    async def update_player_stats(
-        self,
-        tournament_id: str,
-        discord_id: int,
-        wins: int,
-        losses: int,
-        status: Optional[PlayerStatus] = None,
-        elimination_round: Optional[int] = None
+    async def set_status(
+        self, tid: str, status: str,
+        started: bool = False, completed: bool = False,
     ) -> None:
-        """Update player stats."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            if status:
-                if elimination_round is not None:
-                    await conn.execute(
-                        """
-                        UPDATE ultimatum_players
-                        SET wins = $1, losses = $2, status = $3, elimination_round = $4
-                        WHERE tournament_id = $5 AND discord_id = $6
-                        """,
-                        wins, losses, status.value, elimination_round, tournament_id, discord_id
-                    )
-                else:
-                    await conn.execute(
-                        """
-                        UPDATE ultimatum_players
-                        SET wins = $1, losses = $2, status = $3
-                        WHERE tournament_id = $4 AND discord_id = $5
-                        """,
-                        wins, losses, status.value, tournament_id, discord_id
-                    )
-            else:
-                await conn.execute(
-                    """
-                    UPDATE ultimatum_players
-                    SET wins = $1, losses = $2
-                    WHERE tournament_id = $3 AND discord_id = $4
-                    """,
-                    wins, losses, tournament_id, discord_id
-                )
-
-    async def update_player_final_place(
-        self,
-        tournament_id: str,
-        discord_id: int,
-        final_place: int
-    ) -> None:
-        """Update player's final place in tournament."""
         pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                UPDATE ultimatum_players
-                SET final_place = $1
-                WHERE tournament_id = $2 AND discord_id = $3
+                UPDATE ult2_tournaments SET status=$2,
+                    started_at = CASE WHEN $3 THEN now() ELSE started_at END,
+                    completed_at = CASE WHEN $4 THEN now() ELSE completed_at END
+                WHERE id=$1
                 """,
-                final_place, tournament_id, discord_id
+                tid, status, started, completed,
             )
+
+    async def try_start(self, tid: str) -> bool:
+        """Атомарный переход REGISTRATION -> IN_PROGRESS.
+        True если именно этот вызов перевёл турнир (идемпотентный старт)."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE ult2_tournaments
+                SET status='IN_PROGRESS', started_at=now()
+                WHERE id=$1 AND status='REGISTRATION'
+                RETURNING id
+                """,
+                tid,
+            )
+        return row is not None
+
+    async def set_message_ids(
+        self, tid: str, message_id: int = 0,
+        bracket_message_id: int = 0, channel_id: int = 0,
+    ) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ult2_tournaments SET
+                    message_id = CASE WHEN $2>0 THEN $2 ELSE message_id END,
+                    bracket_message_id = CASE WHEN $3>0 THEN $3 ELSE bracket_message_id END,
+                    channel_id = CASE WHEN $4>0 THEN $4 ELSE channel_id END
+                WHERE id=$1
+                """,
+                tid, message_id, bracket_message_id, channel_id,
+            )
+
+    async def claim_bracket_message(
+        self, tid: str, new_message_id: int, expected_old: int,
+    ) -> bool:
+        """CAS-claim bracket_message_id: True, если запись
+        сменилась именно с expected_old на new_message_id.
+
+        Используется при создании сообщения сетки: два
+        параллельных resume/refresh не должны оставить
+        дубликаты — проигравший удаляет своё сообщение.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE ult2_tournaments
+                SET bracket_message_id=$2
+                WHERE id=$1 AND bracket_message_id=$3
+                RETURNING id
+                """,
+                tid, new_message_id, expected_old,
+            )
+        return row is not None
+
+    async def set_is_test(self, tid: str, is_test: bool) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE ult2_tournaments SET is_test=$2 WHERE id=$1",
+                tid, is_test,
+            )
+
+    async def set_open(self, tid: str, is_open: bool) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE ult2_tournaments SET is_open=$2 WHERE id=$1",
+                tid, is_open,
+            )
+
+    async def delete_tournament(self, tid: str) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM ult2_tournaments WHERE id=$1", tid
+            )
+
+    # ---------------- УЧАСТНИКИ ----------------
+
+    async def add_entrant(
+        self, tid: str, member_ids: list[int], member_names: list[str],
+        seed: Optional[int] = None, conn: Optional[asyncpg.Connection] = None,
+    ) -> int:
+        async def _ins(c):
+            return await c.fetchval(
+                """
+                INSERT INTO ult2_entrants
+                    (tournament_id, seed, member_ids, member_names)
+                VALUES ($1,$2,$3,$4::jsonb) RETURNING id
+                """,
+                tid, seed, member_ids, json.dumps(member_names),
+            )
+        if conn is not None:
+            return await _ins(conn)
+        pool = await get_pool()
+        async with pool.acquire() as c:
+            return await _ins(c)
+
+    async def get_entrants(self, tid: str) -> list[UltEntrant]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM ult2_entrants WHERE tournament_id=$1 ORDER BY id",
+                tid,
+            )
+        return [_entrant_from_row(r) for r in rows]
+
+    async def get_entrant(self, eid: int) -> Optional[UltEntrant]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            r = await conn.fetchrow(
+                "SELECT * FROM ult2_entrants WHERE id=$1", eid
+            )
+        return _entrant_from_row(r) if r else None
+
+    async def find_entrant_by_member(
+        self, tid: str, user_id: int
+    ) -> Optional[UltEntrant]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            r = await conn.fetchrow(
+                """
+                SELECT * FROM ult2_entrants
+                WHERE tournament_id=$1 AND $2 = ANY(member_ids)
+                """,
+                tid, user_id,
+            )
+        return _entrant_from_row(r) if r else None
+
+    async def remove_entrant(self, eid: int) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM ult2_entrants WHERE id=$1", eid)
+
+    async def update_entrant_seed(self, eid: int, seed: int) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE ult2_entrants SET seed=$2 WHERE id=$1", eid, seed
+            )
+
+    async def set_entrant_result(
+        self, eid: int, wins: int, losses: int, status: str,
+    ) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ult2_entrants
+                SET wins=$2, losses=$3, status=$4
+                WHERE id=$1
+                """,
+                eid, wins, losses, status,
+            )
+
+    async def set_placements(
+        self, tid: str, placements: dict[int, tuple[Optional[int], Optional[str]]],
+    ) -> None:
+        """placements: entrant_id -> (final_place, place_group)."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for eid, (place, group) in placements.items():
+                    await conn.execute(
+                        """
+                        UPDATE ult2_entrants
+                        SET final_place=$2, place_group=$3, status=$4
+                        WHERE id=$1
+                        """,
+                        eid, place, group,
+                        "CHAMPION" if place == 1 else
+                        "RUNNER_UP" if place == 2 else
+                        ("ELIMINATED" if group else "ACTIVE"),
+                    )
+
+    # ---------------- МАТЧИ ----------------
 
     async def create_match(
         self,
-        tournament_id: str,
-        round_number: int,
-        player1_id: int,
-        player2_id: int,
-        match_type: MatchType = MatchType.NORMAL
-    ) -> Match:
-        """Create a match."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
+        tid: str, key: str, bracket: str, round_name: str,
+        a_src: Slot, b_src: Slot, gf_part: int = 0,
+        conn: Optional[asyncpg.Connection] = None,
+    ) -> int:
+        async def _ins(c):
+            return await c.fetchval(
                 """
-                INSERT INTO ultimatum_matches
-                (tournament_id, round_number, player1_id, player2_id, match_type, status)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO ult2_matches
+                    (tournament_id, key, bracket, round_name, gf_part,
+                     status, side_a_src, side_b_src)
+                VALUES ($1,$2,$3,$4,$5,'WAITING',$6,$7)
                 RETURNING id
                 """,
-                tournament_id, round_number, player1_id, player2_id,
-                match_type.value, MatchStatus.PENDING.value
+                tid, key, bracket, round_name, gf_part,
+                slot_to_str(a_src), slot_to_str(b_src),
             )
-
-        return Match(
-            id=row["id"],
-            tournament_id=tournament_id,
-            round_number=round_number,
-            player1_id=player1_id,
-            player2_id=player2_id,
-            match_type=match_type,
-            status=MatchStatus.PENDING,
-            created_at=datetime.now()
-        )
-
-    async def get_matches(self, tournament_id: str, round_number: Optional[int] = None) -> List[Match]:
-        """Get matches for tournament."""
+        if conn is not None:
+            return await _ins(conn)
         pool = await get_pool()
-        async with pool.acquire() as conn:
-            if round_number:
-                rows = await conn.fetch(
-                    """
-                    SELECT * FROM ultimatum_matches
-                    WHERE tournament_id = $1 AND round_number = $2
-                    ORDER BY id
-                    """,
-                    tournament_id, round_number
-                )
-            else:
-                rows = await conn.fetch(
-                    """
-                    SELECT * FROM ultimatum_matches
-                    WHERE tournament_id = $1
-                    ORDER BY round_number, id
-                    """,
-                    tournament_id
-                )
-            return [
-                Match(
-                    id=row["id"],
-                    tournament_id=row["tournament_id"],
-                    round_number=row["round_number"],
-                    player1_id=row["player1_id"],
-                    player2_id=row["player2_id"],
-                    winner_id=row["winner_id"],
-                    loser_id=row["loser_id"],
-                    status=MatchStatus(row["status"]),
-                    match_type=MatchType(row["match_type"]),
-                    room_id=row["room_id"],
-                    room_password=row["room_password"],
-                    created_at=row["created_at"],
-                    completed_at=row["completed_at"],
-                )
-                for row in rows
-            ]
+        async with pool.acquire() as c:
+            return await _ins(c)
 
-    async def complete_match(
-        self,
-        match_id: int,
-        winner_id: int,
-        loser_id: int
-    ) -> None:
-        """Complete a match."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE ultimatum_matches
-                SET winner_id = $1, loser_id = $2, status = $3, completed_at = $4
-                WHERE id = $5
-                """,
-                winner_id, loser_id, MatchStatus.COMPLETED.value,
-                datetime.now(), match_id
-            )
-
-    async def get_match_by_id(self, match_id: int) -> Optional[Match]:
-        """Get match by database ID."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM ultimatum_matches WHERE id = $1",
-                match_id
-            )
-            if not row:
-                return None
-            return Match(
-                id=row["id"],
-                tournament_id=row["tournament_id"],
-                round_number=row["round_number"],
-                player1_id=row["player1_id"],
-                player2_id=row["player2_id"],
-                winner_id=row["winner_id"],
-                loser_id=row["loser_id"],
-                status=MatchStatus(row["status"]),
-                match_type=MatchType(row["match_type"]),
-                room_id=row["room_id"],
-                room_password=row["room_password"],
-                created_at=row["created_at"],
-                completed_at=row["completed_at"],
-            )
-
-    async def update_match_room(
-        self,
-        match_id: int,
-        room_id: str,
-        room_password: str
-    ) -> None:
-        """Update match with room data."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE ultimatum_matches
-                SET room_id = $1, room_password = $2
-                WHERE id = $3
-                """,
-                room_id, room_password, match_id
-            )
-
-    async def create_round(self, tournament_id: str, round_number: int) -> Round:
-        """Create a round."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO ultimatum_rounds (tournament_id, round_number, status)
-                VALUES ($1, $2, $3)
-                RETURNING id
-                """,
-                tournament_id, round_number, RoundStatus.PENDING.value
-            )
-
-        return Round(
-            id=row["id"],
-            tournament_id=tournament_id,
-            round_number=round_number,
-            status=RoundStatus.PENDING,
-            created_at=datetime.now()
-        )
-
-    async def update_round_status(
-        self,
-        tournament_id: str,
-        round_number: int,
-        status: RoundStatus
-    ) -> None:
-        """Update round status."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE ultimatum_rounds
-                SET status = $1, completed_at = $2
-                WHERE tournament_id = $3 AND round_number = $4
-                """,
-                status.value,
-                datetime.now() if status == RoundStatus.COMPLETED else None,
-                tournament_id, round_number
-            )
-
-    async def add_match_history(
-        self,
-        tournament_id: str,
-        player1_id: int,
-        player2_id: int,
-        round_number: int
-    ) -> None:
-        """Add match to history."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO ultimatum_match_history
-                (tournament_id, player1_id, player2_id, round_number)
-                VALUES ($1, $2, $3, $4)
-                """,
-                tournament_id, player1_id, player2_id, round_number
-            )
-
-    async def have_played_before(
-        self,
-        tournament_id: str,
-        player1_id: int,
-        player2_id: int
-    ) -> bool:
-        """Check if two players have played before."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            count = await conn.fetchval(
-                """
-                SELECT COUNT(*) FROM ultimatum_match_history
-                WHERE tournament_id = $1
-                AND ((player1_id = $2 AND player2_id = $3) OR (player1_id = $3 AND player2_id = $2))
-                """,
-                tournament_id, player1_id, player2_id
-            )
-            return count > 0
-
-    async def log_audit(
-        self,
-        tournament_id: str,
-        actor_discord_id: int,
-        action: str,
-        details: Optional[dict] = None
-    ) -> None:
-        """Log audit entry."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO ultimatum_audit_log
-                (tournament_id, actor_discord_id, action, details)
-                VALUES ($1, $2, $3, $4)
-                """,
-                tournament_id, actor_discord_id, action, details
-            )
-
-    async def record_vote(
-        self,
-        match_id: int,
-        user_id: int,
-        voted_winner_id: int
-    ) -> None:
-        """Record a vote for match winner."""
-        pool = await get_pool()
-        vote_id = str(uuid.uuid4())
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO ultimatum_votes (id, match_id, user_id, voted_winner_id)
-                VALUES ($1, $2, $3, $4)
-                """,
-                vote_id, match_id, user_id, voted_winner_id
-            )
-
-    async def get_vote(
-        self,
-        match_id: int,
-        user_id: int
-    ) -> Optional[Vote]:
-        """Get vote by match and user."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT * FROM ultimatum_votes
-                WHERE match_id = $1 AND user_id = $2
-                """,
-                match_id, user_id
-            )
-            if row:
-                return Vote(
-                    id=row["id"],
-                    match_id=row["match_id"],
-                    user_id=row["user_id"],
-                    voted_winner_id=row["voted_winner_id"],
-                    created_at=row["created_at"]
-                )
-        return None
-
-    async def get_votes(self, match_id: int) -> List[Vote]:
-        """Get all votes for a match."""
+    async def get_matches(self, tid: str) -> list[UltMatch]:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT * FROM ultimatum_votes
-                WHERE match_id = $1
+                SELECT * FROM ult2_matches
+                WHERE tournament_id=$1
+                ORDER BY
+                    CASE bracket WHEN 'W' THEN 0 WHEN 'L' THEN 1 ELSE 2 END,
+                    key
                 """,
-                match_id
+                tid,
             )
-            return [
-                Vote(
-                    id=row["id"],
-                    match_id=row["match_id"],
-                    user_id=row["user_id"],
-                    voted_winner_id=row["voted_winner_id"],
-                    created_at=row["created_at"]
-                )
-                for row in rows
-            ]
+        return [_match_from_row(r) for r in rows]
 
-    async def clear_votes(self, match_id: int) -> None:
-        """Clear all votes for a match."""
+    async def get_match(self, match_db_id: int) -> Optional[UltMatch]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            r = await conn.fetchrow(
+                "SELECT * FROM ult2_matches WHERE id=$1", match_db_id
+            )
+        return _match_from_row(r) if r else None
+
+    async def get_match_by_key(
+        self, tid: str, key: str
+    ) -> Optional[UltMatch]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            r = await conn.fetchrow(
+                "SELECT * FROM ult2_matches WHERE tournament_id=$1 AND key=$2",
+                tid, key,
+            )
+        return _match_from_row(r) if r else None
+
+    async def update_match_slots(
+        self, match_db_id: int,
+        entrant_a: Optional[int], entrant_b: Optional[int],
+        status: Optional[str] = None,
+    ) -> None:
         pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                DELETE FROM ultimatum_votes
-                WHERE match_id = $1
+                UPDATE ult2_matches SET
+                    entrant_a = COALESCE($2, entrant_a),
+                    entrant_b = COALESCE($3, entrant_b),
+                    status = COALESCE($4, status)
+                WHERE id=$1
                 """,
-                match_id
+                match_db_id, entrant_a, entrant_b, status,
             )
 
-    async def set_tournament_open(self, tournament_id: str, is_open: bool) -> None:
-        """Set tournament open/closed status."""
+    async def set_match_status(self, match_db_id: int, status: str) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE ult2_matches SET status=$2 WHERE id=$1",
+                match_db_id, status,
+            )
+
+    async def set_room(
+        self, match_db_id: int, room_id: str, room_password: str,
+        updated_by: int,
+    ) -> None:
         pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                UPDATE ultimatum_tournaments
-                SET is_open = $1
-                WHERE id = $2
+                UPDATE ult2_matches SET
+                    room_id=$2, room_password=$3,
+                    room_updated_by=$4, room_updated_at=now()
+                WHERE id=$1 AND status NOT IN ('COMPLETED','CANCELLED')
                 """,
-                is_open, tournament_id
+                match_db_id, room_id, room_password, updated_by,
             )
 
-    async def remove_player(self, tournament_id: str, discord_id: int) -> None:
-        """Remove player from tournament."""
+    # ---------------- ГОЛОСА ----------------
+
+    async def upsert_vote(
+        self, match_db_id: int, user_id: int,
+        voter_entrant: Optional[int], voted_entrant: int,
+        conn: Optional[asyncpg.Connection] = None,
+    ) -> None:
+        async def _ins(c):
+            await c.execute(
+                """
+                INSERT INTO ult2_votes
+                    (match_id, user_id, voter_entrant, voted_entrant)
+                VALUES ($1,$2,$3,$4)
+                ON CONFLICT (match_id, user_id)
+                DO UPDATE SET voted_entrant=$4, voter_entrant=$3
+                """,
+                match_db_id, user_id, voter_entrant, voted_entrant,
+            )
+        if conn is not None:
+            await _ins(conn)
+            return
+        pool = await get_pool()
+        async with pool.acquire() as c:
+            await _ins(c)
+
+    async def get_votes(self, match_db_id: int) -> list[UltVote]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM ult2_votes WHERE match_id=$1 ORDER BY id",
+                match_db_id,
+            )
+        return [
+            UltVote(
+                id=r["id"], match_id=r["match_id"], user_id=r["user_id"],
+                voter_entrant=r["voter_entrant"], voted_entrant=r["voted_entrant"],
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
+
+    async def clear_votes(self, match_db_id: int) -> None:
         pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                """
-                DELETE FROM ultimatum_players
-                WHERE tournament_id = $1 AND discord_id = $2
-                """,
-                tournament_id, discord_id
+                "DELETE FROM ult2_votes WHERE match_id=$1", match_db_id
             )
 
+    # ---------------- ДУЭТЫ ----------------
 
-# Global store instance
+    async def create_invite(
+        self, tid: str, captain_id: int, partner_id: int,
+        partner_name: str, ttl_seconds: int = 900,
+    ) -> int:
+        from datetime import timedelta
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return await conn.fetchval(
+                """
+                INSERT INTO ult2_duo_invites
+                    (tournament_id, captain_id, partner_id, partner_name,
+                     status, expires_at)
+                VALUES ($1,$2,$3,$4,'pending', now() + ($5 || ' seconds')::interval)
+                RETURNING id
+                """,
+                tid, captain_id, partner_id, partner_name, str(ttl_seconds),
+            )
+
+    async def get_invite(self, invite_id: int) -> Optional[DuoInvite]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            r = await conn.fetchrow(
+                "SELECT * FROM ult2_duo_invites WHERE id=$1", invite_id
+            )
+        return self._invite_from_row(r) if r else None
+
+    async def get_pending_invite_for(
+        self, tid: str, user_id: int
+    ) -> Optional[DuoInvite]:
+        """Активное приглашение, где user — капитан или партнёр."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            r = await conn.fetchrow(
+                """
+                SELECT * FROM ult2_duo_invites
+                WHERE tournament_id=$1 AND status='pending'
+                  AND expires_at > now()
+                  AND (captain_id=$2 OR partner_id=$2)
+                ORDER BY id DESC LIMIT 1
+                """,
+                tid, user_id,
+            )
+        return self._invite_from_row(r) if r else None
+
+    async def list_invites(self, tid: str) -> list[DuoInvite]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM ult2_duo_invites WHERE tournament_id=$1 ORDER BY id",
+                tid,
+            )
+        return [self._invite_from_row(r) for r in rows]
+
+    async def set_invite_status(
+        self, invite_id: int, status: str, message_id: int = 0,
+        conn: Optional[asyncpg.Connection] = None,
+    ) -> bool:
+        async def _upd(c):
+            row = await c.fetchrow(
+                """
+                UPDATE ult2_duo_invites SET status=$2,
+                    message_id = CASE WHEN $3>0 THEN $3 ELSE message_id END
+                WHERE id=$1 AND status='pending'
+                RETURNING id
+                """,
+                invite_id, status, message_id,
+            )
+            return row is not None
+        if conn is not None:
+            return await _upd(conn)
+        pool = await get_pool()
+        async with pool.acquire() as c:
+            return await _upd(c)
+
+    async def expire_invites(self, tid: str) -> int:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            res = await conn.execute(
+                """
+                UPDATE ult2_duo_invites SET status='expired'
+                WHERE tournament_id=$1 AND status='pending'
+                  AND expires_at <= now()
+                """,
+                tid,
+            )
+        # "UPDATE n"
+        try:
+            return int(res.split()[-1])
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _invite_from_row(r) -> DuoInvite:
+        return DuoInvite(
+            r["id"], r["tournament_id"],
+            r["captain_id"], r["partner_id"], r["partner_name"],
+            r["status"], r["message_id"], r["expires_at"], r["created_at"],
+        )
+
+    # ---------------- АУДИТ ----------------
+
+    async def log(
+        self, tid: str, actor_id: int, action: str,
+        details: Optional[dict] = None,
+        conn: Optional[asyncpg.Connection] = None,
+    ) -> None:
+        import json as _json
+        payload = _json.dumps(details) if details is not None else None
+        async def _ins(c):
+            await c.execute(
+                """
+                INSERT INTO ult2_audit (tournament_id, actor_id, action, details)
+                VALUES ($1,$2,$3,$4::jsonb)
+                """,
+                tid, actor_id, action, payload,
+            )
+        if conn is not None:
+            await _ins(conn)
+            return
+        pool = await get_pool()
+        async with pool.acquire() as c:
+            await _ins(c)
+
+    async def get_audit(self, tid: str, limit: int = 50) -> list[dict]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM ult2_audit WHERE tournament_id=$1 ORDER BY id DESC LIMIT $2",
+                tid, limit,
+            )
+        return [dict(r) for r in rows]
+
+
 ultimatum_store = UltimatumStore()

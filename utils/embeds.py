@@ -11,12 +11,6 @@ from storage.bet_store import bet_store
 from storage.player_stats_store import player_stats_store
 from utils.cosmetics import format_player_name
 
-SCREENSHOT_RULE_LINE = (
-    "📸 Скриншот результатов загружает только капитан победившей "
-    "команды — в формате 16:9."
-)
-
-
 # Helper функции для визуальных улучшений
 def get_rarity_color(rarity: str) -> discord.Color:
     """Получить цвет по редкости предмета."""
@@ -43,6 +37,25 @@ def get_phase_color(phase: TournamentPhase) -> discord.Color:
     return colors.get(phase, discord.Color.default())
 
 
+def _room_status_suffix(tournament, phase: str, index: int) -> str:
+    """Публичный статус комнаты матча: только «готова»/«ожидаются».
+
+    Пароль и ID публично не отображаются — детали видны участникам
+    матча и организаторам через ephemeral-карточку.
+    """
+    try:
+        from storage.room_store import match_key, room_store
+
+        gid = getattr(tournament, "guild_id", 0)
+        cid = getattr(tournament, "channel_id", 0)
+        key = match_key(str(tournament.id), phase, index)
+        if room_store.has_room(gid, cid, key):
+            return " · Комната готова"
+    except Exception:
+        pass
+    return " · Ожидаются данные"
+
+
 def create_progress_bar(current: int, total: int, length: int = 10) -> str:
     """Создать текстовый прогресс-бар."""
     if total == 0:
@@ -59,7 +72,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
     """Создать embed для категории справки."""
     categories = {
         "tournament": {
-            "emoji": "🏆",
+            "emoji": "",
             "title": "Турниры",
             "color": discord.Color.dark_purple(),
             "commands": [
@@ -115,7 +128,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "economy": {
-            "emoji": get_emoji("money"),
+            "emoji": "",
             "title": "Экономика",
             "color": discord.Color.dark_green(),
             "commands": [
@@ -150,7 +163,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "shop": {
-            "emoji": replace_emojis("shop"),
+            "emoji": "",
             "title": "Магазин",
             "color": discord.Color.dark_gold(),
             "commands": [
@@ -178,7 +191,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "profile": {
-            "emoji": "👤",
+            "emoji": "",
             "title": "Профиль",
             "color": discord.Color.dark_blue(),
             "commands": [
@@ -213,7 +226,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "admin": {
-            "emoji": replace_emojis("settings"),
+            "emoji": "",
             "title": "Админ",
             "color": discord.Color.dark_red(),
             "commands": [
@@ -258,7 +271,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
 
     cat_data = categories.get(category, categories["tournament"])
     embed = discord.Embed(
-        title=f"{cat_data['emoji']} {cat_data['title']}",
+        title=cat_data['title'],
         color=cat_data['color']
     )
 
@@ -266,9 +279,9 @@ def build_help_category_embed(category: str) -> discord.Embed:
         embed.add_field(
             name=f"**{cmd['name']}**",
             value=f"{cmd['description']}\n"
-                   f"📝 Параметры: {cmd['params']}\n"
-                   f"💡 Пример: `{cmd['example']}`\n"
-                   f"🔒 Доступ: {cmd['access']}",
+                   f"Параметры: {cmd['params']}\n"
+                   f"Пример: `{cmd['example']}`\n"
+                   f"Доступ: {cmd['access']}",
             inline=False
         )
 
@@ -366,8 +379,8 @@ async def build_player_stats_embed(guild_id: int, user: discord.Member) -> disco
 
     if not stats:
         embed = discord.Embed(
-            title=f"📊 Статистика {user.display_name}",
-            description="❌ Статистика не найдена. Игрок ещё не участвовал в турнирах.",
+            title=f"Статистика {user.display_name}",
+            description="Статистика не найдена. Игрок ещё не участвовал в турнирах.",
             color=discord.Color.red()
         )
         return embed
@@ -385,54 +398,54 @@ async def build_player_stats_embed(guild_id: int, user: discord.Member) -> disco
     elo_diff_text = f"+{elo_diff}" if elo_diff > 0 else str(elo_diff)
 
     embed = discord.Embed(
-        title=f"📊 Статистика {user.display_name}",
+        title=f"Статистика {user.display_name}",
         color=discord.Color.dark_blue()
     )
 
     # Basic stats
     embed.add_field(
-        name="🎯 Текущий ELO",
+        name="Текущий ELO",
         value=f"{int(stats.elo)} ({elo_diff_text} от среднего)",
         inline=True
     )
     embed.add_field(
-        name="⚔️ Матчи",
+        name="Матчи",
         value=f"{total_matches}",
         inline=True
     )
     embed.add_field(
-        name="🏆 Победы",
+        name="Победы",
         value=f"{stats.wins}",
         inline=True
     )
 
     # Performance stats
     embed.add_field(
-        name="💀 Убийства",
+        name="Убийства",
         value=f"{stats.kills}",
         inline=True
     )
     embed.add_field(
-        name="☠️ Смерти",
+        name="Смерти",
         value=f"{stats.deaths}",
         inline=True
     )
     embed.add_field(
-        name="📈 K/D",
+        name="K/D",
         value=f"{avg_kd:.2f}",
         inline=True
     )
 
     # Win rate
     embed.add_field(
-        name="📊 Винрейт",
+        name="Винрейт",
         value=f"{win_rate:.1f}%",
         inline=False
     )
 
     # Losses
     embed.add_field(
-        name="❌ Поражения",
+        name="Поражения",
         value=f"{stats.losses}",
         inline=True
     )
@@ -456,6 +469,36 @@ async def get_server_average_elo(guild_id: int) -> int:
         return int(result) if result else 1000
 
 
+def _player_display(
+    tournament: Tournament, player_name: str, guild_id: int | None = None
+) -> str:
+    """Отображаемое имя игрока в карточке турнира.
+
+    Реальные пользователи (user_id > 0) показываются обычным
+    именем с экипированной косметикой через ``format_player_name``:
+    ``**[TAG]** Ник ICON``. Базовое имя — актуальный
+    member.display_name, иначе сохранённое имя турнира.
+    Упоминания ``<@id>`` в списках не используются; идентификация
+    остаётся по user_id. Тестовые игроки (uid <= 0) и записи без
+    ID показываются сохранённым текстовым именем.
+    """
+    user_id = tournament.player_user_ids.get(player_name)
+    try:
+        uid = int(user_id) if user_id is not None else 0
+    except (TypeError, ValueError):
+        uid = 0
+    gid = guild_id or tournament.guild_id
+    if uid > 0:
+        from utils.cosmetics import display_name_for
+        base = display_name_for(gid, uid, player_name)
+        if gid:
+            return format_player_name(gid, uid, base)
+        return base
+    if gid and user_id:
+        return format_player_name(gid, user_id, player_name)
+    return player_name
+
+
 def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None, tournament: Tournament = None, guild_id: int = None) -> str:
     """Строка игроков круга с ELO или пустой слот."""
     if not players:
@@ -463,13 +506,8 @@ def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None, tou
 
     player_strings = []
     for player_name in players:
-        # Format name with cosmetics if tournament and guild_id provided
-        if tournament and guild_id:
-            user_id = tournament.player_user_ids.get(player_name)
-            if user_id:
-                formatted_name = format_player_name(guild_id, user_id, player_name)
-            else:
-                formatted_name = player_name
+        if tournament:
+            formatted_name = _player_display(tournament, player_name, guild_id)
         else:
             formatted_name = player_name
 
@@ -510,13 +548,28 @@ def team_roster_names(team_data: dict) -> list[str]:
 
 
 def team_roster_mentions(tournament: Tournament, team_data: dict) -> str:
-    """Состав команды строкой ментионов <@id> (или имен, если id неизвестен)."""
+    """Состав команды: имя + экипированная косметика.
+
+    Формат как в остальных карточках турнира:
+    ``**[TAG]** Ник ICON``. Идентификация — по user_id,
+    отображение — по нику (без ``<@id>``).
+    """
+    from utils.cosmetics import display_name_for, format_player_name
+
     parts = []
     for name in team_roster_names(team_data):
         uid = tournament.player_user_ids.get(name)
-        # Невалидные ID (тестовые отрицательные значения и т.п.)
-        # не превращаем в <@...> — показываем имя.
-        parts.append(f"<@{uid}>" if uid and uid > 0 else name)
+        try:
+            uid = int(uid)
+        except (TypeError, ValueError):
+            uid = 0
+        if uid > 0:
+            base = display_name_for(tournament.guild_id, uid, name)
+            parts.append(
+                format_player_name(tournament.guild_id, uid, base)
+            )
+        else:
+            parts.append(name)
     return " ".join(parts)
 
 
@@ -605,20 +658,15 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
             if isinstance(p_name, tuple):
                 p_name = p_name[0] if p_name else ""
             if p_name and isinstance(p_name, str):
-                # Format name with cosmetics
-                user_id = tournament.player_user_ids.get(p_name)
-                if user_id:
-                    formatted_name = format_player_name(guild.id, user_id, p_name)
-                else:
-                    formatted_name = p_name
-                players.append(formatted_name)
+                players.append(_player_display(tournament, p_name, guild.id))
 
         players_str = ", ".join(players) if players else "*Ожидание игроков...*"
-        emoji = team_emojis.get(i + 1, "🎮")
+        emoji = team_emojis.get(i + 1, "")
+        captain_display = _player_display(tournament, captain, guild.id)
 
         teams_text.append(
             f"{emoji} **Команда {team_name}**\n"
-            f"┣ **Капитан:** {captain}\n"
+            f"┣ **Капитан:** {captain_display}\n"
             f"┗ **Состав:** {players_str}\n"
         )
 
@@ -656,15 +704,6 @@ async def build_setup_embed(
             elo_dict[player_name] = int(stats.elo)
 
     # Build description based on formation mode
-    ruleset = getattr(tournament, "ruleset", "") or ""
-    rules_line = ""
-    if ruleset:
-        try:
-            from services.rules_vote import ruleset_label
-
-            rules_line = f" Правила: {ruleset_label(ruleset)}\n"
-        except Exception:
-            rules_line = ""
     if tournament.formation_mode == FormationMode.RANDOM:
         # RANDOM mode: show players pool
         current = len(tournament.players_pool)
@@ -673,12 +712,7 @@ async def build_setup_embed(
         # Build player list with ELO
         player_strings = []
         for player_name in tournament.players_pool:
-            # Format name with cosmetics
-            user_id = tournament.player_user_ids.get(player_name)
-            if user_id:
-                formatted_name = format_player_name(guild.id, user_id, player_name)
-            else:
-                formatted_name = player_name
+            formatted_name = _player_display(tournament, player_name, guild.id)
 
             if player_name in elo_dict:
                 player_strings.append(f"{formatted_name} ({int(elo_dict[player_name])} ELO)")
@@ -693,7 +727,6 @@ async def build_setup_embed(
             f" Размер: {tournament.size.value}\n"
             f" Режим формирования: {formation_text}\n"
             f" Статус регистрации: {status_text}\n"
-            f"{rules_line}\n"
             f" **Пул игроков:**\n"
             f" {players_text}\n\n"
             f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
@@ -727,7 +760,6 @@ async def build_setup_embed(
             f" Размер: {tournament.size.value}\n"
             f" Режим формирования: {formation_text}\n"
             f" Статус регистрации: {status_text}\n"
-            f"{rules_line}\n"
             + "\n\n".join(circle_sections) + "\n\n"
             f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
@@ -748,11 +780,9 @@ async def build_draft_embed(
     # Get current picker
     current_picker_pos = tournament.current_picker_position()
     current_line = ""
-    current_captain_id = 0
 
     if current_picker_pos is not None:
         current_captain_name = tournament.captains[tournament.captain_order[current_picker_pos]]
-        current_captain_id = tournament.player_user_ids.get(current_captain_name, 0)
         # Динамический дедлайн: Discord сам отсчитывает <t:...:R>
         # на клиенте — сообщение не редактируется каждую секунду.
         # Дедлайн вычисляется из сохранённого draft_pick_start_time
@@ -762,10 +792,7 @@ async def build_draft_embed(
             timer_line = f"До окончания выбора: <t:{deadline}:R>"
         else:
             timer_line = "У вас есть 60 сек на выбор!"
-        who = (
-            f"<@{current_captain_id}>" if current_captain_id > 0
-            else current_captain_name
-        )
+        who = _player_display(tournament, current_captain_name, guild.id)
         current_line = f"**Сейчас выбирает:** {who}\n{timer_line}"
     else:
         current_line = "Драфт завершён"
@@ -782,24 +809,20 @@ async def build_draft_embed(
 
         for pos in pick_order:
             captain_name = tournament.captains[pos]
-            captain_id = tournament.player_user_ids.get(captain_name, 0)
             pick = tournament.picks.get(str(pos), {}).get(str(circle))
-            captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain_name
+            captain_display = _player_display(
+                tournament, captain_name, guild.id)
 
             if circle > tournament.current_circle or not pick:
-                lines.append(f" {captain_mention} ➔ `[Ожидание]`")
-            elif circle == tournament.current_circle and pick:
-                pick_id = tournament.player_user_ids.get(pick, 0)
-                pick_mention = f"<@{pick_id}>" if pick_id > 0 else pick
-                lines.append(f" {captain_mention} ➔ {pick_mention}")
-            elif circle < tournament.current_circle:
-                pick_id = tournament.player_user_ids.get(pick, 0)
-                pick_mention = f"<@{pick_id}>" if pick_id > 0 else pick
-                lines.append(f" {captain_mention} ➔ {pick_mention}")
+                lines.append(f"{captain_display} `[Ожидание]`")
+            else:
+                pick_display = _player_display(
+                    tournament, pick, guild.id)
+                lines.append(f"{captain_display} {pick_display}")
 
         status = ""
         if circle == tournament.current_circle:
-            status = f" ◄ `[Текущий]`"
+            status = f"`[Текущий]`"
 
         picks_sections.append(f" **Круг {circle}:{status}**\n" + "\n".join(lines))
 
@@ -808,7 +831,7 @@ async def build_draft_embed(
     key = str(tournament.current_circle)
     available = tournament.available.get(key, [])
     if len(available) > 25:
-        warning = f"\n\n⚠️ **Внимание:** В пуле более 25 игроков! Выбор ограничен текущим кругом."
+        warning = f"\n\n**Внимание:** В пуле более 25 игроков! Выбор ограничен текущим кругом."
 
     description = (
         f"{replace_emojis(current_line)}\n\n"
@@ -818,7 +841,7 @@ async def build_draft_embed(
     )
 
     embed = discord.Embed(
-        title=f" ⚔️ Порядок капитанов | Фаза Драфта",
+        title=f"Порядок капитанов | Фаза Драфта",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -833,7 +856,7 @@ async def build_teams_embed(
     # This function is kept for backward compatibility but shouldn't be used
     # since we skip the TEAMS phase now
     embed = discord.Embed(
-        title="🏆 Сформированные Команды",
+        title="Сформированные Команды",
         color=discord.Color.dark_green(),
     )
     await _add_teams_block_to_embed(embed, guild, tournament)
@@ -891,14 +914,15 @@ async def build_qualifiers_embed(
 
         matches_section.append(
             f" **Отбор #{i + 1}:**  **{name_a}:** vs  **{name_b}:** {winner_info}"
+            f"{_room_status_suffix(tournament, 'qualifier', i)}"
         )
 
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
-        footer = "🔓 СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
+        footer = "СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "qualifiers":
-        footer = "🔒 СТАВКИ ЗАКРЫТЫ"
+        footer = "СТАВКИ ЗАКРЫТЫ"
 
     description = (
         f" **Организатор:** {organizer_mention}\n\n"
@@ -931,7 +955,6 @@ async def build_qualifiers_embed(
         (embed.description or "")
         + "\n\n **Участники команд:**\n"
         + "\n".join(team_lines)
-        + f"\n\n{SCREENSHOT_RULE_LINE}"
     )
 
     # Add empty field for gap before betting section
@@ -992,14 +1015,15 @@ async def build_semifinals_embed(
 
         matches_section.append(
             f" **Игра #{i + 1}:** {name_a} vs {name_b}{winner_info}"
+            f"{_room_status_suffix(tournament, 'semifinal', i)}"
         )
 
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "semifinal":
-        footer = "🔓 СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
+        footer = "СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "semifinal":
-        footer = "🔒 СТАВКИ ЗАКРЫТЫ"
+        footer = "СТАВКИ ЗАКРЫТЫ"
 
     description = (
         f" **Организатор:** {organizer_mention}\n\n"
@@ -1032,7 +1056,6 @@ async def build_semifinals_embed(
         (embed.description or "")
         + "\n\n **Участники команд:**\n"
         + "\n".join(team_lines)
-        + f"\n\n{SCREENSHOT_RULE_LINE}"
     )
 
     # Add empty field for gap before betting section
@@ -1089,14 +1112,15 @@ async def build_final_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
-        footer = "🔓 СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
+        footer = "СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "final":
-        footer = "🔒 СТАВКИ ЗАКРЫТЫ"
+        footer = "СТАВКИ ЗАКРЫТЫ"
 
     description = (
         f" **Организатор:** {organizer_mention}\n\n"
         f" **Главная битва:**\n"
-        f" **Финал:** {name_a} vs {name_b}{winner_info}\n\n\n\n"
+        f" **Финал:** {name_a} vs {name_b}{winner_info}"
+        f"{_room_status_suffix(tournament, 'final', 0)}\n\n\n\n"
         f" **Участники команд:**\n"
     )
 
@@ -1125,7 +1149,6 @@ async def build_final_embed(
     embed.description = (
         (embed.description or "")
         + "\n".join(final_team_lines)
-        + f"\n\n{SCREENSHOT_RULE_LINE}"
     )
 
     # Add empty field for gap before betting section
@@ -1317,7 +1340,7 @@ async def build_winner_embed(
         f" **Best AVG:** {best_avg_player if best_avg_player else 'Нет данных'} ({best_avg_display})\n"
         f" **Max Kills:** {best_kills_player if best_kills_player else 'Нет данных'} ({best_kills_display})\n"
         f" **Лудик:** {max_payout_player if max_payout_player else 'Нет данных'} ({max_payout_display} {get_emoji('money') if max_payout > 0 else ''})\n\n"
-        f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
+        f"Поздравляем победителей! Спасибо всем за участие"
     )
 
     embed = discord.Embed(
@@ -1351,20 +1374,6 @@ async def build_embed_for_phase(
         embed = await build_winner_embed(tournament, guild)
     else:
         embed = discord.Embed(title="Ошибка", color=discord.Color.red())
-    # Выбранные правила матча (голосование BRAZIL/KAZAKHSTAN) —
-    # показываем в карточках всех фаз после настройки.
-    ruleset = getattr(tournament, "ruleset", "") or ""
-    if ruleset and len(embed.fields) < 25:
-        try:
-            from services.rules_vote import ruleset_label
-
-            embed.add_field(
-                name="📜 Правила матча",
-                value=ruleset_label(ruleset),
-                inline=False,
-            )
-        except Exception:
-            pass
     return embed
 
 
@@ -1375,7 +1384,7 @@ def build_level_up_embed(stats, old_level: int, new_level: int) -> tuple[discord
     progress_bar = create_progress_bar(current_xp, xp_needed)
 
     embed = discord.Embed(
-        title="🎉 ПОВЫШЕНИЕ УРОВНЯ!",
+        title="ПОВЫШЕНИЕ УРОВНЯ!",
         color=discord.Color.gold(),
     )
     embed.add_field(
@@ -1403,7 +1412,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     from storage.redis_client import get_leaderboard, set_leaderboard
     from cogs.tournament import get_rank_emoji
     from config import replace_emojis
-    from ultimatum.elo_store import elo_store
+    from ultimatum.elo import ult_elo_store as elo_store
 
     # Try to get from cache first
     cached_data = await get_leaderboard(guild_id, leaderboard_type)
@@ -1417,7 +1426,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
         elif leaderboard_type == "money":
             players = await player_stats_store.get_leaderboard_by_earnings(guild_id, page, per_page=10)
         elif leaderboard_type == "ulti_elo":
-            players = await elo_store.get_leaderboard(limit=10, offset=(page - 1) * 10)
+            players = await elo_store.get_leaderboard("solo", limit=10, offset=(page - 1) * 10)
         elif leaderboard_type == "rep":
             from storage.reputation_store import reputation_store
             players = await reputation_store.get_rep_leaderboard(guild_id, page, per_page=10)
@@ -1430,24 +1439,24 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
     # Set title and color based on type
     if leaderboard_type == "level":
-        title = f" ЛИДЕРЫ СЕРВЕРА | УРОВЕНЬ И ОПЫТ"
+        title = f"ЛИДЕРЫ СЕРВЕРА | УРОВЕНЬ И ОПЫТ"
         color = discord.Color.from_rgb(155, 89, 182)  # Пастельно-фиолетовый
     elif leaderboard_type == "money":
-        title = f" ЛИДЕРЫ СЕРВЕРА | БАЛАНС МОНЕТ"
+        title = f"ЛИДЕРЫ СЕРВЕРА | БАЛАНС МОНЕТ"
         color = discord.Color.from_rgb(241, 196, 15)  # Пастельно-золотой
     elif leaderboard_type == "ulti_elo":
-        title = f" ЛИДЕРЫ СЕРВЕРА | ULTIMATUM ELO"
+        title = f"ЛИДЕРЫ СЕРВЕРА | ULTIMATUM ELO"
         color = discord.Color.from_rgb(46, 204, 113)  # Пастельно-зеленый
     elif leaderboard_type == "rep":
-        title = f" ЛИДЕРЫ СЕРВЕРА | РЕПУТАЦИЯ"
+        title = f"ЛИДЕРЫ СЕРВЕРА | РЕПУТАЦИЯ"
         color = discord.Color.from_rgb(142, 68, 173)  # Пастельно-фиолетовый
     else:  # elo
-        title = f" ЛИДЕРЫ СЕРВЕРА | ELO"
+        title = f"ЛИДЕРЫ СЕРВЕРА | ELO"
         color = discord.Color.from_rgb(231, 76, 60)  # Пастельно-красный
 
     # Get total pages based on type
     if leaderboard_type == "ulti_elo":
-        total_pages = await elo_store.get_leaderboard_count()
+        total_pages = await elo_store.get_leaderboard_count("solo")
         total_pages = (total_pages + 9) // 10  # Round up
     elif leaderboard_type == "rep":
         from storage.reputation_store import reputation_store
@@ -1511,8 +1520,9 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             else:
                 rank_emoji = f"{rank}."
 
-            # Ultimatum Elo players are dicts with 'username' and 'elo'
-            username = player.get('username', 'Unknown')
+            # Ultimatum Elo players are dicts with 'discord_id' and 'elo'
+            uid = player.get('discord_id')
+            username = player.get('username') or (f"<@{uid}>" if uid else "Unknown")
             elo = player.get('elo', 0)
 
             line = f"{rank_emoji} {username} — {elo} Elo"

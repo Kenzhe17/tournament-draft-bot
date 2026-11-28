@@ -10,6 +10,19 @@ from config import DATA_DIR  # noqa: E402 — единый путь из config
 from storage.json_atomic import atomic_write_json
 STATS_FILE = DATA_DIR / "player_stats.json"
 
+# Идемпотентные XP-гранты (Spontaneous Events 2.0): одна строка на
+# grant_key — атомарный маркер «XP уже начислен», в одной
+# транзакции с обновлением player_stats.xp/level.
+XP_GRANTS_DDL = """
+CREATE TABLE IF NOT EXISTS player_xp_grants (
+    grant_key TEXT PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    amount INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+"""
+
 
 class PlayerStatsStore:
     """Хранилище статистики игроков в PostgreSQL."""
@@ -59,8 +72,6 @@ class PlayerStatsStore:
             best_loss_streak=row["best_loss_streak"],
             total_kills=row.get("total_kills", 0),
             total_deaths=row.get("total_deaths", 0),
-            total_assists=row.get("total_assists", 0),
-            total_damage=row.get("total_damage", 0),
             best_match_kills=row.get("best_match_kills", 0),
             total_elo_change=row.get("total_elo_change", 0),
             last_elo_change=row.get("last_elo_change", 0),
@@ -83,7 +94,7 @@ class PlayerStatsStore:
     _STATS_COLUMNS = (
         "guild_id, user_id, name, elo, wins, finals, games, "
         "current_streak, best_win_streak, best_loss_streak, "
-        "total_kills, total_deaths, total_assists, total_damage, "
+        "total_kills, total_deaths, "
         "best_match_kills, total_elo_change, last_elo_change, xp, "
         "level, xp_to_next_level, total_earnings, "
         "tournament_participations, description, "
@@ -108,6 +119,89 @@ class PlayerStatsStore:
         else:
             key = f"{guild_id}:{user_id}"
             return self._stats.get(key)
+
+    async def add_xp_once(
+        self,
+        guild_id: int,
+        user_id: int,
+        amount: int,
+        grant_key: str,
+        name: str = "",
+    ) -> dict:
+        """Идемпотентное начисление XP по grant_key (одна транзакция).
+
+        Маркер player_xp_grants вставляется ПЕРВЫМ: повторный вызов
+        с тем же ключом возвращает {"applied": False} без повторного
+        начисления. Уровни пересчитываются по правилам
+        PlayerStats.add_xp (xp — прогресс внутри уровня).
+        Только PostgreSQL — без durable-хранилища XP не начисляется.
+        """
+        if amount <= 0:
+            return {"applied": True, "duplicate": False, "amount": 0}
+        if not self._use_db:
+            raise RuntimeError("XP grants require PostgreSQL")
+        from storage.db import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(XP_GRANTS_DDL)
+                marker = await conn.fetchval(
+                    """
+                    INSERT INTO player_xp_grants
+                        (grant_key, guild_id, user_id, amount)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (grant_key) DO NOTHING
+                    RETURNING grant_key
+                    """,
+                    grant_key, guild_id, user_id, amount,
+                )
+                if marker is None:
+                    return {"applied": False, "duplicate": True}
+                row = await conn.fetchrow(
+                    "SELECT xp, level, name FROM player_stats "
+                    "WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+                    guild_id, user_id,
+                )
+                if row is None:
+                    await conn.execute(
+                        """
+                        INSERT INTO player_stats
+                            (guild_id, user_id, name, xp, level,
+                             xp_to_next_level)
+                        VALUES ($1, $2, $3, 0, 1, 250)
+                        ON CONFLICT (guild_id, user_id) DO NOTHING
+                        """,
+                        guild_id, user_id, name or "",
+                    )
+                    row = await conn.fetchrow(
+                        "SELECT xp, level, name FROM player_stats "
+                        "WHERE guild_id = $1 AND user_id = $2 "
+                        "FOR UPDATE",
+                        guild_id, user_id,
+                    )
+                xp = int((row or {}).get("xp") or 0)
+                level = int((row or {}).get("level") or 1)
+                xp_next = PlayerStats._calculate_xp_to_next_level(level)
+                xp += amount
+                levels_gained = 0
+                while xp >= xp_next:
+                    xp -= xp_next
+                    level += 1
+                    levels_gained += 1
+                    xp_next = PlayerStats._calculate_xp_to_next_level(level)
+                await conn.execute(
+                    """
+                    UPDATE player_stats
+                    SET xp = $3, level = $4, xp_to_next_level = $5
+                    WHERE guild_id = $1 AND user_id = $2
+                    """,
+                    guild_id, user_id, xp, level, xp_next,
+                )
+                return {
+                    "applied": True, "duplicate": False,
+                    "amount": amount, "level": level,
+                    "levels_gained": levels_gained, "xp": xp,
+                }
 
     async def get_many(
         self, guild_id: int, user_ids
@@ -175,12 +269,12 @@ class PlayerStatsStore:
             async with pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, total_assists, total_damage, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date, reputation, birthday, spouse_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date, reputation, birthday, spouse_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
                     ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, total_assists = $13, total_damage = $14, best_match_kills = $15, total_elo_change = $16, last_elo_change = $17, xp = $18, level = $19, xp_to_next_level = $20, total_earnings = $21, tournament_participations = $22, description = $23, daily_tournament_coins = $24, daily_coins_date = $25, birthday = $27, spouse_id = $28
+                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, best_match_kills = $13, total_elo_change = $14, last_elo_change = $15, xp = $16, level = $17, xp_to_next_level = $18, total_earnings = $19, tournament_participations = $20, description = $21, daily_tournament_coins = $22, daily_coins_date = $23, birthday = $25, spouse_id = $26
                     """,
-                    stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak, stats.total_kills, stats.total_deaths, stats.total_assists, stats.total_damage, stats.best_match_kills, stats.total_elo_change, stats.last_elo_change, stats.xp, stats.level, stats.xp_to_next_level, stats.total_earnings, stats.tournament_participations, stats.description, stats.daily_tournament_coins, stats.daily_coins_date, stats.reputation, stats.birthday, stats.spouse_id
+                    stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak, stats.total_kills, stats.total_deaths, stats.best_match_kills, stats.total_elo_change, stats.last_elo_change, stats.xp, stats.level, stats.xp_to_next_level, stats.total_earnings, stats.tournament_participations, stats.description, stats.daily_tournament_coins, stats.daily_coins_date, stats.reputation, stats.birthday, stats.spouse_id
                 )
         else:
             key = f"{stats.guild_id}:{stats.user_id}"
@@ -218,12 +312,12 @@ class PlayerStatsStore:
                     for stats in stats_list:
                         await conn.execute(
                             """
-                            INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, total_assists, total_damage, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date, reputation, birthday, spouse_id)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+                            INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date, reputation, birthday, spouse_id)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
                             ON CONFLICT (guild_id, user_id)
-                            DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, total_assists = $13, total_damage = $14, best_match_kills = $15, total_elo_change = $16, last_elo_change = $17, xp = $18, level = $19, xp_to_next_level = $20, total_earnings = $21, tournament_participations = $22, description = $23, daily_tournament_coins = $24, daily_coins_date = $25, birthday = $27, spouse_id = $28
+                            DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, best_match_kills = $13, total_elo_change = $14, last_elo_change = $15, xp = $16, level = $17, xp_to_next_level = $18, total_earnings = $19, tournament_participations = $20, description = $21, daily_tournament_coins = $22, daily_coins_date = $23, birthday = $25, spouse_id = $26
                             """,
-                            stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak, stats.total_kills, stats.total_deaths, stats.total_assists, stats.total_damage, stats.best_match_kills, stats.total_elo_change, stats.last_elo_change, stats.xp, stats.level, stats.xp_to_next_level, stats.total_earnings, stats.tournament_participations, stats.description, stats.daily_tournament_coins, stats.daily_coins_date, stats.reputation, stats.birthday, stats.spouse_id
+                            stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak, stats.total_kills, stats.total_deaths, stats.best_match_kills, stats.total_elo_change, stats.last_elo_change, stats.xp, stats.level, stats.xp_to_next_level, stats.total_earnings, stats.tournament_participations, stats.description, stats.daily_tournament_coins, stats.daily_coins_date, stats.reputation, stats.birthday, stats.spouse_id
                         )
                     if finalize_match_id:
                         await mark_stats_done_in_tx(

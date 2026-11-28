@@ -98,7 +98,7 @@ class FreeFireProfileView(discord.ui.LayoutView):
             btn.callback = self._on_button
             row.add_item(btn)
         close = discord.ui.Button(
-            label="✕",
+            label="Закрыть",
             style=discord.ButtonStyle.danger,
             custom_id="ffp:close",
             disabled=disabled,

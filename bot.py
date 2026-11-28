@@ -12,7 +12,7 @@ import time
 import discord
 from discord.ext import commands
 
-from config import DATABASE_URL, DISCORD_TOKEN, GUILD_ID, guild_allowed, replace_emojis
+from config import DATABASE_URL, DISCORD_TOKEN, GUILD_ID, guild_allowed, replace_emojis, CASHCUP_ENABLED
 from models.tournament import Tournament, TournamentPhase
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
@@ -150,6 +150,8 @@ class TournamentBot(commands.Bot):
         intents = discord.Intents.default()
         intents.members = True
         intents.message_content = True
+        if hasattr(intents, "auto_moderation_execution"):
+            intents.auto_moderation_execution = True
         super().__init__(
             command_prefix="!",
             intents=intents,
@@ -165,13 +167,6 @@ class TournamentBot(commands.Bot):
             from utils import perf_metrics
 
             perf_metrics.start(self)
-
-            def _ocr_active():
-                return sum(
-                    1
-                    for t in asyncio.all_tasks()
-                    if "ocr" in (t.get_coro().__qualname__ or "").lower()
-                )
 
             def _ranked_active():
                 try:
@@ -198,13 +193,6 @@ class TournamentBot(commands.Bot):
                 except Exception:
                     return None
 
-            perf_metrics.register_gauge("ocr_active", _ocr_active)
-            try:
-                from services.ocr_service import active_ocr_ops
-
-                perf_metrics.register_gauge("ocr_inflight", active_ocr_ops)
-            except Exception:
-                pass
             perf_metrics.register_gauge("ranked_matches", _ranked_active)
             perf_metrics.register_gauge("pg_pool", _pg_pool)
         except Exception as exc:
@@ -224,6 +212,11 @@ class TournamentBot(commands.Bot):
             self.loop.create_task(self.birthday_loop())
         except Exception as e:
             logger.error(f"Failed to create birthday loop task: {e}", exc_info=True)
+        # SHOP 2.0: периодический досчёт непогашенных возвратов
+        try:
+            self.loop.create_task(self.shop_refund_sweeper_loop())
+        except Exception as e:
+            logger.error(f"Failed to create shop sweeper task: {e}", exc_info=True)
         
         # Initialize shop items
         try:
@@ -252,8 +245,74 @@ class TournamentBot(commands.Bot):
                     logger.info(f"Synced {synced} games from config to database")
                 except Exception as e:
                     logger.error(f"Failed to sync games from config: {e}")
+
+                # Магазин: PostgreSQL — авторитетный каталог.
+                # Идемпотентная миграция JSON→PG при первом запуске,
+                # далее каталог управляется через Control Center.
+                try:
+                    from storage import shop_catalog
+                    from storage.shop_store import shop_store
+                    mode = await shop_catalog.sync_to_store(shop_store)
+                    logger.info("Shop catalog synced from %s", mode)
+                except Exception as e:
+                    logger.error("Failed to sync shop catalog: %s", e)
             except Exception as e:
                 logger.error("Failed to initialize database: %s", e)
+
+        # Control Center: движок динамической конфигурации.
+        # PostgreSQL — источник истины; LISTEN/NOTIFY + poll-fallback
+        # применяют изменения без рестарта. Без DATABASE_URL сервис
+        # остаётся в degraded-режиме (defaults + legacy settings.json).
+        try:
+            from services.settings_service import settings_service
+            await settings_service.init()
+            if settings_service.available:
+                await settings_service.start_sync()
+                logger.info("Control Center settings engine active")
+
+                # Каталог магазина: перечитывать PG по notify
+                # (панель пишет shop_items + pg_notify).
+                async def _resync_shop(gid, key):
+                    try:
+                        from storage import shop_catalog
+                        from storage.shop_store import shop_store
+                        await shop_catalog.sync_to_store(shop_store)
+                    except Exception as exc:
+                        logger.warning("shop catalog resync failed: %s", exc)
+
+                settings_service.register_change_handler(
+                    "shop.catalog", _resync_shop
+                )
+
+                # Очередь админ-действий Control Center: панель пишет
+                # admin_action_requests, бот исполняет зарегистрированные
+                # handlers и пишет статус обратно.
+                from services import admin_actions
+                admin_actions.bind_bot(self)
+                self.loop.create_task(admin_actions.actions_loop())
+
+                # Периодический снимок состояния для панели
+                # (турниры, очереди MM, каналы/роли Discord).
+                from services import admin_snapshots
+                self.loop.create_task(admin_snapshots.snapshot_loop(self))
+            else:
+                logger.warning(
+                    "Control Center settings engine unavailable "
+                    "(no DATABASE_URL) — running on defaults"
+                )
+        except Exception as exc:
+            logger.warning("settings service init failed: %s", exc)
+
+        # Журнал аудита: привязка бота для публикации карточек
+        # и восстановление pending-событий после рестарта/сбоя БД.
+        try:
+            from services import tournament_audit_service as audit_svc
+            audit_svc.bind_bot(self)
+            if DATABASE_URL:
+                self.loop.create_task(audit_svc.flush_pending())
+                self.loop.create_task(audit_svc.republish_unpublished())
+        except Exception as exc:
+            logger.warning("audit service init failed: %s", exc)
 
         await self.load_extension("cogs.tournament")
         await self.load_extension("cogs.games.coin_flip")
@@ -270,6 +329,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.coin_drop")
         await self.load_extension("cogs.pet")
         await self.load_extension("cogs.isolate")
+        await self.load_extension("cogs.server_audit")
         await self.load_extension("cogs.br")
         await self.load_extension("cogs.mm")
         await self.load_extension("cogs.ultimatum")
@@ -277,13 +337,10 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.team")
         await self.load_extension("cogs.bot_settings")
         await self.load_extension("cogs.moderation")
+        await self.load_extension("cogs.mod")
         await self.load_extension("cogs.freefire")
-        await self.load_extension("cogs.statistic")
-        await self.load_extension("cogs.ocr_upload")
-        await self.load_extension("cogs.ocr_diag")
-        # Восстановление OCR-сессий, застрявших в «finalizing» после
-        # перезапуска: PG-гейт гарантирует отсутствие повторного ELO.
-        self.loop.create_task(self._recover_finalizing_sessions())
+        if CASHCUP_ENABLED:
+            await self.load_extension("cogs.cashcup")
         await self.load_extension("cogs.wardrobe")
         await self.load_extension("cogs.emoji")
         await self.load_extension("cogs.reputation")
@@ -291,6 +348,12 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.vac")
         await self.load_extension("cogs.banner")
         await self.load_extension("cogs.banner_admin")
+        await self.load_extension("cogs.access")
+        await self.load_extension("cogs.card_repair")
+        # Voice Control грузим всегда: при VOICE_CONTROL_ENABLED=0
+        # админ-операции запрещены, но безопасная очистка ограничений
+        # и фоновая сверка продолжают работать.
+        await self.load_extension("cogs.voice_control")
 
         # Регистрация общих групп команд (/player, /economy, /games, ...)
         from cogs.groups import ROOT_GROUPS
@@ -299,6 +362,14 @@ class TournamentBot(commands.Bot):
                 self.tree.add_command(_group)
             except Exception as e:
                 logger.warning("Не удалось зарегистрировать %s: %s", _group.name, e)
+
+        # BLACKJACK 2.0: динамические кнопки раздач — dispatch по
+        # custom_id bj2:<action>:<round_id> работает и после рестарта.
+        try:
+            from views.blackjack_view import BlackjackActionButton
+            self.add_dynamic_items(BlackjackActionButton)
+        except Exception as e:
+            logger.warning("blackjack dynamic items init failed: %s", e)
 
         # Components V2: author/аватар в командах + обёртки send/edit
         try:
@@ -331,8 +402,6 @@ class TournamentBot(commands.Bot):
                 ("GUILD_ID", "GUILD_ID", "привязка к серверу/tag-check", True, "нет"),
                 ("TOURNAMENT_CHANNELS", "TOURNAMENT_CHANNELS", "каналы организаторов", True, "нет"),
                 ("ORG_ROLE_MAP", "ORG_ROLE_MAP", "роли организаторов по каналам (cid:rid,...)", True, "нет"),
-                ("OCR_STATS_CHANNEL_ID", "OCR_STATS_CHANNEL_ID", "публикация OCR-скриншотов/статистики и маппинга", True, "канал сообщения (может быть неверным)"),
-                ("OCR_RESULT_CHANNEL_ID", "OCR_RESULT_CHANNEL_ID", "канал итоговых результатов OCR", False, "канал статистики/сообщения"),
                 ("NOTIFICATION_CHANNEL_ID", "NOTIFICATION_CHANNEL_ID", "анонсы турниров", False, "канал матчей/турниров"),
                 ("MM_MATCH_CHANNEL_POOL", "MM_MATCH_CHANNEL_POOL", "пул каналов MM-матчей", False, "create/delete каналов на матч"),
                 ("REP_LOG_CHANNEL_ID", "REP_LOG_CHANNEL_ID", "публичный лог репутации", False, "канал создаётся автоматически"),
@@ -360,16 +429,9 @@ class TournamentBot(commands.Bot):
         except Exception as exc:
             logger.warning("Config validation failed: %s", exc)
 
-        # Startup-диагностика окружения и OCR (без секретов).
+        # Startup-диагностика окружения (без секретов).
         try:
             import os as _os
-            import importlib.metadata as _im
-
-            def _pkg_ver(name: str) -> str:
-                try:
-                    return _im.version(name)
-                except Exception:
-                    return "?"
 
             commit = (
                 _os.getenv("RAILWAY_GIT_COMMIT_SHA")
@@ -381,24 +443,7 @@ class TournamentBot(commands.Bot):
                 or _os.getenv("APP_ENV")
                 or "local/unknown"
             )
-            logger.info(
-                "Startup: env=%s commit=%s ocr=v1(rapidocr_onnxruntime "
-                "%s)+v3(rapidocr %s, cyrillic) upload=v5-sequential "
-                "discord.py>=2.7",
-                env_name, commit[:10],
-                _pkg_ver("rapidocr_onnxruntime"), _pkg_ver("rapidocr"),
-            )
-            from services.ocr_service import verify_model_files
-
-            missing_models = verify_model_files()
-            if missing_models:
-                logger.error(
-                    "OCR model files missing — RapidOCR may try "
-                    "network download at runtime: %s",
-                    "; ".join(missing_models),
-                )
-            else:
-                logger.info("OCR model files: all present (no network)")
+            logger.info("Startup: env=%s commit=%s", env_name, commit[:10])
         except Exception as exc:
             logger.warning("Startup diagnostics failed: %s", exc)
 
@@ -466,404 +511,66 @@ class TournamentBot(commands.Bot):
         except Exception as exc:
             logger.warning("JSON store health check failed: %s", exc)
 
+        # Восстановление persistent views активных турниров.
         for tournament in store.all():
             view = self.build_view_for_tournament(tournament)
             self._register_view(view)
 
-            # MM-флоу: кнопка «Загрузить скриншот» живёт в карточке
-            # матча (cs-4x4-match-N), а не в сообщении турнира —
-            # восстанавливаем её persistent view для активных матчей.
-            if getattr(tournament, "mm_search_channel_id", 0):
-                try:
-                    from services.match_announcer import _phase_matches
-                    from views.ocr_match_view import (
-                        MatchScreenshotButton,
-                        _stats_complete,
-                        match_is_finished,
-                    )
-
-                    for mt, mi, _a, _b in _phase_matches(tournament):
-                        if match_is_finished(tournament, mt, mi):
-                            continue
-                        if _stats_complete(tournament, mt, mi):
-                            continue
-                        mm_view = discord.ui.View(timeout=None)
-                        mm_view.add_item(
-                            MatchScreenshotButton(
-                                tournament.guild_id,
-                                tournament.channel_id,
-                                tournament,
-                                mt, mi, "Отправить результат",
-                            )
-                        )
-                        self.add_view(mm_view)
-                except Exception as exc:
-                    logger.warning(
-                        "MM match screenshot view restore failed for %s: %s",
-                        tournament.id, exc,
-                    )
-
-            # Восстанавливаем кнопки мультикомнатных OCR-сессий
-            for session in (tournament.ocr_sessions or {}).values():
-                if session.get("mode") != "rooms":
-                    continue
-                if session.get("status") in ("completed", "cancelled"):
-                    continue
-                try:
-                    from views.ocr_match_view import RoomView
-                    from cogs.ocr_upload import (
-                        RoomCollectView, _rooms_republish_index,
-                    )
-
-                    mt, mi = session["match_type"], session["match_index"]
-                    # Прогресс-сообщение: сбор (collecting) и
-                    # восстановление интерфейса (awaiting_mapping +
-                    # комната без message_id — publish_fail).
-                    rep_needed = (
-                        _rooms_republish_index(session) is not None
-                    )
-                    if prog_id := session.get("progress_message_id"):
-                        prog_ch = session.get("progress_channel_id")
-                        status = session.get("status")
-                        if prog_ch and (
-                            status == "collecting"
-                            or (status == "awaiting_mapping"
-                                and rep_needed)
-                        ):
-                            self.add_view(
-                                RoomCollectView(
-                                    tournament.guild_id,
-                                    tournament.channel_id,
-                                    tournament, mt, mi,
-                                    int(session.get("gen", 1)),
-                                ),
-                                message_id=prog_id,
-                            )
-                    # Кнопки на сообщениях комнат
-                    for room in session.get("rooms") or []:
-                        mids = list(room.get("message_ids") or [])
-                        if room.get("message_id"):
-                            mids.append(room["message_id"])
-                        ridx = room.get("room_index")
-                        for mid in dict.fromkeys(mids):
-                            if mid and ridx:
-                                self.add_view(
-                                    RoomView(
-                                        tournament.guild_id,
-                                        tournament.channel_id,
-                                        tournament, mt, mi, int(ridx),
-                                    ),
-                                    message_id=mid,
-                                )
-                        # V5: сообщение сбора комнаты (collecting_files)
-                        cmid = room.get("collect_message_id")
-                        if cmid and ridx and room.get("status") == "collecting_files":
-                            try:
-                                from views.ocr_match_view import RoomFilesView
-                                self.add_view(
-                                    RoomFilesView(
-                                        tournament.guild_id,
-                                        tournament.channel_id,
-                                        tournament, mt, mi, int(ridx),
-                                        int(session.get("gen", 1)),
-                                    ),
-                                    message_id=cmid,
-                                )
-                            except Exception as e:
-                                logger.warning(
-                                    "RoomFilesView restore failed: %s", e,
-                                )
-                    # Сообщение подтверждения результатов (после
-                    # полного сопоставления всех комнат)
-                    cmid = session.get("confirm_message_id")
-                    if cmid:
-                        try:
-                            from views.ocr_match_view import (
-                                RoomsConfirmView,
-                                _rooms_aux_review_pending,
-                                _rooms_unresolved_conflicts,
-                            )
-                            # Актуальные счётчики из сессии —
-                            # кнопки «Конфликты»/«Игнорировать
-                            # доп. данные» должны работать после
-                            # перезапуска так же, как до него.
-                            self.add_view(
-                                RoomsConfirmView(
-                                    tournament.guild_id,
-                                    tournament.channel_id,
-                                    tournament, mt, mi,
-                                    conflicts_count=len(
-                                        _rooms_unresolved_conflicts(session)
-                                    ),
-                                    aux_review_count=(
-                                        _rooms_aux_review_pending(session)
-                                    ),
-                                ),
-                                message_id=cmid,
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                "Rooms confirm view restore failed: %s", e,
-                            )
-                except Exception as e:
-                    logger.warning(
-                        "Rooms OCR view restore failed for %s: %s",
-                        session.get("match_type"), e,
-                    )
-
-            # Восстанавливаем кнопки публичных OCR-сообщений матчей
-            for session in (tournament.ocr_sessions or {}).values():
-                # Squad-режим: отдельные сообщения на каждый отряд
-                if session.get("mode") == "squad":
-                    try:
-                        from views.ocr_match_view import (
-                            SquadAssignedView,
-                            SquadClaimView,
-                        )
-
-                        mt, mi = session["match_type"], session["match_index"]
-                        for entry in session.get("squad_pool", []):
-                            mid, uid = (
-                                entry.get("message_id"), entry.get("uid")
-                            )
-                            if mid and uid:
-                                self.add_view(
-                                    SquadClaimView(
-                                        tournament.guild_id,
-                                        tournament.channel_id,
-                                        tournament, mt, mi, uid,
-                                    ),
-                                    message_id=mid,
-                                )
-                        for tkey, sentry in session.get("squads", {}).items():
-                            mid = sentry.get("message_id")
-                            if not mid:
-                                continue
-                            try:
-                                tidx = int(tkey)
-                            except (TypeError, ValueError):
-                                continue
-                            self.add_view(
-                                SquadAssignedView(
-                                    tournament.guild_id,
-                                    tournament.channel_id,
-                                    tournament, mt, mi, tidx,
-                                ),
-                                message_id=mid,
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            "Squad OCR view restore failed for %s: %s",
-                            session.get("match_type"), e,
-                        )
-                    continue
-
-                if (
-                    session.get("status") in ("awaiting_mapping", "mapping", "ready")
-                    and session.get("message_id")
-                ):
-                    try:
-                        from views.ocr_match_view import OCRPublicView
-
-                        ocr_view = OCRPublicView(
-                            tournament.guild_id,
-                            tournament.channel_id,
-                            tournament,
-                            session["match_type"],
-                            session["match_index"],
-                        )
-                        self.add_view(
-                            ocr_view, message_id=session["message_id"]
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            "OCR view restore failed for %s: %s",
-                            session.get("match_type"), e,
-                        )
-
-            # Рабочие карточки матчей обычных турниров: кнопка
-            # «Загрузить скриншоты» должна работать после рестарта.
-            # Пропускаем MM, завершённые матчи и матчи с активной
-            # сессией (их сообщение обслуживает progress/confirm view).
-            if not getattr(tournament, "mm_search_channel_id", 0):
-                try:
-                    from services.match_announcer import (
-                        _bracket_winner_index,
-                        match_control_view,
-                    )
-                    from views.ocr_match_view import match_is_finished
-
-                    active_keys = {
-                        k for k, s in (tournament.ocr_sessions or {}).items()
-                        if s.get("status") not in (
-                            None, "completed", "cancelled"
-                        )
-                    }
-                    for mkey, mc in (tournament.match_cards or {}).items():
-                        wid = mc.get("work_message_id")
-                        if not wid or mkey in active_keys:
-                            continue
-                        try:
-                            mt, mi_s = mkey.split("_", 1)
-                            mi = int(mi_s)
-                        except (ValueError, AttributeError):
-                            continue
-                        if match_is_finished(
-                            tournament, mt, mi
-                        ) or _bracket_winner_index(
-                            tournament, mt, mi
-                        ) is not None:
-                            continue
-                        try:
-                            self.add_view(
-                                match_control_view(
-                                    tournament.guild_id,
-                                    tournament.channel_id,
-                                    tournament, mt, mi,
-                                    finished=False,
-                                ),
-                                message_id=int(wid),
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                "Match control view restore failed "
-                                "for %s: %s", mkey, e,
-                            )
-                except Exception as e:
-                    logger.warning(
-                        "Match control views restore failed for %s: %s",
-                        tournament.id, e,
-                    )
-
-                # Legacy публичные карточки матчей больше не нужны —
-                # удаляем подтверждённые сообщения бота из канала
-                # турнира (основное сообщение сетки не трогаем).
-                guild_obj = self.get_guild(tournament.guild_id)
-                if guild_obj is not None:
-                    try:
-                        from services.match_announcer import (
-                            cleanup_public_match_cards,
-                        )
-
-                        await cleanup_public_match_cards(
-                            guild_obj, tournament
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            "Public match cards cleanup failed "
-                            "for %s: %s", tournament.id, e,
-                        )
-
-                    # Дубли рабочих OCR-карточек: в канале результатов
-                    # оставляем ровно одну карточку на матч —
-                    # актуальный work_message_id, остальные (бот,
-                    # сигнатура матча) удаляются.
-                    try:
-                        from services.match_announcer import (
-                            reconcile_work_cards,
-                        )
-
-                        asyncio.create_task(
-                            reconcile_work_cards(guild_obj, tournament)
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            "Work cards reconcile failed "
-                            "for %s: %s", tournament.id, e,
-                        )
-            # со статусом completed, но без cleanup_done —
-            # продолжаем удаление технических сообщений любого
-            # режима (rooms/squad/classic). Идемпотентно.
-            try:
-                from cogs.ocr_upload import cleanup_rooms_ocr_messages
-
-                guild_obj = self.get_guild(tournament.guild_id)
-                if guild_obj is not None:
-                    for _ck, _sess in (tournament.ocr_sessions or {}).items():
-                        if (
-                            _sess.get("status") == "completed"
-                            and not _sess.get("cleanup_done")
-                        ):
-                            try:
-                                _mt, _mi_s = _ck.split("_", 1)
-                                asyncio.create_task(
-                                    cleanup_rooms_ocr_messages(
-                                        guild_obj, tournament,
-                                        _mt, int(_mi_s), _sess,
-                                    )
-                                )
-                            except Exception as e:
-                                logger.warning(
-                                    "Rooms cleanup recovery failed "
-                                    "for %s: %s", _ck, e,
-                                )
-            except Exception as e:
-                logger.warning(
-                    "Rooms cleanup recovery setup failed for %s: %s",
-                    tournament.id, e,
-                )
-
-            # Карточки «🔓 Комната открыта» с card_pending —
-            # безопасная переотправка после рестарта: при живом
-            # card_message_id только снимается флаг, дублей нет.
-            try:
-                from views.room_modal import (
-                    pending_room_cards,
-                    retry_pending_room_card,
-                )
-
-                for _pmt, _pmi in pending_room_cards(tournament):
-                    asyncio.create_task(
-                        retry_pending_room_card(
-                            self, tournament, _pmt, _pmi
-                        )
-                    )
-            except Exception as exc:
-                logger.warning(
-                    "Pending room card recovery failed for %s: %s",
-                    tournament.id, exc,
-                )
-
-        # Голосование за формат (Brazil/Kazakhstan) в MM-матчах:
-        # persistent кнопки + таймеры/финализация просроченных
-        # голосований после рестарта. Один проход по всем
-        # турнирам — вызывается вне цикла store.all() выше.
+        # BR турниры: persistent views публичных карточек (активные
+        # и архивные с итогами — для пагинации «По картам»).
+        # Только регистрация view — Discord-операции (resume pending
+        # publish, sync карточек) выполняются в on_ready, когда кэш
+        # гильдий уже заполнен.
         try:
-            from services.format_vote import restore_format_votes
-
-            await restore_format_votes(self)
+            from storage.br_store import br_store
+            from views.br_view import BRCardView
+            for brt in list(br_store.all()) + br_store.history():
+                self._register_view(BRCardView(brt.guild_id, brt.channel_id, brt))
         except Exception as exc:
-            logger.warning("Format vote restore failed: %s", exc)
+            logger.warning("BR views restore failed: %s", exc)
 
-        # Голосование за правила (BRAZIL/KAZAKHSTAN) в /tournament
-        # create: persistent кнопки + финализация просроченных и
-        # продолжение турнира после рестарта.
+        # MM-матчи: persistent DynamicItem-шаблоны кнопок карточки
+        # матча (K/D, победитель, статистика, отмена, правила).
         try:
-            from services.rules_vote import restore_rules_votes
+            from views.mm_match_view import MmMatchTemplateView
 
-            await restore_rules_votes(self)
+            self.add_view(MmMatchTemplateView())
         except Exception as exc:
-            logger.warning("Rules vote restore failed: %s", exc)
+            logger.warning("MM match view registration failed: %s", exc)
 
-        # «📜 Правила» на карточках матчей — статичная кнопка,
-        # регистрируем persistent view глобально (custom_id совпадает).
+        # Кнопка «📜 Правила» в карточках анонсов матчей турнира.
         try:
-            from services.match_announcer import MatchRulesButton
+            from services.match_announcer import MatchRulesView
 
-            rules_view = discord.ui.View(timeout=None)
-            rules_view.add_item(MatchRulesButton())
-            self.add_view(rules_view)
+            self.add_view(MatchRulesView())
         except Exception as exc:
-            logger.warning("Rules button view registration failed: %s", exc)
+            logger.warning("Match rules view registration failed: %s", exc)
 
-        # «🔓 Комната открыта» — кнопки «Получить ID/пароль»:
-        # persistent DynamicItem-шаблон, custom_id кодирует контекст.
+        # Кнопка «ID» на карточках «КОМНАТА ОТКРЫТА» в канале
+        # данных комнат — persistent DynamicItem.
         try:
-            from views.room_modal import RoomDataTemplateView
+            from services.room_publisher import RoomCardTemplateView
 
-            self.add_view(RoomDataTemplateView())
+            self.add_view(RoomCardTemplateView())
         except Exception as exc:
-            logger.warning("Room data buttons registration failed: %s", exc)
+            logger.warning("Room card view registration failed: %s", exc)
+
+        # Кнопки «Подать/Отозвать заявку» на панели ротации доступа.
+        try:
+            from views.access_panel import AccessPanelView
+
+            self.add_view(AccessPanelView())
+        except Exception as exc:
+            logger.warning("Access panel view registration failed: %s", exc)
+
+        # Кнопки ЛС-инструкции новому владельцу «Доступа».
+        try:
+            from services.access_academy import AccessDmView
+
+            self.add_view(AccessDmView())
+        except Exception as exc:
+            logger.warning("Access DM view registration failed: %s", exc)
+
 
         # Set up error handler for app commands
         self.tree.on_error = self.on_app_command_error
@@ -895,7 +602,9 @@ class TournamentBot(commands.Bot):
         logger.debug("Зарегистрирован View: %s", key)
 
     def build_view_for_tournament(
-        self, tournament: Tournament
+        self, tournament: Tournament,
+        *,
+        journal_url: str | None = None,
     ) -> discord.ui.View | None:
         """Построить View в зависимости от фазы турнира."""
         phase = tournament.phase
@@ -932,6 +641,16 @@ class TournamentBot(commands.Bot):
             return FinalView(gid, tournament.channel_id, tournament.final_teams, tournament)
 
         if phase == TournamentPhase.COMPLETE:
+            # Итоговая карточка: единственная кнопка — ссылка
+            # на карточку журнала турнира (если она опубликована).
+            if journal_url:
+                view = discord.ui.View(timeout=None)
+                view.add_item(discord.ui.Button(
+                    style=discord.ButtonStyle.link,
+                    label="Журнал турнира",
+                    url=journal_url,
+                ))
+                return view
             return None  # No buttons needed for completed tournament
 
         return None
@@ -942,8 +661,14 @@ class TournamentBot(commands.Bot):
         tournament: Tournament,
         *,
         from_timer: bool = False,
-    ) -> None:
+        force: bool = False,
+    ) -> bool:
         """Отредактировать главное сообщение турнира.
+
+        Возвращает True при успешном обновлении (или когда обновление
+        не требовалось), False — если сообщение обновить не удалось
+        (нет message_id, канал/сообщение недоступны, ошибка edit).
+        Вызывающие коды могут сообщить пользователю о проблеме.
 
         Оптимизация P1: контент рендерится и сравнивается по
         сигнатуре — message.edit выполняется только при реальном
@@ -960,13 +685,41 @@ class TournamentBot(commands.Bot):
         ставки) идут с from_timer=False — они всегда делают
         полный rebuild, поэтому изменения от пользователя
         отражаются немедленно.
+
+        force=True (owner repair): пропускает fingerprint-кэш
+        и инвалидирует _EDIT_CACHE — карточка перезаписывается
+        актуальным контентом даже при совпадающей подписи и
+        проверяет существование сообщения через fetch_message.
         """
+        # Защита от гонки: если в канале уже другой турнир
+        # (завершённый заархивирован, создан новый), запоздавшее
+        # обновление СТАРОГО объекта не должно перезаписывать
+        # карточку нового турнира или воскрешать старую фазу.
+        try:
+            from storage.json_store import store as _tstore
+            _current = _tstore.get(guild.id, tournament.channel_id)
+        except Exception:
+            _current = None
+        if (
+            _current is not None
+            and str(_current.id) != str(tournament.id)
+        ):
+            logger.info(
+                "update_tournament_message: пропуск устаревшего "
+                "турнира %s (в канале %s активен %s)",
+                tournament.id, tournament.channel_id, _current.id,
+            )
+            return True
+
         if not tournament.message_id:
             logger.warning("Нет message_id для сервера %s", guild.id)
-            return
+            return False
 
         fp_key = str(tournament.id)
-        fp = _tournament_display_fingerprint(tournament) if from_timer else ""
+        fp = (
+            _tournament_display_fingerprint(tournament)
+            if from_timer and not force else ""
+        )
         now = time.monotonic()
         if from_timer and fp:
             cached_fp = _TOURNAMENT_FP_CACHE.get(fp_key)
@@ -985,14 +738,28 @@ class TournamentBot(commands.Bot):
                     await announce_phase_matches(tournament, guild, self)
                 except Exception as exc:
                     logger.error("Match announce failed: %s", exc)
-                return
+                return True
 
         if from_timer and fp:
             if len(_TOURNAMENT_FP_CACHE) >= _TOURNAMENT_FP_CACHE_MAX:
                 _TOURNAMENT_FP_CACHE.pop(next(iter(_TOURNAMENT_FP_CACHE)))
             _TOURNAMENT_FP_CACHE[fp_key] = {"fp": fp, "ts": now}
 
-        key = f"{guild.id}:{tournament.channel_id}"
+        # Ключ кэша — по СООБЩЕНИЮ турнира (message_id уникален),
+        # а не по каналу: два турнира в одном канале (старый
+        # завершённый + новый) не должны делить кэш и редактировать
+        # чужие карточки.
+        key = (
+            f"{guild.id}:{tournament.channel_id}:"
+            f"{tournament.id}:{tournament.message_id}"
+        )
+        if force:
+            # Принудительное восстановление карточки (repair):
+            # игнорируем кэш подписи — сообщение редактируется
+            # даже при совпадающем контенте, а кэшированный
+            # Message инвалидируется (fetch_message заново
+            # проверит существование сообщения).
+            _EDIT_CACHE.pop(key, None)
         async with _edit_lock(key):
             channel = guild.get_channel(tournament.channel_id)
             if channel is None:
@@ -1000,15 +767,37 @@ class TournamentBot(commands.Bot):
                     channel = await guild.fetch_channel(tournament.channel_id)
                 except discord.HTTPException as exc:
                     logger.error("Канал не найден: %s", exc)
-                    return
+                    return False
 
             from utils import perf_metrics
 
             async with perf_metrics.async_timing("embed_build_ms"):
                 embed = await build_embed_for_phase(tournament, guild)
             async with perf_metrics.async_timing("view_build_ms"):
-                view = self.build_view_for_tournament(tournament)
+                # Для завершённого турнира — ссылка на журнал
+                # (URL кэшируется в tournament_journal).
+                journal_url = None
+                if tournament.phase == TournamentPhase.COMPLETE:
+                    try:
+                        from services import tournament_journal
+                        journal_url = (
+                            await tournament_journal.journal_url_for(
+                                tournament))
+                    except Exception:
+                        journal_url = None
+                view = self.build_view_for_tournament(
+                    tournament, journal_url=journal_url)
                 self._register_view(view)
+                if (
+                    tournament.phase == TournamentPhase.DRAFT
+                    and view is not None
+                    and hasattr(view, "enrich_with_sr")
+                ):
+                    try:
+                        await view.enrich_with_sr(guild.id)
+                    except Exception:
+                        logger.debug(
+                            "draft SR enrich failed", exc_info=True)
                 payload = compose(embed, view)
                 sig = _message_signature(embed, payload)
 
@@ -1039,6 +828,9 @@ class TournamentBot(commands.Bot):
                         logger.warning("Не удалось получить сообщение: %s", exc)
                         message = None
 
+                if message is None:
+                    return False
+
                 if message is not None:
                     try:
                         async with perf_metrics.async_timing(
@@ -1058,15 +850,18 @@ class TournamentBot(commands.Bot):
                         )
                         _EDIT_CACHE.pop(key, None)
                         message = None
+                        return False
                     except discord.Forbidden as exc:
                         logger.error(
                             "Нет прав на редактирование сообщения "
                             "турнира %s: %s", tournament.id, exc
                         )
+                        return False
                     except discord.HTTPException as exc:
                         logger.error(
                             "Не удалось обновить сообщение: %s", exc
                         )
+                        return False
                     else:
                         perf_metrics.incr("discord_edits")
                         if len(_EDIT_CACHE) >= _EDIT_CACHE_MAX:
@@ -1084,6 +879,8 @@ class TournamentBot(commands.Bot):
                 await announce_phase_matches(tournament, guild, self)
         except Exception as exc:
             logger.error("Match announce failed: %s", exc)
+
+        return True
 
     async def betting_timer_loop(self) -> None:
         """Background task to update betting timer in tournament messages."""
@@ -1253,6 +1050,31 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.error(f"Error in pet hunger check loop: {e}", exc_info=True)
 
+    async def shop_refund_sweeper_loop(self) -> None:
+        """SHOP 2.0: досчёт refund_pending/rep_pending каждые 5 минут.
+
+        Покрывает случай, когда возврат уперся в MAX_BALANCE или
+        временную недоступность PostgreSQL между рестартами.
+        """
+        import asyncio
+
+        while not self.is_closed():
+            try:
+                await asyncio.sleep(300)
+                if not self.is_ready():
+                    continue
+                from services.shop_purchase_service import (
+                    recover_sell_pending,
+                    settle_refund_debts,
+                )
+                await settle_refund_debts()
+                # Sell-ops без маркера ready ждут повторной
+                # проверки Discord-роли — recover_pending
+                # отрабатывает только на старте.
+                await recover_sell_pending(self)
+            except Exception as e:
+                logger.error(f"Error in shop refund sweeper: {e}", exc_info=True)
+
     async def birthday_loop(self) -> None:
         """Поздравлять с днём рождения в 00:00 по времени Астаны (UTC+5)."""
         import asyncio
@@ -1338,28 +1160,6 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.error(f"Birthday greetings error for guild {guild.id}: {e}", exc_info=True)
 
-    async def _recover_finalizing_sessions(self) -> None:
-        """Фоновое восстановление OCR-сессий в статусе finalizing.
-
-        Запускается из setup_hook: для каждой зависшей сессии
-        безопасно доводит finalize_ocr_match до конца — повторное
-        начисление ELO исключено PG-гейтом match_finalizations.
-        """
-        try:
-            from storage.json_store import store
-            from services.ocr_recovery import recover_stuck_finalizing
-
-            for tournament in store.all():
-                try:
-                    await recover_stuck_finalizing(self, tournament)
-                except Exception:
-                    logger.exception(
-                        "OCR finalizing recovery failed for tournament %s",
-                        getattr(tournament, "id", "?"),
-                    )
-        except Exception:
-            logger.exception("OCR finalizing recovery scan failed")
-
     async def on_ready(self) -> None:
         import os
         commit = (
@@ -1379,11 +1179,105 @@ class TournamentBot(commands.Bot):
         except Exception as e:
             logger.error(f"Ошибка синхронизации команд: {e}")
 
-        # Restore org role view if it exists
-        from views.org_role_view import (
-            load_state, OrgRoleView, build_org_role_embed,
-        )
-        from utils.design import compose as _compose_v2
+        # Восстановление незавершённых покупок смены ника
+        try:
+            from services.nickname_service import recover_pending
+            resolved = await recover_pending(self)
+            if resolved:
+                logger.info(
+                    "nickname ops recovery: %d операций разрешено", resolved
+                )
+        except Exception as e:
+            logger.error(f"nickname ops recovery failed: {e}")
+
+        # Восстановление незавершённых покупок магазина (SHOP 2.0)
+        try:
+            from services.shop_purchase_service import recover_pending
+            resolved_shop = await recover_pending(self)
+            if resolved_shop:
+                logger.info(
+                    "shop ops recovery: %d операций разрешено",
+                    resolved_shop,
+                )
+        except Exception as e:
+            logger.error(f"shop ops recovery failed: {e}")
+
+        # BLACKJACK 2.0: восстановить активные раздачи после рестарта
+        # и запустить sweeper тайм-аута (90с → авто-Stand).
+        if DATABASE_URL:
+            try:
+                from games.blackjack import (
+                    blackjack_sweeper_loop,
+                    recover_active,
+                )
+                await recover_active(self)
+                self.loop.create_task(blackjack_sweeper_loop())
+            except Exception as e:
+                logger.error(f"blackjack recovery failed: {e}", exc_info=True)
+
+        # Довести отложенные публикации карточек комнат турниров
+        try:
+            from services.room_publisher import retry_pending_rooms
+            resolved_rooms = await retry_pending_rooms(self)
+            if resolved_rooms:
+                logger.info(
+                    "room publish recovery: %d записей", resolved_rooms
+                )
+        except Exception as e:
+            logger.error(f"room publish recovery failed: {e}")
+
+        # BR: довести отложенную публикацию итогов до конца (тот же
+        # снимок) и синхронизировать публичные карточки — только здесь,
+        # после READY, когда кэш гильдий/каналов доступен.
+        try:
+            from storage.br_store import br_store
+            from views.br_view import sync_public_card, resume_pending_publish
+            for brt in br_store.all():
+                # объект из снимка мог устареть (purge/cancel/замена
+                # турнира в канале) — синхронизируем только актуальный
+                fresh = br_store.get(brt.guild_id, brt.channel_id)
+                if fresh is None or str(fresh.id) != str(brt.id):
+                    continue
+                await resume_pending_publish(fresh, self)
+                await sync_public_card(fresh, self)
+        except Exception as e:
+            logger.error(f"BR card restore failed: {e}")
+
+        # Squad Hub 2.0: восстановить persistent views публичной
+        # карточки и рекрутинговых карточек команд, создать карточку
+        # хаба если канал настроен и карточки ещё нет.
+        try:
+            from services import squad_service as squad_svc
+            restored = await squad_svc.restore_hub_views(self)
+            if restored:
+                logger.info("Squad Hub views restored: %d", restored)
+            for guild in self.guilds:
+                try:
+                    await squad_svc.ensure_hub_card(self, guild)
+                except Exception as exc:
+                    logger.warning(
+                        "Squad Hub card ensure failed for %s: %s",
+                        guild.id, exc)
+        except Exception as e:
+            logger.error(f"Squad Hub restore failed: {e}")
+
+        # Централизованный журнал турниров: догнать pending-записи,
+        # гарантировать карточки активных турниров и ссылки
+        # итогов ↔ журнал после рестарта.
+        try:
+            from services import tournament_journal
+            journal_done = await tournament_journal.recover(self)
+            if journal_done:
+                logger.info(
+                    "tournament journal recovery: %d записей",
+                    journal_done,
+                )
+        except Exception as e:
+            logger.error(f"tournament journal recovery failed: {e}")
+
+        # Restore org role panel if it exists
+        from views.org_role_view import load_state, OrgPanelView
+        from utils.banner import edit_attachments as _banner_att
         state = load_state()
         if state.message_id > 0 and state.channel_id > 0 and state.guild_id > 0:
             try:
@@ -1393,78 +1287,57 @@ class TournamentBot(commands.Bot):
                     if channel:
                         try:
                             message = await channel.fetch_message(state.message_id)
-                            view = OrgRoleView(state)
+                            view = OrgPanelView(guild=guild, state=state)
                             self.add_view(view, message_id=state.message_id)
-                            # Старые панели содержали баннер-картинку —
-                            # пересобираем сообщение в компактном виде
-                            # и снимаем вложение (одноразово при старте).
+                            # Пересобираем сообщение в новый CV2-вид
+                            # (баннер + статусы + кнопки в одном сообщении).
                             try:
+                                att = _banner_att(message)
+                                edit_kwargs = {}
+                                if att is not None:
+                                    edit_kwargs["attachments"] = att
                                 await message.edit(
-                                    view=_compose_v2(
-                                        build_org_role_embed(guild, state),
-                                        view,
-                                    ),
-                                    attachments=[],
+                                    view=view,
                                     allowed_mentions=(
                                         discord.AllowedMentions.none()
                                     ),
+                                    **edit_kwargs,
                                 )
                             except Exception as exc:
                                 logger.warning(
                                     "Org panel re-render failed: %s", exc
                                 )
-                            logger.info("Org role view restored")
+                            logger.info("Org role panel restored")
                         except discord.NotFound:
                             logger.warning("Org role message not found, will be recreated")
             except Exception as e:
                 logger.error(f"Error restoring org role view: {e}")
 
-        # Восстановить состояние карточек матчей с активной OCR-загрузкой:
-        # кнопка «Отправить результат» должна оставаться скрытой,
-        # пока сессия не завершена/не отменена.
-        try:
-            from services.match_announcer import update_match_card
-            from cogs.ocr_upload import match_button_hidden_for_session
-            from views.ocr_match_view import (
-                _stats_complete,
-                match_is_finished,
-            )
+        # Classic layout: обновить карточки анонсов матчей и MM-матчей
+        # (убраны блок «ИНФОРМАЦИЯ» и кнопки «Правила»). Одноразово
+        # при старте, идемпотентно, результаты не затрагиваются.
+        async def _refresh_match_cards() -> None:
+            try:
+                from services.match_announcer import refresh_announced_cards
+                await refresh_announced_cards(self)
+            except Exception as exc:
+                logger.warning("Match card refresh failed: %s", exc)
+            try:
+                from views.mm_match_view import refresh_mm_cards
+                await refresh_mm_cards(self)
+            except Exception as exc:
+                logger.warning("MM card refresh failed: %s", exc)
 
-            for tournament in store.all():
-                guild = self.get_guild(tournament.guild_id)
-                if guild is None:
-                    continue
-                for session in (tournament.ocr_sessions or {}).values():
-                    if session.get("status") in (
-                        None, "completed", "cancelled"
-                    ):
-                        continue
-                    mt, mi = session.get("match_type"), session.get(
-                        "match_index"
-                    )
-                    if mt is None or mi is None:
-                        continue
-                    if match_is_finished(tournament, mt, mi):
-                        continue
-                    if _stats_complete(tournament, mt, mi):
-                        continue
-                    # rooms: скрываем кнопку только если файл реально
-                    # принят (0 файлов → кнопка остаётся доступной
-                    # для продолжения сбора).
-                    if not match_button_hidden_for_session(session):
-                        continue
-                    try:
-                        await update_match_card(
-                            guild, tournament, mt, mi,
-                            state="processing",
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "OCR card state restore failed for %s %s: %s",
-                            mt, mi, exc,
-                        )
+        self.loop.create_task(_refresh_match_cards())
+
+        # Ультиматум 2.0: восстановить активные турниры после рестарта
+        # (обновить карточки регистрации/сетки в каналах).
+        try:
+            _ult_cog = self.get_cog("UltimatumCog")
+            if _ult_cog is not None and hasattr(_ult_cog, "cog_load_resume"):
+                self.loop.create_task(_ult_cog.cog_load_resume())
         except Exception as exc:
-            logger.warning("OCR match card state restore failed: %s", exc)
+            logger.warning("Ultimatum resume hook failed: %s", exc)
 
         # Debug: Log all registered commands
         commands = list(self.tree.walk_commands())
@@ -1474,23 +1347,16 @@ class TournamentBot(commands.Bot):
             logger.info(f"  - /{cmd.name} (type: {cmd_type})")
 
     async def close(self) -> None:
-        """Graceful shutdown: закрыть shared-ресурсы рендеров."""
+        """Graceful shutdown: остановить фоновые метрики."""
         try:
-            from utils.match_found_renderer import close_avatar_session
-
-            await close_avatar_session()
+            from services.settings_service import settings_service
+            await settings_service.stop()
         except Exception:
             pass
         try:
             from utils import perf_metrics
 
             await perf_metrics.stop()
-        except Exception:
-            pass
-        try:
-            from utils.profile_renderer import shutdown_profile_renderer
-
-            await shutdown_profile_renderer()
         except Exception:
             pass
         await super().close()

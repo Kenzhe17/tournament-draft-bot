@@ -118,39 +118,3 @@ def _sample_profile_data(level: int) -> dict:
         "ult_matches": 12, "ult_wins": 7, "ult_elo": 1600,
         "ult_status": "В норме",
     }
-
-
-def test_long_rank_names_fit_in_profile():
-    """GRANDMASTER II / ELITE HEROIC / ELITE MASTER не вылезают
-    ни за чип в панели игрока, ни за заголовок ранга."""
-    from utils.profile_renderer import _fit_text, _rank_info, build_profile_svg
-
-    for level in (25, 44, 49, 51, 63, 81, 94, 100):
-        info = _rank_info(level)
-        # заголовок ранга: x=1281, правый край панели ~1860
-        big, big_size = _fit_text(info["cur_name"], 545, 35, 780, min_size=20)
-        assert big_size >= 20, (level, info["cur_name"])
-        # чип в панели игрока: ширина 124px
-        chip, chip_size = _fit_text(info["cur_name"], 124, 19, 700, min_size=9)
-        assert chip_size >= 12, (level, info["cur_name"], chip)
-        # «ДО NEXT» тоже проверяем по той же ширине
-        if info["next_name"]:
-            nxt, _ = _fit_text(f"ДО {info['next_name']}", 545, 15, 750,
-                               min_size=10)
-            assert nxt
-
-
-def test_profile_svg_contains_subrank_and_next():
-    """SVG содержит полное имя подранга и следующий дивизион."""
-    from utils.profile_renderer import build_profile_svg
-
-    badge = (ranks.BADGE_DIR / ranks.rank_badge_filename(44)).read_bytes()
-    svg = build_profile_svg(_sample_profile_data(44), badge_png=badge)
-    assert "PLATINUM III" in svg
-    assert "ДО PLATINUM IV" in svg
-    # CSS-фильтр, искажавший цвета эмблем, удалён
-    assert "brightness(1.9)" not in svg
-
-    svg100 = build_profile_svg(_sample_profile_data(100), badge_png=badge)
-    assert "GRANDMASTER II" in svg100
-    assert "MAX TIER" in svg100

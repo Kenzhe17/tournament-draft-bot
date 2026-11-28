@@ -1,67 +1,47 @@
+# syntax=docker/dockerfile:1
+#
+# Образ для двух ролей (выбор через SERVICE_ROLE):
+#   bot   (default) — python bot.py
+#   panel           — uvicorn control_center.main:app :8080
+#                     (API + собранная React-панель panel/dist)
+
+# --- Stage 1: React-сборка панели ---
+FROM node:22-alpine AS panel-build
+WORKDIR /panel
+COPY panel/package.json panel/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY panel/ ./
+RUN npm run build
+
+# --- Stage 2: Python runtime ---
 FROM python:3.12-slim
-
-
-
 WORKDIR /app
-
-
-
 ENV PYTHONUNBUFFERED=1
-
 ENV DATA_DIR=/app/data
-
 RUN mkdir -p /app/data
 
-# OpenCV (PaddleOCR) requires these system libs on slim images
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 libgfortran5 libsndfile1 \
-    && rm -rf /var/lib/apt/lists/*
-
-
-
-COPY requirements.txt .
-
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Chromium для рендера PNG-профиля (Playwright)
-RUN playwright install --with-deps chromium
-
-
+COPY requirements.txt ./
+COPY control_center/requirements.txt ./control_center/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -r control_center/requirements.txt
 
 COPY bot.py config.py ./
-
 COPY cogs/ cogs/
-
+COPY games/ games/
 COPY services/ services/
-
 COPY models/ models/
-
 COPY storage/ storage/
-
 COPY utils/ utils/
-
 COPY views/ views/
-
 COPY ultimatum/ ultimatum/
-
+COPY control_center/ control_center/
 COPY assets/ assets/
-
 COPY assets_ds_server/ assets_ds_server/
-
 COPY content/ content/
+COPY --from=panel-build /panel/dist panel/dist
 
-# Pre-download RapidOCR ONNX models into the image.
-# v1 (rapidocr_onnxruntime) создаёт сессии eagerly — warmup хватает.
-# v3 (rapidocr, кириллица) — ЛЕНИВО: rec-сессия создаётся только при
-# первом распознанном боксе, поэтому warmup на пустом кадре модель
-# не скачивал → в Railway она докачивалась в рантайме. Качаем
-# детерминированно через штатный download_task + проверяем.
-COPY tools/download_ocr_models.py tools/
-RUN python -c "from rapidocr_onnxruntime import RapidOCR; import numpy as np; o=RapidOCR(); o(np.zeros((64,64,3),dtype='uint8'))"
-RUN python tools/download_ocr_models.py
-RUN python -c "import sys; from services.ocr_service import verify_model_files; m=verify_model_files(); print('missing models:', m); sys.exit(1 if m else 0)"
+RUN python -c "from games.blackjack import start_blackjack"
 
+EXPOSE 8080
 
-
-CMD ["python", "bot.py"]
-
+# SERVICE_ROLE=panel → Control Center; иначе — Discord-бот.
+CMD ["sh", "-c", "if [ \"$SERVICE_ROLE\" = \"panel\" ]; then exec uvicorn control_center.main:app --host 0.0.0.0 --port ${PORT:-8080}; else exec python bot.py; fi"]

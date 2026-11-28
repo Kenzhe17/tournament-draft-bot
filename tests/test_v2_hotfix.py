@@ -114,25 +114,25 @@ async def test_history_pagination_next_and_prev():
     assert view.current_page == 0
     # page 0 -> 1 -> 2 -> 3
     for expected in (1, 2, 3):
-        layout = await _press(layout, "▶")
+        layout = await _press(layout, "Вперёд")
         assert view.current_page == expected
         # Кнопки навигации обязаны остаться после каждого edit
-        assert _has_button(layout, "◀")
-        assert _has_button(layout, "▶")
+        assert _has_button(layout, "Назад")
+        assert _has_button(layout, "Вперёд")
 
-    # На последней странице «▶» отключена
-    assert _find_button(layout, "▶").disabled is True
-    assert _find_button(layout, "◀").disabled is False
+    # На последней странице «Вперёд» отключена
+    assert _find_button(layout, "Вперёд").disabled is True
+    assert _find_button(layout, "Назад").disabled is False
 
     # 3 -> 2 -> 1 -> 0
     for expected in (2, 1, 0):
-        layout = await _press(layout, "◀")
+        layout = await _press(layout, "Назад")
         assert view.current_page == expected
-        assert _has_button(layout, "◀")
-        assert _has_button(layout, "▶")
+        assert _has_button(layout, "Назад")
+        assert _has_button(layout, "Вперёд")
 
-    # На первой странице «◀» — disabled-заглушка без callback
-    prev = _find_button(layout, "◀")
+    # На первой странице «Назад» — disabled-заглушка без callback
+    prev = _find_button(layout, "Назад")
     assert prev.disabled is True
 
 
@@ -142,12 +142,12 @@ async def test_history_pagination_state_shared_across_edits():
     view = _history_view()
     layout = compose(discord.Embed(description="history"), view)
 
-    layout = await _press(layout, "▶")
-    layout = await _press(layout, "▶")
+    layout = await _press(layout, "Вперёд")
+    layout = await _press(layout, "Вперёд")
     assert view.current_page == 2
 
     # Кнопки в новом layout принадлежат новой обёртке с тем же delegate
-    nxt = _find_button(layout, "▶")
+    nxt = _find_button(layout, "Вперёд")
     assert nxt.view is layout
     assert getattr(nxt.view, "source_view", None) is view
 

@@ -4,9 +4,6 @@
 constant custom_id и работают через persistent views: после рестарта
 бот регистрирует QueueControlsView на сохранённый message_id.
 
-Баннер queue_banner.png крепится к сообщению один раз при создании
-и отображается через MediaGallery (attachment://); последующие
-обновления — только edit view, вложение сохраняется.
 """
 
 from __future__ import annotations
@@ -16,13 +13,13 @@ import logging
 import discord
 
 from models.mm_search import MMSearch
+from utils.banner import MEDIA as BANNER_MEDIA, available as banner_available
 from utils.design.layouts import DesignView
 
 logger = logging.getLogger(__name__)
 
 JOIN_CUSTOM_ID = "mmq_join:{gid}:{cid}"
 LEAVE_CUSTOM_ID = "mmq_leave:{gid}:{cid}"
-BANNER_FILENAME = "queue_banner.png"
 
 
 def _cog(interaction: discord.Interaction):
@@ -99,13 +96,15 @@ def build_queue_panel(
     """Построить V2-панель очереди (open/locked)."""
     view = DesignView(timeout=None)
 
-    # Баннер — MediaGallery поверх карточки (файл крепится к сообщению)
-    view.component(
-        discord.ui.MediaGallery(
-            discord.MediaGalleryItem(media=f"attachment://{BANNER_FILENAME}")
+    # PNG-баннер сверху карточки (attachment:// — файл прикреплён
+    # к сообщению при отправке; при edit вложение сохраняется).
+    if banner_available():
+        view.component(
+            discord.ui.MediaGallery(
+                discord.MediaGalleryItem(media=BANNER_MEDIA)
+            )
         )
-    )
-    view.sep()
+        view.sep(large=True)
 
     if search.is_waiting_channel:
         view.text("## СТАТУС ОЧЕРЕДИ")
