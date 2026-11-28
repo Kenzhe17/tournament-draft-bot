@@ -13,7 +13,7 @@ import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace as NS
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -43,6 +43,7 @@ class FakeStore:
         self.overwrites = []
         self.ops = {}
         self.event_rows = []
+        self._panels = {}
         self._next_id = 1
         self._claimed = set()
 
@@ -64,6 +65,16 @@ class FakeStore:
             cur["log_channel_id"] = values["log_channel_id"]
         self.settings_map[guild_id] = cur
         return cur
+
+    # public panel -----------------------------------------------------
+    async def panel(self, guild_id):
+        p = self._panels.get(guild_id)
+        return dict(p) if p else None
+
+    async def put_panel(self, guild_id, channel_id, message_id):
+        self._panels[guild_id] = {
+            "guild_id": guild_id, "channel_id": channel_id,
+            "message_id": message_id, "updated_at": datetime.now(UTC)}
 
     # modes ------------------------------------------------------------
     async def mode(self, guild_id, channel_id):
@@ -447,12 +458,12 @@ def make_role(rid, position=1):
 
 def make_member(uid, guild, channel=None, *, muted=False, deaf=False,
                 self_muted=False, self_deafed=False, bot=False,
-                roles=(), top_role=1, edit_side_effect=None):
+                roles=(), top_role=1, edit_side_effect=None, admin=False):
     m = NS(
         id=uid, bot=bot, guild=guild, top_role=top_role,
         roles=list(roles), display_name=f"User{uid}", name=f"user{uid}",
         mention=f"<@{uid}>", voice=None,
-        guild_permissions=NS(administrator=False, mute_members=True,
+        guild_permissions=NS(administrator=admin, mute_members=True,
                              deafen_members=True, move_members=True,
                              manage_roles=True, manage_channels=True),
     )
@@ -2017,3 +2028,299 @@ async def test_channel_switch_during_member_lock_wait(env):
     assert fresh["state"] in ("released", "expired")
     assert target.voice.mute is False
     assert target.voice.channel is ch_b
+
+
+# ----------------------------------------------------------------------
+# Access model + постоянная публичная панель (CV2)
+# ----------------------------------------------------------------------
+VC_OWNER = 4242
+
+
+def _text_channel(cid, guild, *, fetch_message=None):
+    """Текстовый канал для публикации публичной карточки."""
+    return NS(id=cid, name=f"text-{cid}", guild=guild,
+              type=discord.ChannelType.text,
+              fetch_message=fetch_message or AsyncMock(
+                  side_effect=discord.NotFound(MagicMockResponse(), "nf")),
+              send=AsyncMock())
+
+
+def _interaction(guild, user, channel, *, message_id=None):
+    inter = NS(
+        guild=guild, user=user, channel=channel,
+        message=NS(id=message_id) if message_id else None,
+        type=None,
+        response=NS(is_done=lambda: False,
+                    send_message=AsyncMock(),
+                    defer=AsyncMock(),
+                    edit_message=AsyncMock()),
+        followup=NS(send=AsyncMock(), edit_message=AsyncMock()),
+        original_response=AsyncMock(return_value=NS(id=555)),
+    )
+    return inter
+
+
+@pytest.fixture
+def vc_owner(monkeypatch):
+    monkeypatch.setattr(vc, "BOT_OWNER_ID", VC_OWNER)
+
+
+def _cog(env, extra_bot=None):
+    from cogs.voice_control import VoiceControlCog
+    bot = NS(get_guild=lambda gid: env.guild if gid == GUILD_ID else None,
+             get_channel=lambda cid: next(
+                 (c for c in env.guild.channels if c.id == cid), None),
+             **(extra_bot or {}))
+    return VoiceControlCog(bot)
+
+
+@pytest.mark.asyncio
+async def test_voice_command_only_bot_owner(env, vc_owner):
+    """1-3. /voice — исключительно BOT_OWNER_ID: ни guild owner,
+    ни administrator, ни обычный игрок не могут вызвать команду."""
+    from cogs import voice_control as vc_cog
+    g = env.guild
+    ch = _text_channel(500, g)
+    g.channels.append(ch)
+    ch.send = AsyncMock(return_value=NS(id=777, channel=ch))
+    cog = _cog(env)
+
+    async def call(user):
+        inter = _interaction(g, user, ch)
+        await vc_cog.VoiceControlCog.voice.callback(cog, inter)
+        return inter
+
+    # BOT_OWNER_ID без Discord Administrator — МОЖЕТ.
+    owner = make_member(VC_OWNER, g)
+    inter = await call(owner)
+    assert ch.send.await_count == 1
+    assert inter.response.defer.await_count == 1
+    assert "опубликована" in str(inter.followup.send.await_args)
+    stored = await vc.db.panel(GUILD_ID)
+    assert stored and stored["message_id"] == 777
+
+    # Discord Administrator без BOT_OWNER_ID — НЕ может.
+    admin = make_member(ACTOR_ID, g, admin=True)
+    inter2 = await call(admin)
+    assert ch.send.await_count == 1  # дубликата нет
+    text = str(inter2.response.send_message.await_args)
+    assert "владельцу бота" in text
+
+    # Guild owner без admin-флага — НЕ может.
+    guild_owner = make_member(OWNER_ID, g)
+    await call(guild_owner)
+    assert ch.send.await_count == 1
+
+    # Обычный игрок — отказ.
+    player = make_member(77, g)
+    await call(player)
+    assert ch.send.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_public_button_access_matrix(env, vc_owner):
+    """3. Кнопка публичной карточки: owner без admin и administrator
+    открывают ephemeral-панель; обычный игрок — отказ."""
+    g = env.guild
+    cog = _cog(env)
+    view = cog._public_card_view()
+    btn = next(c for c in view.walk_children()
+               if isinstance(c, discord.ui.Button)
+               and c.custom_id == "vc_open_panel")
+    assert btn.label == "Открыть панель управления"
+
+    async def click(user):
+        inter = _interaction(g, user, None)
+        await btn.callback(inter)
+        return inter
+
+    # Обычный игрок — отказ, панель не создана.
+    player = make_member(77, g)
+    inter = await click(player)
+    assert (GUILD_ID, 77) not in cog.panels
+    assert "Недостаточно прав" in str(
+        inter.response.send_message.await_args)
+
+    # Administrator — открывает свою панель.
+    admin = make_member(ACTOR_ID, g, admin=True)
+    inter = await click(admin)
+    assert (GUILD_ID, ACTOR_ID) in cog.panels
+    assert inter.response.send_message.await_args.kwargs.get(
+        "ephemeral") is True
+
+    # BOT_OWNER_ID без administrator — тоже открывает.
+    owner = make_member(VC_OWNER, g)
+    inter = await click(owner)
+    assert (GUILD_ID, VC_OWNER) in cog.panels
+
+
+@pytest.mark.asyncio
+async def test_public_button_after_restart(env, vc_owner):
+    """6. Persistent view: новый экземпляр cog (после рестарта)
+    регистрирует кнопку и она открывает панель."""
+    g = env.guild
+    # «Рестарт»: новый экземпляр cog регистрирует persistent view —
+    # его callback привязан к новому экземпляру.
+    cog = _cog(env, {"add_view": MagicMock()})
+    await cog.cog_load()
+    try:
+        registered = cog.bot.add_view.call_args.args[0]
+        btn = next(c for c in registered.walk_children()
+                   if isinstance(c, discord.ui.Button)
+                   and c.custom_id == "vc_open_panel")
+        admin = make_member(ACTOR_ID, g, admin=True)
+        inter = _interaction(g, admin, None)
+        await btn.callback(inter)
+        assert (GUILD_ID, ACTOR_ID) in cog.panels
+    finally:
+        await cog.cog_unload()
+
+
+@pytest.mark.asyncio
+async def test_repeat_voice_updates_single_panel(env, vc_owner):
+    """7. Повторный /voice редактирует существующее сообщение —
+    дубликатов нет."""
+    from cogs import voice_control as vc_cog
+    g = env.guild
+    msg = NS(id=777, channel=None, edit=AsyncMock())
+
+    async def fetch_message(mid):
+        msg.channel = ch
+        return msg
+
+    ch = _text_channel(500, g, fetch_message=AsyncMock(
+        side_effect=fetch_message))
+    ch.send = AsyncMock(return_value=NS(id=777, channel=ch))
+    g.channels.append(ch)
+    msg.channel = ch
+    cog = _cog(env)
+    owner = make_member(VC_OWNER, g)
+
+    for _ in range(2):
+        inter = _interaction(g, owner, ch)
+        await vc_cog.VoiceControlCog.voice.callback(cog, inter)
+
+    assert ch.send.await_count == 1
+    assert msg.edit.await_count == 1
+    assert len(env.store._panels) == 1
+
+
+@pytest.mark.asyncio
+async def test_deleted_public_message_restored(env, vc_owner):
+    """Повторный /voice восстанавливает удалённое сообщение."""
+    from cogs import voice_control as vc_cog
+    g = env.guild
+    ch = _text_channel(500, g)
+    ch.send = AsyncMock(return_value=NS(id=222, channel=ch))
+    g.channels.append(ch)
+    await vc.db.put_panel(GUILD_ID, ch.id, 111)  # запись о старом msg
+    cog = _cog(env)
+    owner = make_member(VC_OWNER, g)
+
+    inter = _interaction(g, owner, ch)
+    await vc_cog.VoiceControlCog.voice.callback(cog, inter)
+
+    assert ch.send.await_count == 1  # 111 «удалён» → отправлено 222
+    stored = await vc.db.panel(GUILD_ID)
+    assert stored["message_id"] == 222
+
+
+@pytest.mark.asyncio
+async def test_two_admins_independent_panels(env, vc_owner):
+    """4. Два администратора — независимые ephemeral-панели."""
+    g = env.guild
+    ch = make_channel(10, g, "A")
+    make_channel(11, g, "B")
+    cog = _cog(env)
+    a1 = make_member(101, g, ch, admin=True)
+    a2 = make_member(102, g, admin=True)
+
+    for u in (a1, a2):
+        inter = _interaction(g, u, None)
+        view = cog._public_card_view()
+        btn = next(c for c in view.walk_children()
+                   if isinstance(c, discord.ui.Button))
+        await btn.callback(inter)
+
+    p1 = cog.panels[(GUILD_ID, 101)]
+    p2 = cog.panels[(GUILD_ID, 102)]
+    assert p1 is not p2 and p1.panel_id != p2.panel_id
+    p1.channel_id = ch.id
+    assert p2.channel_id != ch.id
+
+
+@pytest.mark.asyncio
+async def test_revoked_admin_loses_access(env, vc_owner):
+    """5. Снятие Administrator блокирует дальнейшие действия
+    ранее открытой панели."""
+    g = env.guild
+    cog = _cog(env)
+    admin = make_member(ACTOR_ID, g, admin=True)
+    inter = _interaction(g, admin, None)
+    view = cog._public_card_view()
+    btn = next(c for c in view.walk_children()
+               if isinstance(c, discord.ui.Button))
+    await btn.callback(inter)
+    panel = cog.panels[(GUILD_ID, ACTOR_ID)]
+    panel.message_id = 555
+
+    # Отзыв Administrator.
+    admin.guild_permissions.administrator = False
+    inter2 = _interaction(g, admin, None, message_id=555)
+    await cog.handle(inter2, "refresh")
+    text = str(inter2.response.send_message.await_args)
+    assert "Недостаточно прав" in text
+
+
+@pytest.mark.asyncio
+async def test_flag_off_blocks_panel_mutations(env, vc_owner,
+                                               monkeypatch):
+    """8. Feature flag OFF: мутации панели запрещены."""
+    import cogs.voice_control as vc_cog
+    monkeypatch.setattr(vc_cog, "VOICE_CONTROL_ENABLED", False)
+    g = env.guild
+    make_channel(10, g, "A")
+    cog = _cog(env)
+    admin = make_member(ACTOR_ID, g, admin=True)
+    inter = _interaction(g, admin, None)
+    view = cog._public_card_view()
+    btn = next(c for c in view.walk_children()
+               if isinstance(c, discord.ui.Button))
+    await btn.callback(inter)
+    panel = cog.panels[(GUILD_ID, ACTOR_ID)]
+    panel.message_id = 555
+
+    inter2 = _interaction(g, admin, None, message_id=555)
+    await cog.handle(inter2, "mute_all")
+    text = str(inter2.response.send_message.await_args
+               or inter2.followup.send.await_args)
+    assert "отключён" in text
+
+
+@pytest.mark.asyncio
+async def test_emergency_only_bot_owner(env, vc_owner):
+    """5. /voice_emergency — исключительно BOT_OWNER_ID."""
+    from cogs import voice_control as vc_cog
+    g = env.guild
+    cog = _cog(env)
+
+    async def call(user):
+        inter = _interaction(g, user, None)
+        inter.response = NS(is_done=lambda: False,
+                            send_message=AsyncMock(),
+                            defer=AsyncMock())
+        await vc_cog.VoiceControlCog.voice_emergency.callback(
+            cog, inter, confirm=False)
+        return inter
+
+    admin = make_member(ACTOR_ID, g, admin=True)
+    inter = await call(admin)
+    assert "владельца бота" in str(inter.response.send_message.await_args)
+
+    guild_owner = make_member(OWNER_ID, g)
+    await call(guild_owner)
+
+    owner = make_member(VC_OWNER, g)
+    inter = await call(owner)
+    # Владелец бота проходит проверку и доходит до defer.
+    assert inter.response.defer.await_count == 1

@@ -1,10 +1,15 @@
 """r!z3 Voice Control — команда /voice и CV2-панель управления
 голосовыми каналами.
 
-Панель персональная (ephemeral), состояние — в памяти бота
-(поэтому ограничение жизни ~14 минут; по истечении предлагается
-повторно вызвать /voice). Режимы и ограничения живут в PostgreSQL
-и НЕ зависят от жизни панели.
+Модель доступа: /voice публикует постоянную публичную карточку
+Voice Control Center (одна на сервер, привязка к сообщению — в
+PostgreSQL, кнопка работает после рестарта через persistent view).
+Открыть персональную ephemeral-панель могут BOT_OWNER_ID и
+Discord Administrator; права проверяются при каждом взаимодействии.
+
+Ephemeral-панель персональная (состояние в памяти бота, ~14 минут;
+по истечении — снова кнопка публичной карточки). Режимы и
+ограничения живут в PostgreSQL и НЕ зависят от жизни панели.
 
 Целостность сессии: каждая панель имеет panel_id, message_id и
 revision. Кнопки старой панели (до повторного /voice) не имеют
@@ -34,6 +39,9 @@ VOICE_DEBOUNCE = 1.0         # debounce voice_state_update
 PANEL_REFRESH_DEBOUNCE = 3.0
 CHANNELS_PER_PAGE = 25
 MEMBERS_PER_PAGE = 15
+# Статический custom_id кнопки публичной карточки — persistent view
+# после перезапуска бота сопоставляет callback по этому id.
+PUBLIC_PANEL_CUSTOM_ID = "vc_open_panel"
 
 # Действия, изменяющие состояние Discord/БД. При выключенном
 # VOICE_CONTROL_ENABLED они запрещены; навигация по страницам — нет.
@@ -145,6 +153,13 @@ class VoiceControlCog(commands.Cog):
 
     async def cog_load(self) -> None:
         self._sweep_task = asyncio.create_task(self._sweep_loop())
+        # Persistent view публичной карточки: после перезапуска
+        # кнопка «Открыть панель управления» продолжает работать —
+        # discord.py диспетчеризует по статическому custom_id.
+        try:
+            self.bot.add_view(self._public_card_view())
+        except Exception:
+            log.exception("voice control: persistent view not registered")
 
     async def cog_unload(self) -> None:
         if self._sweep_task:
@@ -282,25 +297,118 @@ class VoiceControlCog(commands.Cog):
     @app_commands.command(name="voice",
                           description="Панель управления голосовыми каналами")
     async def voice(self, interaction: discord.Interaction) -> None:
+        """Публикация/обновление постоянной публичной карточки
+        Voice Control Center. Доступна исключительно BOT_OWNER_ID."""
         if not VOICE_CONTROL_ENABLED:
             await interaction.response.send_message(
                 "Voice Control отключён (VOICE_CONTROL_ENABLED=0).",
                 ephemeral=True)
             return
-        try:
-            member = await vc.require_access(interaction)
-        except vc.VoiceControlError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
+        if not interaction.guild or interaction.channel is None:
+            await interaction.response.send_message(
+                "Команда доступна только на сервере.", ephemeral=True)
             return
-        # Повторный /voice инвалидирует предыдущую панель: её кнопки
-        # больше не имеют доступа к новому состоянию.
+        if interaction.user.id != vc.BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "Команда доступна только владельцу бота.", ephemeral=True)
+            return
+        # Ранний defer: публикация может включать fetch/edit сообщения.
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.HTTPException:
+            pass
+        try:
+            await self._publish_public_panel(interaction)
+        except Exception:
+            log.exception("voice public panel publish failed")
+            await interaction.followup.send(
+                "Не удалось обновить публичную панель — "
+                "см. логи бота.", ephemeral=True)
+            return
+        await interaction.followup.send(
+            "Панель Voice Control Center опубликована/обновлена.",
+            ephemeral=True)
+
+    # ------------------------------------------------------------------
+    # Постоянная публичная карточка + ephemeral-панель
+    # ------------------------------------------------------------------
+    def _public_card_view(self) -> DesignView:
+        """Публичная CV2-карточка: заголовок, описание, одна кнопка.
+        timeout=None + статический custom_id → persistent view."""
+        view = DesignView(
+            title="r!z3 | Voice Control Center", timeout=None)
+        view.text("Управление голосовыми каналами сервера.")
+
+        async def _open(interaction: discord.Interaction) -> None:
+            await self._open_ephemeral(interaction)
+
+        view.row(_CallbackButton(
+            _open, label="Открыть панель управления",
+            style=discord.ButtonStyle.primary,
+            custom_id=PUBLIC_PANEL_CUSTOM_ID))
+        return view
+
+    async def _find_panel_message(
+            self, guild: discord.Guild,
+            stored: dict[str, Any] | None) -> discord.Message | None:
+        """Найти опубликованное сообщение карточки по записи в PG.
+        None — записи нет, канал/сообщение удалены."""
+        if not stored:
+            return None
+        channel = guild.get_channel(stored["channel_id"])
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(stored["channel_id"])
+            except Exception:
+                return None
+        try:
+            return await channel.fetch_message(stored["message_id"])
+        except Exception:
+            return None
+
+    async def _publish_public_panel(
+            self, interaction: discord.Interaction) -> None:
+        """Одна карточка на сервер: обновить существующую или
+        опубликовать новую в текущем текстовом канале. Повторный
+        вызов не создаёт дубликатов; удалённое сообщение
+        восстанавливается."""
+        guild = interaction.guild
+        card = self._public_card_view()
+        stored = await vc.db.panel(guild.id)
+        msg = await self._find_panel_message(guild, stored)
+        if msg is not None:
+            try:
+                await msg.edit(view=card)
+            except discord.HTTPException:
+                msg = None
+        if msg is None:
+            msg = await interaction.channel.send(view=card)
+        if stored is None or stored.get("channel_id") != msg.channel.id \
+                or stored.get("message_id") != msg.id:
+            await vc.db.put_panel(guild.id, msg.channel.id, msg.id)
+
+    async def _open_ephemeral(
+            self, interaction: discord.Interaction) -> None:
+        """Открыть персональную ephemeral-панель (кнопка публичной
+        карточки). Доступ: BOT_OWNER_ID или Discord Administrator —
+        проверяется здесь и при каждом следующем действии."""
+        if not interaction.guild:
+            await self._safe_text(interaction, "Только на сервере.")
+            return
+        try:
+            await vc.require_access(interaction)
+        except vc.VoiceControlError as exc:
+            await self._safe_text(interaction, str(exc))
+            return
+        # Повторное открытие инвалидирует предыдущую панель этого
+        # администратора: её кнопки больше не имеют доступа.
         old_key = (interaction.guild.id, interaction.user.id)
         old = self.panels.pop(old_key, None)
         if old is not None:
             old.invalidate()
         panel = PanelState(interaction.guild.id, interaction.user.id)
         panel.source_interaction = interaction
-        voice_state = getattr(member, "voice", None)
+        voice_state = getattr(interaction.user, "voice", None)
         if voice_state and voice_state.channel and \
                 vc._is_voice_channel(voice_state.channel):
             conf = await vc.db.settings(interaction.guild.id)
@@ -344,7 +452,7 @@ class VoiceControlCog(commands.Cog):
                 self.panels.pop((panel.guild_id, panel.user_id), None)
                 panel.invalidate()
             await self._safe_text(
-                interaction, "Панель устарела — вызовите /voice заново.")
+                interaction, "Панель устарела — откройте панель заново.")
             return False
         panel.touch()
         try:
@@ -411,7 +519,7 @@ class VoiceControlCog(commands.Cog):
         panel = self._panel_for(interaction)
         if panel is None:
             await self._safe_text(
-                interaction, "Панель не найдена — вызовите /voice заново.")
+                interaction, "Панель не найдена — откройте панель заново.")
             return
         mutating = action in MUTATING_ACTIONS
         async with panel.lock:
@@ -1564,7 +1672,7 @@ class VoiceControlCog(commands.Cog):
     # ------------------------------------------------------------------
     @app_commands.command(
         name="voice_emergency",
-        description="Аварийное завершение режимов Voice Control (только владелец)")
+        description="Аварийное завершение режимов Voice Control (только владелец бота)")
     @app_commands.describe(
         confirm="false — dry-run отчёт; true — выполнить очистку")
     async def voice_emergency(self, interaction: discord.Interaction,
@@ -1574,11 +1682,11 @@ class VoiceControlCog(commands.Cog):
                 "Только на сервере.", ephemeral=True)
             return
         member = interaction.user
-        is_owner = member.id == interaction.guild.owner_id \
-            or member.id == getattr(vc, "BOT_OWNER_ID", 0)
-        if not is_owner:
+        # Аварийная очистка — глобальная операция: исключительно
+        # BOT_OWNER_ID. Administrator и владелец сервера не могут.
+        if member.id != getattr(vc, "BOT_OWNER_ID", 0):
             await interaction.response.send_message(
-                "Только для владельца сервера.", ephemeral=True)
+                "Только для владельца бота.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
@@ -1688,7 +1796,7 @@ class _PanelModal(discord.ui.Modal):
         panel = self.panel
         if not panel.valid or panel.expired():
             await interaction.response.send_message(
-                "Панель устарела — вызовите /voice заново.", ephemeral=True)
+                "Панель устарела — откройте панель заново.", ephemeral=True)
             return False
         if self.cog.panels.get((panel.guild_id, panel.user_id)) is not panel \
                 or panel.panel_id != self.expected_panel_id:

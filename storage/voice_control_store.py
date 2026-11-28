@@ -136,6 +136,12 @@ CREATE TABLE IF NOT EXISTS voice_control_events (
 );
 CREATE INDEX IF NOT EXISTS vc_events_guild_idx
     ON voice_control_events(guild_id, id DESC);
+CREATE TABLE IF NOT EXISTS voice_control_panels (
+    guild_id BIGINT PRIMARY KEY,
+    channel_id BIGINT NOT NULL,
+    message_id BIGINT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 # Миграция для баз, созданных ранней версией: расширенный набор
@@ -256,6 +262,34 @@ class VoiceControlStore:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(sql, guild_id, *clean.values())
         return await self.settings(guild_id) if row is None else dict(row)
+
+    # ------------------------------------------------------------------
+    # Публичная панель Voice Control Center (одна на guild)
+    # ------------------------------------------------------------------
+    async def panel(self, guild_id: int) -> dict[str, Any] | None:
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT guild_id, channel_id, message_id, updated_at "
+                "FROM voice_control_panels WHERE guild_id=$1",
+                guild_id,
+            )
+        return _dict(row)
+
+    async def put_panel(self, guild_id: int, channel_id: int,
+                        message_id: int) -> None:
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO voice_control_panels"
+                " (guild_id, channel_id, message_id) VALUES ($1,$2,$3) "
+                "ON CONFLICT (guild_id) DO UPDATE SET "
+                "channel_id=EXCLUDED.channel_id, "
+                "message_id=EXCLUDED.message_id, updated_at=now()",
+                guild_id, channel_id, message_id,
+            )
 
     # ------------------------------------------------------------------
     # Режимы каналов

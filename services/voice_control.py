@@ -29,10 +29,8 @@ from typing import Any
 import discord
 
 from config import (
-    ADMIN_USER_IDS,
     BOT_OWNER_ID,
     MOD_LOG_CHANNEL_ID,
-    VOICE_CONTROL_ALLOWED_ROLE_IDS,
     VOICE_CONTROL_LOG_CHANNEL_ID,
     VOICE_CONTROL_PROTECTED_CHANNEL_IDS,
 )
@@ -147,23 +145,18 @@ async def settings(guild_id: int) -> dict[str, Any]:
 
 
 def can_use(member: discord.Member, conf: dict[str, Any] | None = None) -> bool:
-    """Доступ к панели: владелец сервера, administrator, владелец бота,
-    ADMIN_USER_IDS, настроенные роли."""
-    if not isinstance(member, discord.Member):
+    """Доступ к ephemeral-панели Voice Control: BOT_OWNER_ID либо
+    участник с Discord Administrator. Проверяется при КАЖДОМ
+    взаимодействии — отозванный Administrator теряет доступ сразу.
+    conf сохранён в сигнатуре для совместимости вызовов."""
+    if member is None or getattr(member, "id", None) is None:
         return False
-    if member.id == member.guild.owner_id or member.guild_permissions.administrator:
-        return True
-    if member.id == BOT_OWNER_ID or member.id in ADMIN_USER_IDS:
-        return True
-    allowed = set((conf or {}).get("allowed_role_ids") or [])
-    allowed |= VOICE_CONTROL_ALLOWED_ROLE_IDS
-    if not allowed:
-        return False
-    return any(r.id in allowed for r in member.roles)
+    return member.id == BOT_OWNER_ID or bool(
+        getattr(member.guild_permissions, "administrator", False))
 
 
 async def require_access(interaction: discord.Interaction) -> discord.Member:
-    if not interaction.guild or not isinstance(interaction.user, discord.Member):
+    if not interaction.guild or getattr(interaction.user, "id", None) is None:
         raise VoiceControlError("Команда доступна только на сервере.")
     conf = await db.settings(interaction.guild.id)
     if not can_use(interaction.user, conf):

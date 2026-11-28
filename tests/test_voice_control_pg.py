@@ -42,6 +42,7 @@ async def pg_pool(pg_uri):
                   "voice_control_overwrites", "voice_control_restrictions",
                   "voice_control_exceptions", "voice_control_speakers",
                   "voice_control_modes", "voice_control_settings",
+                  "voice_control_panels",
                   "moderation_events", "moderation_cases",
                   "moderation_reports", "moderation_appeals",
                   "moderation_settings"):
@@ -420,3 +421,19 @@ async def test_due_restrictions_readonly_pg(pg_pool):
     assert await pg_pool.set_state(
         1, r["id"], "pending_release",
         from_states=("active", "pending_apply")) is None
+
+
+@pytest.mark.asyncio
+async def test_public_panel_roundtrip_pg(pg_pool):
+    """Публичная карточка: одна запись на guild, upsert при
+    повторной публикации."""
+    assert await pg_pool.panel(1) is None
+    await pg_pool.put_panel(1, 50, 9001)
+    p = await pg_pool.panel(1)
+    assert p["channel_id"] == 50 and p["message_id"] == 9001
+    # Повторная публикация — обновление, не дубликат.
+    await pg_pool.put_panel(1, 51, 9002)
+    p = await pg_pool.panel(1)
+    assert p["channel_id"] == 51 and p["message_id"] == 9002
+    # Изоляция guild.
+    assert await pg_pool.panel(2) is None
