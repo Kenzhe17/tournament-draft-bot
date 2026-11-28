@@ -26,6 +26,14 @@ start..amount (видимый рост).
 Если допустимых предметов нет — тип item исключается из розыгрыша
 ДО публикации (перевыбор среди оставшихся типов). Уже
 зафиксированный приз никогда молча не меняется.
+
+Приз — не покупка: двойная цена (монеты+REP-тариф
+``rep_price_for_item``) применяется только к покупкам в магазине
+и НЕ является ограничением eligibility приза (иначе весь
+каталог — все предметы платные — был бы недоступен, что
+фактически убило бы тип item). REP-начисление приза идёт через
+``award_rep_logged`` с source=EVENT — те же журнальные
+гарантии, что у остальных источников.
 """
 
 from __future__ import annotations
@@ -183,14 +191,45 @@ def prize_public_label(prize: dict[str, Any]) -> str:
 # Гранты (вызываются из cog; протокол как у grant_drop_reward)
 # ------------------------------------------------------------------
 
+def _inventory_file_has(guild_id: int, user_id: int,
+                        item_id: str) -> bool | None:
+    """Проверка durable-состояния инвентаря НАПРЯМУЮ из файла.
+
+    In-memory кэш InventoryStore может содержать «фантомный»
+    предмет после неудачного save() — подтверждением выдачи
+    считается только запись на диске. None — файл нечитаем
+    (вызывающий обязан повторить, а не считать выдачу успешной).
+    """
+    import json as _json
+    from storage.shop_store import INVENTORY_FILE
+    try:
+        data = _json.loads(INVENTORY_FILE.read_text(
+            encoding="utf-8"))
+    except FileNotFoundError:
+        return False
+    except Exception:
+        return None
+    key = f"{guild_id}:{user_id}"
+    for c in data.get(key, []) or []:
+        if isinstance(c, dict) and c.get("item_id") == item_id:
+            return True
+    return False
+
+
 async def _settle_item(guild_id: int, user_id: int,
                        item_id: str) -> None:
     """Выдать предмет в инвентарь идемпотентно.
 
-    add_cosmetic дедуплицирует по item_id: повторная обработка
-    после потерянного complete вернёт False — это НЕ ошибка,
-    предмет уже у игрока. Отсутствующий/неактивный предмет —
-    ошибка (retry), приз не подменяется.
+    Политика дублей (прозрачная): предметы магазина не стакаются —
+    если у игрока УЖЕ есть этот item_id (durable-проверка по файлу),
+    обязательство считается исполненным (no-op, без конвертации
+    в валюту — новых семантик не вводим).
+
+    «Фантомный» дубль (add_cosmetic вернул False, но в файле
+    предмета нет — остаток неудачного save) лечится принудительной
+    перезагрузкой и повторной выдачей. Выдача НЕ считается
+    успешной без подтверждения записи в файле; ошибка записи
+    JSON пробрасывается → worker повторит с backoff.
     """
     from models.shop_item import PlayerCosmetic
     from storage.shop_store import inventory_store, shop_store
@@ -198,9 +237,45 @@ async def _settle_item(guild_id: int, user_id: int,
     if item is None or not getattr(item, "is_active", False):
         raise RuntimeError(
             f"event item prize unavailable: {item_id}")
-    inventory_store.add_cosmetic(PlayerCosmetic(
-        guild_id=guild_id, user_id=user_id,
-        item_id=item_id, equipped=False))
+
+    def _cosmetic() -> "PlayerCosmetic":
+        return PlayerCosmetic(
+            guild_id=guild_id, user_id=user_id,
+            item_id=item_id, equipped=False)
+
+    owned = _inventory_file_has(guild_id, user_id, item_id)
+    if owned is True:
+        return  # уже в инвентаре — политика дублей: no-op
+    if owned is None:
+        raise RuntimeError("inventory file unreadable")
+
+    try:
+        added = inventory_store.add_cosmetic(_cosmetic())
+    except Exception:
+        # save() мог упасть после мутации памяти — сбрасываем
+        # фантомное состояние, чтобы retry не увидел ложный дубль.
+        try:
+            inventory_store.load()
+        except Exception:
+            pass
+        raise
+    if added:
+        # save() отработал без исключения — подтверждаем файлом.
+        if _inventory_file_has(guild_id, user_id, item_id) is True:
+            return
+        raise RuntimeError("item grant not durable after save")
+    # added=False: либо настоящий дубль (owned=True выше — уже
+    # вернулись), либо фантом в памяти. Перечитываем файл и
+    # при необходимости повторяем выдачу один раз.
+    if _inventory_file_has(guild_id, user_id, item_id) is True:
+        return
+    try:
+        inventory_store.load()  # выкинуть фантом из памяти
+    except Exception:
+        pass
+    inventory_store.add_cosmetic(_cosmetic())  # исключение → retry
+    if _inventory_file_has(guild_id, user_id, item_id) is not True:
+        raise RuntimeError("item grant not durable after retry")
 
 
 async def apply_reward(row: dict[str, Any],

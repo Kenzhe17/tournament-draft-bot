@@ -16,9 +16,18 @@ from cogs import coin_drop
 def _no_event_db(monkeypatch):
     """event_store.get → None по умолчанию: клики по уже
     завершённым/несуществующим событиям не ходят в PG.
-    Тесты, проверяющие restore, перекрывают этот патч."""
+    Тесты, проверяющие restore/settle-гонки, перекрывают
+    эти патчи."""
     monkeypatch.setattr(coin_drop.event_store, "get",
                         AsyncMock(return_value=None))
+    # settle() по умолчанию «успешен»: state→settling, outcome
+    # сохранён (как реальный UPDATE ... RETURNING).
+    monkeypatch.setattr(
+        coin_drop.event_store, "settle",
+        AsyncMock(side_effect=lambda eid, res: {
+            "event_id": eid, "state": "settling", "result": res}))
+    monkeypatch.setattr(coin_drop.event_store, "mark_card_edit",
+                        AsyncMock())
 
 
 # ------------------------------------------------------------ fakes

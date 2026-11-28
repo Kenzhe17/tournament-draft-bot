@@ -178,6 +178,78 @@ async def test_event_store_overdue_uses_close_at(pg_pool):
     assert "evt00030" in ids
 
 
+@pytest.mark.asyncio
+async def test_patch_actions_pg_guards(pg_pool):
+    """PG-уровень: must_absent не даёт перезаписать winner;
+    патч после эффективного дедлайна отклоняется."""
+    store = es.event_store
+    await store.create(
+        "evt00040", 5, 500, "speed",
+        {"type": "coins", "amount": 100, "item_id": None},
+        {}, _deadline())
+    # Первый winner фиксируется.
+    assert await store.patch_actions(
+        "evt00040", {"winner": 11}, must_absent=["winner"]) is True
+    # Второй winner — тот же ключ запрещён must_absent.
+    assert await store.patch_actions(
+        "evt00040", {"winner": 22}, must_absent=["winner"]) is False
+    row = await store.get("evt00040")
+    actions = row["actions"]
+    if isinstance(actions, str):
+        import json
+        actions = json.loads(actions)
+    assert actions["winner"] == 11
+    # Просроченное событие: патч отклонён по дедлайну БД.
+    await store.create(
+        "evt00041", 5, 501, "speed",
+        {"type": "coins", "amount": 100, "item_id": None},
+        {}, datetime.now(timezone.utc) - timedelta(seconds=1))
+    assert await store.patch_actions(
+        "evt00041", {"p:1": 1}) is False
+
+
+@pytest.mark.asyncio
+async def test_settle_state_machine(pg_pool):
+    """active → settling → finished: settle атомарен и хранит
+    outcome; settling держит слот канала; patch закрыт."""
+    store = es.event_store
+    await store.create(
+        "evt00050", 6, 600, "raffle",
+        {"type": "coins", "amount": 100, "item_id": None},
+        {}, _deadline())
+    outcome = {"winners": [9], "reason": "raffle",
+               "payout": 100, "detail": ""}
+    settled = await store.settle(
+        "evt00050", {"outcome": outcome, "reason": "timeout"})
+    assert settled is not None and settled["state"] == "settling"
+    # Повторный settle — None (единственный финализатор).
+    assert await store.settle("evt00050", {"outcome": {}}) is None
+    # Settling держит слот: новый create на канале → None.
+    assert await store.create(
+        "evt00051", 6, 600, "dice",
+        {"type": "coins", "amount": 100, "item_id": None},
+        {}, _deadline()) is None
+    # Действия в settling закрыты.
+    assert await store.patch_actions(
+        "evt00050", {"p:1": 1}) is False
+    # outcome сохранён в result.
+    row = await store.get("evt00050")
+    res = row["result"]
+    if isinstance(res, str):
+        import json
+        res = json.loads(res)
+    assert res["outcome"]["winners"] == [9]
+    # finish settling → finished.
+    closed = await store.finish("evt00050", "finished",
+                                {"grant": "credited"})
+    assert closed is not None and closed["state"] == "finished"
+    # Слот освобождён.
+    assert await store.create(
+        "evt00052", 6, 600, "dice",
+        {"type": "coins", "amount": 100, "item_id": None},
+        {}, _deadline()) is not None
+
+
 # ------------------------------------------------------- event_rewards
 
 @pytest.mark.asyncio

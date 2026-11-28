@@ -425,7 +425,11 @@ def _build_card(session: _EventSession,
     color = 0xF1C40F
     if game == "growing":
         color = 0xE67E22
-    return discord.Embed(title=title, description=desc, color=color)
+    embed = discord.Embed(title=title, description=desc, color=color)
+    # Невидимый маркер для восстановления карточки, если
+    # message_id не сохранился (крах между send и записью).
+    embed.set_footer(text=f"se2:{session.event_id}")
+    return embed
 
 
 def _build_view(session: _EventSession) -> discord.ui.View:
@@ -473,6 +477,39 @@ def _build_view(session: _EventSession) -> discord.ui.View:
         _btn("Кликнуть", discord.ButtonStyle.secondary, "click",
              emoji="👆")
     return view
+
+
+_GAME_ACTIONS: dict[str, set[str]] = {
+    "speed": {"claim"},
+    "raffle": {"join"},
+    "chests": {"chest"},          # chest:<0..4>
+    "quick_math": {"answer"},
+    "minority": {"red", "blue"},
+    "dice": {"roll"},
+    "growing": {"claim"},
+    "word": {"answer"},
+    "last_click": {"click"},
+    "guess_number": {"answer"},
+    "krokodil": {"answer"},
+}
+
+
+def _action_allowed(game: str, action: str) -> bool:
+    """Допустимость действия для типа события (защита от
+    поддельных/устаревших custom_id)."""
+    allowed = _GAME_ACTIONS.get(game)
+    if not allowed:
+        return False
+    if action in allowed:
+        return True
+    if "chest" in allowed and action.startswith("chest:"):
+        try:
+            idx = int(action.split(":", 1)[1])
+        except (ValueError, IndexError):
+            return False
+        n = int(event_games.GAME_DEFS.get(game, {}).get("chests", 5))
+        return 0 <= idx < n
+    return False
 
 
 class EventAnswerModal(discord.ui.Modal):
@@ -594,10 +631,16 @@ class CoinDropCog(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         # Боты, вебхуки и системные сообщения не считаются.
+        # Обычные сообщения и Discord replies — считаются.
         if message.author.bot or message.webhook_id \
                 or not message.guild:
             return
-        if getattr(message, "type", None) != discord.MessageType.default:
+        mtype = getattr(message, "type", None)
+        allowed_types = {discord.MessageType.default}
+        reply_type = getattr(discord.MessageType, "reply", None)
+        if reply_type is not None:
+            allowed_types.add(reply_type)
+        if mtype not in allowed_types:
             return
         # Команды (!...) не считаются.
         if (message.content or "").startswith("!"):
@@ -607,29 +650,32 @@ class CoinDropCog(commands.Cog):
 
         gid = message.guild.id
         cid = message.channel.id
+        key = (gid, cid)
         settings = event_config.event_settings(gid)
         if not event_config.feature_enabled(gid):
             return
 
-        # Обновить пороги гейта из настроек (дешёвые peek).
-        self._gate.window_s = settings.get(
-            "window_minutes", 5) * 60.0
-        self._gate.min_messages = int(settings.get("min_messages", 10))
-        self._gate.min_unique_users = int(
-            settings.get("min_unique_users", 3))
-        self._gate.max_per_author = int(
-            settings.get("max_per_author", 4))
-        self._gate.min_interval_s = float(
-            settings.get("min_message_interval_seconds", 10))
-        self._gate.min_active_authors = int(
-            settings.get("min_active_authors_60s", 2))
+        # Пороги гейта — per-key (guild/channel), настройки
+        # разных серверов не протекают друг в друга.
+        self._gate.configure(
+            key,
+            window_s=settings.get("window_minutes", 5) * 60.0,
+            min_messages=settings.get("min_messages", 10),
+            min_unique_users=settings.get("min_unique_users", 3),
+            max_per_author=settings.get("max_per_author", 4),
+            min_interval_s=settings.get(
+                "min_message_interval_seconds", 10),
+            min_active_authors=settings.get(
+                "min_active_authors_60s", 2))
 
-        key = (gid, cid)
         now = time.time()
         # Сообщение учитывается ВСЕГДА (в т.ч. во время кулдауна и
         # активного события) — гейт «тёплый» к моменту оценки.
-        self._gate.record(key, message.author.id,
-                          message.content or "", now)
+        # Запуск события — ТОЛЬКО на новом засчитанном сообщении:
+        # флуд/дубли/незасчитанные не могут спровоцировать старт.
+        if not self._gate.record(key, message.author.id,
+                                 message.content or "", now):
+            return
         if not self._gate.evaluate(key, now):
             return
         await self._try_start(message.channel, message.guild,
@@ -719,7 +765,15 @@ class CoinDropCog(commands.Cog):
                 pass
             return "send_failed"
         session.message = msg
-        await event_store.set_message_id(event_id, msg.id)
+        # message_id — часть восстановления карточки; сбой не
+        # должен ронять запуск — повторим с backoff.
+        try:
+            await event_store.set_message_id(event_id, msg.id)
+        except Exception:
+            logger.warning("set_message_id failed id=%s — retry",
+                           event_id)
+            asyncio.get_running_loop().create_task(
+                self._ensure_message_id(session))
 
         async with self._drop_lock:
             # Кулдаун и last_type — только после успешной публикации.
@@ -771,24 +825,73 @@ class CoinDropCog(commands.Cog):
             logger.exception("growing refresher failed id=%s",
                              session.event_id)
 
+    async def _ensure_message_id(self, session: _EventSession,
+                                 attempts: int = 5) -> None:
+        """Retry сохранения message_id после send — карточка
+        уже опубликована, id нужно для финальной правки."""
+        msg = session.message
+        if msg is None:
+            return
+        for i in range(attempts):
+            try:
+                await event_store.set_message_id(
+                    session.event_id, msg.id)
+                return
+            except Exception:
+                logger.warning("set_message_id retry %d id=%s",
+                               i + 1, session.event_id)
+                await asyncio.sleep(5 * (i + 1))
+
+    async def _resolve_card_message(self, session: _EventSession):
+        """Найти сообщение карточки: session.message → fetch по
+        message_id → скан истории по footer-маркеру ``se2:{eid}``
+        (восстановление при потере message_id)."""
+        msg = session.message
+        if msg is not None:
+            return msg
+        channel = await self._resolve_channel(session)
+        if channel is None:
+            return None
+        if session.message_id:
+            try:
+                msg = await channel.fetch_message(session.message_id)
+                session.message = msg
+                return msg
+            except Exception:
+                pass
+        # message_id потерян (крах между send и записью) —
+        # ищем карточку по footer-маркеру в свежих сообщениях.
+        try:
+            marker = f"se2:{session.event_id}"
+            async for m in channel.history(limit=25):
+                for emb in getattr(m, "embeds", []) or []:
+                    if (getattr(emb, "footer", None)
+                            and emb.footer.text == marker):
+                        session.message = m
+                        try:
+                            await event_store.set_message_id(
+                                session.event_id, m.id)
+                        except Exception:
+                            pass
+                        return m
+        except Exception:
+            pass
+        return None
+
     async def _refresh_card(self, session: _EventSession,
                             force: bool = False) -> None:
-        """Обновить публичную карточку (троттлинг)."""
+        """Обновить публичную карточку (троттлинг).
+
+        Не редактирует карточку завершённого события — финальный
+        edit не должен перезаписываться «живым» снапшотом."""
+        if session.finished:
+            return
         now = time.time()
         if not force and now - session.last_card_edit < \
                 _CARD_EDIT_MIN_INTERVAL:
             return
-        msg = session.message
-        if msg is None and session.message_id:
-            try:
-                channel = await self._resolve_channel(session)
-                if channel is not None:
-                    msg = await channel.fetch_message(
-                        session.message_id)
-                    session.message = msg
-            except Exception:
-                msg = None
-        if msg is None:
+        msg = await self._resolve_card_message(session)
+        if msg is None or session.finished:
             return
         session.last_card_edit = now
         try:
@@ -848,35 +951,94 @@ class CoinDropCog(commands.Cog):
         outcome = event_games.compute_outcome(
             session.game, session.config, session.actions,
             session.prize, now)
-        winners = [int(w) for w in outcome.get("winners") or []]
+        await self._settle_and_finish(session, outcome, reason)
 
+    async def _settle_and_finish(self, session: _EventSession,
+                                 outcome: dict[str, Any],
+                                 reason: str, *,
+                                 already_settled: bool = False
+                                 ) -> None:
+        """Финализация active → settling → finished.
+
+        1. ``settle`` атомарно фиксирует outcome (победители,
+           выплата) в БД ДО начислений — случайный победитель
+           никогда не перевыбирается, даже после рестарта.
+        2. Обязательства по всем победителям фиксируются в
+           event_rewards / pending-файле. Если ни одно
+           обязательство не удалось сохранить надёжно —
+           событие НЕ закрывается: остаётся 'settling',
+           свипер повторит.
+        3. ``finish`` атомарен — карточку редактирует только
+           победивший UPDATE процесс.
+        """
+        eid = session.event_id
+        if not already_settled:
+            try:
+                settled = await event_store.settle(
+                    eid,
+                    {"outcome": outcome, "reason": reason,
+                     "settled_ts": time.time()})
+            except Exception:
+                # PG недоступен — остаёмся 'active', свипер
+                # просроченных повторит финализацию.
+                logger.exception("event settle failed id=%s", eid)
+                self._unregister_session(session)
+                return
+            if settled is None:
+                # Уже settling/finished: если settling — обязаны
+                # использовать СОХРАНЁННЫЙ outcome (не наш RNG).
+                try:
+                    cur = await event_store.get(eid)
+                except Exception:
+                    cur = None
+                if cur is not None and \
+                        cur.get("state") == "settling":
+                    stored = _json_field(cur, "result") or {}
+                    so = stored.get("outcome")
+                    if isinstance(so, dict) and so:
+                        outcome = so
+                else:
+                    self._unregister_session(session)
+                    return
+
+        winners = [int(w) for w in outcome.get("winners") or []]
         grant_status = "none"
+        obligations_ok = True
         if winners:
             # Фиксация обязательства ДО закрытия события:
-            # crash между grant и finish → sweeper доведёт
+            # crash между grant и finish → свипер доведёт
             # (grant_key идемпотентен).
             prize = dict(session.prize)
             if outcome.get("payout") is not None:
                 prize["amount"] = int(outcome["payout"])
             results = []
-            try:
-                for uid in winners:
+            for uid in winners:
+                try:
                     res = await grant_event_reward(
                         self, session.guild_id, uid, prize,
-                        f"event:{session.event_id}:{uid}")
-                    results.append(res)
-            except Exception:
-                logger.exception(
-                    "event grant raised id=%s", session.event_id)
-                results.append("failed")
+                        f"event:{eid}:{uid}")
+                except Exception:
+                    logger.exception("event grant raised id=%s", eid)
+                    res = "failed"
+                results.append(res)
             if any(r in ("failed", "other") for r in results):
                 grant_status = "failed"
+                obligations_ok = False
             elif all(r == "credited" for r in results):
                 grant_status = "credited"
             else:
                 grant_status = "queued"
-        else:
-            prize = session.prize
+
+        if not obligations_ok:
+            # Нет надёжно сохранённого обязательства — событие
+            # остаётся 'settling', finished не ставим, карточку
+            # не закрываем. Свипер повторит доведение.
+            logger.critical(
+                "event %s settling: payout obligation NOT durable "
+                "(grant=%s) — stays settling for retry",
+                eid, grant_status)
+            self._unregister_session(session)
+            return
 
         result = {
             "reason": outcome.get("reason"),
@@ -884,14 +1046,14 @@ class CoinDropCog(commands.Cog):
             "payout": outcome.get("payout"),
             "detail": outcome.get("detail"),
             "grant": grant_status,
-            "finished_ts": now,
+            "outcome": outcome,
+            "finished_ts": time.time(),
         }
         try:
             closed = await event_store.finish(
-                session.event_id, "finished", result)
+                eid, "finished", result)
         except Exception:
-            logger.exception("event finish DB failed id=%s",
-                             session.event_id)
+            logger.exception("event finish DB failed id=%s", eid)
             closed = None
         if closed is None:
             # Другой процесс уже закрыл событие — не дублируем
@@ -903,27 +1065,41 @@ class CoinDropCog(commands.Cog):
         self._unregister_session(session)
         logger.info("event finished id=%s game=%s reason=%s "
                     "winners=%s grant=%s",
-                    session.event_id, session.game,
+                    eid, session.game,
                     outcome.get("reason"), winners, grant_status)
+
+    async def _resume_settling(self, row: dict[str, Any]) -> None:
+        """Довести 'settling'-событие: обязательства уже
+        зафиксированы (или фиксируются повторно идемпотентно),
+        outcome берётся из сохранённого result — RNG не
+        перевыбирается."""
+        stored = _json_field(row, "result") or {}
+        outcome = stored.get("outcome")
+        if not isinstance(outcome, dict) or not outcome:
+            # Legacy settling без outcome — безопасно закрываем
+            # без выплат (обязательств не было).
+            outcome = {"winners": [], "reason": "no_winner",
+                       "payout": None, "detail": "resume"}
+        session = _EventSession.from_row(row)
+        reason = str(stored.get("reason") or "resume")
+        await self._settle_and_finish(session, outcome, reason,
+                                      already_settled=True)
 
     async def _edit_final_card(self, session: _EventSession,
                                outcome: dict[str, Any],
                                grant_status: str) -> None:
         """Edit исходной карточки: финальный результат, кнопки
         убраны. Чужие сообщения не трогаем — только message_id
-        события."""
-        msg = session.message
-        if msg is None and session.message_id:
-            try:
-                channel = await self._resolve_channel(session)
-                if channel is not None:
-                    msg = await channel.fetch_message(
-                        session.message_id)
-                    session.message = msg
-            except Exception:
-                msg = None
+        события. Повторные попытки при сбое Discord; исход
+        фиксируется в result.card_edit для свипера."""
+        msg = await self._resolve_card_message(session)
         if msg is None:
             logger.warning("event card missing id=%s", session.event_id)
+            try:
+                await event_store.mark_card_edit(
+                    session.event_id, "missing")
+            except Exception:
+                pass
             return
 
         game = session.game
@@ -980,14 +1156,33 @@ class CoinDropCog(commands.Cog):
 
         embed = discord.Embed(title=title, description=desc,
                               color=0x2ECC71 if winners else 0xED4245)
+        # Финальный edit с одной повторной попыткой; итог
+        # фиксируется в result.card_edit — свипер повторит при
+        # 'failed'/'missing'.
+        ok = False
+        for attempt in range(2):
+            try:
+                await msg.edit(
+                    view=compose(embed, None),
+                    allowed_mentions=discord.AllowedMentions(
+                        users=True, roles=False, everyone=False))
+                ok = True
+                break
+            except discord.HTTPException:
+                logger.warning("event final edit failed "
+                               "id=%s attempt=%d",
+                               session.event_id, attempt + 1)
+                if attempt == 0:
+                    await asyncio.sleep(2.0)
+            except Exception:
+                logger.exception("event final edit error id=%s",
+                                 session.event_id)
+                break
         try:
-            await msg.edit(
-                view=compose(embed, None),
-                allowed_mentions=discord.AllowedMentions(
-                    users=True, roles=False, everyone=False))
-        except discord.HTTPException:
-            logger.warning("event final edit failed id=%s",
-                           session.event_id)
+            await event_store.mark_card_edit(
+                session.event_id, "ok" if ok else "failed")
+        except Exception:
+            pass
 
     # ---------------------------------------------------------- buttons
 
@@ -1021,8 +1216,29 @@ class CoinDropCog(commands.Cog):
 
         if interaction.user.bot:
             return
-        now = time.time()
+        # Валидация контекста: действие должно относиться к
+        # этому событию, каналу и карточке.
+        if interaction.guild_id is not None and \
+                int(interaction.guild_id) != session.guild_id:
+            return
+        if getattr(interaction, "channel_id", None) and \
+                int(interaction.channel_id) != session.channel_id:
+            return
+        msg = getattr(interaction, "message", None)
+        if session.message_id and msg is not None and \
+                getattr(msg, "id", None) != session.message_id:
+            await interaction.response.send_message(
+                "Это устаревшая карточка события.", ephemeral=True)
+            return
+        if not _action_allowed(session.game, action):
+            await interaction.response.send_message(
+                "Неизвестное действие для этого события.",
+                ephemeral=True)
+            return
         async with session.lock:
+            # Дедлайн перепроверяется ПОСЛЕ получения блокировки —
+            # действие, ждавшее lock, не должно пройти.
+            now = time.time()
             if session.finished or now >= session.end_ts:
                 await interaction.response.send_message(
                     "Время события истекло.", ephemeral=True)
@@ -1054,11 +1270,21 @@ class CoinDropCog(commands.Cog):
         actions = session.actions
         eid = session.event_id
 
-        async def _persist(patch: dict[str, Any]) -> bool:
+        async def _persist(patch: dict[str, Any],
+                          must_absent: list[str] | None = None
+                          ) -> bool:
+            """Сохранить действие; False — не сохранено (БД
+            отклонила: дедлайн/закрыто/ключ занят) — результат
+            ОБЯЗАТЕЛЬНО проверяется."""
             try:
-                await event_store.patch_actions(eid, patch)
+                ok = await event_store.patch_actions(
+                    eid, patch, must_absent=must_absent)
             except Exception:
                 logger.warning("patch_actions failed id=%s", eid)
+                return False
+            if not ok:
+                logger.info("patch_actions rejected id=%s patch=%s",
+                            eid, list(patch))
                 return False
             actions.update(patch)
             return True
@@ -1076,7 +1302,8 @@ class CoinDropCog(commands.Cog):
             if "winner" in actions:
                 await _deny("Кто-то уже успел первым!")
                 return
-            if not await _persist({"winner": uid}):
+            if not await _persist({"winner": uid},
+                                  must_absent=["winner"]):
                 await _deny("Временная ошибка — попробуйте ещё раз.")
                 return
             await self._finish_event(session, "first_click",
@@ -1089,7 +1316,9 @@ class CoinDropCog(commands.Cog):
             if key in actions:
                 await _deny("Вы уже участвуете в розыгрыше!")
                 return
-            await _persist({key: 1})
+            if not await _persist({key: 1}, must_absent=[key]):
+                await _deny("Временная ошибка — попробуйте ещё раз.")
+                return
             await _ack("Вы в игре! Победителя выберут случайно.")
             await self._refresh_card(session)
             return
@@ -1108,7 +1337,11 @@ class CoinDropCog(commands.Cog):
             if ckey in actions:
                 await _deny("Вы уже сделали выбор — он не меняется.")
                 return
-            await _persist({ckey: idx})
+            # Первый выбор фиксируется на уровне PG (must_absent) —
+            # гонка двух сундуков одного игрока не перезапишет.
+            if not await _persist({ckey: idx}, must_absent=[ckey]):
+                await _deny("Временная ошибка — попробуйте ещё раз.")
+                return
             await _ack(f"Вы выбрали сундук **{idx + 1}**. "
                        "Удачи!")
             await self._refresh_card(session)
@@ -1129,7 +1362,9 @@ class CoinDropCog(commands.Cog):
                             f"**{int(actions[rkey])}**")
                 return
             value = self._rng.randint(1, 100)
-            await _persist({rkey: value})
+            if not await _persist({rkey: value}, must_absent=[rkey]):
+                await _deny("Временная ошибка — попробуйте ещё раз.")
+                return
             await _ack(f"Ваш бросок: **{value}**. Один бросок на игрока.")
             await self._refresh_card(session)
             return
@@ -1146,7 +1381,8 @@ class CoinDropCog(commands.Cog):
                 await _deny("Куш уже забран другим игроком!")
                 return
             elapsed = max(0.0, now - session.start_ts)
-            if not await _persist({ckey: elapsed}):
+            if not await _persist({ckey: elapsed},
+                                  must_absent=[ckey]):
                 await _deny("Временная ошибка — попробуйте ещё раз.")
                 return
             await self._finish_event(session, "claimed",
@@ -1159,7 +1395,9 @@ class CoinDropCog(commands.Cog):
             if ckey in actions:
                 await _deny("Вы уже кликали — один клик на игрока.")
                 return
-            await _persist({ckey: now})
+            if not await _persist({ckey: now}, must_absent=[ckey]):
+                await _deny("Временная ошибка — попробуйте ещё раз.")
+                return
             await _ack("Клик засчитан! Победит последний кликнувший.")
             await self._refresh_card(session)
             return
@@ -1179,13 +1417,27 @@ class CoinDropCog(commands.Cog):
                 return
             session = _EventSession.from_row(row)
             self._register_session(session)
+        # Валидация: модалка должна соответствовать событию,
+        # его каналу и типу игры.
+        if session.game != game or game not in _MODAL_TITLES:
+            await interaction.response.send_message(
+                "Модалка не относится к этому событию.",
+                ephemeral=True)
+            return
+        if interaction.guild_id is not None and \
+                int(interaction.guild_id) != session.guild_id:
+            return
+        if getattr(interaction, "channel_id", None) and \
+                int(interaction.channel_id) != session.channel_id:
+            return
         try:
             await interaction.response.defer(ephemeral=True)
         except Exception:
             return
         uid = interaction.user.id
-        now = time.time()
         async with session.lock:
+            # Дедлайн перепроверяется ПОСЛЕ получения блокировки.
+            now = time.time()
             if session.finished or now >= session.end_ts:
                 await interaction.followup.send(
                     "Время события истекло.", ephemeral=True)
@@ -1193,11 +1445,14 @@ class CoinDropCog(commands.Cog):
             actions = session.actions
             cfg = session.config
 
-            async def _persist(patch):
+            async def _persist(patch, must_absent=None):
                 try:
-                    await event_store.patch_actions(
-                        session.event_id, patch)
+                    ok = await event_store.patch_actions(
+                        session.event_id, patch,
+                        must_absent=must_absent)
                 except Exception:
+                    return False
+                if not ok:
                     return False
                 actions.update(patch)
                 return True
@@ -1224,8 +1479,12 @@ class CoinDropCog(commands.Cog):
                     return
                 accepted = cfg.get("accepted") or []
                 correct = event_games.answer_matches(text, accepted)
-                # Одна попытка — фиксируем даже неверный ответ.
-                await _persist({gkey: 1})
+                # Одна попытка — фиксируем даже неверный ответ
+                # (must_absent — попытка не перезаписывается в PG).
+                if not await _persist({gkey: 1},
+                                      must_absent=[gkey]):
+                    await _deny("Временная ошибка — попробуйте ещё раз.")
+                    return
                 if not correct:
                     await _deny("Неверно — попытка использована.")
                     return
@@ -1242,8 +1501,11 @@ class CoinDropCog(commands.Cog):
             if not correct:
                 await _deny("Неверно — попробуйте ещё раз.")
                 return
-            if not await _persist({"winner": uid}):
-                await _deny("Временная ошибка — попробуйте ещё раз.")
+            # Победитель фиксируется атомарно в PG: при гонке
+            # двух верных ответов должен победить только один.
+            if not await _persist({"winner": uid},
+                                  must_absent=["winner"]):
+                await _deny("Победитель уже найден — событие завершено.")
                 return
             await self._finish_event(session, "correct_answer",
                                      locked=True)
@@ -1264,6 +1526,12 @@ class CoinDropCog(commands.Cog):
         now = time.time()
         for row in rows:
             try:
+                state = str(row.get("state") or "")
+                if state == "settling":
+                    # Обязательства/выплаты доводятся из
+                    # сохранённого outcome — без перевыбора RNG.
+                    await self._resume_settling(row)
+                    continue
                 session = _EventSession.from_row(row)
                 self._register_session(session)
                 delay = session.end_ts - now
@@ -1386,12 +1654,55 @@ class CoinDropCog(commands.Cog):
         for row in rows:
             try:
                 session = self._session_for(str(row["event_id"]))
+                if session is not None and session.finished:
+                    # Прошлая попытка финализации упала (напр. PG
+                    # был недоступен) — пересоздаём из строки БД.
+                    self._unregister_session(session)
+                    session = None
                 if session is None:
                     session = _EventSession.from_row(row)
                     self._register_session(session)
                 await self._finish_event(session, "timeout")
             except Exception:
                 logger.exception("overdue finalize failed id=%s",
+                                 (row or {}).get("event_id"))
+
+    async def _sweep_settling(self) -> None:
+        """Довести settling-события: фиксация обязательств могла
+        не пройти (PG/файл недоступны) — событие НЕ закрыто,
+        повторяем идемпотентно."""
+        try:
+            rows = await event_store.list_settling()
+        except Exception:
+            logger.exception("event settling sweep failed")
+            return
+        for row in rows:
+            try:
+                await self._resume_settling(row)
+            except Exception:
+                logger.exception("settling resume failed id=%s",
+                                 (row or {}).get("event_id"))
+
+    async def _sweep_failed_cards(self) -> None:
+        """Повторить финальную правку карточек, у которых edit
+        не подтверждён (result.card_edit != 'ok')."""
+        try:
+            rows = await event_store.list_failed_cards()
+        except Exception:
+            logger.exception("failed-cards sweep failed")
+            return
+        for row in rows:
+            try:
+                stored = _json_field(row, "result") or {}
+                outcome = stored.get("outcome")
+                if not isinstance(outcome, dict) or not outcome:
+                    continue
+                session = _EventSession.from_row(row)
+                await self._edit_final_card(
+                    session, outcome,
+                    str(stored.get("grant") or "none"))
+            except Exception:
+                logger.exception("card retry failed id=%s",
                                  (row or {}).get("event_id"))
 
     # ---------------------------------------------------------- legacy
@@ -1484,6 +1795,8 @@ class CoinDropCog(commands.Cog):
                 for row in await event_reward_store.claim_due(limit=10):
                     await self._process_event_reward(row)
                 await self._sweep_overdue()
+                await self._sweep_settling()
+                await self._sweep_failed_cards()
             except asyncio.CancelledError:
                 raise
             except Exception:

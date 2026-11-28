@@ -84,6 +84,51 @@ class ActivityGate:
         # key -> {"samples": deque[(ts, uid, chash)],
         #         "last": {uid: ts}, "seen": deque[(ts, chash)]}
         self._channels: dict[Hashable, dict[str, Any]] = {}
+        # key -> per-channel overrides (независимые настройки
+        # разных серверов/каналов не «протекают» друг в друга).
+        self._configs: dict[Hashable, dict[str, float]] = {}
+
+    # ------------------------------------------------------------ config
+
+    _PARAM_KEYS = (
+        "window_s", "min_messages", "min_unique_users",
+        "max_per_author", "min_interval_s", "min_active_authors",
+        "dedup_ttl_s", "max_samples",
+    )
+
+    def configure(self, key: Hashable, **params: float) -> None:
+        """Задать пороги для конкретного ключа (guild/channel).
+
+        Значения валидируются в float и обрезаются до известных
+        параметров; вызывается на каждое подходящее сообщение —
+        обязано быть дешёвым (присваивание dict).
+        """
+        clean = {}
+        for name in self._PARAM_KEYS:
+            if name not in params:
+                continue
+            try:
+                clean[name] = float(params[name])
+            except (TypeError, ValueError):
+                continue
+        if clean:
+            self._configs[key] = clean
+
+    def _params(self, key: Hashable) -> dict[str, float]:
+        """Действующие параметры ключа: атрибуты экземпляра
+        (глобальный дефолт) + per-key overrides."""
+        p = {
+            "window_s": self.window_s,
+            "min_messages": float(self.min_messages),
+            "min_unique_users": float(self.min_unique_users),
+            "max_per_author": float(self.max_per_author),
+            "min_interval_s": self.min_interval_s,
+            "min_active_authors": float(self.min_active_authors),
+            "dedup_ttl_s": self.dedup_ttl_s,
+            "max_samples": float(self.max_samples),
+        }
+        p.update(self._configs.get(key) or {})
+        return p
 
     # ------------------------------------------------------------ internals
 
@@ -94,13 +139,15 @@ class ActivityGate:
             self._channels[key] = st
         return st
 
-    def _evict(self, st: dict[str, Any], now: float) -> None:
-        cut = now - self.window_s
+    def _evict(self, st: dict[str, Any], now: float,
+               p: dict[str, float] | None = None) -> None:
+        p = p or self._params(None)
+        cut = now - p["window_s"]
         samples = st["samples"]
         while samples and samples[0][0] < cut:
             samples.popleft()
         seen = st["seen"]
-        seen_cut = now - self.dedup_ttl_s
+        seen_cut = now - p["dedup_ttl_s"]
         while seen and seen[0][0] < seen_cut:
             seen.popleft()
         last = st["last"]
@@ -113,24 +160,25 @@ class ActivityGate:
                text: str, now: float | None = None) -> bool:
         """Учесть сообщение. True — сообщение credited."""
         now = time.time() if now is None else now
+        p = self._params(key)
         st = self._state(key)
-        self._evict(st, now)
+        self._evict(st, now, p)
 
         last_ts = st["last"].get(user_id)
-        if last_ts is not None and now - last_ts < self.min_interval_s:
+        if last_ts is not None and now - last_ts < p["min_interval_s"]:
             return False  # флуд: чаще min_interval_s
 
         chash = content_hash(text)
-        seen_cut = now - self.dedup_ttl_s
+        seen_cut = now - p["dedup_ttl_s"]
         if any(h == chash for ts, h in st["seen"] if ts >= seen_cut):
             return False  # дубликат нормализованного контента
 
         per_author = sum(1 for _ts, uid, _h in st["samples"]
                          if uid == user_id)
-        if per_author >= self.max_per_author:
+        if per_author >= p["max_per_author"]:
             return False
 
-        if len(st["samples"]) >= self.max_samples:
+        if len(st["samples"]) >= p["max_samples"]:
             return False  # потолок памяти канала
 
         st["samples"].append((now, user_id, chash))
@@ -145,19 +193,20 @@ class ActivityGate:
         """Пороги окна выполнены? Оценивается только по уже
         записанным сэмплам — вызов сам по себе ничего не делает."""
         now = time.time() if now is None else now
+        p = self._params(key)
         st = self._channels.get(key)
         if st is None:
             return False
-        self._evict(st, now)
+        self._evict(st, now, p)
         samples = st["samples"]
-        if len(samples) < self.min_messages:
+        if len(samples) < p["min_messages"]:
             return False
         users = {uid for _ts, uid, _h in samples}
-        if len(users) < self.min_unique_users:
+        if len(users) < p["min_unique_users"]:
             return False
         active_cut = now - 60.0
         active = {uid for ts, uid, _h in samples if ts >= active_cut}
-        return len(active) >= self.min_active_authors
+        return len(active) >= p["min_active_authors"]
 
     def stats(self, key: Hashable,
               now: float | None = None) -> dict[str, int]:
@@ -166,7 +215,7 @@ class ActivityGate:
         st = self._channels.get(key)
         if st is None:
             return {"samples": 0, "users": 0}
-        self._evict(st, now)
+        self._evict(st, now, self._params(key))
         samples = st["samples"]
         return {
             "samples": len(samples),
@@ -176,5 +225,7 @@ class ActivityGate:
     def reset(self, key: Hashable | None = None) -> None:
         if key is None:
             self._channels.clear()
+            self._configs.clear()
         else:
             self._channels.pop(key, None)
+            self._configs.pop(key, None)

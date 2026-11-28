@@ -3,16 +3,24 @@
 Две таблицы (только PostgreSQL, JSON-fallback отсутствует —
 события без durable-записи не запускаются):
 
-- ``spontaneous_events`` — одна строка на событие. ``state='active'``
-  ограничен частичным UNIQUE-индексом по (guild_id, channel_id):
-  атомарный claim «одно активное событие на канал» работает и при
-  гонке естественного триггера и /forcedrop, и между процессами.
+- ``spontaneous_events`` — одна строка на событие. Машина
+  состояний ``active → settling → finished`` (+``cancelled``):
+  ``settle()`` атомарно фиксирует вычисленный outcome
+  (победители/выплата) ДО начисления наград — повторная
+  финализация никогда не перевыбирает случайного победителя.
+  Частичный UNIQUE-индекс по (guild_id, channel_id) для
+  ``state IN ('active','settling')``: атомарный claim «одно
+  незавершённое событие на канал» работает и при гонке
+  естественного триггера и /forcedrop, и между процессами.
   ``config``/``prize`` — JSONB с публичной и скрытой частью
   (скрытые поля никогда не попадают в карточку).
   ``actions`` — плоский JSONB-словарь зафиксированных действий
   (``p:<uid>``, ``choice:<uid>``, ``roll:<uid>``, ``click:<uid>``,
-  ``winner`` …), обновляется атомарным ``||`` merge — restart
-  безопасно восстанавливает уже сделанные ходы.
+  ``winner`` …), обновляется атомарным ``||`` merge с PG-гардами:
+  ``must_absent``-ключи (winner, первый выбор и т.п.) не
+  перезаписываются, правки после эффективного дедлайна
+  отклоняются на уровне БД — restart безопасно восстанавливает
+  уже сделанные ходы.
 
 - ``event_channel_state`` — кулдаун и последний тип события на
   канал. Кулдаун ставится в момент успешного старта и переживает
@@ -51,9 +59,10 @@ CREATE TABLE IF NOT EXISTS spontaneous_events (
 )
 """
 INDEX_DDL = """
-CREATE UNIQUE INDEX IF NOT EXISTS spontaneous_events_one_active
+DROP INDEX IF EXISTS spontaneous_events_one_active;
+CREATE UNIQUE INDEX spontaneous_events_one_active
 ON spontaneous_events (guild_id, channel_id)
-WHERE state = 'active'
+WHERE state IN ('active', 'settling')
 """
 CHANNEL_DDL = """
 CREATE TABLE IF NOT EXISTS event_channel_state (
@@ -112,7 +121,7 @@ class EventStore:
                 VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb,
                         'active', $7, $8)
                 ON CONFLICT (guild_id, channel_id)
-                    WHERE state = 'active'
+                    WHERE state IN ('active', 'settling')
                 DO NOTHING
                 RETURNING *
                 """,
@@ -142,19 +151,33 @@ class EventStore:
                 """
                 SELECT * FROM spontaneous_events
                 WHERE guild_id = $1 AND channel_id = $2
-                  AND state = 'active'
+                  AND state IN ('active', 'settling')
                 """,
                 guild_id, channel_id,
             )
             return dict(row) if row else None
 
     async def list_active(self) -> list[dict[str, Any]]:
-        """Все активные события — восстановление после рестарта."""
+        """Все незавершённые события (active+settling) —
+        восстановление после рестарта."""
         pool = await self._pool()
         async with pool.acquire() as conn:
             await self._ensure_ddl(conn)
             rows = await conn.fetch(
-                "SELECT * FROM spontaneous_events WHERE state = 'active'"
+                "SELECT * FROM spontaneous_events "
+                "WHERE state IN ('active', 'settling')"
+            )
+            return [dict(r) for r in rows]
+
+    async def list_settling(self) -> list[dict[str, Any]]:
+        """События в состоянии settling — долги по выплатам,
+        требующие доведения до finished."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_ddl(conn)
+            rows = await conn.fetch(
+                "SELECT * FROM spontaneous_events "
+                "WHERE state = 'settling'"
             )
             return [dict(r) for r in rows]
 
@@ -183,37 +206,77 @@ class EventStore:
             await self._ensure_ddl(conn)
             await conn.execute(
                 "UPDATE spontaneous_events SET message_id = $2 "
-                "WHERE event_id = $1",
+                "WHERE event_id = $1 "
+                "AND (message_id IS NULL OR message_id = $2)",
                 event_id, message_id,
             )
 
     async def patch_actions(self, event_id: str,
-                            patch: dict[str, Any]) -> None:
+                            patch: dict[str, Any],
+                            must_absent: list[str] | None = None
+                            ) -> bool:
         """Атомарно влить действия в actions (jsonb ||).
 
-        Ключи плоские (``p:<uid>``, ``choice:<uid>``, ``winner`` …) —
-        конкурентные обновления разных пользователей не теряются.
+        Ключи плоские (``p:<uid>``, ``choice:<uid>``, ``winner`` …).
+        PG-гарды (одна UPDATE): ``state='active'``, эффективный
+        дедлайн не истёк по часам БД, ключи ``must_absent`` ещё
+        не зафиксированы. True — патч применён; False — событие
+        закрыто/истекло или ключ занят (проверять результат!).
         """
         if not patch:
-            return
+            return True
+        absent = list(must_absent or [])
         pool = await self._pool()
         async with pool.acquire() as conn:
             await self._ensure_ddl(conn)
-            await conn.execute(
+            row = await conn.fetchrow(
                 """
                 UPDATE spontaneous_events
                 SET actions = COALESCE(actions, '{}'::jsonb)
                               || $2::jsonb
                 WHERE event_id = $1 AND state = 'active'
+                  AND LEAST(deadline_at,
+                            COALESCE(close_at, deadline_at)) > now()
+                  AND NOT (COALESCE(actions, '{}'::jsonb)
+                           ?| $3::text[])
+                RETURNING event_id
                 """,
                 event_id, json.dumps(patch, ensure_ascii=False),
+                absent,
             )
+            return row is not None
+
+    async def settle(self, event_id: str,
+                     result: dict[str, Any]
+                     ) -> dict[str, Any] | None:
+        """Атомарно перевести active → settling, зафиксировав
+        вычисленный outcome в ``result`` ДО начисления наград.
+
+        None — событие уже settling/finished/отсутствует:
+        единственный финализатор, случайный победитель не
+        перевыбирается (outcome берётся из сохранённого result).
+        """
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_ddl(conn)
+            row = await conn.fetchrow(
+                """
+                UPDATE spontaneous_events
+                SET state = 'settling',
+                    result = $2::jsonb
+                WHERE event_id = $1 AND state = 'active'
+                RETURNING *
+                """,
+                event_id, json.dumps(result, ensure_ascii=False),
+            )
+            return dict(row) if row else None
 
     async def finish(self, event_id: str, state: str,
                      result: dict[str, Any] | None = None
                      ) -> dict[str, Any] | None:
-        """Атомарно закрыть событие. None — уже закрыто другим
-        процессом (единственный финализатор)."""
+        """Атомарно закрыть событие (settling→finished,
+        active→cancelled). None — уже закрыто другим процессом
+        (единственный финализатор карточки)."""
         pool = await self._pool()
         async with pool.acquire() as conn:
             await self._ensure_ddl(conn)
@@ -223,13 +286,50 @@ class EventStore:
                 SET state = $2,
                     result = $3::jsonb,
                     finished_at = now()
-                WHERE event_id = $1 AND state = 'active'
+                WHERE event_id = $1
+                  AND state IN ('active', 'settling')
                 RETURNING *
                 """,
                 event_id, state,
                 json.dumps(result or {}, ensure_ascii=False),
             )
             return dict(row) if row else None
+
+    async def mark_card_edit(self, event_id: str,
+                             status: str) -> None:
+        """Отметить исход финального редактирования карточки
+        (``card_edit`` в result) — для свипера повторных попыток."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_ddl(conn)
+            await conn.execute(
+                """
+                UPDATE spontaneous_events
+                SET result = COALESCE(result, '{}'::jsonb)
+                             || jsonb_build_object(
+                                    'card_edit', $2::text)
+                WHERE event_id = $1
+                """,
+                event_id, status,
+            )
+
+    async def list_failed_cards(self, within_seconds: int = 1800
+                                ) -> list[dict[str, Any]]:
+        """Недавно завершённые события, у которых финальная
+        правка карточки не подтверждена — кандидаты на retry."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_ddl(conn)
+            rows = await conn.fetch(
+                """
+                SELECT * FROM spontaneous_events
+                WHERE state = 'finished'
+                  AND finished_at > now() - ($1 || ' seconds')::interval
+                  AND COALESCE(result->>'card_edit', '') <> 'ok'
+                """,
+                str(within_seconds),
+            )
+            return [dict(r) for r in rows]
 
     # ---------------------------------------------------- channel state
 
