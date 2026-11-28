@@ -33,10 +33,10 @@ Legacy-команды (созданные до Squad Hub, с plaintext-паро�
 ## Откат кода
 
 Подготовленная rollback-ветка: **`rollback/squad-hub-compat`**,
-SHA **`1865919fb696b5f397e0204a33e5098c73390d07`** — production
-base `feat/classic-riz3-cv2` @ `a4c7c2b` + патч совместимости
-паролей (один коммит). Это и есть «подготовленная версия» —
-отдельный redeploy произвольного старого SHA не нужен.
+SHA **`d4276397c4f8a1df12287b94a63d9f338b15a25b`** — production
+base `feat/classic-riz3-cv2` + патч совместимости
+(коммиты поверх актуальной базы). Это и есть «подготовленная
+версия» — отдельный redeploy произвольного старого SHA не нужен.
 
 Патч (уже применён в ветке):
 
@@ -51,7 +51,7 @@ base `feat/classic-riz3-cv2` @ `a4c7c2b` + патч совместимости
 - `views/team_view.py`: вход по паролю через `check_password`,
   смена пароля через `set_password`;
 - `cogs/team.py`: `/team create` сохраняет пароль хешем.
-- `storage/team_store.py` (коммит `1865919`): удаление команды
+- `storage/team_store.py` (коммит `d427639`): удаление команды
   FK-безопасно — `team_applications`/`team_invites` удаляются
   в той же транзакции (через `to_regclass`-проверку на случай
   отсутствия таблиц), ошибка удаления возвращает `False` и не

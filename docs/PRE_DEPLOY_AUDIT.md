@@ -1,145 +1,209 @@
 # Squad Hub 2.0 — Pre-Deploy Audit
 
 Release candidate: PR #54
-`feat/classic-squad-hub-v2` @ `db194e1` → base `feat/classic-riz3-cv2` @ `a4c7c2b`
-Rollback: `rollback/squad-hub-compat` @ `1865919fb696b5f397e0204a33e5098c73390d07`
+`feat/classic-squad-hub-v2` → base `feat/classic-riz3-cv2` @ `feb8daa`
+Rollback: `rollback/squad-hub-compat` @ `d4276397c4f8a1df12287b94a63d9f338b15a25b`
 
 Выполнять **до** деплоя, read-only. Production не изменять.
 Существующие команды не сбрасывать.
 
-## 1. Активные турниры
+> Хранилища: PostgreSQL — `teams`, `cashcup_*`, `mm_queues`,
+> `blackjack_*`, `spontaneous_events`, `ultimatum_*`, `ult2_*`,
+> `player_stats`, `rep_balance`, `user_balance`, `user_bank`,
+> `user_inventory`, `elo_*`. JSON-файлы в `DATA_DIR` (Volume) —
+> classic-турниры (`tournaments/*.json` + `tournaments.manifest.json`),
+> BR (`br_tournaments.json`), прочие `json_store`.
+
+## 1. Активные турниры и игровые сессии
+
+### PostgreSQL
 
 ```sql
--- Активные/незавершённые турниры всех типов
+-- Cash Cup: активные статусы 'registration'/'running'
 SELECT id, guild_id, status, created_at
 FROM cashcup_tournaments
-WHERE status NOT IN ('finished','cancelled','archived')
+WHERE status IN ('registration','running')
 ORDER BY created_at DESC;
 ```
 
 ```sql
--- BR-турниры в активных фазах (если хранятся отдельно —
--- проверить таблицы br_* по фактической схеме)
-SELECT * FROM br_tournaments WHERE status = 'active';
-```
-
-Ожидание: список зафиксировать. Команды, зарегистрированные в
-активных турнирах, защищены от изменения состава
-(`roster_locked` / `check_failed` fail-closed).
-
-## 2. Количество существующих команд
-
-```sql
-SELECT guild_id, COUNT(*) AS teams,
-       COUNT(*) FILTER (WHERE captain_id IS NOT NULL) AS with_captain
-FROM teams GROUP BY guild_id ORDER BY teams DESC;
+-- MM-очереди и активные слоты матчей
+SELECT guild_id, channel_id, queue_type, state, match_num
+FROM mm_queues;
+SELECT * FROM match_channel_slots;
 ```
 
 ```sql
--- Распределение по размеру состава и join-режиму
-SELECT array_length(members,1) AS size, COUNT(*)
-FROM teams GROUP BY 1 ORDER BY 1;
+-- Ultimatum / Ultimatum 2 (активные фазы)
+SELECT id, guild_id, status FROM ultimatum_tournaments
+WHERE status NOT IN ('COMPLETED','CANCELLED');
+SELECT id, guild_id, status FROM ult2_tournaments
+WHERE status NOT IN ('COMPLETED','CANCELLED','FINISHED');
 ```
 
-Ожидание: зафиксировать baseline. После деплоя количество
-команд не должно измениться (миграция аддитивна, команды не
-создаются/не удаляются автоматически).
+```sql
+-- Spontaneous Events
+SELECT event_id, guild_id, game_type, state, deadline_at
+FROM spontaneous_events WHERE state = 'active';
+SELECT * FROM event_channel_state;
+```
+
+```sql
+-- Открытые blackjack-раунды
+SELECT * FROM blackjack_rounds WHERE status = 'active';
+```
+
+### JSON / Volume (не SQL!)
+
+```bash
+# Classic-турниры: шарды DATA_DIR/tournaments/*.json
+ls "$DATA_DIR/tournaments/" | head -50
+cat "$DATA_DIR/tournaments.manifest.json" | python -m json.tool | head -40
+
+# BR-турниры
+python -c "import json;d=json.load(open('$DATA_DIR/br_tournaments.json'));print(list(d.keys())[:20])"
+```
+
+Ожидание: полный список активных сессий зафиксировать.
+**При наличии активных игровых сессий, которые прервёт
+рестарт — остановить выпуск и отчитаться владельцу.**
+Команды, зарегистрированные в активных Cash Cup/BR,
+защищены от изменения состава (`roster_locked` /
+`check_failed` — fail-closed).
+
+## 2. Команды и участники
+
+```sql
+-- Схема teams: team_id PK, team_name, password (legacy),
+-- captain_id, guild_id, members BIGINT[],
+-- + squad-колонки: join_mode, recruiting, purpose,
+--   description, requirements JSONB, logo_url,
+--   password_hash, updated_at
+SELECT guild_id, COUNT(*) AS teams FROM teams
+GROUP BY guild_id ORDER BY teams DESC;
+
+SELECT COUNT(*) AS total_members,
+       SUM(array_length(members,1)) AS total_slots
+FROM teams;
+```
+
+Ожидание: baseline до миграции. После деплоя количество
+команд и составы не должны измениться (миграция аддитивна).
 
 ## 3. Конфликты legacy-данных
 
 Миграция (`ensure_squad_schema`) при старте пишет отчёт в
-`DATA_DIR` (team-migration report JSON) и создаёт уникальный
-индекс имён **только при отсутствии конфликтов**.
-
-Проверить до деплоя:
+`DATA_DIR` и создаёт уникальный индекс имён **только при
+отсутствии конфликтов**. Проверить до деплоя:
 
 ```sql
 -- Дубликаты названий без учёта регистра
-SELECT lower(name), COUNT(*) FROM teams
+SELECT lower(team_name), COUNT(*) FROM teams
 GROUP BY 1 HAVING COUNT(*) > 1;
-```
 
-```sql
 -- Игрок более чем в одной команде одного guild
-SELECT guild_id, unnest(members) AS uid, COUNT(*)
-FROM teams GROUP BY 1,2 HAVING COUNT(*) > 1;
-```
+SELECT guild_id, uid, COUNT(*) FROM teams,
+     unnest(members) AS uid
+GROUP BY 1,2 HAVING COUNT(*) > 1;
 
-```sql
 -- Капитан отсутствует в составе
-SELECT team_id, name, captain_id, members FROM teams
+SELECT team_id, team_name, captain_id, members FROM teams
 WHERE NOT (captain_id = ANY(members));
-```
 
-```sql
 -- Составы > 4 игроков
-SELECT team_id, name, array_length(members,1) AS n
+SELECT team_id, team_name, array_length(members,1) AS n
 FROM teams WHERE array_length(members,1) > 4;
-```
 
-```sql
 -- Команды с паролем (станут join_mode='password',
 -- recruiting=FALSE — публичный набор не откроется)
-SELECT team_id, name, captain_id FROM teams WHERE password <> '';
+SELECT team_id, team_name, captain_id,
+       (password <> '') AS has_legacy_pw,
+       (password_hash <> '') AS has_hash
+FROM teams WHERE password <> '' OR password_hash <> '';
 ```
 
-При любом конфликте: миграция **не** создаст уникальный индекс
-и запишет отчёт — команды не переименовываются и не удаляются.
-Требуется ручное решение администратора.
+При любом конфликте: миграция **не** создаст уникальный
+индекс и запишет отчёт — команды не переименовываются и не
+удаляются. Требуется ручное решение администратора.
 
-## 4. Резервные копии
+## 4. Прогресс / экономика / статистика (сохранность)
+
+```sql
+-- ELO/SR/XP/REP: player_stats (elo, xp, level,
+-- reputation, total_earnings, ...), elo_ratings,
+-- elo_history, rep_balance, rep_balance_grants,
+-- reputation_transactions
+SELECT COUNT(*) FROM player_stats;
+SELECT COUNT(*) FROM elo_ratings;
+SELECT COUNT(*) FROM rep_balance;
+SELECT COUNT(*) FROM reputation_transactions;
+
+-- Балансы и инвентарь
+SELECT COUNT(*) FROM user_balance;
+SELECT COUNT(*) FROM user_bank;
+SELECT COUNT(*) FROM user_inventory;
+SELECT COUNT(*) FROM shop_items;
+```
+
+## 5. Резервные копии
 
 - **PostgreSQL**: свежий `pg_dump` production БД перед деплоем
-  (включая `teams`, `team_invites`, `team_applications`,
-  `team_audit`, `team_lfg`, `squad_hub_state`,
-  `cashcup_tournaments`, `br_*`, blackjack-таблицы).
-- **Volume / DATA_DIR**: снапшот каталога данных бота
-  (JSON-файлы, аватары, `backups/` от `disband_many`).
-- Проверить, что бэкап **восстановим** (тестовый restore на
-  staging или хотя бы проверка целостности дампа).
+  (полный дамп, включая `teams`, `team_invites`,
+  `team_applications`, `team_audit`, `team_lfg`,
+  `squad_hub_state`, `cashcup_*`, `mm_*`, `blackjack_*`,
+  `spontaneous_events`, `ultimatum_*`, `ult2_*`, `player_stats`,
+  `rep_*`, `user_*`, `elo_*`).
+- **Volume / DATA_DIR**: снапшот каталога данных бота —
+  `tournaments/`, `br_tournaments.json`, JSON-store файлы,
+  `backups/`.
+- Проверить целостность: тестовый restore pg_dump на
+  staging/in-memory PG, `pg_restore --list` для custom-формата.
+- **Сохранить проверенную копию вне Railway Volume**
+  (локальная машина / объектное хранилище).
 
-## 5. Проверенный rollback SHA
+## 6. Проверенный rollback SHA
 
-`rollback/squad-hub-compat` @ `1865919`
-(base `a4c7c2b` + совместимость password_hash + FK-safe delete).
+`rollback/squad-hub-compat` @ `d4276397c4f8a1df12287b94a63d9f338b15a25b`
+(поверх `feat/classic-riz3-cv2` @ `feb8daa`):
 
-Проверено:
 - `password_hash` читается/пишется, PBKDF2-совместим с Squad Hub;
 - plaintext не восстанавливается;
+- `/team delete` проверяет результат `TeamStore.delete()` —
+  при ошибке PG показывает ошибку, а не ложный успех;
 - удаление команды чистит `team_invites`/`team_applications`
-  в одной транзакции (FK), ошибка → `False`, кэш не трогается;
-- `team_audit`/`team_lfg` без FK — история сохраняется;
-- новые таблицы Squad Hub старый код игнорирует.
+  в одной транзакции (FK), `to_regclass`-guard для БД без
+  squad-таблиц; `team_audit`/`team_lfg` без FK — история
+  сохраняется;
+- squad-таблицы старый код игнорирует (аддитивны).
 
-Действия отката: переключить образ/деплой на SHA `1865919`,
-схему БД **не** откатывать (аддитивна). См.
-`docs/SQUAD_HUB_ROLLBACK.md`.
+Действия отката: переключить деплой на SHA `d427639`, схему
+БД **не** откатывать. См. `docs/SQUAD_HUB_ROLLBACK.md`.
 
-## 6. Сохранность соседних подсистем
+## 7. Сохранность соседних подсистем
 
-- **BR**: регистрация в BR-турнире идёт через
+- **BR**: JSON-store; регистрация команды в BR под
   `team_registration_lock` (FOR UPDATE на teams) + VAC-проверка
-  состава перед фиксацией. Проверить: `tests/test_br_*` и
-  сценарий «регистрация ↔ disband» покрыт
-  `test_register_br_team_vs_disband_concurrent`.
+  состава. Тест `test_register_br_team_vs_disband_concurrent`.
 - **Cash Cup**: `register_br_team` фиксирует свежие
   name/captain/members под `cashcup_store.mutate` +
-  `locked_team_on` в одной транзакции. Активный турнир блокирует
-  изменение состава (`roster_locked`), повреждённый `state` →
-  `check_failed` (fail-closed).
-- **Blackjack**: изменений не было; прогон полного pytest
-  подтверждает.
-- **Spontaneous Events 2.0**: в базе `a4c7c2b`, ветка
-  отребейжена поверх — конфликты отсутствуют; полный suite
-  зелёный.
+  `locked_team_on` в одной транзакции; активный турнир блокирует
+  состав (`roster_locked`); повреждённый `state` → `check_failed`.
+- **Blackjack**: изменений не было; PG-таблицы `blackjack_rounds`/
+  `blackjack_ledger` не затрагиваются миграцией.
+- **Spontaneous Events 2.0**: в базе `feb8daa`; ветка отребейжена
+  поверх — конфликтов нет; полный suite зелёный.
+- **Classic-турниры / MM / Ultimatum**: JSON/PG stores не
+  изменялись Squad Hub; покрыты регрессией полного pytest.
 
-## 7. Критерии go/no-go
+## 8. Критерии go/no-go
 
 GO только если:
-- [ ] активные турниры перечислены и команды в них известны;
-- [ ] количество команд зафиксировано (baseline);
+- [ ] активные сессии всех типов перечислены; при активных
+      играх — выпуск остановлен и владелец уведомлён;
+- [ ] количество команд/участников зафиксировано (baseline);
 - [ ] конфликтов legacy-данных нет ИЛИ есть утверждённый план;
-- [ ] pg_dump + Volume-снапшот сняты и проверены;
-- [ ] rollback SHA `1865919` подтверждён;
-- [ ] CI на PR #54 зелёный;
-- [ ] получено отдельное разрешение владельца на деплой.
+- [ ] pg_dump + Volume-снапшот сняты, проверены, копия вне
+      Railway Volume;
+- [ ] rollback SHA `d427639` подтверждён;
+- [ ] CI на финальном HEAD зелёный;
+- [ ] получено отдельное разрешение владельца на merge/deploy.
