@@ -14,7 +14,7 @@ from models.br_tournament import (BRFormat, BRTournamentFormation,
                                   BRTournamentPhase, br_format_rules)
 from storage.br_store import br_store
 from utils.embeds import replace_emojis
-from views.br_view import BRCardView, public_embed
+from views.br_view import BRCardView, public_embed, get_br_lock
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -319,14 +319,27 @@ class BRCog(commands.Cog):
             return
 
         import random
-        n_slots = len(tournament.teams)
-        for m in range(tournament.map_count):
-            places = random.sample(range(1, tournament.place_cap + 1), n_slots)
-            for si, slot in enumerate(tournament.teams):
-                tournament.set_result_entry(m, si, place=places[si],
-                                            kills=random.randint(0, 50),
-                                            by=interaction.user.id)
-        br_store.set(tournament)
+        async with get_br_lock(tournament):
+            # актуальный объект под блокировкой: турнир мог быть
+            # отменён/удалён/заменён после проверки выше
+            t2 = br_store.get(interaction.guild_id, interaction.channel_id)
+            if (t2 is None or str(t2.id) != str(tournament.id)
+                    or not t2.is_test or not t2.results_editable
+                    or not t2.teams):
+                await interaction.response.send_message(
+                    "Состояние турнира изменилось — статистика не записана.",
+                    ephemeral=True)
+                return
+            n_slots = len(t2.teams)
+            for m in range(t2.map_count):
+                places = random.sample(range(1, t2.place_cap + 1), n_slots)
+                for si, slot in enumerate(t2.teams):
+                    t2.set_result_entry(m, si, place=places[si],
+                                        kills=random.randint(0, 50),
+                                        by=interaction.user.id)
+            br_store.set(t2)
+            tournament = t2
+        await _refresh_card(interaction, tournament)
         await interaction.response.send_message(
             replace_emojis("Случайная статистика заполнена!"), ephemeral=True)
 

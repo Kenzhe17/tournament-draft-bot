@@ -1960,12 +1960,22 @@ class EntryResultModal(Modal):
                 f"Киллы должны быть целым числом 0–50 (получено «{kills_raw}») — запись не сохранена.",
                 ephemeral=True)
             return
+        ok = False
+        err = ""
         async with get_br_lock(t):
-            ok, err = t.set_result_entry(
-                self.map_index, self.slot_index, place=place, kills=kills,
-                dns=is_dns, clear=is_clear, by=interaction.user.id)
-            if ok:
-                br_store.set(t)
+            # актуальный объект и повторная проверка под блокировкой:
+            # турнир мог быть отменён/удалён/заменён после открытия модалки
+            t2 = br_store.get(self.guild_id, self.channel_id)
+            if (t2 is None or str(t2.id) != str(self.tid)
+                    or not t2.results_editable):
+                err = "Ввод недоступен — состояние турнира изменилось."
+            else:
+                ok, err = t2.set_result_entry(
+                    self.map_index, self.slot_index, place=place, kills=kills,
+                    dns=is_dns, clear=is_clear, by=interaction.user.id)
+                if ok:
+                    br_store.set(t2)
+                    t = t2
         if ok:
             await refresh_main_card(interaction, t)
             await _respond(interaction,
@@ -2054,11 +2064,23 @@ class BatchEntryModal(Modal):
                 "Ошибки пакета (ничего не сохранено):\n" + "\n".join(parse_errors[:15]),
                 ephemeral=True)
             return
+        ok = False
+        errors: list[str] = []
         async with get_br_lock(t):
-            ok, errors = t.set_results_batch(self.map_index, entries, by=interaction.user.id)
-            if ok:
-                br_store.set(t)
+            # актуальный объект и повторная проверка под блокировкой:
+            # турнир мог быть отменён/удалён/заменён после открытия модалки
+            t2 = br_store.get(self.guild_id, self.channel_id)
+            if (t2 is None or str(t2.id) != str(self.tid)
+                    or not t2.results_editable):
+                errors = ["Ввод недоступен — состояние турнира изменилось."]
+            else:
+                ok, errors = t2.set_results_batch(
+                    self.map_index, entries, by=interaction.user.id)
+                if ok:
+                    br_store.set(t2)
+                    t = t2
         if ok:
+            await refresh_main_card(interaction, t)
             await _respond(interaction,
                 f"Карта {self.map_index + 1}: пакет из {len(entries)} строк сохранён.",
                 ephemeral=True)

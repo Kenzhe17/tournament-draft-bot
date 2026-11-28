@@ -874,3 +874,74 @@ def test_cv2_payload_ten_maps_within_limits(patched_store):
                     map_ids.add(cid.rsplit(":", 1)[-1])
     assert n_buttons <= 25
     assert len(map_ids) == 10
+
+
+# ---------------------------------------------------------------------------
+# Final rollout fixes: stale-object protection под блокировкой
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_entry_submit_rejects_replaced_tournament(patched_store):
+    """Между открытием модалки и submit турнир заменён в store —
+    запись не выполняется по устаревшему объекту."""
+    t = _tournament(maps=1)
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+
+    modal = EntryResultModal(1, 2, t.id, 0, 0, "Слот 1",
+                             absent=br_view.absent_label(t))
+    modal.place = SimpleNamespace(value="1")
+    modal.kills = SimpleNamespace(value="5")
+    modal.dns = SimpleNamespace(value="")
+
+    # store вернул ДРУГОЙ турнир с тем же tid-каналом (замена)
+    other = _tournament(maps=1)
+    other.id = "other-tid"
+    patched_store["t"] = other
+
+    inter = _interaction(guild)
+    await modal.on_submit(inter)
+    assert any("изменилось" in str(m[0][0]) or "недоступен" in str(m[0][0]).lower()
+               for m in inter.response.messages)
+    # записи нет ни в старом, ни в новом объекте
+    assert t.get_team_stats_for_map(t.teams[0], 0) is None
+    assert other.get_team_stats_for_map(other.teams[0], 0) is None
+
+
+@pytest.mark.asyncio
+async def test_batch_submit_rejects_replaced_tournament(patched_store):
+    t = _tournament(maps=1)
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+
+    modal = BatchEntryModal(1, 2, t.id, 0)
+    modal.data = SimpleNamespace(value="1 1 5")
+
+    other = _tournament(maps=1)
+    other.id = "other-tid"
+    patched_store["t"] = other
+
+    inter = _interaction(guild)
+    await modal.on_submit(inter)
+    assert any("недоступен" in str(m[0][0]).lower()
+               or "изменилось" in str(m[0][0])
+               for m in inter.response.messages)
+    assert not t.results_complete()
+
+
+@pytest.mark.asyncio
+async def test_entry_submit_works_on_fresh_store_object(patched_store):
+    """Контроль: при актуальном объекте в store запись проходит
+    именно через него."""
+    t = _tournament(maps=1)
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    modal = EntryResultModal(1, 2, t.id, 0, 0, "Слот 1",
+                             absent=br_view.absent_label(t))
+    modal.place = SimpleNamespace(value="2")
+    modal.kills = SimpleNamespace(value="7")
+    modal.dns = SimpleNamespace(value="")
+    await modal.on_submit(_interaction(guild))
+    e = t.get_team_stats_for_map(t.teams[0], 0)
+    assert e == {"place": 2, "kills": 7, "dns": False}

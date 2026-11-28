@@ -1208,8 +1208,13 @@ class TournamentBot(commands.Bot):
             from storage.br_store import br_store
             from views.br_view import sync_public_card, resume_pending_publish
             for brt in br_store.all():
-                await resume_pending_publish(brt, self)
-                await sync_public_card(brt, self)
+                # объект из снимка мог устареть (purge/cancel/замена
+                # турнира в канале) — синхронизируем только актуальный
+                fresh = br_store.get(brt.guild_id, brt.channel_id)
+                if fresh is None or str(fresh.id) != str(brt.id):
+                    continue
+                await resume_pending_publish(fresh, self)
+                await sync_public_card(fresh, self)
         except Exception as e:
             logger.error(f"BR card restore failed: {e}")
 
