@@ -135,7 +135,9 @@ async def list_entries(
     enabled: bool | None = None,
     limit: int = Query(default=50, le=200),
     offset: int = 0,
-    user: PanelUser = Depends(require_perm(rbac.PERM_SETTINGS_VIEW)),
+    # Содержимое каталога (слова/загадки/ответы) — ТОЛЬКО
+    # BOT_OWNER_ID; остальным — только /games stats.
+    user: PanelUser = Depends(_require_owner),
 ) -> dict[str, Any]:
     game = _game(game)
     items, total = await event_content_store.list_entries(
@@ -149,7 +151,7 @@ async def list_entries(
 @router.get("/{game}/categories")
 async def list_categories(
     game: str,
-    user: PanelUser = Depends(require_perm(rbac.PERM_SETTINGS_VIEW)),
+    user: PanelUser = Depends(_require_owner),
 ) -> dict[str, Any]:
     return {"categories":
             await event_content_store.list_categories(_game(game))}
@@ -158,7 +160,7 @@ async def list_categories(
 @router.get("/{game}/entries/{entry_id}")
 async def get_entry(
     game: str, entry_id: str,
-    user: PanelUser = Depends(require_perm(rbac.PERM_SETTINGS_VIEW)),
+    user: PanelUser = Depends(_require_owner),
 ) -> dict[str, Any]:
     item = await event_content_store.get_entry(_game(game), entry_id)
     if item is None:

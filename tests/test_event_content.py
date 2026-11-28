@@ -182,18 +182,23 @@ def test_make_config_word_with_content():
     assert cfg["content_difficulty"] == "medium"
     assert Counter(cfg["scrambled"]) == Counter("вертолёт")
     assert cfg["scrambled"] != "вертолёт"
-    # Строгий ответ: ТОЛЬКО исходное слово, без алиасов
+    # Строгий ответ: ТОЛЬКО исходное слово, без алиасов —
+    # отдельная строгая проверка word_answer_matches
     assert cfg["accepted"] == ["вертолёт"]
-    assert event_games.answer_matches("ВЕРТОЛЕТ", cfg["accepted"])
-    assert event_games.answer_matches("  вертолёт  ",
-                                    cfg["accepted"])
+    wm = event_games.word_answer_matches
+    assert wm("ВЕРТОЛЕТ", cfg["word"])
+    assert wm("  вертолёт  ", cfg["word"])
     # синонимы/сокращения НЕ принимаются
-    assert not event_games.answer_matches("вертушка",
-                                          cfg["accepted"])
-    assert not event_games.answer_matches("вертолетчик",
-                                          cfg["accepted"])
-    assert not event_games.answer_matches("верто лет",
-                                          cfg["accepted"])
+    assert not wm("вертушка", cfg["word"])
+    assert not wm("вертолетчик", cfg["word"])
+    assert not wm("верто лет", cfg["word"])
+    # произвольно вставленные символы НЕ удаляются
+    assert not wm("вертолёт!", cfg["word"])
+    assert not wm("верто.лёт", cfg["word"])
+    assert not wm("вертолёт1", cfg["word"])
+    assert not wm("в ертолёт", cfg["word"])
+    assert not wm("", cfg["word"])
+    assert not wm("что угодно", "")
 
 
 def test_make_config_krokodil_with_content():
@@ -336,3 +341,35 @@ def test_scramble_fallback_never_returns_original():
         for _ in range(10):
             s = event_content.scramble_word(w, rng)
             assert s != w and Counter(s) == Counter(w)
+
+
+def test_validate_rejects_bad_field_types():
+    """Некорректные типы accepted/category → ошибки валидации
+    (API мапит их в HTTP 422)."""
+    # category не строка
+    bad_cat = _word_entry(id="c1", word="парта")
+    bad_cat["category"] = 123
+    errs = event_content.validate_catalog(
+        _cat("word", [bad_cat]), "word")
+    assert any("category" in e for e in errs)
+    # word + accepted не-None (даже пустой список/неверный тип)
+    for acc in ([], "строка", 5):
+        e = _word_entry(id="c2", word="парта")
+        e["accepted"] = acc
+        errs = event_content.validate_catalog(
+            _cat("word", [e]), "word")
+        assert any("accepted" in x for x in errs), acc
+    # krokodil: accepted не список / с не-строками
+    for acc in ("строка", ["ок", 5], []):
+        e = _krok_entry(id="k1", answer="окно",
+                        clue="Проём в стене для света.",
+                        accepted=acc)
+        errs = event_content.validate_catalog(
+            _cat("krokodil", [e]), "krokodil")
+        assert any("accepted" in x for x in errs), acc
+    # category пустая строка/пробелы
+    e = _word_entry(id="c3", word="парта")
+    e["category"] = "   "
+    errs = event_content.validate_catalog(
+        _cat("word", [e]), "word")
+    assert any("category" in x for x in errs)

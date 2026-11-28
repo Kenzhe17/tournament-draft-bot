@@ -120,10 +120,31 @@ async def test_non_owner_denied(client, app):
     for uid, role in ((1, "viewer"), (2, "admin"),
                       (3, "moderator"), (4, "organizer")):
         _auth(app, _user(uid=uid, role=role, perms={"*"}))
-        # GET — чтение доступно любому panel-пользователю
-        # (settings.view), как у остальных каталогов CC
+        # Содержимое каталога (записи с ответами) — только
+        # BOT_OWNER_ID, даже с полным perm-бандлом
         r = await client.get("/api/event-content/word/entries")
+        assert r.status_code == 403, role
+        r = await client.get("/api/event-content/word/categories")
+        assert r.status_code == 403, role
+        r = await client.get(
+            "/api/event-content/word/entries/api_000")
+        assert r.status_code == 403, role
+        # Обезличенная статистика доступна (settings.view)
+        r = await client.get("/api/event-content/games")
         assert r.status_code == 200, role
+        body = r.json()
+        # только счётчики/версии — никаких контентных полей
+        def _keys(o):
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    yield k
+                    yield from _keys(v)
+            elif isinstance(o, list):
+                for v in o:
+                    yield from _keys(v)
+        keys = set(_keys(body))
+        assert not ({"answer", "accepted", "clue", "word",
+                     "items"} & keys), keys
         # Запись — только BOT_OWNER_ID
         r = await client.post("/api/event-content/word/entries",
                               json={"word": "глобус"}, headers=H)
@@ -145,6 +166,9 @@ async def test_admin_without_owner_id_denied(client, app):
                             "panel.view"}))
     r = await client.get("/api/event-content/games")
     assert r.status_code == 200
+    # Записи каталога — только owner
+    r = await client.get("/api/event-content/word/entries")
+    assert r.status_code == 403
     r = await client.post("/api/event-content/word/entries",
                           json={"word": "глобус"}, headers=H)
     assert r.status_code == 403

@@ -44,6 +44,7 @@ from __future__ import annotations
 import random
 import string
 import time
+import unicodedata
 from typing import Any
 
 # ------------------------------------------------------------------
@@ -256,6 +257,20 @@ def answer_matches(text: str, accepted: tuple[str, ...] | list[str]
         if norm == normalize_answer(a):
             return True
     return False
+
+
+def word_answer_matches(text: str, word: str) -> bool:
+    """Строгая проверка «Перепутанного слова»: принимается
+    ТОЛЬКО исходное слово. Толерантны лишь регистр, Ё/Е и
+    внешние пробелы — произвольно вставленные символы,
+    знаки препинания и внутренние пробелы НЕ удаляются и
+    дают несовпадение."""
+    def _strict(s: str) -> str:
+        return unicodedata.normalize(
+            "NFC", s or "").strip().lower().replace("ё", "е")
+
+    t, w = _strict(text), _strict(word)
+    return bool(t) and t == w
 
 
 def make_config(game: str, prize: dict[str, Any],

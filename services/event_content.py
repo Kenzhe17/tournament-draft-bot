@@ -95,8 +95,9 @@ def validate_catalog(data: Any, game: str) -> list[str]:
             errors.append(f"{tag}: enabled must be bool")
         if e.get("difficulty") not in DIFFICULTIES:
             errors.append(f"{tag}: bad difficulty {e.get('difficulty')!r}")
-        if not e.get("category"):
-            errors.append(f"{tag}: missing category")
+        cat = e.get("category")
+        if not isinstance(cat, str) or not cat.strip():
+            errors.append(f"{tag}: category must be non-empty str")
         if game == "word":
             w = e.get("word")
             if not isinstance(w, str) or not w:
@@ -116,7 +117,7 @@ def validate_catalog(data: Any, game: str) -> list[str]:
                 # синонимы/сокращения не принимаются, поле
                 # accepted в word-каталоге запрещено.
                 acc = e.get("accepted")
-                if acc:
+                if acc is not None:
                     errors.append(
                         f"{tag}: 'accepted' is forbidden for "
                         "word entries")
@@ -160,6 +161,8 @@ def validate_catalog(data: Any, game: str) -> list[str]:
                 seen_clues.add(nc)
             if isinstance(acc, list):
                 for a in acc:
+                    if not isinstance(a, str):
+                        continue  # тип уже отмечен ошибкой выше
                     na = normalize_answer(a)
                     if na in seen_norm:
                         errors.append(

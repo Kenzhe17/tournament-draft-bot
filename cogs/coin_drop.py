@@ -1820,8 +1820,10 @@ class CoinDropCog(commands.Cog):
                 await _deny("Неверно — попытка использована.")
                 return
             elif game == "word":
-                accepted = cfg.get("accepted") or []
-                correct = event_games.answer_matches(text, accepted)
+                # Строгая проверка: только исходное слово,
+                # без алиасов и удаления вставленных символов.
+                correct = event_games.word_answer_matches(
+                    text, str(cfg.get("word") or ""))
             elif game == "krokodil":
                 accepted = cfg.get("accepted") or []
                 correct = event_games.answer_matches(text, accepted)
