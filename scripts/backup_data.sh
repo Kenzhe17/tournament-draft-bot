@@ -23,7 +23,10 @@ mkdir -p "$OUT" || { echo "не удалось создать $OUT" >&2; exit 1;
 BACKED_UP=0
 
 if [ -n "$DATA_DIR" ] && [ -d "$DATA_DIR" ]; then
-    tar -czf "$OUT/data.tar.gz" -C "$DATA_DIR" . \
+    # --exclude: каталог backups внутри DATA_DIR не должен попадать
+    # в собственный архив (иначе tar рекурсивно пакует сам себя)
+    tar -czf "$OUT/data.tar.gz" -C "$DATA_DIR" \
+        --exclude='./backups' --exclude='backups' . \
         || { echo "ОШИБКА: tar не смог архивировать $DATA_DIR" >&2; exit 1; }
     # целостность архива
     tar -tzf "$OUT/data.tar.gz" >/dev/null 2>&1 \
@@ -58,6 +61,8 @@ fi
     : > MANIFEST.txt
     for f in *; do
         [ -f "$f" ] || continue
+        # MANIFEST.txt не входит в собственные контрольные суммы
+        [ "$f" = "MANIFEST.txt" ] && continue
         size=$(wc -c < "$f" | tr -d ' ')
         if command -v sha256sum >/dev/null 2>&1; then
             sha=$(sha256sum "$f" | cut -d' ' -f1)

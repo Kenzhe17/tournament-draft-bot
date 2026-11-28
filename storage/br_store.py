@@ -52,6 +52,15 @@ class BRStore:
         """Число повреждённых записей, сохранённых в карантине."""
         return len(self._corrupt_active) + len(self._corrupt_history)
 
+    @property
+    def file_parse_failed(self) -> bool:
+        """True, если JSON-файл целиком не распарсился при load().
+
+        Флаг живёт до первого save() — читается preflight'ом сразу
+        после старта процесса.
+        """
+        return self._preserve_corrupt_file
+
     def load(self) -> None:
         """Загрузить все BR турниры из файла."""
         self._preserve_corrupt_file = False
@@ -146,19 +155,28 @@ class BRStore:
         не парсился целиком, перед перезаписью сохраняем его копию.
         """
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        if self._preserve_corrupt_file and BR_DATA_FILE.exists():
-            import shutil
-            import time
-            backup = BR_DATA_FILE.with_name(
-                f"{BR_DATA_FILE.name}.corrupt-{int(time.time())}")
-            try:
-                shutil.copy2(BR_DATA_FILE, backup)
+        if self._preserve_corrupt_file:
+            if BR_DATA_FILE.exists():
+                import shutil
+                import time
+                backup = BR_DATA_FILE.with_name(
+                    f"{BR_DATA_FILE.name}.corrupt-{int(time.time())}")
+                try:
+                    shutil.copy2(BR_DATA_FILE, backup)
+                except Exception as exc:
+                    # копию не удалось сохранить — перезапись файла
+                    # запрещена: иначе повреждённые данные исчезнут
+                    # безвозвратно. Флаг остаётся — следующий save()
+                    # повторит попытку.
+                    raise RuntimeError(
+                        "BR store: не удалось сохранить копию "
+                        "повреждённого br_tournaments.json — "
+                        "перезапись заблокирована до ручного "
+                        "восстановления"
+                    ) from exc
                 logger.error(
                     "BR store: исходный файл не парсился — копия сохранена: %s",
                     backup)
-            except Exception as exc:
-                logger.error("BR store: не удалось сохранить копию "
-                             "повреждённого файла: %s", exc)
             self._preserve_corrupt_file = False
         active = {
             f"{gid}:{cid}": t.to_dict()

@@ -46,9 +46,18 @@ def main() -> None:
     if pending:
         print(f"ВНИМАНИЕ: {len(pending)} турниров с отложенной публикацией — "
               "после деплоя resume_pending_publish доведёт их до конца.")
+
+    failed = False
+    if br_store.file_parse_failed:
+        print("КРИТИЧНО: br_tournaments.json целиком не парсится — "
+              "все BR данные недоступны. Деплой ЗАПРЕЩЁН до восстановления.")
+        failed = True
     if br_store.corrupt_count:
         print(f"КРИТИЧНО: {br_store.corrupt_count} повреждённых записей BR "
               "в карантине — восстановите данные до деплоя!")
+        failed = True
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

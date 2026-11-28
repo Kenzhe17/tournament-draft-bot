@@ -810,3 +810,77 @@ def test_discord_interaction_types_support_defer_and_followup():
     assert "followup" in dir(Interaction)
     send_sig = inspect.signature(Webhook.send)
     assert "ephemeral" in send_sig.parameters
+
+
+def test_save_blocked_when_corrupt_backup_fails(tmp_path, monkeypatch):
+    """Копию повреждённого файла сохранить не удалось → перезапись
+    br_tournaments.json запрещена, исходные байты не тронуты."""
+    import shutil
+    import storage.br_store as br_store_mod
+    from storage.br_store import BRStore
+
+    src = tmp_path / "br.json"
+    original = b'{"active": {broken json!!!'
+    src.write_bytes(original)
+    monkeypatch.setattr(br_store_mod, "BR_DATA_FILE", src)
+    monkeypatch.setattr(shutil, "copy2",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            OSError("disk full")))
+
+    s = BRStore.__new__(BRStore)
+    s.load()
+    assert s.file_parse_failed is True
+
+    import pytest as _pytest
+    with _pytest.raises(RuntimeError, match="перезапись заблокирована"):
+        s.save()
+    # файл не перезаписан, флаг сохранён для повторной попытки
+    assert src.read_bytes() == original
+    assert s.file_parse_failed is True
+    assert list(tmp_path.glob("br.json.corrupt-*")) == []
+
+
+def test_preflight_exits_nonzero_on_corrupt_json(tmp_path):
+    """Полностью повреждённый br_tournaments.json → preflight exit!=0."""
+    import os
+    import subprocess
+    import sys
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "br_tournaments.json").write_text(
+        '{"active": {broken', encoding="utf-8")
+
+    env = dict(os.environ, DATA_DIR=str(data_dir))
+    repo = Path(__file__).resolve().parents[1]
+    proc = subprocess.run(
+        [sys.executable, "scripts/br_preflight.py"],
+        cwd=repo, env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 1
+    assert "не парсится" in proc.stdout
+
+
+def test_preflight_exits_zero_on_clean_data(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    env = dict(os.environ, DATA_DIR=str(data_dir))
+    repo = Path(__file__).resolve().parents[1]
+    proc = subprocess.run(
+        [sys.executable, "scripts/br_preflight.py"],
+        cwd=repo, env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0
+    assert "Активных BR турниров: 0" in proc.stdout
+
+
+def test_backup_script_excludes_backups_dir_and_manifest():
+    """Регрессия: tar не должен паковать собственный каталог backups,
+    MANIFEST.txt не должен входить в собственные контрольные суммы."""
+    repo = Path(__file__).resolve().parents[1]
+    script = (repo / "scripts" / "backup_data.sh").read_text(
+        encoding="utf-8")
+    assert "--exclude" in script and "backups" in script
+    assert '"$f" = "MANIFEST.txt"' in script
