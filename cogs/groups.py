@@ -22,7 +22,7 @@ economy_group = app_commands.Group(
     name="economy", description="Баланс, переводы, магазин-сейф и ставки"
 )
 games_group = app_commands.Group(
-    name="games", description="Мини-игры на монеты"
+    name="games", description="Мини-игры"
 )
 crime_group = app_commands.Group(
     name="crime", description="Криминальные действия"
