@@ -1350,3 +1350,26 @@ async def test_reward_card_sync_still_pending_stays_queued():
     assert persisted["updates"]["grant"] == "queued"
     assert persisted["updates"]["rewards"]["5"]["status"] \
         == "pending"
+
+
+@pytest.mark.asyncio
+async def test_cooldown_save_failure_keeps_settling():
+    """Сбой ensure_channel_state → finish() НЕ вызывается:
+    событие остаётся settling для автоматического retry
+    свипером (никакого «finished без кулдауна»)."""
+    cog = _cog()
+    s = _session("speed", actions={"winner": 5},
+                 config={"started_ts": time.time() - 5,
+                         "cooldown_s": 900})
+    s.message = _msg()
+    cog._register_session(s)
+    finish = AsyncMock(return_value={"state": "finished"})
+    with patch.object(coin_drop.event_store, "finish", new=finish), \
+         patch.object(coin_drop.event_store,
+                      "ensure_channel_state",
+                      new=AsyncMock(side_effect=RuntimeError("pg"))), \
+         patch("cogs.coin_drop.grant_event_reward",
+               new=AsyncMock(return_value="credited")):
+        await cog._finish_event(s, "first_click")
+    finish.assert_not_awaited()
+    s.message.edit.assert_not_awaited()

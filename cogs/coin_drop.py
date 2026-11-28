@@ -1167,8 +1167,15 @@ class CoinDropCog(commands.Cog):
                     started_at=datetime.fromtimestamp(
                         session.start_ts, timezone.utc))
         except Exception:
-            logger.warning("channel state backfill failed id=%s",
-                           session.event_id)
+            # Cooldown не зафиксирован durable — finish() НЕ
+            # вызываем: событие остаётся 'settling', свипер
+            # повторит backfill+finish идемпотентно. Иначе
+            # возможен «finished без кулдауна».
+            logger.exception(
+                "channel state backfill failed id=%s — "
+                "stays settling for retry", session.event_id)
+            self._unregister_session(session)
+            return
 
         result = {
             "reason": outcome.get("reason"),
