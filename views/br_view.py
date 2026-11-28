@@ -892,7 +892,7 @@ class SquadRegisterButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
-        from storage.team_store import team_store
+        from storage.team_store import team_store, TeamStoreError
         from config import BR_TEAM_CHANNEL_ID
 
         t = get_bound(self.guild_id, self.channel_id, self.tid)
@@ -908,7 +908,7 @@ class SquadRegisterButton(Button):
             return
 
         team = team_store.get_by_captain(interaction.user.id)
-        if not team:
+        if not team or team.guild_id != interaction.guild_id:
             await _respond(interaction,
                 f"Вы не капитан команды! Создайте отряд из 4 через `/team create` в <#{BR_TEAM_CHANNEL_ID}>.",
                 ephemeral=True)
@@ -917,6 +917,9 @@ class SquadRegisterButton(Button):
             await _respond(interaction,
                 f"В отряде {len(team.members)}/{t.slot_size} игроков.", ephemeral=True)
             return
+        # Снимок состава, по которому выполнялась VAC-проверка —
+        # под блокировкой ниже он сверяется с актуальным.
+        vac_checked_members = set(team.members)
 
         # VAC — ни один участник
         from services import vac_service
@@ -935,19 +938,42 @@ class SquadRegisterButton(Button):
                 ephemeral=True)
             return
 
-        display_names = {}
-        for uid in team.members:
-            m = interaction.guild.get_member(uid)
-            display_names[uid] = clean_user_name(m) if m else f"User_{uid}"
-
         async with get_br_lock(t):
-            ok, err = t.register_team_slot(
-                team.team_id, team.team_name, team.captain_id,
-                list(team.members), display_names)
-            if not ok:
-                await _respond(interaction,err, ephemeral=True)
+            # Согласованная блокировка (финальный блокер №1):
+            # FOR UPDATE на строке teams держится до фиксации
+            # регистрации в br_store — join/leave/disband Squad
+            # Hub сериализуются через тот же row-lock. Регистрируем
+            # ТОЛЬКО актуальный снимок: удалённая команда, смена
+            # капитана или изменение состава после VAC-проверки
+            # здесь отсекаются.
+            try:
+                async with team_store.team_registration_lock(
+                        team.team_id, team.guild_id,
+                        interaction.user.id) as fresh:
+                    if set(fresh.members) != vac_checked_members:
+                        await _respond(interaction,
+                            "Состав команды изменился — "
+                            "повторите регистрацию.", ephemeral=True)
+                        return
+                    display_names = {}
+                    for uid in fresh.members:
+                        m = interaction.guild.get_member(uid)
+                        display_names[uid] = clean_user_name(m) \
+                            if m else f"User_{uid}"
+                    ok, err = t.register_team_slot(
+                        fresh.team_id, fresh.team_name,
+                        fresh.captain_id, list(fresh.members),
+                        display_names)
+                    if not ok:
+                        await _respond(interaction, err,
+                                       ephemeral=True)
+                        return
+                    br_store.set(t)
+            except TeamStoreError as exc:
+                await _respond(interaction,
+                    getattr(exc, "message", "") or str(exc),
+                    ephemeral=True)
                 return
-            br_store.set(t)
 
         await _respond(interaction,
             f"Отряд «{team.team_name}» зарегистрирован.", ephemeral=True)

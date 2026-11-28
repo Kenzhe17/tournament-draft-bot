@@ -1175,3 +1175,11 @@ async def init_db() -> None:
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
         """)
+
+        # Squad Hub 2.0: команды, приглашения, заявки, LFG, аудит
+        try:
+            from storage.squad_schema import ensure_squad_schema
+            await ensure_squad_schema(conn)
+        except Exception as e:
+            logger.error(f"Error ensuring squad schema: {e}", exc_info=True)
+            raise

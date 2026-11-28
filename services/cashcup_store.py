@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import uuid
 from typing import Any, Callable
@@ -89,6 +90,22 @@ class CashCupStore:
             """, guild_id)
         return self._decode(row) if row else None
 
+    async def last_completed(self, guild_id: int) -> dict[str, Any] | None:
+        """Последний ЗАВЕРШЁННЫЙ реальный турнир (status='completed').
+
+        latest() может вернуть активный или отменённый турнир —
+        для «сброса команд прошлого Cash Cup» нужен именно
+        завершённый."""
+        await self.ensure_schema()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT * FROM cashcup_tournaments WHERE guild_id=$1
+                AND status='completed'
+                ORDER BY created_at DESC LIMIT 1
+            """, guild_id)
+        return self._decode(row) if row else None
+
     async def create(self, guild_id: int, channel_id: int, creator_id: int,
                      prize: str, pool: int | None = None,
                      prize1: int | None = None, currency: str = "KZT") -> dict[str, Any]:
@@ -165,7 +182,28 @@ class CashCupStore:
                 tid = state.pop("tournament_id")
                 channel_id = state.pop("channel_id")
                 message_id = state.pop("message_id")
-                result = change(state)
+                # change может принимать (state, conn) — тогда она
+                # работает на том же соединении/транзакции и может
+                # брать согласованные блокировки (например, FOR
+                # UPDATE на teams при регистрации squads). Второй
+                # параметр должен быть ОБЯЗАТЕЛЬНЫМ позиционным —
+                # callback'и с опциональными аргументами (st, x=def)
+                # получают только state. Async change поддерживается.
+                try:
+                    params = [
+                        p for p in inspect.signature(change)
+                        .parameters.values()
+                        if p.kind in (p.POSITIONAL_ONLY,
+                                      p.POSITIONAL_OR_KEYWORD)]
+                    wants_conn = (len(params) >= 2
+                                  and params[1].default
+                                  is inspect.Parameter.empty)
+                except (TypeError, ValueError):
+                    wants_conn = False
+                result = (change(state, conn) if wants_conn
+                          else change(state))
+                if inspect.isawaitable(result):
+                    result = await result
                 await conn.execute("""
                     UPDATE cashcup_tournaments
                     SET status=$2, state=$3::jsonb, version=version+1

@@ -1,16 +1,25 @@
-"""Team commands for BR tournament."""
+"""Team commands — Squad Hub 2.0.
+
+Slash-команды для обычных пользователей:
+- /team create — мастер создания команды (кнопки + модалки)
+- /team status — приватная панель команды / Squad Hub
+- /team delete — подтверждение расформирования
+"""
 
 from __future__ import annotations
 
+import logging
+
 import discord
-from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
 from config import replace_emojis
-from models.team import Team
 from storage.team_store import team_store
-from views.team_view import TeamStatusView, TeamJoinModal
+
+logger = logging.getLogger(__name__)
+
+_NO_MENTIONS = discord.AllowedMentions.none()
 
 
 class TeamCog(commands.Cog):
@@ -22,192 +31,106 @@ class TeamCog(commands.Cog):
     team = app_commands.Group(name="team", description="Управление командами")
 
     @team.command(name="create", description="Создать команду")
-    @app_commands.describe(password="Пароль команды (обязательно)")
-    async def create(self, interaction: discord.Interaction, password: str):
-        """Создать новую команду."""
-        # Defer ДО team_store.create — PG-запись может превысить
-        # 3-секундное окно ответа (10062).
-        await interaction.response.defer(ephemeral=True)
-        # Check if user already in a team
-        existing_team = team_store.get_by_member(interaction.user.id)
-        if existing_team:
-            await interaction.followup.send(
-                replace_emojis("Вы уже состоите в команде!"),
-                ephemeral=True
-            )
-            return
+    async def create(self, interaction: discord.Interaction):
+        """Открыть мастер создания команды."""
+        from views.team_create_view import open_create_flow
+        await open_create_flow(interaction)
 
-        # Generate unique team name
-        base_name = f"Команда {interaction.user.display_name}"
-        team_name = base_name
-        counter = 1
-
-        # Check if name already exists and find a unique one
-        while team_store.get_by_name(interaction.guild_id, team_name):
-            team_name = f"{base_name} {counter}"
-            counter += 1
-
-        # Create team
-        team = Team(
-            team_id="",
-            team_name=team_name,
-            password=password,
-            captain_id=interaction.user.id,
-            guild_id=interaction.guild_id
-        )
-
-        await team_store.create(team)
-
-        embed = discord.Embed(
-            title=f"Команда создана!",
-            description=(
-                f" **Название:** {team.team_name}\n"
-                f" **Пароль:** ||{password}||\n"
-                f" **Капитан:** {interaction.user.mention}\n\n"
-                f" Используйте `/team status` для управления командой"
-            ),
-            color=discord.Color.from_rgb(114, 137, 218)  # Pastel blue
-        )
-
-        await interaction.followup.send( view=compose(embed), ephemeral=True)
-
-    @team.command(name="delete", description="Удалить команду")
+    @team.command(name="delete", description="Расформировать команду")
     async def delete(self, interaction: discord.Interaction):
-        """Удалить команду (только капитан)."""
-        team = team_store.get_by_captain(interaction.user.id)
-        if not team:
+        """Расформировать команду (только капитан, с подтверждением)."""
+        guild = interaction.guild
+        if guild is None:
             await interaction.response.send_message(
-                replace_emojis("Вы не капитан команды!"),
-                ephemeral=True
-            )
+                replace_emojis("Команды работают только на сервере."),
+                ephemeral=True)
             return
-
-        # Defer response since we need to do async operations
+        team = team_store.get_by_member_in_guild(guild.id,
+                                                 interaction.user.id)
+        if team is None:
+            await interaction.response.send_message(
+                replace_emojis("Вы не состоите в команде!"),
+                ephemeral=True)
+            return
+        if not team.is_captain(interaction.user.id):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "Расформировать команду может только капитан."),
+                ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
+        from views.team_panel_view import open_disband_command
+        await open_disband_command(interaction, team.team_id)
 
-        # Delete team status message if exists
-        async for msg in interaction.channel.history(limit=50):
-            if msg.author == interaction.client.user and msg.embeds:
-                embed = msg.embeds[0]
-                if embed.title and team.team_name in embed.title:
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
-                    break
-
-        await team_store.delete(team.team_id)
-
-        embed = discord.Embed(
-            title=f"Команда удалена",
-            description=f" Команда **{team.team_name}** была удалена.",
-            color=discord.Color.from_rgb(235, 100, 100)  # Pastel red
-        )
-
-        await interaction.followup.send( view=compose(embed), ephemeral=True)
-
-    @team.command(name="status", description="Статус команды")
+    @team.command(name="status", description="Панель команды / Squad Hub")
     @app_commands.describe(team_name="Название команды (опционально)")
-    async def status(self, interaction: discord.Interaction, team_name: str = None):
-        """Показать статус команды."""
-        # Defer ДО fetch_message/edit/send/update_team — эти Discord
-        # и store-вызовы могут превысить 3-секундное окно ответа
-        # (production 10062 Unknown interaction).
+    async def status(self, interaction: discord.Interaction,
+                     team_name: str = None):
+        """Открыть приватную панель команды."""
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                replace_emojis("Команды работают только на сервере."),
+                ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
-        # If team_name is provided, search for that team
+
         if team_name:
-            team = team_store.get_by_name(interaction.guild_id, team_name)
-            if not team:
+            team = team_store.get_by_name(guild.id, team_name)
+            if team is None:
                 await interaction.followup.send(
                     replace_emojis("Команда с таким названием не найдена!"),
-                    ephemeral=True
-                )
+                    ephemeral=True)
                 return
-        else:
-            # Otherwise, get user's team
-            team = team_store.get_by_member(interaction.user.id)
-            if not team:
-                await interaction.followup.send(
-                    replace_emojis("Вы не состоите в команде! Укажите название команды или создайте свою."),
-                    ephemeral=True
-                )
-                return
+            from views.team_panel_view import open_team_panel
+            await open_team_panel(interaction, team.team_id)
+            return
 
-        # Build member list
-        member_mentions = []
-        for member_id in team.members:
-            member = interaction.guild.get_member(member_id)
-            if member:
-                mention = member.mention
-                if member_id == team.captain_id:
-                    mention += " 👑"
-                member_mentions.append(mention)
+        team = team_store.get_by_member_in_guild(guild.id,
+                                                 interaction.user.id)
+        if team is not None:
+            from views.team_panel_view import open_team_panel
+            await open_team_panel(interaction, team.team_id)
+            return
 
-        # Determine status
-        count = team.member_count()
-        if count >= 4:
-            status_emoji = "🟢"
-            status_text = "(Готова)"
-        else:
-            status_emoji = "🔴"
-            missing = 4 - count
-            # Fix grammar: "игрок" for 1, "игроков" for 2-4
-            if missing == 1:
-                status_text = f"(Недостаёт {missing} игрок)"
-            else:
-                status_text = f"(Недостаёт {missing} игроков)"
-
-        embed = discord.Embed(
-            title=f" {team.team_name}",
-            description=(
-                f" **Состав:** {count}/4\n"
-                f" {', '.join(member_mentions) if member_mentions else 'Нет участников'}\n\n"
-                f" **Статус:** {status_emoji} {status_text}"
-            ),
-            color=discord.Color.from_rgb(114, 137, 218)  # Pastel blue
-        )
-
-        # Create view with buttons for dynamic updates
-        from views.team_view import TeamStatusView
-        view = TeamStatusView(team, interaction.user.id)
-
-        # Check if there's an existing status message
-        message = None
-        if team.status_message_id:
-            try:
-                message = await interaction.channel.fetch_message(team.status_message_id)
-                # Store message in view for dynamic updates
-                view.message = message
-                # Update existing message
-                await message.edit(
-                    view=compose(embed, view),
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-            except (discord.NotFound, discord.Forbidden):
-                # Message doesn't exist or can't access, create new
-                message = None
-
-        if not message:
-            # Create new message
-            message = await interaction.channel.send(
-                view=compose(embed, view),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-            # Save message_id to team
-            team.status_message_id = message.id
-            await team_store.update_team(team)
-
-        # Store message in view for dynamic updates (if not already set)
-        if not view.message:
-            view.message = message
-
-        # Send ephemeral confirmation (response уже отложен defer'ом)
+        # Нет команды — открыть Squad Hub меню
+        from views.squad_hub_view import hub_menu_view
         await interaction.followup.send(
-            replace_emojis("Статус команды обновлен"),
-            ephemeral=True
-        )
+            view=hub_menu_view(), ephemeral=True,
+            allowed_mentions=_NO_MENTIONS)
+
+    @team.command(name="admin", description="Администрирование команд")
+    async def admin(self, interaction: discord.Interaction):
+        """Приватный админ-интерфейс команд (r!z3 admin-права)."""
+        from views.team_admin_view import open_admin_panel
+        await open_admin_panel(interaction)
+
+    @status.autocomplete("team_name")
+    async def status_autocomplete(
+            self, interaction: discord.Interaction,
+            current: str) -> list[app_commands.Choice[str]]:
+        guild = interaction.guild
+        if guild is None:
+            return []
+        cur = (current or "").lower()
+        names = sorted(
+            {t.team_name for t in team_store.get_by_guild(guild.id)
+             if cur in t.team_name.lower()},
+            key=str.lower)[:25]
+        return [app_commands.Choice(name=n[:100], value=n)
+                for n in names]
 
 
 async def setup(bot: commands.Bot):
-    """Setup the team cog."""
+    """Setup the team cog + persistent views Squad Hub."""
+    # Persistent dispatch для публичной карточки и рекрутинговых
+    # карточек (custom_id-шаблоны squad:* / squad:rec:*).
+    try:
+        from views.squad_hub_view import (
+            RecruitmentCardView, SquadHubView)
+        bot.add_view(SquadHubView())
+        bot.add_view(RecruitmentCardView())
+    except Exception as exc:
+        logger.warning("squad persistent views registration failed: %s",
+                       exc)
     await bot.add_cog(TeamCog(bot))

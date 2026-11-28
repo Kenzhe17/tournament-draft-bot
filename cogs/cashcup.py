@@ -27,7 +27,7 @@ from services.cashcup_bracket import (BracketError, create_bracket, ready_matche
 from services.cashcup_store import CashCupError, cashcup_store
 from services import vac_service
 from services import moderation_service
-from storage.team_store import team_store
+from storage.team_store import team_store, TeamStoreError
 from utils.ff_profile_formatter import safe_text
 from utils.design import compose
 
@@ -1011,11 +1011,33 @@ class CashCupCog(commands.Cog):
             if len(br.members) < 4:
                 raise CashCupError(
                     f"В команде {len(br.members)}/4 — для CASH CUP нужно 4 основных")
-            lineup = list(dict.fromkeys(br.members))[:4]
 
-            def change(state):
+            async def change(state, conn):
                 _assert_registration(state)
-                name = (br.team_name or "CASH CUP")[:40]
+                # Согласованная блокировка (финальный блокер №1):
+                # актуальные имя/капитан/team_id/состав читаются
+                # под FOR UPDATE на строке teams В ЭТОЙ ЖЕ
+                # транзакции, что и запись в cashcup_tournaments.
+                # Squad-операции держат тот же row-lock: либо они
+                # уже committed (мы видим актуальный состав), либо
+                # ждут нас и применятся после регистрации.
+                # Удалённая команда / ex-капитан / устаревший
+                # кэш здесь отсекаются — регистрируем только
+                # свежее зафиксированное состояние.
+                try:
+                    fresh = await team_store.locked_team_on(
+                        conn, br.team_id,
+                        guild_id=interaction.guild_id,
+                        actor_id=interaction.user.id)
+                except TeamStoreError as exc:
+                    raise CashCupError(exc.message or str(exc)) \
+                        from exc
+                if len(fresh.members) < 4:
+                    raise CashCupError(
+                        f"В команде {len(fresh.members)}/4 — "
+                        "для CASH CUP нужно 4 основных")
+                lineup = list(dict.fromkeys(fresh.members))[:4]
+                name = (fresh.team_name or "CASH CUP")[:40]
                 if any(t["name"].casefold() == name.casefold()
                        for t in state["teams"]):
                     raise CashCupError("Команда с таким названием уже в Cash Cup")
@@ -1024,13 +1046,14 @@ class CashCupCog(commands.Cog):
                 now = datetime.now(timezone.utc).isoformat()
                 state["teams"].append({
                     "id": uuid.uuid4().hex[:12], "name": name,
-                    "captain": br.captain_id,
-                    "members": [{"discord_id": u, "device": "", "ff_uid": "",
-                                 "nick": "", "region": "", "verified": False,
+                    "captain": fresh.captain_id,
+                    "members": [{"discord_id": u, "device": "",
+                                 "ff_uid": "", "nick": "",
+                                 "region": "", "verified": False,
                                  "joined_at": now, "needs_ff": True}
                                 for u in lineup],
                     "pending": [], "lineup": lineup,
-                    "sub_invites": [], "br_team_id": br.team_id})
+                    "sub_invites": [], "br_team_id": fresh.team_id})
 
             await self._post(interaction, "register_br", change,
                              {"br_team_id": br.team_id})

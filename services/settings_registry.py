@@ -486,6 +486,12 @@ _reg(key="discord.organizer_role_ids", type="json", default=[],
 _reg(key="discord.welcome_channel_id", type="int", default=0,
      module="discord", min=0, permission="discord.manage",
      description="Канал приветствий (runtime через discord_cfg)")
+_reg(key="discord.squad_hub_channel_id", type="int", default=0,
+     module="discord", min=0, permission="discord.manage",
+     description="Канал публичной карточки Squad Hub (runtime через discord_cfg)")
+_reg(key="discord.recruitment_channel_id", type="int", default=0,
+     module="discord", min=0, permission="discord.manage",
+     description="Канал рекрутинговых карточек команд (runtime через discord_cfg)")
 
 _reg(key="discord.notification_role_id", type="int", default=0,
      module="discord", min=0, permission="discord.manage",
