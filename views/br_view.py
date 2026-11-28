@@ -46,6 +46,16 @@ def is_org(user_id: int) -> bool:
     return user_id == BOT_OWNER_ID or user_id in ADMIN_USER_IDS
 
 
+def player_allowed(interaction: discord.Interaction, t: "BRTournament") -> bool:
+    """Участие в тестовом BR — только владельцу и администраторам.
+
+    Обычные игроки не могут регистрироваться/вступать в пары/отрады,
+    принимать приглашения, переименовывать составы и видеть данные
+    комнаты тестового турнира — тест не затрагивает реальных users.
+    """
+    return not getattr(t, "is_test", False) or is_org(interaction.user.id)
+
+
 def _cid(prefix: str, guild_id: int, channel_id: int, tid: str, *extra) -> str:
     """custom_id компонента, привязанный к конкретному турниру."""
     parts = [prefix, str(guild_id), str(channel_id), str(tid)]
@@ -76,6 +86,21 @@ def get_br_lock_key(guild_id: int, channel_id: int, tid: str) -> asyncio.Lock:
 STALE_MSG = "Кнопка устарела — турнир изменился или завершён. Обновите карточку."
 
 
+async def _respond(interaction: discord.Interaction, content=None, **kwargs) -> None:
+    """Ответ на interaction с учётом возможного defer().
+
+    Если callback успел сделать defer(ephemeral=True) (долгая работа до
+    ответа — VAC, запись в store, edit карточки), ответ уходит через
+    followup; иначе — обычный response.send_message. Все ответы BR
+    ephemeral.
+    """
+    kwargs.setdefault("ephemeral", True)
+    if interaction.response.is_done():
+        await interaction.followup.send(content, **kwargs)
+    else:
+        await interaction.response.send_message(content, **kwargs)
+
+
 BR_NUM_EMOJIS = [
     "num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
     "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve",
@@ -89,10 +114,10 @@ def _num(i: int) -> str:
 
 
 def clean_user_name(user) -> str:
-    from utils.cosmetics import clean_tournament_nickname
+    from utils.cosmetics import clean_nickname
     return (
-        clean_tournament_nickname(user.display_name)
-        or clean_tournament_nickname(user.name)
+        clean_nickname(user.display_name)
+        or clean_nickname(user.name)
         or f"Игрок-{user.id % 10000:04d}"
     )
 
@@ -402,6 +427,8 @@ async def strip_tournament_roles(guild, tournament: "BRTournament") -> None:
 
 async def grant_tournament_roles(guild, tournament: "BRTournament") -> None:
     """Выдать BR-роль по правилам формата."""
+    if getattr(tournament, "is_test", False):
+        return  # тестовый турнир не меняет роли реальных участников
     role = guild.get_role(tournament.role_id)
     if not role:
         return
@@ -525,9 +552,14 @@ class JoinLeaveButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.REGISTRATION:
-            await interaction.response.send_message("Регистрация закрыта.", ephemeral=True)
+            await _respond(interaction,"Регистрация закрыта.", ephemeral=True)
+            return
+        if not player_allowed(interaction, t):
+            await _respond(interaction,
+                "Это тестовый турнир — участие только для ведущих.", ephemeral=True)
             return
         async with get_br_lock(t):
             if self.kind == "join":
@@ -541,27 +573,27 @@ async def _do_join(interaction: discord.Interaction, t: "BRTournament") -> None:
     vac = await vac_service.check_vac(t.guild_id, interaction.user.id)
     if vac is not None:
         ts = int(vac["expires_at"].timestamp())
-        await interaction.response.send_message(
+        await _respond(interaction,
             vac_service.vac_blocked_text(ts, reason=vac.get("reason"), level=vac.get("level")),
             ephemeral=True)
         return
     name = clean_user_name(interaction.user)
     ok, err = t.register_player(name, interaction.user.id)
     if not ok:
-        await interaction.response.send_message(err or "Не удалось зарегистрироваться.", ephemeral=True)
+        await _respond(interaction,err or "Не удалось зарегистрироваться.", ephemeral=True)
         return
     br_store.set(t)
     await refresh_main_card(interaction, t)
-    await interaction.response.send_message("Вы зарегистрированы.", ephemeral=True)
+    await _respond(interaction,"Вы зарегистрированы.", ephemeral=True)
 
 
 async def _do_leave(interaction: discord.Interaction, t: "BRTournament") -> None:
     if not t.remove_player(interaction.user.id):
-        await interaction.response.send_message("Вы не зарегистрированы.", ephemeral=True)
+        await _respond(interaction,"Вы не зарегистрированы.", ephemeral=True)
         return
     br_store.set(t)
     await refresh_main_card(interaction, t)
-    await interaction.response.send_message("Вы вышли из турнира.", ephemeral=True)
+    await _respond(interaction,"Вы вышли из турнира.", ephemeral=True)
 
 
 class DuoInviteButton(Button):
@@ -575,7 +607,11 @@ class DuoInviteButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.REGISTRATION:
-            await interaction.response.send_message("Регистрация закрыта.", ephemeral=True)
+            await _respond(interaction,"Регистрация закрыта.", ephemeral=True)
+            return
+        if not player_allowed(interaction, t):
+            await _respond(interaction,
+                "Это тестовый турнир — участие только для ведущих.", ephemeral=True)
             return
         await interaction.response.send_modal(DuoInviteModal(self.guild_id, self.channel_id, self.tid))
 
@@ -591,30 +627,35 @@ class DuoInviteModal(Modal):
         self.tid = tid
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.REGISTRATION:
-            await interaction.response.send_message("Регистрация закрыта.", ephemeral=True)
+            await _respond(interaction,"Регистрация закрыта.", ephemeral=True)
+            return
+        if not player_allowed(interaction, t):
+            await _respond(interaction,
+                "Это тестовый турнир — участие только для ведущих.", ephemeral=True)
             return
         raw = self.invitee.value.strip().strip("<@!>")
         try:
             invitee_id = int(raw)
         except ValueError:
-            await interaction.response.send_message("Укажите ID или упоминание игрока.", ephemeral=True)
+            await _respond(interaction,"Укажите ID или упоминание игрока.", ephemeral=True)
             return
         member = interaction.guild.get_member(invitee_id)
         if member is None:
-            await interaction.response.send_message("Игрок не найден на сервере.", ephemeral=True)
+            await _respond(interaction,"Игрок не найден на сервере.", ephemeral=True)
             return
         async with get_br_lock(t):
             ok, err, idx = t.create_duo_invite(
                 interaction.user.id, clean_user_name(interaction.user), invitee_id)
             if not ok:
-                await interaction.response.send_message(err, ephemeral=True)
+                await _respond(interaction,err, ephemeral=True)
                 return
             br_store.set(t)
         slot = t.teams[idx]
         mate_name = member.display_name if member else str(invitee_id)
-        await interaction.response.send_message(
+        await _respond(interaction,
             f"Приглашение отправлено {mate_name}. Пара «{slot_label(slot, idx)}» "
             "занимает место после подтверждения напарником (кнопка «Мои заявки»).",
             ephemeral=True)
@@ -630,15 +671,16 @@ class MyInvitesButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t:
-            await interaction.response.send_message("Турнир не найден.", ephemeral=True)
+            await _respond(interaction,"Турнир не найден.", ephemeral=True)
             return
         uid = interaction.user.id
         invites = [(i, s) for i, s in enumerate(t.teams)
                    if s.get("pending_invitee_id") == uid]
         if not invites:
-            await interaction.response.send_message("Нет входящих заявок.", ephemeral=True)
+            await _respond(interaction,"Нет входящих заявок.", ephemeral=True)
             return
         view = View(timeout=120)
         for i, s in invites:
@@ -651,7 +693,7 @@ class MyInvitesButton(Button):
                                               s.get("uid", str(i)), False,
                                               f"Отклонить: {slot_label(s, i)}"[:80],
                                               style=discord.ButtonStyle.danger))
-        await interaction.response.send_message("Входящие заявки в пары:", view=view, ephemeral=True)
+        await _respond(interaction,"Входящие заявки в пары:", view=view, ephemeral=True)
 
 
 class InviteRespondButton(Button):
@@ -666,9 +708,14 @@ class InviteRespondButton(Button):
         self.accept = accept
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.REGISTRATION:
-            await interaction.response.send_message("Регистрация закрыта.", ephemeral=True)
+            await _respond(interaction,"Регистрация закрыта.", ephemeral=True)
+            return
+        if not player_allowed(interaction, t):
+            await _respond(interaction,
+                "Это тестовый турнир — участие только для ведущих.", ephemeral=True)
             return
         found = t.find_slot_by_uid(self.slot_uid)
         if not found:
@@ -679,14 +726,14 @@ class InviteRespondButton(Button):
             except ValueError:
                 found = None
         if not found:
-            await interaction.response.send_message("Заявка не найдена или устарела.", ephemeral=True)
+            await _respond(interaction,"Заявка не найдена или устарела.", ephemeral=True)
             return
         idx, slot = found
         if self.accept:
             # VAC проверяем у ОБОИХ игроков пары при подтверждении.
             vac_bad = await self._vac_members(interaction.guild, t, slot)
             if vac_bad:
-                await interaction.response.send_message(
+                await _respond(interaction,
                     "Подтверждение отклонено — активен VAC у: " + ", ".join(vac_bad) + ".",
                     ephemeral=True)
                 return
@@ -696,9 +743,9 @@ class InviteRespondButton(Button):
             if t.phase == BRTournamentPhase.REGISTRATION:
                 br_store.set(t)
         if not ok:
-            await interaction.response.send_message(msg, ephemeral=True)
+            await _respond(interaction,msg, ephemeral=True)
             return
-        await interaction.response.send_message(msg, ephemeral=True)
+        await _respond(interaction,msg, ephemeral=True)
         await refresh_main_card(interaction, t)
 
     async def _vac_members(self, guild, t: "BRTournament", slot: dict) -> list[str]:
@@ -734,25 +781,30 @@ class SquadRegisterButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         from storage.team_store import team_store
         from config import BR_TEAM_CHANNEL_ID
 
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.REGISTRATION:
-            await interaction.response.send_message("Регистрация закрыта.", ephemeral=True)
+            await _respond(interaction,"Регистрация закрыта.", ephemeral=True)
             return
         if t.format != BRFormat.SQUAD or t.mode != "team":
-            await interaction.response.send_message("Недоступно для этого формата.", ephemeral=True)
+            await _respond(interaction,"Недоступно для этого формата.", ephemeral=True)
+            return
+        if not player_allowed(interaction, t):
+            await _respond(interaction,
+                "Это тестовый турнир — участие только для ведущих.", ephemeral=True)
             return
 
         team = team_store.get_by_captain(interaction.user.id)
         if not team:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 f"Вы не капитан команды! Создайте отряд из 4 через `/team create` в <#{BR_TEAM_CHANNEL_ID}>.",
                 ephemeral=True)
             return
         if len(team.members) != t.slot_size:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 f"В отряде {len(team.members)}/{t.slot_size} игроков.", ephemeral=True)
             return
 
@@ -768,7 +820,7 @@ class SquadRegisterButton(Button):
             for u in vac_bad:
                 m = interaction.guild.get_member(u)
                 names.append(m.display_name if m else f"User_{u}")
-            await interaction.response.send_message(
+            await _respond(interaction,
                 "Регистрация невозможна: активен VAC у " + ", ".join(names) + ".",
                 ephemeral=True)
             return
@@ -783,11 +835,11 @@ class SquadRegisterButton(Button):
                 team.team_id, team.team_name, team.captain_id,
                 list(team.members), display_names)
             if not ok:
-                await interaction.response.send_message(err, ephemeral=True)
+                await _respond(interaction,err, ephemeral=True)
                 return
             br_store.set(t)
 
-        await interaction.response.send_message(
+        await _respond(interaction,
             f"Отряд «{team.team_name}» зарегистрирован.", ephemeral=True)
         await refresh_main_card(interaction, t)
 
@@ -801,19 +853,20 @@ class MySlotButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t:
-            await interaction.response.send_message("Турнир не найден.", ephemeral=True)
+            await _respond(interaction,"Турнир не найден.", ephemeral=True)
             return
         found = t.find_slot_by_user(interaction.user.id)
         if not found and t.phase == BRTournamentPhase.REGISTRATION:
             in_pool = any(p.get("id") == interaction.user.id for p in t.players)
             if in_pool:
-                await interaction.response.send_message(
+                await _respond(interaction,
                     "Вы в пуле жеребьёвки — состав определится после старта.", ephemeral=True)
                 return
         if not found:
-            await interaction.response.send_message("Вы не зарегистрированы в турнире.", ephemeral=True)
+            await _respond(interaction,"Вы не зарегистрированы в турнире.", ephemeral=True)
             return
         idx, slot = found
         lines = [f"**{slot_label(slot, idx)}**"]
@@ -827,7 +880,7 @@ class MySlotButton(Button):
                 if e:
                     mark = "DNS" if e["dns"] else f"место {e['place']}, {e['kills']} киллов"
                     lines.append(f"Карта {m + 1} ({MAP_NAMES_RU.get(t.get_map_name_for_index(m), '')}): {mark}")
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+        await _respond(interaction,"\n".join(lines), ephemeral=True)
 
 
 class RoomViewButton(Button):
@@ -841,23 +894,28 @@ class RoomViewButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase not in (BRTournamentPhase.PLAYING, BRTournamentPhase.COLLECT):
-            await interaction.response.send_message("Комната недоступна.", ephemeral=True)
+            await _respond(interaction,"Комната недоступна.", ephemeral=True)
             return
         if interaction.guild and t.guild_id != interaction.guild.id:
-            await interaction.response.send_message("Турнир не найден.", ephemeral=True)
+            await _respond(interaction,"Турнир не найден.", ephemeral=True)
+            return
+        if not player_allowed(interaction, t):
+            await _respond(interaction,
+                "Это тестовый турнир — данные только для ведущих.", ephemeral=True)
             return
         if not t.can_view_room(interaction.user.id):
-            await interaction.response.send_message(
+            await _respond(interaction,
                 "Данные комнаты видны только участникам турнира.", ephemeral=True)
             return
         creds = t.room_credentials()
         if not creds:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 "Ведущий ещё не указал данные комнаты.", ephemeral=True)
             return
-        await interaction.response.send_message(
+        await _respond(interaction,
             f"**Комната BR** (карта одна на весь турнир):\n```\n"
             f"ID: {creds['id']}\nПароль: {creds['password']}\n```",
             ephemeral=True)
@@ -874,18 +932,22 @@ class RenameSlotButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.DRAFT:
-            await interaction.response.send_message("Переименование доступно только на этапе составов.", ephemeral=True)
+            await _respond(interaction,"Переименование доступно только на этапе составов.", ephemeral=True)
+            return
+        if not player_allowed(interaction, t):
+            await _respond(interaction,
+                "Это тестовый турнир — участие только для ведущих.", ephemeral=True)
             return
         found = t.find_slot_by_user(interaction.user.id)
         if not found:
-            await interaction.response.send_message("Вы не в составе.", ephemeral=True)
+            await _respond(interaction,"Вы не в составе.", ephemeral=True)
             return
         idx, slot = found
         if slot.get("captain_id") != interaction.user.id:
-            await interaction.response.send_message("Только капитан может назвать состав.", ephemeral=True)
+            await _respond(interaction,"Только капитан может назвать состав.", ephemeral=True)
             return
         if not t.team_rename_remaining.get(idx, False):
-            await interaction.response.send_message("Название уже использовано.", ephemeral=True)
+            await _respond(interaction,"Название уже использовано.", ephemeral=True)
             return
         await interaction.response.send_modal(RenameSlotModal(self.guild_id, self.channel_id, self.tid))
 
@@ -900,21 +962,22 @@ class RenameSlotModal(Modal):
         self.tid = tid
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.DRAFT:
-            await interaction.response.send_message("Турнир не в фазе составов.", ephemeral=True)
+            await _respond(interaction,"Турнир не в фазе составов.", ephemeral=True)
             return
         found = t.find_slot_by_user(interaction.user.id)
         if not found:
-            await interaction.response.send_message("Вы не в составе.", ephemeral=True)
+            await _respond(interaction,"Вы не в составе.", ephemeral=True)
             return
         idx, slot = found
         if t.rename_slot(idx, self.name.value.strip(), interaction.user.id):
             br_store.set(t)
-            await interaction.response.send_message(f"Состав переименован в «{self.name.value.strip()}».", ephemeral=True)
+            await _respond(interaction,f"Состав переименован в «{self.name.value.strip()}».", ephemeral=True)
             await refresh_main_card(interaction, t)
         else:
-            await interaction.response.send_message("Не удалось переименовать (уже использовано или нет прав).", ephemeral=True)
+            await _respond(interaction,"Не удалось переименовать (уже использовано или нет прав).", ephemeral=True)
 
 
 class ResultsPageButton(Button):
@@ -930,7 +993,7 @@ class ResultsPageButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase not in (BRTournamentPhase.RESULTS, BRTournamentPhase.COMPLETE):
-            await interaction.response.send_message("Результаты недоступны.", ephemeral=True)
+            await _respond(interaction,"Результаты недоступны.", ephemeral=True)
             return
         page = getattr(t, "view_page", -1)
         # -1 = сводка; 0..N-1 = карты; листаем по кругу
@@ -955,16 +1018,17 @@ class OrgMenuButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message(
+            await _respond(interaction,
                 "Только владелец/админ может управлять BR.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t:
-            await interaction.response.send_message("Турнир не найден.", ephemeral=True)
+            await _respond(interaction,"Турнир не найден.", ephemeral=True)
             return
         view = BRManagementMenuView(self.guild_id, self.channel_id, t)
-        await interaction.response.send_message(
+        await _respond(interaction,
             view=compose(text="Орг-меню BR:", view=view), ephemeral=True)
 
 
@@ -1017,31 +1081,32 @@ class DrawButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.REGISTRATION:
-            await interaction.response.send_message("Регистрация закрыта.", ephemeral=True)
+            await _respond(interaction,"Регистрация закрыта.", ephemeral=True)
             return
         async with get_br_lock(t):
             # Проверки перед стартом: лимиты, гильдия, VAC — блокируют старт,
             # регистрация остаётся открытой, показаны конкретные участники.
             problems = await pre_start_problems(interaction.guild, t)
             if problems:
-                await interaction.response.send_message(
+                await _respond(interaction,
                     "Старт заблокирован:\n" + "\n".join(problems[:15]) +
                     "\nРегистрация остаётся открытой — исправьте и повторите.",
                     ephemeral=True)
                 return
             ok, err = t.draw()
             if not ok:
-                await interaction.response.send_message(err, ephemeral=True)
+                await _respond(interaction,err, ephemeral=True)
                 return
             await grant_tournament_roles(interaction.guild, t)
             br_store.set(t)
         await refresh_main_card(interaction, t)
-        await interaction.response.send_message(
+        await _respond(interaction,
             "Жеребьёвка выполнена — составы опубликованы." if t.phase == BRTournamentPhase.DRAFT
             else "Турнир начался — игры идут.", ephemeral=True)
 
@@ -1055,18 +1120,19 @@ class BeginGamesButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.DRAFT:
-            await interaction.response.send_message("Нет этапа составов.", ephemeral=True)
+            await _respond(interaction,"Нет этапа составов.", ephemeral=True)
             return
         async with get_br_lock(t):
             t.begin_games()
             br_store.set(t)
         await refresh_main_card(interaction, t)
-        await interaction.response.send_message("Игры начались.", ephemeral=True)
+        await _respond(interaction,"Игры начались.", ephemeral=True)
 
 
 class FinishGamesButton(Button):
@@ -1080,15 +1146,16 @@ class FinishGamesButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.PLAYING:
-            await interaction.response.send_message("Игры уже завершены или турнир не активен.", ephemeral=True)
+            await _respond(interaction,"Игры уже завершены или турнир не активен.", ephemeral=True)
             return
         view = FinishGamesConfirmView(self.guild_id, self.channel_id, self.tid)
-        await interaction.response.send_message(
+        await _respond(interaction,
             f"Подтвердите: **все {t.map_count} карт сыграны**?\n"
             "После подтверждения откроется приватный ввод результатов "
             "за все карты. До этого момента ввод закрыт.",
@@ -1110,23 +1177,24 @@ class FinishGamesConfirmButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         async with get_br_lock_key(self.guild_id, self.channel_id, self.tid):
             # перепроверка под блокировкой: свежий объект, ID и фаза
             t = br_store.get(self.guild_id, self.channel_id)
             if t is None or str(t.id) != str(self.tid):
-                await interaction.response.send_message(STALE_MSG, ephemeral=True)
+                await _respond(interaction,STALE_MSG, ephemeral=True)
                 return
             if t.phase != BRTournamentPhase.PLAYING:
-                await interaction.response.send_message(
+                await _respond(interaction,
                     "Игры уже завершены — переход не выполнен.", ephemeral=True)
                 return
             t.finish_games()
             br_store.set(t)
         await refresh_main_card(interaction, t)
-        await interaction.response.send_message(
+        await _respond(interaction,
             f"Все {t.map_count} карт сыграны. Результаты проверяются — "
             "откройте орг-меню → «Ввод результатов».", ephemeral=True)
 
@@ -1140,19 +1208,20 @@ class KickSlotButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.REGISTRATION:
-            await interaction.response.send_message("Регистрация закрыта.", ephemeral=True)
+            await _respond(interaction,"Регистрация закрыта.", ephemeral=True)
             return
         slots = t.teams
         if not slots:
-            await interaction.response.send_message("Нет слотов для снятия.", ephemeral=True)
+            await _respond(interaction,"Нет слотов для снятия.", ephemeral=True)
             return
         view = KickSlotSelectView(self.guild_id, self.channel_id, self.tid, slots, page=0)
-        await interaction.response.send_message("Выберите слот для снятия:", view=view, ephemeral=True)
+        await _respond(interaction,"Выберите слот для снятия:", view=view, ephemeral=True)
 
 
 class KickSlotSelectView(View):
@@ -1189,12 +1258,13 @@ class KickSlotSelect(Select):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.REGISTRATION:
-            await interaction.response.send_message("Регистрация закрыта.", ephemeral=True)
+            await _respond(interaction,"Регистрация закрыта.", ephemeral=True)
             return
         uid = self.values[0]
         found = t.find_slot_by_uid(uid)
@@ -1205,7 +1275,7 @@ class KickSlotSelect(Select):
             except ValueError:
                 found = None
         if not found:
-            await interaction.response.send_message("Слот не найден.", ephemeral=True)
+            await _respond(interaction,"Слот не найден.", ephemeral=True)
             return
         idx, slot = found
         async with get_br_lock(t):
@@ -1213,11 +1283,11 @@ class KickSlotSelect(Select):
             if ok:
                 br_store.set(t)
         if ok:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 f"Слот «{slot_label(slot, idx)}» снят.", ephemeral=True)
             await refresh_main_card(interaction, t)
         else:
-            await interaction.response.send_message("Не удалось снять слот.", ephemeral=True)
+            await _respond(interaction,"Не удалось снять слот.", ephemeral=True)
 
 
 class KickPageButton(Button):
@@ -1245,7 +1315,7 @@ class CancelTournamentButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         await interaction.response.send_modal(CancelReasonModal(self.guild_id, self.channel_id, self.tid))
 
@@ -1260,46 +1330,54 @@ class CancelReasonModal(Modal):
         self.tid = tid
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or not t.is_active:
-            await interaction.response.send_message("Турнир не найден или уже завершён.", ephemeral=True)
+            await _respond(interaction,"Турнир не найден или уже завершён.", ephemeral=True)
             return
         view = CancelConfirmView(self.guild_id, self.channel_id, self.tid, self.reason.value.strip())
-        await interaction.response.send_message(
+        await _respond(interaction,
             f"Подтвердите отмену BR турнира.\nПричина: {self.reason.value.strip()}",
             view=view, ephemeral=True)
 
 
 class CancelConfirmView(View):
-    def __init__(self, guild_id, channel_id, tid, reason):
+    def __init__(self, guild_id, channel_id, tid, reason, purge=False):
         super().__init__(timeout=120)
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.tid = tid
         self.reason = reason
-        self.add_item(CancelConfirmButton(guild_id, channel_id, tid, reason))
+        self.add_item(CancelConfirmButton(guild_id, channel_id, tid, reason,
+                                          purge=purge))
 
 
 class CancelConfirmButton(Button):
-    def __init__(self, guild_id, channel_id, tid, reason):
-        super().__init__(style=discord.ButtonStyle.danger, label="Подтвердить отмену",
+    def __init__(self, guild_id, channel_id, tid, reason, purge=False):
+        super().__init__(style=discord.ButtonStyle.danger,
+                         label="Удалить тест" if purge else "Подтвердить отмену",
                          custom_id=_cid("br_cancel_ok", guild_id, channel_id, tid))
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.tid = tid
         self.reason = reason
+        self.purge = purge
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         async with get_br_lock_key(self.guild_id, self.channel_id, self.tid):
+            if self.purge:
+                await self._purge(interaction)
+                return
             t = br_store.get(self.guild_id, self.channel_id)
             if t is None or str(t.id) != str(self.tid):
-                await interaction.response.send_message(STALE_MSG, ephemeral=True)
+                await _respond(interaction,STALE_MSG, ephemeral=True)
                 return
             if not t.is_active:
-                await interaction.response.send_message("Турнир уже не активен.", ephemeral=True)
+                await _respond(interaction,"Турнир уже не активен.", ephemeral=True)
                 return
             prev_phase = t.phase
             prev_pending = t.publish_pending
@@ -1315,7 +1393,7 @@ class CancelConfirmButton(Button):
                 t.cancel_reason = ""
                 t.cancelled_by = 0
                 t.publish_pending = prev_pending
-                await interaction.response.send_message(
+                await _respond(interaction,
                     "Не удалось сохранить отмену — повторите.", ephemeral=True)
                 return
         try:
@@ -1323,7 +1401,37 @@ class CancelConfirmButton(Button):
         except Exception as exc:
             logger.warning("BR cancel strip roles: %s", exc)
         await refresh_main_card(interaction, t)
-        await interaction.response.send_message("Турнир отменён и перенесён в историю.", ephemeral=True)
+        await _respond(interaction,"Турнир отменён и перенесён в историю.", ephemeral=True)
+
+    async def _purge(self, interaction: discord.Interaction) -> None:
+        """Полное удаление тестового турнира (активного или архивного).
+
+        Доступно только для is_test — реальные турниры удалять нельзя,
+        они хранятся в истории для Hall of Fame.
+        """
+        t = get_bound(self.guild_id, self.channel_id, self.tid)
+        if t is None:
+            await _respond(interaction, STALE_MSG, ephemeral=True)
+            return
+        if not t.is_test:
+            await _respond(interaction,
+                "Удалить можно только тестовый турнир — обычные турниры "
+                "остаются в истории.", ephemeral=True)
+            return
+        br_store.remove(self.guild_id, self.channel_id, self.tid)
+        # публичную карточку заменяем заглушкой «удалён»
+        try:
+            if interaction.guild and t.message_id:
+                channel = interaction.guild.get_channel(t.channel_id)
+                if channel is not None:
+                    from utils.design import text_card
+                    msg = await channel.fetch_message(t.message_id)
+                    await msg.edit(view=text_card("Тестовый турнир удалён."))
+        except Exception as exc:
+            logger.warning("BR purge card edit failed: %s", exc)
+        await _respond(interaction,
+            "Тестовый турнир полностью удалён (активные данные и архив).",
+            ephemeral=True)
 
 
 # ---------- комната (единые ID/пароль на весь турнир) ----------
@@ -1340,11 +1448,11 @@ class RoomSetButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase not in (BRTournamentPhase.PLAYING, BRTournamentPhase.COLLECT):
-            await interaction.response.send_message("Комнату можно задать во время игр.", ephemeral=True)
+            await _respond(interaction,"Комнату можно задать во время игр.", ephemeral=True)
             return
         await interaction.response.send_modal(RoomSetModal(self.guild_id, self.channel_id, self.tid))
 
@@ -1360,12 +1468,13 @@ class RoomSetModal(Modal):
         self.tid = tid
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase not in (BRTournamentPhase.PLAYING, BRTournamentPhase.COLLECT):
-            await interaction.response.send_message("Турнир не в фазе игр.", ephemeral=True)
+            await _respond(interaction,"Турнир не в фазе игр.", ephemeral=True)
             return
         async with get_br_lock(t):
             t.room_data = {
@@ -1375,7 +1484,7 @@ class RoomSetModal(Modal):
             br_store.set(t)
         # публичная карточка и новых сообщений не создаём — данные
         # комнаты видны только приватно по кнопке «Комната».
-        await interaction.response.send_message(
+        await _respond(interaction,
             "Данные комнаты обновлены. Участники видят их по кнопке «Комната».",
             ephemeral=True)
 
@@ -1391,12 +1500,13 @@ class EntryPanelButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.COLLECT:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 "Ввод доступен только после «Завершить игры».", ephemeral=True)
             return
         filled, expected = t.results_status()
@@ -1405,7 +1515,7 @@ class EntryPanelButton(Button):
             notes = ("\n\n**Замечания миграции (сверьте вручную):**\n"
                      + "\n".join(f"• {n}" for n in t.migration_notes[:10]))
         view = BREntryPanelView(self.guild_id, self.channel_id, self.tid, map_index=0, page=0)
-        await interaction.response.send_message(
+        await _respond(interaction,
             view=compose(
                 text=f"Панель ввода результатов (приватно). Заполнено: {filled}/{expected}. "
                      "Номера карт — для записи результатов, не игровые фазы." + notes,
@@ -1468,11 +1578,11 @@ class EntryMapButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t:
-            await interaction.response.send_message("Турнир не найден.", ephemeral=True)
+            await _respond(interaction,"Турнир не найден.", ephemeral=True)
             return
         new_map = self.map_index + self.delta
         if not (0 <= new_map < t.map_count):
-            await interaction.response.send_message("Нет такой карты.", ephemeral=True)
+            await _respond(interaction,"Нет такой карты.", ephemeral=True)
             return
         view = BREntryPanelView(self.guild_id, self.channel_id, self.tid, new_map, 0)
         await interaction.response.edit_message(view=view)
@@ -1504,11 +1614,11 @@ class EntrySlotSelect(Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.COLLECT:
-            await interaction.response.send_message("Ввод недоступен.", ephemeral=True)
+            await _respond(interaction,"Ввод недоступен.", ephemeral=True)
             return
         slot_idx = int(self.values[0])
         slot = t.teams[slot_idx]
@@ -1531,12 +1641,13 @@ class EntryResultModal(Modal):
         self.slot_index = slot_index
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.COLLECT:
-            await interaction.response.send_message("Ввод недоступен.", ephemeral=True)
+            await _respond(interaction,"Ввод недоступен.", ephemeral=True)
             return
         dns_raw = self.dns.value.strip().lower()
         is_dns = dns_raw in ("да", "dns", "yes", "d")
@@ -1546,7 +1657,7 @@ class EntryResultModal(Modal):
             try:
                 place = int(self.place.value.strip())
             except (ValueError, AttributeError):
-                await interaction.response.send_message("Укажите место, DNS или «пусто».", ephemeral=True)
+                await _respond(interaction,"Укажите место, DNS или «пусто».", ephemeral=True)
                 return
         try:
             kills = int(self.kills.value.strip() or "0")
@@ -1559,10 +1670,10 @@ class EntryResultModal(Modal):
             if ok:
                 br_store.set(t)
         if ok:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 f"Карта {self.map_index + 1}: результат слота записан.", ephemeral=True)
         else:
-            await interaction.response.send_message(err, ephemeral=True)
+            await _respond(interaction,err, ephemeral=True)
 
 
 class EntryBatchButton(Button):
@@ -1576,11 +1687,11 @@ class EntryBatchButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.COLLECT:
-            await interaction.response.send_message("Ввод недоступен.", ephemeral=True)
+            await _respond(interaction,"Ввод недоступен.", ephemeral=True)
             return
         await interaction.response.send_modal(BatchEntryModal(self.guild_id, self.channel_id, self.tid, self.map_index))
 
@@ -1600,12 +1711,13 @@ class BatchEntryModal(Modal):
         self.map_index = map_index
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.COLLECT:
-            await interaction.response.send_message("Ввод недоступен.", ephemeral=True)
+            await _respond(interaction,"Ввод недоступен.", ephemeral=True)
             return
         entries = []
         parse_errors = []
@@ -1639,7 +1751,7 @@ class BatchEntryModal(Modal):
             except ValueError:
                 parse_errors.append(f"строка {ln}: «{line}» — место/киллы должны быть числами")
         if parse_errors:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 "Ошибки пакета (ничего не сохранено):\n" + "\n".join(parse_errors[:15]),
                 ephemeral=True)
             return
@@ -1648,11 +1760,11 @@ class BatchEntryModal(Modal):
             if ok:
                 br_store.set(t)
         if ok:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 f"Карта {self.map_index + 1}: пакет из {len(entries)} строк сохранён.",
                 ephemeral=True)
         else:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 "Ошибки пакета (ничего не сохранено):\n" + "\n".join(errors[:15]),
                 ephemeral=True)
 
@@ -1666,12 +1778,13 @@ class PreviewResultsButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or t.phase != BRTournamentPhase.COLLECT:
-            await interaction.response.send_message("Нет данных для предпросмотра.", ephemeral=True)
+            await _respond(interaction,"Нет данных для предпросмотра.", ephemeral=True)
             return
         filled, expected = t.results_status()
         results = t.calculate_final_results()
@@ -1685,7 +1798,7 @@ class PreviewResultsButton(Button):
             lines.append("**Замечания миграции (сверьте вручную):**")
             lines.extend(f"• {n}" for n in t.migration_notes[:10])
         view = PublishResultsView(self.guild_id, self.channel_id, self.tid)
-        await interaction.response.send_message(
+        await _respond(interaction,
             "**Приватный предпросмотр итогов:**\n" + "\n".join(lines),
             view=view, ephemeral=True)
 
@@ -1715,18 +1828,19 @@ class PublishResultsButton(Button):
         self.tid = tid
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if not is_org(interaction.user.id):
-            await interaction.response.send_message("Только владелец/админ.", ephemeral=True)
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t:
-            await interaction.response.send_message(STALE_MSG, ephemeral=True)
+            await _respond(interaction,STALE_MSG, ephemeral=True)
             return
         if t.phase in (BRTournamentPhase.RESULTS, BRTournamentPhase.COMPLETE) or t.results_published:
-            await interaction.response.send_message("Итоги уже опубликованы.", ephemeral=True)
+            await _respond(interaction,"Итоги уже опубликованы.", ephemeral=True)
             return
         if t.phase != BRTournamentPhase.COLLECT:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 "Итоги уже опубликованы или турнир не готов.", ephemeral=True)
             return
 
@@ -1734,20 +1848,20 @@ class PublishResultsButton(Button):
         async with get_br_lock_key(self.guild_id, self.channel_id, self.tid):
             t2 = br_store.get(self.guild_id, self.channel_id)
             if t2 is None or str(t2.id) != str(self.tid):
-                await interaction.response.send_message(STALE_MSG, ephemeral=True)
+                await _respond(interaction,STALE_MSG, ephemeral=True)
                 return
             if t2.phase != BRTournamentPhase.COLLECT or t2.results_published:
-                await interaction.response.send_message("Итоги уже опубликованы.", ephemeral=True)
+                await _respond(interaction,"Итоги уже опубликованы.", ephemeral=True)
                 return
             ok, err = t2.freeze_results()
             if not ok:
-                await interaction.response.send_message(err, ephemeral=True)
+                await _respond(interaction,err, ephemeral=True)
                 return
             try:
                 br_store.set(t2)  # сохраняем pending-снимок
             except Exception as exc:
                 logger.error("BR publish: save pending failed: %s", exc)
-                await interaction.response.send_message(
+                await _respond(interaction,
                     "Не удалось сохранить снимок итогов — публикация не начата.",
                     ephemeral=True)
                 return
@@ -1757,7 +1871,7 @@ class PublishResultsButton(Button):
         #    Сбой → состояние COLLECT+pending, повтор с тем же снимком.
         edited = await _edit_final_card(t, interaction.guild)
         if not edited:
-            await interaction.response.send_message(
+            await _respond(interaction,
                 "Не удалось обновить карточку в Discord — итоги НЕ опубликованы. "
                 "Снимок сохранён, повторите «Опубликовать итоги» или перезапустите бота.",
                 ephemeral=True)
@@ -1771,7 +1885,7 @@ class PublishResultsButton(Button):
             async with get_br_lock_key(self.guild_id, self.channel_id, self.tid):
                 t3 = get_bound(self.guild_id, self.channel_id, self.tid)
                 if t3 is None:
-                    await interaction.response.send_message(STALE_MSG, ephemeral=True)
+                    await _respond(interaction,STALE_MSG, ephemeral=True)
                     return
                 if (t3.phase == BRTournamentPhase.COLLECT
                         and t3.publish_pending is not None
@@ -1791,12 +1905,12 @@ class PublishResultsButton(Button):
                     # фазу сменили (например, отмена) — карточка должна
                     # показывать актуальный статус, а не финал
                     await refresh_main_card(interaction, t3)
-                    await interaction.response.send_message(
+                    await _respond(interaction,
                         "Публикация прервана: фаза турнира изменилась.", ephemeral=True)
                     return
         except Exception as exc:
             logger.error("BR publish: commit failed: %s", exc)
-            await interaction.response.send_message(
+            await _respond(interaction,
                 "Карточка обновлена, но сохранение не удалось — повторите "
                 "«Опубликовать итоги» (снимок не изменится).", ephemeral=True)
             return
@@ -1804,7 +1918,7 @@ class PublishResultsButton(Button):
             await strip_tournament_roles(interaction.guild, t)
         except Exception as exc:
             logger.warning("BR publish strip roles: %s", exc)
-        await interaction.response.send_message("Итоги опубликованы.", ephemeral=True)
+        await _respond(interaction,"Итоги опубликованы.", ephemeral=True)
 
 
 async def _edit_final_card(t: "BRTournament", guild) -> bool:

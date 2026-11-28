@@ -161,20 +161,35 @@ class BRCog(commands.Cog):
             return
 
         tournament = br_store.get(interaction.guild_id, interaction.channel_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "В этом канале нет активного BR турнира.", ephemeral=True)
-            return
+        purge = False
+        if tournament is None:
+            # активного нет — ищем последний ТЕСТОВЫЙ турнир канала в истории
+            for h in reversed(br_store.history()):
+                if (h.guild_id == interaction.guild_id
+                        and h.channel_id == interaction.channel_id
+                        and h.is_test):
+                    tournament = h
+                    purge = True
+                    break
+            if tournament is None:
+                await interaction.response.send_message(
+                    "В этом канале нет активного BR турнира.", ephemeral=True)
+                return
+        else:
+            # активный тестовый турнир удаляем полностью, не в архив
+            purge = bool(tournament.is_test)
 
         from views.br_view import CancelConfirmView
-        if tournament.is_active:
-            # подтверждение через кнопку + причина уже получена аргументом
+        if purge or tournament.is_active:
             view = CancelConfirmView(
                 interaction.guild_id, interaction.channel_id,
-                tournament.id, reason[:200])
-            await interaction.response.send_message(
-                f"Отменить BR турнир?\nПричина: {reason[:200]}",
-                view=view, ephemeral=True)
+                tournament.id, reason[:200], purge=purge)
+            if purge:
+                text = ("Полностью удалить ТЕСТОВЫЙ BR турнир "
+                        "(активные данные и архив)?")
+            else:
+                text = f"Отменить BR турнир?\nПричина: {reason[:200]}"
+            await interaction.response.send_message(text, view=view, ephemeral=True)
             return
         # неактивный — просто архивирован
         await interaction.response.send_message("Турнир не активен.", ephemeral=True)

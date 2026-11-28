@@ -34,9 +34,24 @@ from utils.design import compose
 class FakeResponse:
     def __init__(self):
         self.messages = []
+        self.deferred = False
+
+    def is_done(self):
+        return self.deferred
+
+    async def defer(self, **kwargs):
+        self.deferred = True
 
     async def send_message(self, *args, **kwargs):
         self.messages.append((args, kwargs))
+
+
+class FakeFollowup:
+    def __init__(self, response):
+        self._response = response
+
+    async def send(self, *args, **kwargs):
+        self._response.messages.append((args, kwargs))
 
 
 class FakeMessage:
@@ -83,11 +98,14 @@ class FakeClient:
 
 
 def _interaction(guild, user_id=999):
+    resp = FakeResponse()
     return SimpleNamespace(
-        user=SimpleNamespace(id=user_id),
+        user=SimpleNamespace(id=user_id, display_name=f"User{user_id}",
+                             name=f"user{user_id}"),
         guild=guild,
         channel=guild.get_channel(2),
-        response=FakeResponse(),
+        response=resp,
+        followup=FakeFollowup(resp),
     )
 
 
@@ -403,3 +421,159 @@ def test_archive_save_failure_keeps_active_in_memory():
     # память откачена: турнир всё ещё активный, история пуста
     assert store.get(1, 2) is t
     assert store.history() == []
+
+
+# ---------------------------------------------------------------------------
+# Этап 2: is_test — только орги, без влияния на реальные данные
+# ---------------------------------------------------------------------------
+
+
+def _registration_tournament(is_test=True):
+    t = BRTournament(
+        id="tid-test", guild_id=1, channel_id=2,
+        formation=BRTournamentFormation.RANDOM,
+        format=BRFormat.SOLO, map_count=1,
+        message_id=555, is_test=is_test)
+    return t
+
+
+@pytest.mark.asyncio
+async def test_test_tournament_join_blocked_for_non_org(patched_store,
+                                                        monkeypatch):
+    import services.vac_service as vac_service
+    from views.br_view import JoinLeaveButton
+
+    monkeypatch.setattr(vac_service, "check_vac",
+                        lambda *a, **k: _noop())
+    # is_org: только uid=999 — «владелец»
+    monkeypatch.setattr(br_view, "is_org", lambda uid: uid == 999)
+
+    t = _registration_tournament(is_test=True)
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+
+    # обычный игрок не может зарегистрироваться в тестовом BR
+    inter = _interaction(guild, user_id=555)
+    await JoinLeaveButton(1, 2, t.id, "join").callback(inter)
+    assert not t.players
+    assert any("тестовый турнир" in str(m[0][0]).lower()
+               for m in inter.response.messages)
+
+    # орг может
+    inter2 = _interaction(guild, user_id=999)
+    await JoinLeaveButton(1, 2, t.id, "join").callback(inter2)
+    assert len(t.players) == 1
+
+
+async def _noop():
+    return None
+
+
+@pytest.mark.asyncio
+async def test_regular_tournament_join_allowed_for_players(patched_store,
+                                                           monkeypatch):
+    import services.vac_service as vac_service
+    from views.br_view import JoinLeaveButton
+
+    monkeypatch.setattr(vac_service, "check_vac", lambda *a, **k: _noop())
+    monkeypatch.setattr(br_view, "is_org", lambda uid: False)
+
+    t = _registration_tournament(is_test=False)
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+
+    inter = _interaction(guild, user_id=555)
+    await JoinLeaveButton(1, 2, t.id, "join").callback(inter)
+    assert len(t.players) == 1
+
+
+@pytest.mark.asyncio
+async def test_purge_removes_test_tournament_completely(patched_store,
+                                                        monkeypatch):
+    from views.br_view import CancelConfirmButton
+
+    removed = []
+    monkeypatch.setattr(
+        br_store, "remove",
+        lambda gid, cid, tid=None: removed.append((gid, cid, tid)) or True)
+
+    t = _collect_tournament()
+    t.is_test = True
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+    inter = _interaction(guild)
+
+    btn = CancelConfirmButton(1, 2, t.id, "cleanup", purge=True)
+    await btn.callback(inter)
+
+    assert removed == [(1, 2, t.id)]
+    assert any("полностью удалён" in str(m[0][0])
+               for m in inter.response.messages)
+    # карточка заменена заглушкой
+    assert channel.message.edits
+
+
+@pytest.mark.asyncio
+async def test_purge_refuses_non_test_tournament(patched_store, monkeypatch):
+    from views.br_view import CancelConfirmButton
+
+    removed = []
+    monkeypatch.setattr(
+        br_store, "remove",
+        lambda *a, **k: removed.append(a) or True)
+
+    t = _collect_tournament()
+    t.is_test = False
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+    inter = _interaction(guild)
+
+    btn = CancelConfirmButton(1, 2, t.id, "x", purge=True)
+    await btn.callback(inter)
+
+    assert removed == []
+    assert any("только тестовый" in str(m[0][0])
+               for m in inter.response.messages)
+
+
+def test_store_remove_and_load_resilience(tmp_path, monkeypatch):
+    import json
+    import storage.br_store as br_store_mod
+    from storage.br_store import BRStore
+
+    store = BRStore.__new__(BRStore)
+    t = _collect_tournament()
+    store._tournaments = {(1, 2): t}
+    store._history = [t]
+    monkeypatch.setattr(store, "save", lambda: None)
+
+    # удаляем только активный (история по id не трогается? — remove по id
+    # удаляет и активный, и архивную запись с тем же tid)
+    assert store.remove(1, 2, t.id) is True
+    assert store.get(1, 2) is None
+    assert store.history() == []
+    # повтор — False
+    assert store.remove(1, 2, t.id) is False
+
+    # load(): битые записи пропускаются, валидные грузятся
+    data = {
+        "active": {
+            "1:2": "not-a-dict",          # упадёт в from_dict → пропуск
+            "bad-key": {"id": "x"},       # нет ':' → пропуск
+            "9:9": _collect_tournament().to_dict(),
+        },
+        "history": ["garbage", {"id": "h1"}],
+    }
+    f = tmp_path / "br.json"
+    f.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setattr(br_store_mod, "BR_DATA_FILE", f)
+    s2 = BRStore.__new__(BRStore)
+    s2.load()
+    assert (9, 9) in s2._tournaments
+    assert len(s2._tournaments) == 1
+    # {"id": "h1"} — минимальный dict, from_dict его проглотит или пропустит
+    assert all(isinstance(h, BRTournament) for h in s2._history)

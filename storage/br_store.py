@@ -62,16 +62,25 @@ class BRStore:
 
             loaded: dict[tuple[int, int], BRTournament] = {}
             for key, data in active_raw.items():
-                parts = str(key).split(":")
-                if len(parts) == 2:
+                try:
+                    parts = str(key).split(":")
+                    if len(parts) != 2:
+                        continue
                     gid, cid = int(parts[0]), int(parts[1])
                     loaded[(gid, cid)] = BRTournament.from_dict(data)
+                except Exception as exc:
+                    # битая запись не должна ронять весь store при старте
+                    logger.error("BR load: пропущен активный турнир %s: %s",
+                                 key, exc)
             self._tournaments = loaded
 
             history: list[BRTournament] = []
             for data in history_raw:
                 if isinstance(data, dict):
-                    history.append(BRTournament.from_dict(data))
+                    try:
+                        history.append(BRTournament.from_dict(data))
+                    except Exception as exc:
+                        logger.error("BR load: пропущен архивный турнир: %s", exc)
             # legacy-турниры в архивных фазах тоже уходят в history
             for (gid, cid), t in list(self._tournaments.items()):
                 if t.phase in ARCHIVE_PHASES:
@@ -82,7 +91,7 @@ class BRStore:
                 "Загружено %d активных и %d архивных BR турниров",
                 len(self._tournaments), len(self._history),
             )
-        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             logger.error("Ошибка загрузки BR JSON: %s", exc)
             self._tournaments = {}
             self._history = []
@@ -145,6 +154,43 @@ class BRStore:
         """Удалить активный BR турнир по guild_id и channel_id."""
         self._tournaments.pop((guild_id, channel_id), None)
         self.save()
+
+    def remove(self, guild_id: int, channel_id: int,
+               tournament_id: str | None = None) -> bool:
+        """Полностью удалить турнир(ы) канала: активный и архивные.
+
+        ``tournament_id=None`` — все турниры канала; иначе только
+        указанный. Возвращает True, если что-то было удалено.
+        Используется для чистки тестовых данных (is_test).
+        """
+        removed = False
+        prev_active = dict(self._tournaments)
+        prev_history = list(self._history)
+        if tournament_id is None:
+            if self._tournaments.pop((guild_id, channel_id), None) is not None:
+                removed = True
+        else:
+            key = (guild_id, channel_id)
+            t = self._tournaments.get(key)
+            if t is not None and str(t.id) == str(tournament_id):
+                del self._tournaments[key]
+                removed = True
+        self._history = [
+            h for h in self._history
+            if not (h.guild_id == guild_id and h.channel_id == channel_id
+                    and (tournament_id is None
+                         or str(h.id) == str(tournament_id)))
+        ]
+        removed = removed or len(self._history) != len(prev_history)
+        if not removed:
+            return False
+        try:
+            self.save()
+        except Exception:
+            self._tournaments = prev_active
+            self._history = prev_history
+            raise
+        return True
 
     def all(self) -> list[BRTournament]:
         """Получить все активные BR турниры."""

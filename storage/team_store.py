@@ -284,9 +284,11 @@ class TeamStore:
             True если успешно, False если команда не найдена, лимит превышен или уже в команде
         """
         # Check if team is registered in any BR tournament
+        # (тестовые BR не блокируют управление реальными отрядами)
         from storage.br_store import br_store
         for tournament in br_store._tournaments.values():
-            if tournament and team_id in tournament.registered_teams:
+            if (tournament and not getattr(tournament, "is_test", False)
+                    and team_id in tournament.registered_teams):
                 return False  # Team is registered, cannot add members
 
         team = self._teams.get(team_id)
@@ -313,9 +315,11 @@ class TeamStore:
             True если успешно, False если команда не найдена, пользователь не найден или это капитан
         """
         # Check if team is registered in any BR tournament
+        # (тестовые BR не блокируют управление реальными отрядами)
         from storage.br_store import br_store
         for tournament in br_store._tournaments.values():
-            if tournament and team_id in tournament.registered_teams:
+            if (tournament and not getattr(tournament, "is_test", False)
+                    and team_id in tournament.registered_teams):
                 return False  # Team is registered, cannot remove members
 
         team = self._teams.get(team_id)
@@ -374,9 +378,11 @@ class TeamStore:
             return False
 
         # Check if team is registered in any BR tournament
+        # (тестовые BR не блокируют управление реальными отрядами)
         from storage.br_store import br_store
         for tournament in br_store._tournaments.values():
-            if tournament and team.team_id in tournament.registered_teams:
+            if (tournament and not getattr(tournament, "is_test", False)
+                    and team.team_id in tournament.registered_teams):
                 return False  # Team is registered, cannot update
 
         self._teams[team.team_id] = team
