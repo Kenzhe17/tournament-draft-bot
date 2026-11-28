@@ -1822,8 +1822,15 @@ class CoinDropCog(commands.Cog):
             elif game == "word":
                 # Строгая проверка: только исходное слово,
                 # без алиасов и удаления вставленных символов.
-                correct = event_games.word_answer_matches(
-                    text, str(cfg.get("word") or ""))
+                # Fallback на accepted — для legacy-сессий без
+                # cfg["word"] (старые снапшоты до каталога).
+                w = str(cfg.get("word") or "")
+                if w:
+                    correct = event_games.word_answer_matches(
+                        text, w)
+                else:
+                    correct = event_games.answer_matches(
+                        text, cfg.get("accepted") or [])
             elif game == "krokodil":
                 accepted = cfg.get("accepted") or []
                 correct = event_games.answer_matches(text, accepted)
