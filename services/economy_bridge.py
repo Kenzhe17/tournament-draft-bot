@@ -41,12 +41,22 @@ _MAX_BALANCE = 100_000
 
 
 def _max_balance() -> int:
-    """Dynamic cap from Control Center (economy.max_balance)."""
+    """Dynamic cap from Control Center (economy.max_balance).
+
+    Эффективный потолок ограничен SAFE_BALANCE_CAP — тот же
+    инвариант, что и в user_balance_store._max_balance:
+    не-гарантированный кредит ≤ SAFE_CAP гарантирует, что
+    blackjack settlement-выплата (≤2×BET_MAX) всегда помещается
+    в HARD_BALANCE_LIMIT. Значения выше SAFE_CAP ранее упирались
+    бы в CHECK-ограничение user_balance — теперь это clamp.
+    """
     try:
         from services.settings_service import settings_service
-        return int(settings_service.peek(None, "economy.max_balance"))
+        from storage.user_balance_store import SAFE_BALANCE_CAP
+        return min(int(settings_service.peek(None, "economy.max_balance")),
+                   SAFE_BALANCE_CAP)
     except Exception:  # noqa: BLE001 — fallback на константу без PG
-        return _MAX_BALANCE
+        return min(_MAX_BALANCE, 2_000_000_000)
 _MAX_STAKE = 1_000_000
 _MAX_STAKES = 6
 
@@ -430,17 +440,37 @@ async def refund(request: web.Request) -> web.Response:
                         guild_id, user_id,
                     )
                     before = int(before_row["balance"])
-                    # Refunds are restitution, not winnings: the full held
-                    # amount is always recoverable, even at the balance cap.
-                    after = before + amount
+                    # Refunds are restitution: the held amount is always
+                    # recoverable. Часть, не помещающаяся в гарантию
+                    # blackjack-выплаты (balance + obligation ≤
+                    # HARD_BALANCE_LIMIT), уходит в arcade_pending_credit
+                    # и дозачисляется claim_pending — реституция не
+                    # теряется и не обрезается молча.
+                    from storage.user_balance_store import (
+                        HARD_BALANCE_LIMIT as _HARD_LIMIT,
+                    )
+                    from storage.user_balance_store import (
+                        _payout_obligation as _obligation,
+                    )
+                    obligation = await _obligation(conn, guild_id, user_id)
+                    headroom = max(
+                        0, _HARD_LIMIT - obligation - before)
+                    credited = min(amount, headroom)
+                    after = before + credited
+                    remainder = amount - credited
                     await conn.execute(
                         "UPDATE user_balance SET balance = $3 WHERE guild_id = $1 AND user_id = $2",
                         guild_id, user_id, after,
                     )
                     await conn.execute(
                         "INSERT INTO arcade_ledger (op_id, guild_id, user_id, kind, amount, balance_after) VALUES ($1,$2,$3,'refund',$4,$5)",
-                        op_id, guild_id, user_id, amount, after,
+                        op_id, guild_id, user_id, credited, after,
                     )
+                    if remainder > 0:
+                        await conn.execute(
+                            "INSERT INTO arcade_pending_credit (op_id, guild_id, user_id, amount) VALUES ($1,$2,$3,$4)",
+                            op_id, guild_id, user_id, remainder,
+                        )
                 await conn.execute("UPDATE arcade_escrow SET state = 'refunded', settled_at = now() WHERE op_id = $1", op_id)
         except Exception:
             logger.exception("Arcade refund failed for op %s", op_id)

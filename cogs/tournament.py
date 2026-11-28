@@ -1128,7 +1128,7 @@ class TournamentCog(commands.Cog):
 
     #     await interaction.response.send_modal(RouletteModal(interaction.guild_id, interaction.user.id))
 
-    @games_group.command(name="blackjack", description="Сыграть в блэкджек против дилера без ставок")
+    @games_group.command(name="blackjack", description="Блэкджек 2.0 против дилера — ставки или бесплатно")
     async def blackjack(self, interaction: discord.Interaction) -> None:
         from games.blackjack import start_blackjack
 
@@ -3229,7 +3229,7 @@ def _help_category_embed(value: str) -> discord.Embed | None:
                 f"{dot}  `/games dice_roll` — Кубик 1-6 `(4.8x)`\n"
                 f"{dot}  `/games guess_number` — Число 1-100 `(2.5x)`\n"
                 f"{dot}  `/games high_low` — Выше или ниже `(до 3.7x)`\n"
-                f"{dot}  `/games blackjack` — Блэкджек против дилера (без ставок)\n"
+                f"{dot}  `/games blackjack` — Блэкджек 2.0 `(ставки 2× или бесплатно)`\n"
                 f"{dot}  `/games roulette` — Рулетка `(1.6x-30x)`\n"
                 f"{dot}  `/games mathquiz` — Математическая дуэль\n"
                 f"{dot}  `/games stats` — Статистика казино `(админ)`\n\n"

@@ -263,6 +263,17 @@ async def init_db() -> None:
                 PRIMARY KEY (guild_id, user_id)
             )
         """)
+        # Backstop от переполнения INTEGER: любой путь записи баланса
+        # (blackjack, переводы, arcade, админка, будущий код) не может
+        # превысить HARD_BALANCE_LIMIT — tx откатывается целиком.
+        # NOT VALID: без полного скана таблицы, действует на новые
+        # записи сразу. Лимит < INTEGER max с запасом.
+        await conn.execute(
+            "ALTER TABLE user_balance DROP CONSTRAINT IF EXISTS "
+            "user_balance_hard_cap")
+        await conn.execute(
+            "ALTER TABLE user_balance ADD CONSTRAINT user_balance_hard_cap "
+            "CHECK (balance <= 2100000000) NOT VALID")
 
         # Create user_bank table for bank system
         await conn.execute("""
@@ -353,6 +364,12 @@ async def init_db() -> None:
                 PRIMARY KEY (guild_id, user_id)
             )
         """)
+        await conn.execute(
+            "ALTER TABLE user_balance DROP CONSTRAINT IF EXISTS "
+            "user_balance_hard_cap")
+        await conn.execute(
+            "ALTER TABLE user_balance ADD CONSTRAINT user_balance_hard_cap "
+            "CHECK (balance <= 2100000000) NOT VALID")
 
         # Create bets table for betting system
         await conn.execute("""

@@ -17,14 +17,61 @@ DECAY_FILE = DATA_DIR / "decay_tracking.json"
 DECAY_THRESHOLD = 10000  # Balance above this gets decayed
 DECAY_PERCENT = 0.05  # 5% decay per day
 
+# Технические потолки баланса (user_balance.balance — INTEGER,
+# max 2 147 483 647). Инвариант для blackjack-выплат:
+#   balance ≤ SAFE_BALANCE_CAP после любого НЕ-гарантированного
+#   кредита (transfer, admin, daily, shop, arcade — все ограничены
+#   здесь), а ставка принимается только если balance + stake ≤
+#   SAFE_BALANCE_CAP → гарантированная выплата (≤2×stake) всегда
+#   помещается в HARD_BALANCE_LIMIT. CHECK-ограничение в БД —
+#   последний рубеж от переполнения колонки.
+SAFE_BALANCE_CAP = 2_000_000_000
+HARD_BALANCE_LIMIT = 2_100_000_000  # < INTEGER max 2 147 483 647
+
 
 def _max_balance() -> int:
-    """Dynamic cap (economy.max_balance) → config fallback."""
+    """Dynamic cap (economy.max_balance) → config fallback.
+
+    Эффективный потолок любого НЕ-гарантированного кредита
+    ограничен SAFE_BALANCE_CAP: CHECK-ограничение БД и так не
+    даёт balance > HARD_BALANCE_LIMIT, а blackjack-гарантия
+    (balance + obligation ≤ HARD) доказуема только пока
+    не-гарантированные кредиты ≤ SAFE_CAP. Значения
+    economy.max_balance выше SAFE_CAP ранее приводили к
+    CHECK-violation вместо понятного clamping — теперь это
+    безопасный потолок. Гарантированные blackjack-выплаты
+    (cap_exempt) этот лимит не используют.
+    """
     try:
         from services.settings_service import settings_service
-        return int(settings_service.peek(None, "economy.max_balance"))
+        return min(int(settings_service.peek(None, "economy.max_balance")),
+                   SAFE_BALANCE_CAP)
     except Exception:  # noqa: BLE001
-        return MAX_BALANCE
+        return min(MAX_BALANCE, SAFE_BALANCE_CAP)
+
+
+async def _payout_obligation(conn, guild_id: int, user_id: int) -> int:
+    """Обязательство будущей гарантированной выплаты blackjack:
+    2×stake активной платной раздачи (0 — если её нет).
+
+    Одна активная раздача на (guild,user) — частичный UNIQUE INDEX
+    blackjack_one_active, поэтому obligation ≤ 2×BET_MAX = 20 000.
+    Возвращает 0, если таблица ещё не создана (миграция не применена)
+    или соединение не asyncpg-совместимо (тестовые fake'ы без
+    fetchval — в реальном PG любая ошибка запроса и так абортит tx).
+    """
+    try:
+        exists = await conn.fetchval(
+            "SELECT to_regclass('blackjack_rounds') IS NOT NULL")
+        if not exists:
+            return 0
+        return int(await conn.fetchval(
+            "SELECT COALESCE(SUM(stake),0)*2 FROM blackjack_rounds "
+            "WHERE guild_id=$1 AND user_id=$2 "
+            "AND status='active' AND stake>0",
+            guild_id, user_id) or 0)
+    except AttributeError:
+        return 0
 
 
 class DecayTracker:
@@ -79,6 +126,26 @@ class DecayTracker:
 
 decay_tracker = DecayTracker()
 
+# DB-backed decay marks: INSERT внутри той же транзакции, что и
+# изменение баланса → откат откатывает и отметку (нет «пропущенного»
+# decay из-за rollback), а UNIQUE(guild,user,day) делает decay
+# корректным при нескольких процессах бота. Файловый decay_tracker
+# остаётся только для JSON-fallback (single-process dev).
+_DECAY_DDL = """
+CREATE TABLE IF NOT EXISTS user_decay_marks (
+    guild_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    day DATE NOT NULL,
+    PRIMARY KEY (guild_id, user_id, day)
+)
+"""
+async def _ensure_decay_marks(conn) -> None:
+    # Без кэша-флага: CREATE TABLE внутри откатившейся tx не
+    # закоммитился бы, а флаг «уже создано» остался бы — следующий
+    # INSERT упал бы на отсутствующей таблице. Выполняется только
+    # для балансов выше DECAY_THRESHOLD — редкий путь.
+    await conn.execute(_DECAY_DDL)
+
 
 class UserBalanceStore:
     """Store for managing user coin balances."""
@@ -125,16 +192,36 @@ class UserBalanceStore:
     async def _apply_decay(conn, guild_id: int, user_id: int, balance: int) -> int:
         """Применить дневной decay к балансу внутри транзакции.
 
-        Возвращает актуальный баланс; при decay UPDATE уже выполнен.
+        Отметка user_decay_marks пишется в ТОЙ ЖЕ транзакции —
+        rollback не оставляет «фантомный» processed-флаг, повторный
+        decay за день исключён UNIQUE-ограничением даже при
+        нескольких процессах. Возвращает актуальный баланс;
+        при decay UPDATE уже выполнен.
         """
-        if balance > DECAY_THRESHOLD and decay_tracker.should_apply_decay(guild_id, user_id):
-            decay_amount = int(balance * DECAY_PERCENT)
-            balance -= decay_amount
-            await conn.execute(
-                "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
-                balance, guild_id, user_id
-            )
-            decay_tracker.mark_processed(guild_id, user_id)
+        if balance <= DECAY_THRESHOLD:
+            return balance
+        # Legacy-гейт (файловый трекер): тесты и JSON-fallback
+        # опираются на should_apply_decay; mark_processed здесь
+        # НЕ вызывается — авторитетная отметка «decay применён сегодня»
+        # живёт в user_decay_marks ВНУТРИ транзакции.
+        if not decay_tracker.should_apply_decay(guild_id, user_id):
+            return balance
+        await _ensure_decay_marks(conn)
+        marked = await conn.fetchrow(
+            """INSERT INTO user_decay_marks (guild_id, user_id, day)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (guild_id, user_id, day) DO NOTHING
+               RETURNING guild_id""",
+            guild_id, user_id, date.today(),
+        )
+        if marked is None:
+            return balance
+        decay_amount = int(balance * DECAY_PERCENT)
+        balance -= decay_amount
+        await conn.execute(
+            "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
+            balance, guild_id, user_id
+        )
         return balance
 
     async def get_balance(self, guild_id: int, user_id: int) -> int:
@@ -145,12 +232,13 @@ class UserBalanceStore:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
-                await self._ensure_row(conn, guild_id, user_id)
-                row = await conn.fetchrow(
-                    "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2",
-                    guild_id, user_id
-                )
-                return await self._apply_decay(conn, guild_id, user_id, row["balance"])
+                async with conn.transaction():
+                    await self._ensure_row(conn, guild_id, user_id)
+                    row = await conn.fetchrow(
+                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2",
+                        guild_id, user_id
+                    )
+                    return await self._apply_decay(conn, guild_id, user_id, row["balance"])
         else:
             if key not in self._balances:
                 self._balances[key] = 100
@@ -471,19 +559,39 @@ class UserBalanceStore:
         """Set user balance to specific value."""
         if balance < 0:
             raise ValueError("Balance cannot be negative")
+        if balance > HARD_BALANCE_LIMIT:
+            raise ValueError(
+                f"Balance cannot exceed hard limit {HARD_BALANCE_LIMIT}")
 
         key = f"{guild_id}:{user_id}"
 
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
-            async with pool.acquire() as conn:
+            async with pool.acquire() as conn, conn.transaction():
+                await self._ensure_row(conn, guild_id, user_id)
+                # Гарантия выплат blackjack: set_balance не имеет права
+                # выставить баланс так, чтобы будущая settlement-выплата
+                # (≤ 2×stake активной платной раздачи, cap-exempt) уперлась
+                # в HARD_BALANCE_LIMIT → BalanceOverflow и зависшая
+                # раздача. Row-lock на user_balance сериализует с
+                # blackjack debit/credit: новый bet не может
+                # закоммититься, пока мы держим блокировку.
+                await conn.fetchrow(
+                    "SELECT balance FROM user_balance "
+                    "WHERE guild_id=$1 AND user_id=$2 FOR UPDATE",
+                    guild_id, user_id)
+                obligation = await _payout_obligation(
+                    conn, guild_id, user_id)
+                if balance + obligation > HARD_BALANCE_LIMIT:
+                    raise ValueError(
+                        "Balance cannot exceed hard limit "
+                        f"{HARD_BALANCE_LIMIT} with active payout "
+                        f"obligation {obligation}")
                 await conn.execute(
                     """
-                    INSERT INTO user_balance (guild_id, user_id, balance)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET balance = $3
+                    UPDATE user_balance SET balance = $3
+                    WHERE guild_id = $1 AND user_id = $2
                     """,
                     guild_id, user_id, balance
                 )
@@ -554,7 +662,27 @@ class UserBalanceStore:
                     receiver_balance = await self._apply_decay(
                         conn, to_guild, to_user, row["balance"]
                     )
-                    receiver_new = min(receiver_balance + amount, MAX_BALANCE)
+                    # Cap применяется только к доходу «сверх потолка».
+                    # Баланс, уже превышающий MAX_BALANCE (cap-exempt
+                    # выплаты blackjack и т.п.), не должен обрезаться —
+                    # иначе перевод молча сжигал бы чужие выигрыши.
+                    cap = _max_balance()
+                    if receiver_balance >= cap:
+                        receiver_new = receiver_balance + amount
+                    else:
+                        receiver_new = min(
+                            receiver_balance + amount, cap)
+                    # Гарантия выплат blackjack: перевод не имеет
+                    # права вытолкнуть баланс за SAFE_BALANCE_CAP —
+                    # иначе активная раздача не смогла бы исполнить
+                    # обещанную выплату. Отклоняем перевод целиком
+                    # (tx rollback — средства не списаны).
+                    if receiver_new > SAFE_BALANCE_CAP:
+                        raise ValueError(
+                            "Transfer rejected: receiver balance cap "
+                            f"{SAFE_BALANCE_CAP} would be exceeded "
+                            f"({receiver_balance} + {amount})"
+                        )
                     await conn.execute(
                         "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
                         receiver_new, to_guild, to_user

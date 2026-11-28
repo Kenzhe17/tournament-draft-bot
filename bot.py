@@ -359,6 +359,14 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.warning("Не удалось зарегистрировать %s: %s", _group.name, e)
 
+        # BLACKJACK 2.0: динамические кнопки раздач — dispatch по
+        # custom_id bj2:<action>:<round_id> работает и после рестарта.
+        try:
+            from views.blackjack_view import BlackjackActionButton
+            self.add_dynamic_items(BlackjackActionButton)
+        except Exception as e:
+            logger.warning("blackjack dynamic items init failed: %s", e)
+
         # Components V2: author/аватар в командах + обёртки send/edit
         try:
             from utils.design import meta as _design_meta
@@ -1190,6 +1198,19 @@ class TournamentBot(commands.Bot):
         except Exception as e:
             logger.error(f"shop ops recovery failed: {e}")
 
+        # BLACKJACK 2.0: восстановить активные раздачи после рестарта
+        # и запустить sweeper тайм-аута (90с → авто-Stand).
+        if DATABASE_URL:
+            try:
+                from games.blackjack import (
+                    blackjack_sweeper_loop,
+                    recover_active,
+                )
+                await recover_active(self)
+                self.loop.create_task(blackjack_sweeper_loop())
+            except Exception as e:
+                logger.error(f"blackjack recovery failed: {e}", exc_info=True)
+
         # Довести отложенные публикации карточек комнат турниров
         try:
             from services.room_publisher import retry_pending_rooms
@@ -1208,8 +1229,13 @@ class TournamentBot(commands.Bot):
             from storage.br_store import br_store
             from views.br_view import sync_public_card, resume_pending_publish
             for brt in br_store.all():
-                await resume_pending_publish(brt, self)
-                await sync_public_card(brt, self)
+                # объект из снимка мог устареть (purge/cancel/замена
+                # турнира в канале) — синхронизируем только актуальный
+                fresh = br_store.get(brt.guild_id, brt.channel_id)
+                if fresh is None or str(fresh.id) != str(brt.id):
+                    continue
+                await resume_pending_publish(fresh, self)
+                await sync_public_card(fresh, self)
         except Exception as e:
             logger.error(f"BR card restore failed: {e}")
 
