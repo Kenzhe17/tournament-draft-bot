@@ -167,6 +167,8 @@ class DealRoundOpIdTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(bjgame.blackjack_store, "create_round", create), \
              patch.object(bjgame.blackjack_store, "get_round",
                           AsyncMock(return_value=stored)), \
+             patch.object(bjgame.blackjack_store, "claim_delivery",
+                          AsyncMock(return_value=True)), \
              patch.object(bjgame.blackjack_store, "mark_delivery",
                           AsyncMock()), \
              patch.object(bjgame.blackjack_store, "mark_message",

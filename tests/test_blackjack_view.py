@@ -204,6 +204,48 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
             await bv.handle_round_action(inter, "close", stored.round_id, 1)
         inter.edit_original_response.assert_awaited_once()
 
+    async def test_close_blocked_when_card_transferred(self):
+        """§6: «Закрыть» после передачи карточки новой раздаче не
+        должно стереть чужую публичную карту."""
+        stored = _stored(phase="done", outcome=OUT_WIN, message_id=777)
+        transferred = _stored(phase="done", outcome=OUT_WIN,
+                              message_id=None)  # detach_message уже отработал
+        inter = _interaction(user_id=1)
+        inter.message = SimpleNamespace(id=777)
+        with patch.object(bv.blackjack_store, "get_round",
+                          AsyncMock(side_effect=[stored, transferred])):
+            await bv.handle_round_action(inter, "close", stored.round_id, 1)
+        inter.edit_original_response.assert_not_awaited()
+        inter.followup.send.assert_awaited_once()
+        self.assertTrue(
+            inter.followup.send.call_args.kwargs["ephemeral"])
+
+    async def test_play_edit_skipped_when_card_transferred(self):
+        """§6: hit/stale-edit не перезаписывает карточку, уже
+        принадлежащую другой раздаче."""
+        stored = _stored()
+        updated = _stored()  # message_id=777 у updated
+        inter = _interaction(user_id=1)
+        inter.message = SimpleNamespace(id=555)  # карточка уже не наша
+        with patch.object(bv.blackjack_store, "get_round",
+                          AsyncMock(return_value=stored)), \
+             patch.object(bv.blackjack_store, "apply_action",
+                          AsyncMock(return_value=updated)):
+            await bv.handle_round_action(inter, "hit", stored.round_id, 1)
+        inter.edit_original_response.assert_not_awaited()
+        inter.followup.send.assert_awaited_once()
+
+    async def test_again_without_message_id_sends_new_card(self):
+        """§6/§5: 'delivered' без message_id → reuse=None → новая
+        карточка вместо fetch_message(None) → ложный failed+refund."""
+        stored = _stored(phase="done", outcome=OUT_WIN, message_id=None)
+        inter = _interaction(user_id=1)
+        with patch.object(bv.blackjack_store, "get_round",
+                          AsyncMock(return_value=stored)):
+            await bv.handle_round_action(inter, "again", stored.round_id, 1)
+        view = inter.followup.send.call_args.kwargs["view"]
+        self.assertIsNone(view.reuse)
+
 
 class MenuTests(unittest.IsolatedAsyncioTestCase):
     async def test_bet_menu_owner_only(self):

@@ -9,19 +9,26 @@ cogs/tournament.py): ``start_blackjack(interaction)``.
 Ходы/settlement — в views/blackjack_view.py и storage/blackjack_store.py.
 
 Доставка имеет явный state machine (delivery_state):
-    pending → sending → delivered | unknown | failed
-Refund выполняется ТОЛЬКО при доказанной недоставке
-('pending' — HTTP не вызывался; 'failed' — reconcile не нашёл
-сообщение с маркером ``ref <round_id>`` в истории канала).
-Неоднозначная доставка ('sending'/'unknown') никогда не
-рефандится автоматически.
+    pending → sending → delivered | unknown | failed | disputed
+Право на отправку захватывается атомарно (claim_delivery CAS с
+уникальным attempt_id) — не более одного отправителя на раздачу.
+Refund выполняется ТОЛЬКО при доказанной недоставке:
+'pending' (HTTP к Discord не вызывался) и 'failed' (pre-send сбой
+до вызова Discord). 'sending'/'unknown'/'delivered'/'disputed'
+автоматически НЕ рефандятся: check_delivery возвращает FOUND или
+UNKNOWN — отсутствие маркера в истории никогда не доказывает
+недоставку (сообщение могло быть удалено/изменено). Неоднозначные
+раздачи разрешаются обычным тайм-аутом; после
+MAX_RECONCILE_ATTEMPTS помечаются 'disputed' для администратора.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 
 import discord
 
@@ -41,6 +48,9 @@ logger = logging.getLogger(__name__)
 # 'pending'/'sending'/'unknown' кандидатами на reconcile. Даёт
 # запас на штатную доставку и медленный Discord API.
 DELIVERY_GRACE_SECONDS = 120
+# После стольких безрезультатных проходов reconcile раздача
+# помечается 'disputed' — спорный случай для администратора.
+MAX_RECONCILE_ATTEMPTS = 30
 
 
 def _bet_limits(guild_id: int) -> tuple[int, int]:
@@ -253,7 +263,25 @@ async def deal_round(
 
     view, png = build_game_view(stored)
 
-    # ---------- доставка с явными состояниями ----------
+    # ---------- атомарная доставка ----------
+    # CAS-захват права на отправку: только один обработчик (в т.ч.
+    # в двух процессах) получит 'sending' для этого round_id.
+    attempt_id = uuid.uuid4().hex
+    try:
+        claimed = await blackjack_store.claim_delivery(round_id, attempt_id)
+    except Exception:
+        logger.exception("blackjack claim_delivery failed %s", round_id)
+        await _fail("Не удалось создать раздачу. Попробуйте позже.")
+        return
+    if not claimed:
+        # кто-то уже отправляет или доставил
+        cur = await blackjack_store.get_round(round_id)
+        if cur is not None and cur.message_id is not None:
+            await _fail("Раздача уже создана — смотрите сообщение выше.")
+        else:
+            await _fail("Раздача уже отправляется — статус проверяется.")
+        return
+
     # Pre-send: всё, что может доказуемо НЕ дойти до Discord.
     channel = None
     target_msg = None
@@ -278,24 +306,34 @@ async def deal_round(
         logger.warning("blackjack pre-send failed for %s", round_id,
                        exc_info=True)
         try:
-            await blackjack_store.mark_delivery(round_id, "failed")
+            await blackjack_store.mark_delivery(
+                round_id, "failed", attempt_id)
         except Exception:
             logger.exception("blackjack mark_delivery(failed) failed")
         await _refund_and_fail(interaction, round_id, _fail)
         return
 
-    # Граница отправки: с этого момента исход HTTP-вызова неизвестен.
-    try:
-        await blackjack_store.mark_delivery(round_id, "sending")
-    except Exception:
-        # Не отправляем без зафиксированного состояния — иначе
-        # возможна доставка при 'pending' → ложный refund.
-        logger.exception("blackjack mark_delivery(sending) failed %s",
-                         round_id)
-        await _fail("Не удалось создать раздачу. Попробуйте позже.")
-        return
+    # Передача карточки новой раздаче — ДО редактирования: старые
+    # обработчики прошлой раздачи сразу теряют право её править.
+    if reuse is not None:
+        try:
+            await blackjack_store.detach_message(
+                ch_id, msg_id, except_round_id=round_id)
+        except Exception:
+            logger.exception("blackjack detach_message failed %s",
+                             round_id)
+            try:
+                await blackjack_store.mark_delivery(
+                    round_id, "failed", attempt_id)
+            except Exception:
+                logger.debug("blackjack mark failed-state failed",
+                             exc_info=True)
+            await _refund_and_fail(interaction, round_id, _fail)
+            return
 
+    # Граница отправки: с этого момента исход HTTP-вызова неизвестен.
     delivered = False
+    sent_id = None
     try:
         if reuse is not None:
             await target_msg.edit(**kwargs)
@@ -303,8 +341,7 @@ async def deal_round(
         else:
             msg = await interaction.followup.send(**kwargs)
             sent_id = msg.id if msg is not None else None
-        if sent_id is not None:
-            delivered = True
+        delivered = sent_id is not None
     except Exception:
         logger.warning("blackjack deal delivery failed for %s",
                        round_id, exc_info=True)
@@ -313,21 +350,24 @@ async def deal_round(
         try:
             await blackjack_store.mark_message(round_id, sent_id)
         except Exception:
-            # Ответ Discord потерян ПОСЛЕ отправки — delivery
-            # доказан msg.id: фиксируем 'delivered' без message_id,
-            # refund запрещён, reconcile найдёт сообщение по маркеру.
+            # Ответ mark_message потерян, но доставка ДОКАЗАНА sent_id:
+            # фиксируем 'delivered' без message_id — refund запрещён,
+            # reconcile найдёт карточку по маркеру и дозапишет id.
             logger.exception("blackjack mark_message failed %s", round_id)
             try:
-                await blackjack_store.mark_delivery(round_id, "delivered")
+                await blackjack_store.mark_delivery(
+                    round_id, "delivered", attempt_id)
             except Exception:
                 logger.exception("blackjack mark_delivery(delivered) failed")
     else:
         try:
-            await blackjack_store.mark_delivery(round_id, "unknown")
+            await blackjack_store.mark_delivery(
+                round_id, "unknown", attempt_id)
         except Exception:
             logger.exception("blackjack mark_delivery(unknown) failed")
-        # 'unknown' → НЕ рефандим: сообщение могло дойти.
-        # Reconcile в sweeper найдёт маркер или докажет отсутствие.
+        # 'unknown' → НЕ рефандим и НЕ пересылаем: сообщение могло
+        # дойти. Reconcile проверит маркер; исход раздачи решит
+        # обычный тайм-аут — ставка не зависает.
         settled_note = ""
         try:
             cur = await blackjack_store.get_round(round_id)
@@ -369,6 +409,23 @@ async def _refund_and_fail(interaction, round_id: str, fail) -> None:
 # ------------------------------------------------------------------
 
 _DELIVERY_MARKER_PREFIX = "ref "
+_SCAN_LIMIT = 500
+
+
+class DeliveryCheck(Enum):
+    """Типизированный результат проверки доставки.
+
+    FOUND — маркер найден, сообщение существует.
+    CONFIRMED_NOT_SENT — отправка доказуемо не состоялась
+        (delivery_state='pending': HTTP к Discord не вызывался).
+    UNKNOWN — всё остальное: ошибки API, недоступная/неполная
+        история, лимит сканирования, ошибки парсинга, отсутствие
+        маркера, удалённое/изменённое сообщение. Отсутствие маркера
+        НИКОГДА не доказывает недоставку.
+    """
+    FOUND = "found"
+    CONFIRMED_NOT_SENT = "confirmed_not_sent"
+    UNKNOWN = "unknown"
 
 
 def _msg_has_marker(msg: discord.Message, round_id: str) -> bool:
@@ -378,42 +435,66 @@ def _msg_has_marker(msg: discord.Message, round_id: str) -> bool:
             [c.to_dict() for c in (msg.components or [])],
             ensure_ascii=False,
         )
-    except Exception:  # noqa: BLE001 — to_dict может падать на чужих типах
-        return False
+    except Exception as exc:
+        # Ошибка парсинга компонента → результат неполный → UNKNOWN
+        raise _MarkerScanError() from exc
     return f"{_DELIVERY_MARKER_PREFIX}{round_id}" in blob
 
 
-async def _find_delivery_message(
+class _MarkerScanError(Exception):
+    pass
+
+
+async def check_delivery(
     client: discord.Client, stored
-) -> discord.Message | None:
-    """Найти публичное сообщение раздачи по маркеру в истории канала."""
+) -> tuple[DeliveryCheck, discord.Message | None]:
+    """Проверить доставку раздачи. Никогда не «доказывает» отсутствие
+    отправки по результатам сканирования — только FOUND или UNKNOWN.
+
+    CONFIRMED_NOT_SENT возвращается только для 'pending' — состояния,
+    в котором HTTP-вызов к Discord доказуемо не выполнялся.
+    """
+    if stored.delivery_state == "pending":
+        return DeliveryCheck.CONFIRMED_NOT_SENT, None
     channel = client.get_channel(stored.channel_id)
     if channel is None:
         try:
             channel = await client.fetch_channel(stored.channel_id)
-        except Exception:  # noqa: BLE001 — канал удалён/недоступен
-            return None
+        except Exception:  # noqa: BLE001 — Forbidden/HTTPException/NotFound
+            return DeliveryCheck.UNKNOWN, None
     since = (stored.created_at or datetime.now(UTC)) - timedelta(seconds=10)
+    scanned = 0
     try:
         async for msg in channel.history(
-            limit=500, after=since, oldest_first=True
+            limit=_SCAN_LIMIT, after=since, oldest_first=True
         ):
-            if _msg_has_marker(msg, stored.round_id):
-                return msg
+            scanned += 1
+            try:
+                if _msg_has_marker(msg, stored.round_id):
+                    return DeliveryCheck.FOUND, msg
+            except _MarkerScanError:
+                return DeliveryCheck.UNKNOWN, None
+        # История прочитана целиком без маркера — но сообщение могло
+        # быть удалено/изменено → это UNKNOWN, а не «не доставлено».
+        if scanned >= _SCAN_LIMIT:
+            logger.info("blackjack scan hit limit for %s", stored.round_id)
+        return DeliveryCheck.UNKNOWN, None
     except Exception:
         logger.info("blackjack marker scan failed for %s",
                     stored.round_id, exc_info=True)
-    return None
+        return DeliveryCheck.UNKNOWN, None
 
 
 async def reconcile_undelivered(client: discord.Client) -> int:
     """Сверка недоставленных раздач старше DELIVERY_GRACE_SECONDS.
 
-    - 'pending' — HTTP к Discord не вызывался → доказанная
-      недоставка → refund ('failed' обрабатывается так же).
-    - 'sending'/'unknown' — ищем маркер в истории канала:
-      найден → delivered; не найден → 'failed' → refund.
-      Неоднозначность разрешается доказательством, а не угадыванием.
+    Политика:
+    - 'pending'/'failed' — отправка доказуемо не состоялась → refund.
+    - 'sending'/'unknown'/'delivered'-без-id — только поиск маркера:
+      FOUND → delivered; иначе UNKNOWN → +1 попытка, после
+      MAX_RECONCILE_ATTEMPTS → 'disputed' (админ-диагностика).
+      Автоматический refund НЕ выполняется — неоднозначная доставка
+      никогда не рефандится. Раздача завершается обычным тайм-аутом.
     """
     cutoff = datetime.now(UTC) - timedelta(seconds=DELIVERY_GRACE_SECONDS)
     try:
@@ -425,24 +506,12 @@ async def reconcile_undelivered(client: discord.Client) -> int:
     for stored in rounds:
         try:
             if stored.delivery_state in ("pending", "failed"):
-                # 'pending': send не вызывался; 'failed': уже доказано
+                # 'pending': send не вызывался; 'failed': pre-send сбой
                 if await blackjack_store.refund_undelivered(stored.round_id):
                     handled += 1
                 continue
-            if stored.delivery_state == "delivered":
-                # отправка была, id потерян → только поиск по маркеру
-                msg = await _find_delivery_message(client, stored)
-                if msg is not None:
-                    try:
-                        await blackjack_store.mark_message(
-                            stored.round_id, msg.id)
-                        handled += 1
-                    except Exception:
-                        logger.exception("blackjack reconcile mark failed")
-                continue
-            # sending | unknown → reconcile по маркеру
-            msg = await _find_delivery_message(client, stored)
-            if msg is not None:
+            status, msg = await check_delivery(client, stored)
+            if status is DeliveryCheck.FOUND and msg is not None:
                 try:
                     await blackjack_store.mark_message(
                         stored.round_id, msg.id)
@@ -451,61 +520,85 @@ async def reconcile_undelivered(client: discord.Client) -> int:
                                 "for %s (msg %s)", stored.round_id, msg.id)
                 except Exception:
                     logger.exception("blackjack reconcile mark failed")
-            else:
-                # Канал недоступен → НЕ доказываем отсутствие:
-                # оставляем 'unknown' до следующего прохода.
-                channel = client.get_channel(stored.channel_id)
-                if channel is None:
-                    try:
-                        channel = await client.fetch_channel(
-                            stored.channel_id)
-                    except Exception:  # noqa: BLE001 — канал недоступен
-                        channel = None
-                if channel is not None:
-                    await blackjack_store.mark_delivery(
-                        stored.round_id, "failed")
-                    if await blackjack_store.refund_undelivered(
-                            stored.round_id):
-                        handled += 1
+                continue
+            if status is DeliveryCheck.CONFIRMED_NOT_SENT:
+                # теоретически unreachable (pending обработан выше),
+                # но на случай гонки состояний — только через refund-guard
+                if await blackjack_store.refund_undelivered(
+                        stored.round_id):
+                    handled += 1
+                continue
+            # UNKNOWN — попытка зачтена, спорный счётчик
+            try:
+                attempts = await blackjack_store.note_reconcile_attempt(
+                    stored.round_id)
+                if attempts >= MAX_RECONCILE_ATTEMPTS:
+                    await blackjack_store.mark_disputed(stored.round_id)
+                    logger.error(
+                        "blackjack DISPUTED delivery round_id=%s "
+                        "guild=%s user=%s stake=%s state=%s — "
+                        "требуется проверка администратора",
+                        stored.round_id, stored.guild_id, stored.user_id,
+                        stored.stake, stored.delivery_state)
+            except Exception:
+                logger.exception("blackjack reconcile attempt mark failed")
         except Exception:
             logger.warning("blackjack reconcile failed for %s",
                            stored.round_id, exc_info=True)
     return handled
 
 
-async def sweep_once() -> int:
-    """Один проход: просроченные раздачи → авто-Stand + settle
-    + обновление публичного сообщения; затем reconcile доставки."""
-    from views.blackjack_view import build_game_view
+async def _sync_card(client: discord.Client, round_id: str) -> bool:
+    """Перерисовать публичную карточку актуальным состоянием БД.
 
+    Guards: round существует, message_id записан и принадлежит
+    именно этой раздаче (detach_message мог уже передать карточку
+    новой раздаче). Рендер — от свежего fetch, поэтому последняя
+    запись всегда отражает актуальную версию состояния.
+    """
+    from views.blackjack_view import build_game_view
     try:
-        settled = await blackjack_store.expire_due()
+        stored = await blackjack_store.get_round(round_id)
+        if stored is None or stored.message_id is None:
+            return False
+        channel = client.get_channel(stored.channel_id)
+        if channel is None:
+            channel = await client.fetch_channel(stored.channel_id)
+        msg = await channel.fetch_message(stored.message_id)
+        view, png = build_game_view(stored)
+        kwargs = {"view": view,
+                  "allowed_mentions": discord.AllowedMentions.none()}
+        if png is not None:
+            kwargs["attachments"] = [png]
+        await msg.edit(**kwargs)
+        return True
     except Exception:
-        logger.warning("blackjack expire_due failed", exc_info=True)
-        settled = []
+        logger.info("blackjack card sync skipped %s", round_id,
+                    exc_info=True)
+        return False
+
+
+async def sweep_once() -> int:
+    """Один проход: reconcile доставки → тайм-аут → обновление карт.
+
+    Reconcile идёт ПЕРВЫМ: доказанно недоставленные раздачи
+    возвращаются до того, как expire_due мог бы рассчитать их
+    как обычную игру (expire_due также исключает pending/failed).
+    """
     client = _client
-    for stored in settled:
-        try:
-            if client is None or stored.message_id is None:
-                continue
-            channel = client.get_channel(stored.channel_id)
-            if channel is None:
-                channel = await client.fetch_channel(stored.channel_id)
-            msg = await channel.fetch_message(stored.message_id)
-            view, png = build_game_view(stored)
-            kwargs = {"view": view,
-                      "allowed_mentions": discord.AllowedMentions.none()}
-            if png is not None:
-                kwargs["attachments"] = [png]
-            await msg.edit(**kwargs)
-        except Exception:
-            logger.info("blackjack sweep edit skipped %s", stored.round_id,
-                        exc_info=True)
     if client is not None:
         try:
             await reconcile_undelivered(client)
         except Exception:
             logger.warning("blackjack reconcile pass failed", exc_info=True)
+    try:
+        settled = await blackjack_store.expire_due()
+    except Exception:
+        logger.warning("blackjack expire_due failed", exc_info=True)
+        settled = []
+    for stored in settled:
+        if client is not None:
+            await _sync_card(client, stored.round_id)
     return len(settled)
 
 
@@ -520,27 +613,10 @@ async def recover_active(client: discord.Client) -> int:
     except Exception:
         logger.warning("blackjack recovery list failed", exc_info=True)
         active = []
-    from views.blackjack_view import build_game_view
     n = 0
     for stored in active:
-        try:
-            if stored.message_id is None:
-                # доставка не подтверждена — reconcile/тайм-аут решат
-                continue
-            channel = client.get_channel(stored.channel_id)
-            if channel is None:
-                channel = await client.fetch_channel(stored.channel_id)
-            msg = await channel.fetch_message(stored.message_id)
-            view, png = build_game_view(stored)
-            kwargs = {"view": view,
-                      "allowed_mentions": discord.AllowedMentions.none()}
-            if png is not None:
-                kwargs["attachments"] = [png]
-            await msg.edit(**kwargs)
+        if await _sync_card(client, stored.round_id):
             n += 1
-        except Exception:
-            logger.info("blackjack recover edit skipped %s",
-                        stored.round_id, exc_info=True)
     if n:
         logger.info("blackjack: восстановлено %d активных раздач", n)
     # сверка доставки — отдельный проход, не зависит от list_active

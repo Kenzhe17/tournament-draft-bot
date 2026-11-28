@@ -554,7 +554,16 @@ class UserBalanceStore:
                     receiver_balance = await self._apply_decay(
                         conn, to_guild, to_user, row["balance"]
                     )
-                    receiver_new = min(receiver_balance + amount, MAX_BALANCE)
+                    # Cap применяется только к доходу «сверх потолка».
+                    # Баланс, уже превышающий MAX_BALANCE (cap-exempt
+                    # выплаты blackjack и т.п.), не должен обрезаться —
+                    # иначе перевод молча сжигал бы чужие выигрыши.
+                    cap = _max_balance()
+                    if receiver_balance >= cap:
+                        receiver_new = receiver_balance + amount
+                    else:
+                        receiver_new = min(
+                            receiver_balance + amount, cap)
                     await conn.execute(
                         "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
                         receiver_new, to_guild, to_user

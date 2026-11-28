@@ -248,6 +248,8 @@ async def test_no_refund_after_message_delivered(pg_pool):
 async def test_expire_due_auto_stands(pg_pool):
     await _set_balance(2000)
     rid, _created = await bj.blackjack_store.create_round(G, U, 55, 500, _game())
+    # доставка подтверждена — иначе expire_due ждёт reconcile/refund
+    await bj.blackjack_store.mark_message(rid, 555)
     # deadline в прошлое
     async with pg_pool.acquire() as conn:
         await conn.execute(
@@ -488,8 +490,12 @@ async def test_reconcile_finds_marker_and_confirms_delivery(pg_pool):
 
 
 @pytest.mark.asyncio
-async def test_reconcile_no_marker_proves_failed_and_refunds(pg_pool):
-    """'unknown' + маркер не найден → 'failed' → refund."""
+async def test_reconcile_no_marker_is_unknown_no_refund(pg_pool):
+    """'unknown' + маркер не найден → UNKNOWN: БЕЗ refund.
+
+    Отсутствие маркера не доказывает недоставку (сообщение могло быть
+    удалено/изменено/не влезть в лимит истории). Раздача живёт
+    обычным тайм-аутом, попытка reconcile зачитывается."""
     from games import blackjack as bjgame
     await _set_balance(1000)
     rid, _ = await bj.blackjack_store.create_round(G, U, 55, 500, _game())
@@ -500,10 +506,17 @@ async def test_reconcile_no_marker_proves_failed_and_refunds(pg_pool):
             rid, datetime.now(UTC) - timedelta(minutes=10))
     client = _FakeClient(_FakeChannel([_FakeMessage(1, "-# ref other")]))
     handled = await bjgame.reconcile_undelivered(client)
-    assert handled == 1
+    assert handled == 0
     stored = await bj.blackjack_store.get_round(rid)
-    assert stored.status == "refunded"
-    assert await _balance() == 1000
+    assert stored.status == "active"
+    assert stored.delivery_state == "unknown"
+    # ставка НЕ возвращена — останется до разрешения раздачи
+    assert await _balance() == 500
+    async with pg_pool.acquire() as conn:
+        attempts = await conn.fetchval(
+            "SELECT reconcile_attempts FROM blackjack_rounds "
+            "WHERE round_id=$1", rid)
+    assert attempts == 1
 
 
 @pytest.mark.asyncio
@@ -522,3 +535,307 @@ async def test_reconcile_pending_round_refunded(pg_pool):
     stored = await bj.blackjack_store.get_round(rid)
     assert stored.status == "refunded"
     assert await _balance() == 1000
+
+
+# ------------------------------------------------------------------
+# Атомарный захват доставки (claim CAS) — §5
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_claim_delivery_single_winner(pg_pool):
+    """Два параллельных обработчика → ровно один получает 'sending'."""
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 500, _game())
+    results = await asyncio.gather(
+        bj.blackjack_store.claim_delivery(rid, "attempt-A"),
+        bj.blackjack_store.claim_delivery(rid, "attempt-B"),
+    )
+    assert sorted(results) == [False, True]
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "sending"
+
+
+@pytest.mark.asyncio
+async def test_claim_delivery_rejected_when_in_flight_or_done(pg_pool):
+    """'sending'/'unknown'/'delivered' не клеймятся — blind resend
+    запрещён; 'failed' (pre-send сбой) — повторная попытка разрешена."""
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 500, _game())
+    assert await bj.blackjack_store.claim_delivery(rid, "a1") is True
+    # второй claim во время 'sending' — отказ
+    assert await bj.blackjack_store.claim_delivery(rid, "a2") is False
+    # 'unknown' — тоже отказ
+    await bj.blackjack_store.mark_delivery(rid, "unknown", "a1")
+    assert await bj.blackjack_store.claim_delivery(rid, "a3") is False
+    # 'failed' → retry разрешён (pre-send доказанно не дошёл)
+    await bj.blackjack_store.mark_delivery(rid, "failed")
+    assert await bj.blackjack_store.claim_delivery(rid, "a4") is True
+
+
+@pytest.mark.asyncio
+async def test_mark_delivery_attempt_cas(pg_pool):
+    """mark_delivery с attempt_id — только от владельца 'sending'.
+    Устаревший/чужой обработчик не может перезаписать состояние."""
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 500, _game())
+    await bj.blackjack_store.claim_delivery(rid, "owner")
+    # чужой attempt → перехода нет
+    await bj.blackjack_store.mark_delivery(rid, "failed", "intruder")
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "sending"
+    # владелец → переход есть
+    await bj.blackjack_store.mark_delivery(rid, "unknown", "owner")
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_refund_blocked_while_sending(pg_pool):
+    """Гонка доставка↔refund: 'sending' → refund_undelivered=False,
+    ставка не возвращается пока исход HTTP неизвестен."""
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 500, _game())
+    await bj.blackjack_store.claim_delivery(rid, "a1")
+    assert await bj.blackjack_store.refund_undelivered(rid) is False
+    assert await _balance() == 500
+
+
+@pytest.mark.asyncio
+async def test_detach_message_transfers_card_ownership(pg_pool):
+    """Новая раздача снимает message_id у старой settled-раздачи —
+    старые обработчики теряют право редактировать карточку.
+    Активная раздача не затрагивается."""
+    await _set_balance(10000)
+    old_rid, _ = await bj.blackjack_store.create_round(
+        G, U, 55, 0, _game())
+    await bj.blackjack_store.apply_action(old_rid, "stand")  # → settled
+    await bj.blackjack_store.mark_message(old_rid, 999)
+    # вторая (новая) раздача получает ту же карточку
+    new_rid, _ = await bj.blackjack_store.create_round(
+        G + 1, U, 55, 0, _game())
+    moved = await bj.blackjack_store.detach_message(
+        55, 999, except_round_id=new_rid)
+    assert moved == 1
+    old = await bj.blackjack_store.get_round(old_rid)
+    assert old.message_id is None
+    # повторный detach — идемпотентно 0
+    assert await bj.blackjack_store.detach_message(
+        55, 999, except_round_id=new_rid) == 0
+
+
+@pytest.mark.asyncio
+async def test_expire_due_skips_proven_undelivered(pg_pool):
+    """§7: 'pending'/'failed' недоставленные раздачи НЕ рассчитываются
+    как игра — их закрывает refund, а не auto-stand."""
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 500, _game())
+    async with pg_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE blackjack_rounds SET deadline=$2 WHERE round_id=$1",
+            rid, datetime.now(UTC) - timedelta(seconds=1))
+    settled = await bj.blackjack_store.expire_due()
+    assert all(s.round_id != rid for s in settled)
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.status == "active"  # ждёт reconcile/refund
+
+
+# ------------------------------------------------------------------
+# Типизированная проверка доставки — §4
+# ------------------------------------------------------------------
+
+class _FakeHistoryError(Exception):
+    pass
+
+
+class _FakeHistoryFail:
+    """История, падающая посередине итерации."""
+
+    def __init__(self, messages, fail_after):
+        self._messages = messages
+        self._fail_after = fail_after
+
+    def __aiter__(self):
+        async def gen():
+            for i, m in enumerate(self._messages):
+                if i >= self._fail_after:
+                    raise _FakeHistoryError("discord http 500")
+                yield m
+        return gen()
+
+
+class _FakeChannelFail(_FakeChannel):
+    def __init__(self, messages, fail_after):
+        super().__init__(messages)
+        self._fail_after = fail_after
+
+    def history(self, **kw):
+        return _FakeHistoryFail(self._messages, self._fail_after)
+
+
+class _FakeClientNoFetch:
+    """get_channel → None, fetch_channel → Forbidden."""
+
+    def get_channel(self, _cid):
+        return None
+
+    async def fetch_channel(self, _cid):
+        raise _FakeHistoryError("discord.Forbidden")
+
+
+class _FakeComponentBad:
+    def to_dict(self):
+        raise RuntimeError("cannot serialize")
+
+
+class _FakeMessageBadComponents:
+    def __init__(self, mid):
+        self.id = mid
+        self.components = [_FakeComponentBad()]
+
+
+async def _old_round(pg_pool, rid):
+    async with pg_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE blackjack_rounds SET created_at=$2 WHERE round_id=$1",
+            rid, datetime.now(UTC) - timedelta(minutes=10))
+
+
+async def _mk_unknown(pg_pool, stake=500):
+    await _set_balance(5000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, stake, _game())
+    await bj.blackjack_store.claim_delivery(rid, "a1")
+    await bj.blackjack_store.mark_delivery(rid, "unknown", "a1")
+    await _old_round(pg_pool, rid)
+    return rid
+
+
+@pytest.mark.asyncio
+async def test_check_delivery_pending_is_confirmed_not_sent(pg_pool):
+    """'pending' — HTTP не вызывался → CONFIRMED_NOT_SENT (единственный
+    путь к автоматическому refund)."""
+    from games.blackjack import DeliveryCheck, check_delivery
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 500, _game())
+    stored = await bj.blackjack_store.get_round(rid)
+    status, msg = await check_delivery(_FakeClient(None), stored)
+    assert status is DeliveryCheck.CONFIRMED_NOT_SENT
+    assert msg is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_api_error_mid_history_no_refund(pg_pool):
+    """Discord HTTPException посередине чтения истории → UNKNOWN,
+    без refund и без 'failed'."""
+    from games import blackjack as bjgame
+    rid = await _mk_unknown(pg_pool)
+    channel = _FakeChannelFail(
+        [_FakeMessage(i, f"-# ref x{i}") for i in range(10)], 3)
+    handled = await bjgame.reconcile_undelivered(_FakeClient(channel))
+    assert handled == 0
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "unknown"
+    assert stored.status == "active"
+    assert await _balance() == 4500
+
+
+@pytest.mark.asyncio
+async def test_reconcile_channel_unavailable_no_refund(pg_pool):
+    """Канал недоступен (Forbidden/удалён) → UNKNOWN, не 'failed'."""
+    from games import blackjack as bjgame
+    rid = await _mk_unknown(pg_pool)
+    handled = await bjgame.reconcile_undelivered(_FakeClientNoFetch())
+    assert handled == 0
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "unknown"
+    assert stored.status == "active"
+    assert await _balance() == 4500
+
+
+@pytest.mark.asyncio
+async def test_reconcile_scan_limit_no_refund(pg_pool):
+    """История > лимита сканирования без маркера → UNKNOWN."""
+    from games import blackjack as bjgame
+    from games.blackjack import _SCAN_LIMIT
+    rid = await _mk_unknown(pg_pool)
+    msgs = [_FakeMessage(i, f"-# ref other{i}") for i in range(_SCAN_LIMIT)]
+    handled = await bjgame.reconcile_undelivered(
+        _FakeClient(_FakeChannel(msgs)))
+    assert handled == 0
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "unknown"
+    assert stored.status == "active"
+    assert await _balance() == 4500
+
+
+@pytest.mark.asyncio
+async def test_reconcile_component_parse_error_no_refund(pg_pool):
+    """Ошибка to_dict() CV2-компонентов → UNKNOWN (скан неполный)."""
+    from games import blackjack as bjgame
+    rid = await _mk_unknown(pg_pool)
+    msgs = [
+        _FakeMessageBadComponents(1),
+        _FakeMessage(2, f"-# ref {rid}"),  # маркер есть, но скан уже UNKNOWN
+    ]
+    handled = await bjgame.reconcile_undelivered(
+        _FakeClient(_FakeChannel(msgs)))
+    assert handled == 0
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "unknown"
+    assert stored.status == "active"
+    assert await _balance() == 4500
+
+
+@pytest.mark.asyncio
+async def test_reconcile_deleted_delivered_message_no_refund(pg_pool):
+    """Сообщение было доставлено, но удалено → маркера нет →
+    UNKNOWN, НЕ refund (доказать недоставку нельзя)."""
+    from games import blackjack as bjgame
+    rid = await _mk_unknown(pg_pool)
+    # история есть, маркера нет — как будто сообщение удалено
+    handled = await bjgame.reconcile_undelivered(
+        _FakeClient(_FakeChannel([_FakeMessage(9, "обычное сообщение")])))
+    assert handled == 0
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.status == "active"
+    assert await _balance() == 4500
+
+
+@pytest.mark.asyncio
+async def test_reconcile_repeat_eventually_disputed(pg_pool, monkeypatch):
+    """Повторный reconcile: счётчик растёт, после MAX → 'disputed'
+    (админ-диагностика), refund так и не выполняется."""
+    from games import blackjack as bjgame
+    monkeypatch.setattr(bjgame, "MAX_RECONCILE_ATTEMPTS", 2)
+    rid = await _mk_unknown(pg_pool)
+    client = _FakeClient(_FakeChannel([_FakeMessage(1, "no marker")]))
+    await bjgame.reconcile_undelivered(client)
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "unknown"
+    await bjgame.reconcile_undelivered(client)
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "disputed"
+    # 'disputed' исключён из list_undelivered — больше не сканируется
+    handled = await bjgame.reconcile_undelivered(client)
+    assert handled == 0
+    # refund по-прежнему запрещён
+    assert await bj.blackjack_store.refund_undelivered(rid) is False
+    assert await _balance() == 4500
+
+
+@pytest.mark.asyncio
+async def test_reconcile_finds_marker_after_restart_pg(pg_pool):
+    """Рестарт между claim и сохранением message_id: 'sending' старше
+    grace → reconcile находит маркер → delivered (не refund, не resend)."""
+    from games import blackjack as bjgame
+    await _set_balance(1000)
+    rid, _ = await bj.blackjack_store.create_round(G, U, 55, 500, _game())
+    await bj.blackjack_store.claim_delivery(rid, "crashed-attempt")
+    # процесс «умер» — состояние осталось 'sending', message_id NULL
+    await _old_round(pg_pool, rid)
+    msg = _FakeMessage(7777, f"карта\n-# ref {rid}")
+    handled = await bjgame.reconcile_undelivered(
+        _FakeClient(_FakeChannel([msg])))
+    assert handled == 1
+    stored = await bj.blackjack_store.get_round(rid)
+    assert stored.delivery_state == "delivered"
+    assert stored.message_id == 7777

@@ -248,7 +248,7 @@ async def handle_round_action(
     if action in ("hit", "stand"):
         await _handle_play(interaction, stored, action, ver)
     elif action == "close":
-        await _handle_close(interaction, stored)
+        await _handle_close(interaction, stored, ver)
     elif action == "again":
         await _handle_again(interaction, stored, same_stake=True)
     elif action == "change":
@@ -289,13 +289,39 @@ async def _handle_play(interaction, stored, action: str, ver: int) -> None:
         await _refresh_public(interaction, stored)
         return
     view, f = build_game_view(updated)
+    # Ownership guard: если карточка уже передана новой раздаче
+    # (detach_message обнулил message_id), НЕ редактируем её —
+    # финансовый результат сохранён, актуальное состояние
+    # новой раздачи не будет перезаписано устаревшим.
+    imid = getattr(getattr(interaction, "message", None), "id", None)
+    if imid is not None and updated.message_id != imid:
+        logger.info("blackjack play edit skipped: card transferred %s",
+                    stored.round_id)
+        await _ephemeral(interaction, "Раздача завершена — карта обновлена.")
+        return
     kwargs = {"view": view, "allowed_mentions": discord.AllowedMentions.none()}
     if f is not None:
         kwargs["attachments"] = [f]
     await interaction.edit_original_response(**kwargs)
 
 
-async def _handle_close(interaction, stored) -> None:
+async def _handle_close(interaction, stored, ver: int) -> None:
+    # Re-check ownership ПЕРЕД edit: между defer и edit карточка могла
+    # быть передана новой раздачей (again/change → detach_message).
+    # Без проверки «Закрыть» стёр бы публичную карту новой игры.
+    try:
+        fresh = await blackjack_store.get_round(stored.round_id)
+    except Exception:  # noqa: BLE001 — сбой PG → не доверяем edit
+        fresh = None
+    msg_id = getattr(getattr(interaction, "message", None), "id", None)
+    if (
+        fresh is None
+        or fresh.message_id is None
+        or (msg_id is not None and fresh.message_id != msg_id)
+    ):
+        await _ephemeral(
+            interaction, "Эта карточка уже используется другой раздачей.")
+        return
     view = DesignView(title="BLACKJACK", timeout=None)
     view.lines("Раздача закрыта. Спасибо за игру!")
     await interaction.edit_original_response(
@@ -310,6 +336,13 @@ async def _handle_again(interaction, stored, *, same_stake: bool) -> None:
     if stored.status != "settled":
         await _ephemeral(interaction, "Новая раздача доступна после завершения текущей.")
         return
+    # reuse только при реально записанном message_id — 'delivered'
+    # без id (редкий сбой mark_message) → новая карточка, а не
+    # fetch_message(None) → ложный failed+refund новой ставки.
+    reuse = (
+        (stored.channel_id, stored.message_id)
+        if stored.message_id is not None else None
+    )
     # interaction уже deferred → ephemeral через followup
     kwargs = {"ephemeral": True,
               "allowed_mentions": discord.AllowedMentions.none()}
@@ -317,14 +350,14 @@ async def _handle_again(interaction, stored, *, same_stake: bool) -> None:
         stake = stored.stake
         view = ConfirmStakeView(
             interaction.guild_id, interaction.user.id, stored.channel_id,
-            stake, reuse=(stored.channel_id, stored.message_id),
+            stake, reuse=reuse,
         )
         await interaction.followup.send(view=view, **kwargs)
     else:
         await show_bet_menu(
             interaction, guild_id=interaction.guild_id,
             user_id=interaction.user.id, channel_id=stored.channel_id,
-            reuse=(stored.channel_id, stored.message_id),
+            reuse=reuse,
         )
 
 

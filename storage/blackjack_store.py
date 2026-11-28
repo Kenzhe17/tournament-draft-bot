@@ -53,6 +53,9 @@ CREATE TABLE IF NOT EXISTS blackjack_rounds (
     deadline TIMESTAMPTZ,
     op_id TEXT,
     delivery_state TEXT NOT NULL DEFAULT 'pending',
+    delivery_attempt TEXT,
+    reconcile_attempts INTEGER NOT NULL DEFAULT 0,
+    last_reconcile_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     settled_at TIMESTAMPTZ
@@ -61,6 +64,12 @@ ALTER TABLE blackjack_rounds
     ADD COLUMN IF NOT EXISTS op_id TEXT;
 ALTER TABLE blackjack_rounds
     ADD COLUMN IF NOT EXISTS delivery_state TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS delivery_attempt TEXT;
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS reconcile_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS last_reconcile_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS blackjack_one_active
     ON blackjack_rounds (guild_id, user_id) WHERE status = 'active';
 CREATE UNIQUE INDEX IF NOT EXISTS blackjack_op_id
@@ -116,7 +125,8 @@ class StoredRound:
     reason: str | None
     payout: int | None
     op_id: str | None = None
-    delivery_state: str = "pending"  # pending|sending|delivered|unknown|failed
+    delivery_state: str = "pending"
+    # pending|sending|delivered|unknown|failed|disputed
     created_at: datetime | None = None
     settled_at: datetime | None = None
 
@@ -532,6 +542,32 @@ class BlackjackStore:
 
     # ---------------- служебные ----------------
 
+    async def claim_delivery(self, round_id: str, attempt_id: str) -> bool:
+        """Атомарный CAS-захват права на отправку раздачи.
+
+        Переход delivery_state pending|failed → 'sending' с уникальным
+        attempt_id — только ОДИН обработчик (даже в двух процессах)
+        получает право вызвать Discord. 'sending'/'unknown'/'delivered'
+        не клеймятся: blind resend запрещён — неоднозначная доставка
+        разрешается только reconcile по маркеру.
+
+        PG-транзакция НЕ удерживается на время Discord HTTP — claim
+        и send разделены; крах между ними → 'sending' до reconcile.
+        """
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """UPDATE blackjack_rounds
+                   SET delivery_state='sending', delivery_attempt=$2,
+                       updated_at=now()
+                   WHERE round_id=$1 AND message_id IS NULL
+                     AND delivery_state IN ('pending','failed')
+                     AND status IN ('active','settled')
+                   RETURNING round_id""",
+                round_id, attempt_id,
+            )
+            return row is not None
+
     async def mark_message(self, round_id: str, message_id: int) -> None:
         """Доставка подтверждена: message_id + delivery_state='delivered'."""
         pool = await self._pool()
@@ -544,25 +580,91 @@ class BlackjackStore:
                 round_id, message_id,
             )
 
-    async def mark_delivery(self, round_id: str, state: str) -> None:
-        """Фиксация состояния доставки: sending | unknown | failed."""
+    async def detach_message(
+        self, channel_id: int, message_id: int, except_round_id: str
+    ) -> int:
+        """Снять владение публичной карточкой с других (завершённых)
+        раздач — атомарно, ДО редактирования сообщения новой раздачей.
+
+        После этого устаревшие обработчики старой раздачи не смогут
+        легально редактировать карточку (их stored.message_id NULL).
+        Возвращает число отсоединённых строк."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """WITH moved AS (
+                       UPDATE blackjack_rounds SET message_id=NULL,
+                           updated_at=now()
+                       WHERE channel_id=$1 AND message_id=$2
+                         AND round_id<>$3 AND status='settled'
+                       RETURNING round_id)
+                   SELECT count(*) AS n FROM moved""",
+                channel_id, message_id, except_round_id,
+            )
+            return int(row["n"]) if row else 0
+
+    async def mark_delivery(
+        self, round_id: str, state: str, attempt_id: str | None = None
+    ) -> None:
+        """Фиксация состояния доставки после claim.
+
+        При ``attempt_id`` — CAS: переход разрешён только из 'sending'
+        и только владельцем попытки (защита от устаревшего обработчика).
+        Без attempt_id (reconcile) — из любого нефинального состояния,
+        но никогда не регрессирует 'delivered'."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            if attempt_id is not None:
+                await conn.execute(
+                    """UPDATE blackjack_rounds SET delivery_state=$2,
+                           updated_at=now()
+                       WHERE round_id=$1 AND delivery_state='sending'
+                         AND delivery_attempt=$3""",
+                    round_id, state, attempt_id,
+                )
+            else:
+                await conn.execute(
+                    """UPDATE blackjack_rounds SET delivery_state=$2,
+                           updated_at=now()
+                       WHERE round_id=$1 AND delivery_state <> 'delivered'""",
+                    round_id, state,
+                )
+
+    async def note_reconcile_attempt(self, round_id: str) -> int:
+        """Отметить проход reconcile: +1 попытка, вернуть новое число."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """UPDATE blackjack_rounds
+                   SET reconcile_attempts=reconcile_attempts+1,
+                       last_reconcile_at=now(), updated_at=now()
+                   WHERE round_id=$1 RETURNING reconcile_attempts""",
+                round_id,
+            )
+            return int(row["reconcile_attempts"]) if row else 0
+
+    async def mark_disputed(self, round_id: str) -> None:
+        """Неоднозначная доставка после MAX_RECONCILE_ATTEMPTS —
+        флаг для администратора (спорный случай). Раздача продолжает
+        жить обычным тайм-аутом; refund не выполняется."""
         pool = await self._pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                """UPDATE blackjack_rounds SET delivery_state=$2,
+                """UPDATE blackjack_rounds SET delivery_state='disputed',
                        updated_at=now()
-                   WHERE round_id=$1 AND delivery_state <> 'delivered'""",
-                round_id, state,
+                   WHERE round_id=$1 AND message_id IS NULL
+                     AND delivery_state IN ('sending','unknown','delivered')""",
+                round_id,
             )
 
     async def list_undelivered(
         self, older_than: datetime, limit: int = 50
     ) -> list[StoredRound]:
-        """Раздачи без подтверждённой доставки старше ``older_than``:
-        message_id IS NULL и delivery_state IN
-        (pending, sending, unknown, failed, delivered) —
-        'delivered' без message_id = отправка подтверждена, но id
-        не записался → тоже кандидат на поиск по маркеру."""
+        """Раздачи без подтверждённой доставки старше ``older_than``.
+
+        Ротация: сначала ни разу не проверенные (любого возраста),
+        затем давно не проверенные — застрявшие 'unknown' не блокируют
+        очередь. 'disputed' исключён (админ-диагностика)."""
         pool = await self._pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
@@ -571,7 +673,9 @@ class BlackjackStore:
                      AND delivery_state IN
                          ('pending','sending','unknown','failed','delivered')
                      AND created_at < $1
-                   ORDER BY created_at LIMIT $2""",
+                   ORDER BY last_reconcile_at ASC NULLS FIRST,
+                            created_at ASC
+                   LIMIT $2""",
                 older_than, limit,
             )
             return [_row_to_round(r) for r in rows]
@@ -590,7 +694,11 @@ class BlackjackStore:
             rows = await conn.fetch(
                 """SELECT round_id FROM blackjack_rounds
                    WHERE status='active' AND phase='player'
-                     AND deadline IS NOT NULL AND deadline < $1""",
+                     AND deadline IS NOT NULL AND deadline < $1
+                     -- гарантированно недоставленные раздачи не
+                     -- рассчитываем как игру — их закрывает refund
+                     AND NOT (message_id IS NULL
+                              AND delivery_state IN ('pending','failed'))""",
                 now,
             )
         settled = []
@@ -610,11 +718,11 @@ class BlackjackStore:
         - status='active' — settled/void/refunded не трогаем
           (natural-blackjack уже рассчитан — выплата стоит);
         - message_id IS NULL;
-        - delivery_state IN ('pending','failed') — HTTP к Discord
-          либо не вызывался ('pending' — крах до send, 'failed' —
-          reconcile доказал отсутствие сообщения маркером).
-          'sending'/'unknown'/'delivered' → False: неоднозначная
-          доставка НЕ рефандится автоматически.
+        - delivery_state IN ('pending','failed') — отправка
+          доказуемо не состоялась: 'pending' — крах до send,
+          'failed' — pre-send сбой до вызова Discord. 'sending'/
+          'unknown'/'delivered'/'disputed' → False: неоднозначная
+          или подтверждённая доставка НЕ рефандится автоматически.
         """
         pool = await self._pool()
         async with pool.acquire() as conn, conn.transaction():
