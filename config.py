@@ -213,6 +213,27 @@ CIRCLES = (2, 3, 4)
 # в очереди запрещены, существующие матчи доигрываются, история и
 # инфраструктура сохраняются. Включение обратно — env + редеплой
 # (или runtime-флаг Control Center после его интеграции).
+# Voice Control Center (r!z3 CLASSIC): административная панель
+# управления голосовыми каналами. По умолчанию ВЫКЛЮЧЕНА —
+# включается env VOICE_CONTROL_ENABLED=1. При выключенном флаге
+# новые административные операции запрещены, но безопасная
+# очистка ранее созданных ограничений продолжается.
+VOICE_CONTROL_ENABLED = os.getenv("VOICE_CONTROL_ENABLED", "0").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+# Дополнительные роли с доступом к /voice (env csv id).
+VOICE_CONTROL_ALLOWED_ROLE_IDS = {
+    int(x) for x in os.getenv("VOICE_CONTROL_ALLOWED_ROLE_IDS", "").split(",")
+    if x.strip().isdigit()
+}
+# Канал журнала Voice Control (0 = fallback на канал модерации).
+VOICE_CONTROL_LOG_CHANNEL_ID = int(os.getenv("VOICE_CONTROL_LOG_CHANNEL_ID", "0"))
+# Каналы, исключённые из управления Voice Control (env csv id).
+VOICE_CONTROL_PROTECTED_CHANNEL_IDS = {
+    int(x) for x in os.getenv("VOICE_CONTROL_PROTECTED_CHANNEL_IDS", "").split(",")
+    if x.strip().isdigit()
+}
+
 MM_ENABLED = os.getenv("MM_ENABLED", "1").strip().lower() not in (
     "0", "false", "no", "off",
 )

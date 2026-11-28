@@ -350,6 +350,10 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.banner_admin")
         await self.load_extension("cogs.access")
         await self.load_extension("cogs.card_repair")
+        # Voice Control грузим всегда: при VOICE_CONTROL_ENABLED=0
+        # админ-операции запрещены, но безопасная очистка ограничений
+        # и фоновая сверка продолжают работать.
+        await self.load_extension("cogs.voice_control")
 
         # Регистрация общих групп команд (/player, /economy, /games, ...)
         from cogs.groups import ROOT_GROUPS
