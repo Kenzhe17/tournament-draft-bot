@@ -13,6 +13,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from services import moderation_service as ms
+from services import voice_control as voice_svc
 from storage.moderation_store import moderation_store as db
 from views import mod_panel
 from config import GUILD_ID
@@ -323,11 +324,17 @@ class ModeratorCog(commands.GroupCog,group_name='mod',group_description='Цен�
             needed='mute_members' if field=='mute' else 'deafen_members'
             if not getattr(_me(interaction.guild).guild_permissions,needed,False):
                 raise PermissionError('У бота нет разрешения '+needed)
-            await db.event(interaction.guild_id,interaction.user.id,f'voice.{field}.requested',
-                detail={'target_id':user.id,'value':value,'reason':ms.clean_reason(reason)})
-            await user.edit(**{field:value},reason=f'r!z3 · {_short(reason)}')
-            await db.event(interaction.guild_id,interaction.user.id,f'voice.{field}.applied',
-                detail={'target_id':user.id,'value':value,'reason':ms.clean_reason(reason)})
+            # Единый coordinator-замок (guild_id, user_id) с Voice
+            # Control: запись requested → Discord edit → applied
+            # атомарна относительно проверок/очистки Voice Control.
+            # Иначе VC мог бы снять флаг между проверкой модерационного
+            # состояния и применением модерационного мута.
+            async with voice_svc.member_lock(interaction.guild_id,user.id):
+                await db.event(interaction.guild_id,interaction.user.id,f'voice.{field}.requested',
+                    detail={'target_id':user.id,'value':value,'reason':ms.clean_reason(reason)})
+                await user.edit(**{field:value},reason=f'r!z3 · {_short(reason)}')
+                await db.event(interaction.guild_id,interaction.user.id,f'voice.{field}.applied',
+                    detail={'target_id':user.id,'value':value,'reason':ms.clean_reason(reason)})
             await ms.notice(self.bot,interaction.guild_id,'Голосовая модерация',
                 f'Участник: <@{user.id}>\nДействие: {field}={value}\nМодератор: <@{interaction.user.id}>')
             await interaction.followup.send('Действие выполнено и записано.',ephemeral=True)
