@@ -20,6 +20,9 @@ from views import br_view
 from views.br_view import (BRCardView, BRManagementMenuView, MapButton,
                            MapRoomButton, MapEntryButton, MapBatchButton,
                            MapRoomEditButton, MapBackButton, EntryBackButton,
+                           AdminMapButton, AdminMapBackButton,
+                           BRAdminMapPanelView, OrgMenuButton,
+                           admin_map_panel_text,
                            PublishResultsButton, RoomPickButton, RoomMapSelect,
                            RoomSetModal, RulesButton, EntryResultModal,
                            BatchEntryModal, public_embed, render_public,
@@ -257,10 +260,12 @@ async def test_map_button_opens_panel_with_room_and_status(patched_store):
     args, kwargs = inter.response.messages[-1]
     view = kwargs["view"]
     labels = [b.label for b in _buttons(view)]
+    # публичная панель — только просмотр, даже для орга
     assert "Данные комнаты" in labels
-    assert "Ввести результаты" in labels  # is_org=True в фикстуре
-    assert "Массовый ввод" in labels
     assert "Назад" in labels
+    for banned in ("Ввести результаты", "Массовый ввод",
+                   "Изменить комнату", "Обновить"):
+        assert banned not in labels
 
 
 @pytest.mark.asyncio
@@ -343,10 +348,12 @@ async def test_org_menu_playing_has_no_finish_games(patched_store):
     view = BRManagementMenuView(1, 2, t)
     labels = [b.label for b in _buttons(view)]
     assert "Завершить игры" not in labels
-    assert "Комнаты" in labels
+    # PLAYING: отдельная кнопка управления на каждую карту
+    assert "Карта 1" in labels and "Карта 2" in labels
     assert "Предпросмотр итогов" in labels
     assert "Опубликовать итоги" in labels
     assert "Отменить турнир" in labels
+    assert "Закрыть" in labels
 
 
 # ---------------------------------------------------------------------------
@@ -700,10 +707,26 @@ async def test_squad_team_captain_only_sees_room(patched_store, monkeypatch):
     text, labels = await panel_text(12)
     assert "888" not in text
     assert "Данные комнаты" not in labels
-    # орг
+    # орг: публичная панель карты — только просмотр (без кнопок управления)
     text, labels = await panel_text(999)
     assert "888" in text
-    assert "Изменить комнату" in labels
+    assert "Данные комнаты" in labels
+    assert "Изменить комнату" not in labels
+    assert "Ввести результаты" not in labels
+    # управление — через «Управление» → кнопка карты → админ-панель
+    inter = _interaction(guild, user_id=999)
+    await AdminMapButton(1, 2, t.id, 0).callback(inter)
+    _, kw = inter.response.messages[-1]
+    admin_labels = [b.label for b in _buttons(kw["view"])]
+    assert "Изменить комнату" in admin_labels
+    assert "Ввести результаты" in admin_labels
+    assert "Массовый ввод" in admin_labels
+    assert "Обновить" in admin_labels
+    assert "Назад" in admin_labels
+    # админ-панель показывает пароль открытым текстом (private ephemeral)
+    admin_text = " ".join(str(getattr(c, "content", "") or "")
+                          for c in _walk(kw["view"]))
+    assert "secret" in admin_text
 
 
 @pytest.mark.asyncio
@@ -807,8 +830,11 @@ async def test_entry_back_returns_to_map_panel(patched_store):
     _, kw = inter.response.edits[-1]
     view = kw["view"]
     labels = [b.label for b in _buttons(view)]
-    assert "Данные комнаты" in labels
+    # «← Карта» ведёт в админ-панель карты (ввод — только через Управление)
+    assert "Изменить комнату" in labels
     assert "Ввести результаты" in labels
+    assert "Массовый ввод" in labels
+    assert "Назад" in labels
 
 
 @pytest.mark.asyncio
@@ -1077,3 +1103,154 @@ def test_registration_card_long_names_all_kept_in_cv2_payload():
     for c in found:
         assert len(c.children) <= MAX_CONTAINER_CHILDREN, (
             f"container overflow: {len(c.children)} children")
+
+
+# ---------------------------------------------------------------------------
+# Единая кнопка «Управление» + ростер на всех фазах
+# ---------------------------------------------------------------------------
+
+
+def test_playing_card_shows_full_roster():
+    """PLAYING: статус → прогресс → расписание → полный список составов;
+    подсказки про кнопки и промежуточная статистика отсутствуют."""
+    t = _tournament(maps=2)
+    assert t.phase == BRTournamentPhase.PLAYING
+    desc = (public_embed(t).description or "")
+    assert "Турнир идёт" in desc
+    assert "Карт с результатами: 0/2" in desc
+    assert "**Расписание:**" in desc
+    assert "**Составы:**" in desc
+    # вертикальные блоки команд с игроками
+    assert "01. **" in desc and "┗ " in desc
+    # порядок: статус раньше расписания, расписание раньше составов
+    assert desc.index("Турнир идёт") < desc.index("Расписание") < desc.index("Составы")
+    assert "Данные комнаты и результаты" not in desc
+    assert "место" not in desc and "очк" not in desc and "килл" not in desc
+
+
+def test_draft_card_roster_not_clipped():
+    """DRAFT: полный список составов без обрезки (_clip убран)."""
+    t = _tournament(maps=1, n_slots=5)
+    t.phase = BRTournamentPhase.DRAFT
+    desc = (public_embed(t).description or "")
+    for i in range(5):
+        assert f"{i + 1:02d}. **" in desc
+    assert "…" not in desc.split("Составы:")[-1]
+
+
+@pytest.mark.asyncio
+async def test_org_menu_denies_regular_user(patched_store, monkeypatch):
+    """Обычный пользователь: панель не открывается, приватный отказ."""
+    t = _tournament(maps=1)
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    monkeypatch.setattr(br_view, "is_org", lambda uid: False)
+    inter = _interaction(guild, user_id=424242)
+    await OrgMenuButton(1, 2, t.id).callback(inter)
+    text = str(inter.response.messages[-1][0][0] or "")
+    assert "нет доступа к управлению" in text
+    # view с кнопками управления не отправлен
+    _, kw = inter.response.messages[-1]
+    assert kw.get("view") is None
+
+
+@pytest.mark.asyncio
+async def test_admin_map_button_denies_regular_user(patched_store, monkeypatch):
+    t = _tournament(maps=2)
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    monkeypatch.setattr(br_view, "is_org", lambda uid: False)
+    inter = _interaction(guild, user_id=424242)
+    await AdminMapButton(1, 2, t.id, 0).callback(inter)
+    text = str(inter.response.messages[-1][0][0] or "")
+    assert "нет доступа к управлению" in text
+
+
+@pytest.mark.asyncio
+async def test_management_menu_draft_has_map_buttons(patched_store):
+    """DRAFT: Начать игры + кнопка на каждую карту (комнаты) + отмена."""
+    t = _tournament(maps=3)
+    t.phase = BRTournamentPhase.DRAFT
+    view = BRManagementMenuView(1, 2, t)
+    labels = [b.label for b in _buttons(view)]
+    assert "Начать игры" in labels
+    assert labels.count("Карта 1") == 1
+    map_btns = [b for b in _buttons(view)
+                if getattr(b, "custom_id", "").startswith("br_adm_map:")]
+    assert len(map_btns) == 3
+    assert "Отменить турнир" in labels and "Закрыть" in labels
+
+
+@pytest.mark.asyncio
+async def test_admin_map_panel_hides_results_when_not_editable(patched_store):
+    """DRAFT: админ-панель карты — комната есть, ввода результатов нет."""
+    t = _tournament(maps=2)
+    t.phase = BRTournamentPhase.DRAFT
+    t.set_room(0, "42", "pw42")
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    inter = _interaction(guild)
+    await AdminMapButton(1, 2, t.id, 0).callback(inter)
+    _, kw = inter.response.messages[-1]
+    labels = [b.label for b in _buttons(kw["view"])]
+    assert "Изменить комнату" in labels
+    assert "Ввести результаты" not in labels
+    assert "Массовый ввод" not in labels
+    assert "Обновить" in labels and "Назад" in labels
+
+
+@pytest.mark.asyncio
+async def test_admin_map_back_returns_to_management_menu(patched_store):
+    t = _tournament(maps=2)
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    inter = _interaction(guild)
+    await AdminMapBackButton(1, 2, t.id, 0).callback(inter)
+    _, kw = inter.response.edits[-1]
+    labels = [b.label for b in _buttons(kw["view"])]
+    assert "Предпросмотр итогов" in labels
+    assert "Опубликовать итоги" in labels
+    assert "Отменить турнир" in labels
+    assert "Карта 1" in labels
+
+
+@pytest.mark.asyncio
+async def test_public_map_panel_has_no_admin_buttons(patched_store):
+    """Публичная «Карта N» — только просмотр даже для орга."""
+    t = _tournament(maps=1)
+    t.set_room(0, "55", "pw")
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    inter = _interaction(guild)  # is_org=True в patched_store
+    await MapButton(1, 2, t.id, 0).callback(inter)
+    _, kw = inter.response.messages[-1]
+    labels = [b.label for b in _buttons(kw["view"])]
+    assert labels == ["Данные комнаты", "Назад"] or \
+        set(labels) <= {"Данные комнаты", "Назад"}
+    for banned in ("Изменить комнату", "Ввести результаты",
+                   "Массовый ввод", "Обновить"):
+        assert banned not in labels
+
+
+def test_playing_card_cv2_payload_with_roster_and_10_maps():
+    """Максимум: 10 карт + 48 игроков — payload в пределах лимитов CV2."""
+    t = BRTournament(
+        id="tid-max", guild_id=1, channel_id=2,
+        formation=BRTournamentFormation.RANDOM, format=BRFormat.SOLO,
+        map_count=10, message_id=555, is_test=True)
+    for i in range(48):
+        ok, err = t.register_player(f"Player{i:02d}", 9000 + i)
+        assert ok, err
+    ok, err = t.draw()
+    assert ok, err
+    assert t.phase == BRTournamentPhase.PLAYING
+    embed = public_embed(t)
+    layout = compose(embed, BRCardView(t.guild_id, t.channel_id, t))
+
+    def components(view):
+        for child in getattr(view, "children", []):
+            yield child
+            yield from components(child)
+
+    n = sum(1 for c in components(layout))
+    assert n <= 40, f"CV2 components overflow: {n}"

@@ -285,6 +285,12 @@ def _clip(text: str, limit: int = 3400) -> str:
 
 
 def slots_public_lines(tournament: "BRTournament") -> list[str]:
+    if tournament.is_solo:
+        # Solo: слот = игрок — плоский нумерованный список без дублей.
+        return _player_lines([
+            {"name": slot_label(s, i)} for i, s in
+            enumerate(tournament.filled_slots())
+        ])
     lines = []
     for i, slot in enumerate(tournament.filled_slots()):
         members = slot_member_names_list(tournament, slot)
@@ -327,7 +333,7 @@ def public_embed(tournament: "BRTournament") -> discord.Embed:
         )
 
     if phase == BRTournamentPhase.DRAFT:
-        body = _clip("\n".join(slots_public_lines(tournament))) or " *"
+        body = "\n".join(slots_public_lines(tournament)) or " *"
         return discord.Embed(
             title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {title_fmt} | Составы",
             description=(
@@ -348,13 +354,14 @@ def public_embed(tournament: "BRTournament") -> discord.Embed:
             1 for i in range(tournament.map_count)
             if tournament.map_status(i) == "filled")
         sched = "\n".join(schedule_status_lines(tournament))
+        roster = "\n".join(slots_public_lines(tournament)) or " *"
         return discord.Embed(
             title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {title_fmt}",
             description=(
                 f" **Статус:** Турнир идёт\n"
                 f" Карт с результатами: {filled_maps}/{tournament.map_count}\n\n"
                 f" **Расписание:**\n{sched}\n\n"
-                f"Данные комнаты и результаты — по кнопкам карт."
+                f" **Составы:**\n{roster}"
             ),
             color=discord.Color.from_rgb(69, 69, 69),
         )
@@ -1019,8 +1026,7 @@ class MapButton(Button):
         can_view = (is_org(interaction.user.id)
                     or t.can_view_room(interaction.user.id))
         view = BRMapPanelView(self.guild_id, self.channel_id, self.tid,
-                              self.map_index, is_org_user=is_org(interaction.user.id),
-                              can_view_room=can_view)
+                              self.map_index, can_view_room=can_view)
         await _respond(interaction,
             view=compose(text=map_panel_text(t, self.map_index,
                                              show_room=can_view), view=view),
@@ -1058,11 +1064,15 @@ def map_panel_text(tournament: "BRTournament", map_index: int,
 
 
 class BRMapPanelView(View):
-    """Приватная панель карты: комната + (для орга) ввод результатов."""
+    """Публичная панель карты — только просмотр.
+
+    Доступные действия: статус карты, данные комнаты при наличии прав,
+    «Назад». Организаторские функции (комната/результаты) живут
+    исключительно в приватном меню «Управление».
+    """
 
     def __init__(self, guild_id: int, channel_id: int, tid: str,
-                 map_index: int, is_org_user: bool = False,
-                 can_view_room: bool = False):
+                 map_index: int, can_view_room: bool = False):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -1070,11 +1080,6 @@ class BRMapPanelView(View):
         self.map_index = map_index
         if can_view_room:
             self.add_item(MapRoomButton(guild_id, channel_id, tid, map_index))
-        if is_org_user:
-            self.add_item(MapRoomEditButton(guild_id, channel_id, tid, map_index))
-            self.add_item(MapEntryButton(guild_id, channel_id, tid, map_index))
-            self.add_item(MapBatchButton(guild_id, channel_id, tid, map_index))
-        self.add_item(MapRefreshButton(guild_id, channel_id, tid, map_index))
         self.add_item(MapBackButton(guild_id, channel_id, tid, map_index))
 
 
@@ -1207,31 +1212,149 @@ class MapRoomEditButton(Button):
                          self.map_index, prefill=creds))
 
 
-class MapRefreshButton(Button):
-    """Обновить текст приватной панели карты актуальными данными."""
+def admin_map_panel_text(tournament: "BRTournament", map_index: int) -> str:
+    """Текст панели управления картой — только для орга (ephemeral).
+
+    В отличие от публичной панели показывает ID и пароль открытым
+    текстом — сообщение приватное, доступ проверен is_org.
+    """
+    ru = MAP_NAMES_RU.get(tournament.get_map_name_for_index(map_index),
+                          tournament.get_map_name_for_index(map_index))
+    status = MAP_STATUS_LABELS.get(
+        tournament.map_status(map_index), tournament.map_status(map_index))
+    filled = tournament.map_filled_count(map_index)
+    total = len(tournament.teams)
+    creds = tournament.room_credentials(map_index)
+    if creds:
+        room_line = (f"Комната: ID `{creds['id']}` — пароль `{creds['password']}`")
+    else:
+        room_line = "Комната: не задана — заполните через «Изменить комнату»."
+    return (
+        f"**Управление — Карта {map_index + 1} из {tournament.map_count} — {ru}**\n"
+        f"Статус: {status}\n"
+        f"Результаты: {filled}/{total} слотов\n"
+        f"{room_line}"
+    )
+
+
+class BRAdminMapPanelView(View):
+    """Приватная панель управления картой (только через «Управление»).
+
+    Комната редактируется в DRAFT/PLAYING/COLLECT; ввод результатов —
+    только когда results_editable (PLAYING/COLLECT до публикации).
+    """
+
+    def __init__(self, guild_id: int, channel_id: int, tid: str,
+                 map_index: int, editable: bool = True):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tid = tid
+        self.map_index = map_index
+        self.add_item(MapRoomEditButton(guild_id, channel_id, tid, map_index))
+        if editable:
+            self.add_item(MapEntryButton(guild_id, channel_id, tid, map_index))
+            self.add_item(MapBatchButton(guild_id, channel_id, tid, map_index))
+        self.add_item(AdminMapRefreshButton(guild_id, channel_id, tid, map_index))
+        self.add_item(AdminMapBackButton(guild_id, channel_id, tid, map_index))
+
+
+class AdminMapButton(Button):
+    """Кнопка конкретной карты в орг-меню «Управление»."""
 
     def __init__(self, guild_id, channel_id, tid, map_index):
-        super().__init__(style=discord.ButtonStyle.secondary, label="Обновить",
-                         custom_id=_cid("br_map_refresh", guild_id, channel_id, tid, map_index))
+        super().__init__(style=discord.ButtonStyle.secondary,
+                         label=f"Карта {map_index + 1}",
+                         custom_id=_cid("br_adm_map", guild_id, channel_id,
+                                        tid, map_index))
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.tid = tid
         self.map_index = map_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        # без defer: edit_message — первый ответ
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        if not is_org(interaction.user.id):
+            await _respond(interaction,
+                           "У вас нет доступа к управлению турниром",
+                           ephemeral=True)
+            return
+        t = get_bound(self.guild_id, self.channel_id, self.tid)
+        if (not t or not (0 <= self.map_index < t.map_count)
+                or t.phase not in (BRTournamentPhase.DRAFT,
+                                   BRTournamentPhase.PLAYING,
+                                   BRTournamentPhase.COLLECT)):
+            await _respond(interaction,"Управление картой недоступно.",
+                           ephemeral=True)
+            return
+        view = BRAdminMapPanelView(self.guild_id, self.channel_id, self.tid,
+                                   self.map_index,
+                                   editable=bool(t.results_editable))
+        await _respond(interaction,
+            view=compose(text=admin_map_panel_text(t, self.map_index),
+                         view=view),
+            ephemeral=True)
+
+
+class AdminMapRefreshButton(Button):
+    """Обновить панель управления картой актуальными данными."""
+
+    def __init__(self, guild_id, channel_id, tid, map_index):
+        super().__init__(style=discord.ButtonStyle.secondary, label="Обновить",
+                         custom_id=_cid("br_adm_map_refresh", guild_id,
+                                        channel_id, tid, map_index))
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tid = tid
+        self.map_index = map_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org(interaction.user.id):
+            await _respond(interaction,
+                           "У вас нет доступа к управлению турниром",
+                           ephemeral=True)
+            return
+        t = get_bound(self.guild_id, self.channel_id, self.tid)
+        if (not t or not (0 <= self.map_index < t.map_count)
+                or t.phase not in (BRTournamentPhase.DRAFT,
+                                   BRTournamentPhase.PLAYING,
+                                   BRTournamentPhase.COLLECT)):
+            await _respond(interaction,"Управление картой недоступно.",
+                           ephemeral=True)
+            return
+        view = BRAdminMapPanelView(self.guild_id, self.channel_id, self.tid,
+                                   self.map_index,
+                                   editable=bool(t.results_editable))
+        await interaction.response.edit_message(
+            view=compose(text=admin_map_panel_text(t, self.map_index),
+                         view=view))
+
+
+class AdminMapBackButton(Button):
+    """Назад — приватное меню «Управление» турнира."""
+
+    def __init__(self, guild_id, channel_id, tid, map_index):
+        super().__init__(style=discord.ButtonStyle.secondary, label="Назад",
+                         custom_id=_cid("br_adm_map_back", guild_id,
+                                        channel_id, tid, map_index))
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tid = tid
+        self.map_index = map_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org(interaction.user.id):
+            await _respond(interaction,
+                           "У вас нет доступа к управлению турниром",
+                           ephemeral=True)
+            return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t:
             await _respond(interaction,"Турнир не найден.", ephemeral=True)
             return
-        can_view = (is_org(interaction.user.id)
-                    or t.can_view_room(interaction.user.id))
-        view = BRMapPanelView(self.guild_id, self.channel_id, self.tid,
-                              self.map_index, is_org_user=is_org(interaction.user.id),
-                              can_view_room=can_view)
+        view = BRManagementMenuView(self.guild_id, self.channel_id, t)
         await interaction.response.edit_message(
-            view=compose(text=map_panel_text(t, self.map_index,
-                                             show_room=can_view), view=view))
+            view=compose(text="Управление BR:", view=view))
 
 
 class BRMapsOverviewView(View):
@@ -1367,7 +1490,7 @@ class OrgMenuButton(Button):
         await interaction.response.defer(ephemeral=True, thinking=True)
         if not is_org(interaction.user.id):
             await _respond(interaction,
-                "Только владелец/админ может управлять BR.", ephemeral=True)
+                "У вас нет доступа к управлению турниром", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t:
@@ -1375,7 +1498,7 @@ class OrgMenuButton(Button):
             return
         view = BRManagementMenuView(self.guild_id, self.channel_id, t)
         await _respond(interaction,
-            view=compose(text="Орг-меню BR:", view=view), ephemeral=True)
+            view=compose(text="Управление BR:", view=view), ephemeral=True)
 
 
 class BRManagementMenuView(View):
@@ -1391,10 +1514,14 @@ class BRManagementMenuView(View):
             self.add_item(CancelTournamentButton(gid, cid, tid))
         elif t.phase == BRTournamentPhase.DRAFT:
             self.add_item(BeginGamesButton(gid, cid, tid))
-            self.add_item(RoomPickButton(gid, cid, tid))
+            # управление комнатами по картам — панель каждой карты
+            for m in range(min(int(t.map_count or 0), 10)):
+                self.add_item(AdminMapButton(gid, cid, tid, m))
             self.add_item(CancelTournamentButton(gid, cid, tid))
         elif t.phase in (BRTournamentPhase.PLAYING, BRTournamentPhase.COLLECT):
-            self.add_item(RoomPickButton(gid, cid, tid))
+            # отдельная кнопка управления на каждую карту
+            for m in range(min(int(t.map_count or 0), 10)):
+                self.add_item(AdminMapButton(gid, cid, tid, m))
             self.add_item(PreviewResultsButton(gid, cid, tid))
             self.add_item(PublishResultsButton(gid, cid, tid))
             self.add_item(CancelTournamentButton(gid, cid, tid))
@@ -1579,6 +1706,11 @@ class KickPageButton(Button):
         self.page = page
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org(interaction.user.id):
+            await _respond(interaction,
+                           "У вас нет доступа к управлению турниром",
+                           ephemeral=True)
+            return
         view = KickSlotSelectView(self.guild_id, self.channel_id, self.tid, self.slots, self.page)
         await interaction.response.edit_message(view=view)
 
@@ -1609,6 +1741,11 @@ class CancelReasonModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
+        if not is_org(interaction.user.id):
+            await _respond(interaction,
+                           "У вас нет доступа к управлению турниром",
+                           ephemeral=True)
+            return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t or not t.is_active:
             await _respond(interaction,"Турнир не найден или уже завершён.", ephemeral=True)
@@ -1837,7 +1974,7 @@ class BREntryPanelView(View):
         self.tid = tid
         self.map_index = map_index
         self.page = page
-        t = br_store.get(guild_id, channel_id)
+        t = get_bound(guild_id, channel_id, tid)
         if not t:
             return
         n_slots = len(t.teams)
@@ -1883,6 +2020,11 @@ class EntryMapButton(Button):
         self.delta = delta
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org(interaction.user.id):
+            await _respond(interaction,
+                           "У вас нет доступа к управлению турниром",
+                           ephemeral=True)
+            return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
         if not t:
             await _respond(interaction,"Турнир не найден.", ephemeral=True)
@@ -1896,7 +2038,7 @@ class EntryMapButton(Button):
 
 
 class EntryBackButton(Button):
-    """Назад — приватная панель этой карты."""
+    """Назад — приватная панель управления этой картой."""
 
     def __init__(self, guild_id, channel_id, tid, map_index):
         super().__init__(style=discord.ButtonStyle.secondary, label="← Карта",
@@ -1907,18 +2049,25 @@ class EntryBackButton(Button):
         self.map_index = map_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        t = get_bound(self.guild_id, self.channel_id, self.tid)
-        if not t:
-            await _respond(interaction,"Турнир не найден.", ephemeral=True)
+        if not is_org(interaction.user.id):
+            await _respond(interaction,
+                           "У вас нет доступа к управлению турниром",
+                           ephemeral=True)
             return
-        can_view = (is_org(interaction.user.id)
-                    or t.can_view_room(interaction.user.id))
-        view = BRMapPanelView(self.guild_id, self.channel_id, self.tid,
-                              self.map_index, is_org_user=is_org(interaction.user.id),
-                              can_view_room=can_view)
+        t = get_bound(self.guild_id, self.channel_id, self.tid)
+        if (not t or not (0 <= self.map_index < t.map_count)
+                or t.phase not in (BRTournamentPhase.DRAFT,
+                                   BRTournamentPhase.PLAYING,
+                                   BRTournamentPhase.COLLECT)):
+            await _respond(interaction,"Управление картой недоступно.",
+                           ephemeral=True)
+            return
+        view = BRAdminMapPanelView(self.guild_id, self.channel_id, self.tid,
+                                   self.map_index,
+                                   editable=bool(t.results_editable))
         await interaction.response.edit_message(
-            view=compose(text=map_panel_text(t, self.map_index,
-                                             show_room=can_view), view=view))
+            view=compose(text=admin_map_panel_text(t, self.map_index),
+                         view=view))
 
 
 class EntryRefreshButton(Button):
@@ -1933,6 +2082,11 @@ class EntryRefreshButton(Button):
         self.map_index = map_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org(interaction.user.id):
+            await _respond(interaction,
+                           "У вас нет доступа к управлению турниром",
+                           ephemeral=True)
+            return
         view = BREntryPanelView(self.guild_id, self.channel_id, self.tid,
                                 self.map_index, 0)
         await interaction.response.edit_message(view=view)
@@ -1949,6 +2103,11 @@ class EntryPageButton(Button):
         self.page = page
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org(interaction.user.id):
+            await _respond(interaction,
+                           "У вас нет доступа к управлению турниром",
+                           ephemeral=True)
+            return
         view = BREntryPanelView(self.guild_id, self.channel_id, self.tid, self.map_index, self.page)
         await interaction.response.edit_message(view=view)
 
