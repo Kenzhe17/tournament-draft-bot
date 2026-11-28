@@ -7,6 +7,11 @@ Rollback: `rollback/squad-hub-compat` @ `d4276397c4f8a1df12287b94a63d9f338b15a25
 Выполнять **до** деплоя, read-only. Production не изменять.
 Существующие команды не сбрасывать.
 
+Готовый read-only скрипт PG-аудита: `scripts/prod_audit.py`
+(запуск внутри Railway: `railway ssh --service core` или
+`railway run` при доступном DATABASE_URL). JSON-файлы DATA_DIR
+проверяются отдельно через `railway ssh --service core`.
+
 > Хранилища: PostgreSQL — `teams`, `cashcup_*`, `mm_queues`,
 > `blackjack_*`, `spontaneous_events`, `ultimatum_*`, `ult2_*`,
 > `player_stats`, `rep_balance`, `user_balance`, `user_bank`,
