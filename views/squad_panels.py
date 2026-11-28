@@ -500,8 +500,6 @@ async def build_team_card_view(guild: discord.Guild, team,
         req_bits.append(f"SR от {req['min_sr']}")
     if req.get("device"):
         req_bits.append(f"Устройство: {DEVICE_LABELS.get(req['device'], req['device'])}")
-    if req.get("ff_uid_required"):
-        req_bits.append("Подтверждённый FF UID")
     if req.get("role"):
         req_bits.append(f"Роль: {req['role']}")
     if req_bits:

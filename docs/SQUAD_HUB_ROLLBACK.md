@@ -32,30 +32,39 @@ Legacy-команды (созданные до Squad Hub, с plaintext-паро�
 
 ## Откат кода
 
-Откат = deploy предыдущего SHA **плюс** патч совместимости
-паролей. Простой redeploy старого SHA недостаточен: старый код
-сравнивал `team.password` как plaintext, а после миграции там
-пустая строка — вход по паролю сломался бы.
+Подготовленная rollback-ветка: **`rollback/squad-hub-compat`**,
+SHA **`03b83e5fef8b9bd36e69fbbeb8b3b8d3963c1dc3`** — production
+base `feat/classic-riz3-cv2` @ `a4c7c2b` + патч совместимости
+паролей (один коммит). Это и есть «подготовленная версия» —
+отдельный redeploy произвольного старого SHA не нужен.
 
-Патч (на коде до Squad Hub, файл `views/team_view.py`,
-обработчик `PasswordJoinModal.on_submit`):
+Патч (уже применён в ветке):
 
-```python
-# было:
-if self.password.value != self.team.password:
-# стало:
-from models.team import verify_password  # или локальная копия
-stored = getattr(self.team, "password_hash", "") or self.team.password
-if not verify_password(self.password.value, stored):
-```
+- `models/team.py`: поле `password_hash`, `hash_password`/
+  `verify_password` (PBKDF2, формат идентичен Squad Hub),
+  `check_password()` (хеш → fallback на legacy plaintext),
+  `set_password()` (пишет только хеш, plaintext не хранится);
+- `storage/team_store.py`: `load_from_postgres`/
+  `refresh_from_db` читают `password_hash` (с защитой на
+  случай отсутствия колонки до миграции), `_save_to_postgres`
+  пишет `password_hash` когда колонка есть;
+- `views/team_view.py`: вход по паролю через `check_password`,
+  смена пароля через `set_password`;
+- `cogs/team.py`: `/team create` сохраняет пароль хешем.
 
-`verify_password` (есть в `models/team.py` начиная с Squad Hub)
-принимает и pbkdf2-хеш, и legacy-plaintext — поэтому патч
-совместим с обеими сторонами миграции и **не возвращает
-небезопасное хранение**: plaintext в БД после миграции уже
-отсутствует, проверка идёт по хешу.
+Проверенный сценарий (прогнан на временной PostgreSQL):
 
-Если патч применить нельзя — альтернативный откат: перед
+1. Старая версия → создание команды с паролем (plaintext).
+2. Миграция Squad Hub → plaintext хеширован в `password_hash`.
+3. Успешное вступление по паролю под Squad Hub.
+4. Откат на `rollback/squad-hub-compat` → вступление по тому
+   же паролю работает (проверка по хешу).
+5. Повторное обновление до Squad Hub → работает без миграций.
+
+Plaintext-пароли не восстанавливаются; новые таблицы при
+штатном rollback не удаляются (старый код их игнорирует).
+
+Если ветку применить нельзя — альтернативный откат: перед
 откатом в Control Center вернуть legacy-командам вход через
 приглашения (капитан рассылает invite), а password-режим
 временно не использовать. Новые таблицы (`team_invites` и др.)

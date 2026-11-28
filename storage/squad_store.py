@@ -514,6 +514,79 @@ async def resolve_application(application_id: int, status: str) -> bool:
         return False
 
 
+async def _captain_gate_on(conn, team_id: str,
+                           actor_id: int) -> bool:
+    """Проверка актуального капитанства под FOR UPDATE на строке
+    teams в текущей транзакции. False — actor не капитан
+    (бывший капитан не завершает ранее открытую операцию)."""
+    cap = await conn.fetchval(
+        "SELECT captain_id FROM teams WHERE team_id = $1 "
+        "FOR UPDATE", team_id)
+    return cap is not None and int(cap) == int(actor_id)
+
+
+async def resolve_application_as_captain(
+        application_id: int, actor_id: int,
+        status: str = "declined") -> bool:
+    """Капитан отклоняет/обрабатывает заявку: актуальное
+    капитанство проверяется под FOR UPDATE в той же транзакции,
+    что и обновление заявки."""
+    pool = await _pool()
+    if pool is None:
+        return False
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT team_id FROM team_applications "
+                    "WHERE application_id = $1 "
+                    "AND status = 'pending'", application_id)
+                if row is None:
+                    return False
+                if not await _captain_gate_on(
+                        conn, row["team_id"], actor_id):
+                    return False
+                res = await conn.execute(
+                    "UPDATE team_applications SET status = $2, "
+                    "resolved_at = now() WHERE application_id = $1 "
+                    "AND status = 'pending'",
+                    application_id, status)
+                return res.endswith("1")
+    except Exception as exc:
+        logger.warning("resolve_application_as_captain failed: %s",
+                       exc)
+        return False
+
+
+async def cancel_invite_as_captain(invite_id: int,
+                                   actor_id: int) -> bool:
+    """Капитан отзывает отправленное приглашение: проверка
+    капитанства под FOR UPDATE в той же транзакции."""
+    pool = await _pool()
+    if pool is None:
+        return False
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT team_id FROM team_invites "
+                    "WHERE invite_id = $1 AND status = 'pending'",
+                    invite_id)
+                if row is None:
+                    return False
+                if not await _captain_gate_on(
+                        conn, row["team_id"], actor_id):
+                    return False
+                res = await conn.execute(
+                    "UPDATE team_invites SET status = 'cancelled', "
+                    "resolved_at = now() WHERE invite_id = $1 "
+                    "AND status = 'pending'", invite_id)
+                return res.endswith("1")
+    except Exception as exc:
+        logger.warning("cancel_invite_as_captain failed: %s", exc)
+        return False
+
+
 async def withdraw_application(application_id: int,
                                user_id: int) -> bool:
     """Игрок отзывает свою заявку."""

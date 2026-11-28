@@ -475,16 +475,14 @@ async def _render_application_card(interaction: discord.Interaction,
         await _do_accept_application(i, app_id, tid)
 
     async def _decline(i):
-        # P0.4: перепроверяем актуальные права на момент клика.
-        fresh = await team_store.refresh_from_db(tid)
-        if fresh is None or not fresh.is_captain(i.user.id):
-            await i.response.send_message(
-                "Только капитан команды может отклонять заявки.",
-                ephemeral=True)
-            return
-        ok = await squad_store.resolve_application(app_id, "declined")
+        # Капитанство проверяется под FOR UPDATE в той же
+        # транзакции, что и обновление заявки — бывший капитан
+        # не завершит ранее открытую операцию.
+        ok = await squad_store.resolve_application_as_captain(
+            app_id, i.user.id, "declined")
         await i.response.send_message(
-            "Заявка отклонена." if ok else "Заявка уже обработана.",
+            "Заявка отклонена." if ok
+            else "Заявка уже обработана или права изменились.",
             ephemeral=True)
 
     async def _profile(i):
@@ -557,7 +555,8 @@ async def _do_accept_application(interaction: discord.Interaction,
     try:
         team = await team_store.join_team(
             team_id, app.user_id, app.guild_id, via="application",
-            application_id=app_id, sr=sr)
+            application_id=app_id, sr=sr,
+            actor_id=interaction.user.id)
     except TeamStoreError as exc:
         await interaction.response.send_message(
             f"Не удалось принять: {_err(exc)}", ephemeral=True)
@@ -624,8 +623,6 @@ async def _render_manage(interaction: discord.Interaction,
         req_bits.append(f"Устройство: {DEVICE_LABELS.get(req['device'], req['device'])}")
     if req.get("role"):
         req_bits.append(f"Роль: {req['role']}")
-    if req.get("ff_uid_required"):
-        req_bits.append("FF UID обязателен")
     view = DesignView(title=f"Управление — {team.team_name}",
                       accent=colors.BRAND)
     view.text(
@@ -713,7 +710,8 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
             return
         team.team_name = self.name.value.strip()
         try:
-            await team_store.update_team(team)
+            await team_store.update_team(
+                team, actor_id=interaction.user.id)
         except TeamStoreError as exc:
             await interaction.response.send_message(
                 _err(exc), ephemeral=True)
@@ -746,7 +744,13 @@ class TeamDescModal(discord.ui.Modal, title="Описание команды"):
                 "Нет доступа.", ephemeral=True)
             return
         team.description = (self.desc.value or "").strip()
-        await team_store.update_team(team)
+        try:
+            await team_store.update_team(
+                team, actor_id=interaction.user.id)
+        except TeamStoreError as exc:
+            await interaction.response.send_message(
+                _err(exc), ephemeral=True)
+            return
         await squad_store.audit(team.guild_id, team_id,
                                 interaction.user.id, "desc_change")
         svc.schedule_hub_refresh(interaction.guild)
@@ -766,7 +770,12 @@ async def _render_purpose_select(interaction: discord.Interaction,
             await i.response.send_message("Нет доступа.", ephemeral=True)
             return
         team.purpose = val
-        await team_store.update_team(team)
+        try:
+            await team_store.update_team(
+                team, actor_id=i.user.id)
+        except TeamStoreError as exc:
+            await i.response.send_message(_err(exc), ephemeral=True)
+            return
         svc.schedule_hub_refresh(i.guild)
         await open_team_panel(i, team_id, notice="Цель обновлена.")
 
@@ -796,7 +805,12 @@ async def _render_joinmode_select(interaction: discord.Interaction,
         if val != JOIN_PASSWORD:
             team.password_hash = ""
             team.password = ""
-        await team_store.update_team(team)
+        try:
+            await team_store.update_team(
+                team, actor_id=i.user.id)
+        except TeamStoreError as exc:
+            await i.response.send_message(_err(exc), ephemeral=True)
+            return
         svc.schedule_hub_refresh(i.guild)
         await open_team_panel(i, team_id, notice="Настройки вступления "
                                            "обновлены.")
@@ -827,7 +841,13 @@ class TeamPasswordModal(discord.ui.Modal, title="Пароль команды"):
             return
         team.set_password(self.pw.value)
         team.join_mode = JOIN_PASSWORD
-        await team_store.update_team(team)
+        try:
+            await team_store.update_team(
+                team, actor_id=interaction.user.id)
+        except TeamStoreError as exc:
+            await interaction.response.send_message(
+                _err(exc), ephemeral=True)
+            return
         svc.schedule_hub_refresh(interaction.guild)
         await open_team_panel(interaction, self.team_id,
                               notice="Включён вход по паролю.")
@@ -847,18 +867,29 @@ async def _render_requirements(interaction: discord.Interaction,
                       accent=colors.BRAND)
     view.text(
         "Обязательные условия вступления и пожелания капитана.\n"
-        "-# Пустое значение — требование не установлено.")
+        "-# Пустое значение — требование не установлено.\n"
+        "-# Требование «подтверждённый Free Fire UID» временно "
+        "скрыто: сервер не хранит верифицированные UID вне "
+        "турниров — пользовательский текст не считается "
+        "подтверждением.")
 
     async def _save(i, **kw):
         req.update(kw)
-        # убрать пустые значения
+        # убрать пустые значения; ff_uid_required не поддерживается
+        # (нет источника верифицированных UID) — удаляем из
+        # сохранённых требований, если он там остался.
+        req.pop("ff_uid_required", None)
         req2 = {k: v for k, v in req.items() if v not in ("", None, 0)}
         t = await team_store.refresh_from_db(team_id)
         if t is None or not t.is_captain(i.user.id):
             await i.response.send_message("Нет доступа.", ephemeral=True)
             return
         t.requirements = req2
-        await team_store.update_team(t)
+        try:
+            await team_store.update_team(t, actor_id=i.user.id)
+        except TeamStoreError as exc:
+            await i.response.send_message(_err(exc), ephemeral=True)
+            return
         svc.schedule_hub_refresh(i.guild)
         await _render_requirements(i, team_id)
 
@@ -873,10 +904,6 @@ async def _render_requirements(interaction: discord.Interaction,
     async def _role(i):
         val = (i.data.get("values") or [""])[0]
         await _save(i, role=val or None)
-
-    async def _ffuid(i):
-        val = (i.data.get("values") or ["0"])[0]
-        await _save(i, ff_uid_required=(val == "1"))
 
     cur_min = req.get("min_sr") or 0
     view.row(_s(
@@ -894,10 +921,6 @@ async def _render_requirements(interaction: discord.Interaction,
         [option(label="Любая", value="")] +
         [option(label=r, value=r) for r in PLAY_ROLES],
         "tm:req:role", "Предпочтительная роль", _role))
-    view.row(_s(
-        [option(label="Не обязательно", value="0"),
-         option(label="Обязателен", value="1")],
-        "tm:req:ff", "Подтверждённый Free Fire UID", _ffuid))
     view.row(_b("Назад", "secondary", "tm:req:back",
                 lambda i: _render_manage(i, team_id)))
     await interaction.response.edit_message(view=view)
@@ -911,7 +934,12 @@ async def _do_toggle_recruiting(interaction: discord.Interaction,
             "Нет доступа.", ephemeral=True)
         return
     team.recruiting = not team.recruiting
-    await team_store.update_team(team)
+    try:
+        await team_store.update_team(team, actor_id=interaction.user.id)
+    except TeamStoreError as exc:
+        await interaction.response.send_message(
+            _err(exc), ephemeral=True)
+        return
     svc.schedule_hub_refresh(interaction.guild)
     await svc.sync_recruit_card(interaction.client, interaction.guild,
                                 team_id)

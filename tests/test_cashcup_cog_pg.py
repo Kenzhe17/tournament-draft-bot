@@ -12,6 +12,7 @@ Discord-граница замокана (Interaction/Response/Followup/User/Guil
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -28,8 +29,11 @@ import config
 import storage.db as dbmod
 import cogs.cashcup as cashcup_mod
 from cogs.cashcup import CashCupCog
+from models.team import Team
 from services.cashcup_store import cashcup_store
 from services.cashcup_bracket import ready_matches
+from storage import squad_schema
+from storage.team_store import team_store
 
 G = 777000
 CH = 555000
@@ -179,32 +183,63 @@ COG: list = []
 
 
 def _br_team(team_id: str, name: str, captain: int,
-             members: list[int]) -> SimpleNamespace:
-    return SimpleNamespace(
-        team_id=team_id, team_name=name, password="pw",
-        captain_id=captain, guild_id=G, members=list(members))
+             members: list[int]) -> Team:
+    """Реальная команда в PG — регистрация читает её под
+    FOR UPDATE (согласованная блокировка), моков стора нет."""
+    return Team(team_id=team_id, team_name=name, captain_id=captain,
+                guild_id=G, members=list(members))
 
 
 def _ff_uid(uid: int) -> str:
     return f"9{uid:08d}"[:15]
 
 
+async def _reset_squad_tables(pg_pool):
+    """Очистить squads-таблицы и кэш team_store для guild G."""
+    async with pg_pool.acquire() as conn:
+        # Базовая таблица teams (в проде создаёт storage.db.init_db).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS teams (
+                team_id TEXT PRIMARY KEY,
+                team_name TEXT NOT NULL,
+                password TEXT NOT NULL,
+                captain_id BIGINT NOT NULL,
+                guild_id BIGINT NOT NULL,
+                members BIGINT[] NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await squad_schema.ensure_squad_schema(conn)
+        await conn.execute(
+            "DELETE FROM team_applications WHERE guild_id=$1", G)
+        await conn.execute(
+            "DELETE FROM team_invites WHERE guild_id=$1", G)
+        await conn.execute(
+            "DELETE FROM team_lfg WHERE guild_id=$1", G)
+        await conn.execute(
+            "DELETE FROM team_audit WHERE team_id IN "
+            "(SELECT team_id FROM teams WHERE guild_id=$1)", G)
+        await conn.execute(
+            "DELETE FROM teams WHERE guild_id=$1", G)
+    for tid in [t.team_id for t in list(team_store._teams.values())
+                if t.guild_id == G]:
+        team_store._teams.pop(tid, None)
+        team_store._forget(tid)
+
+
 async def _seed_two_teams(pg_pool, monkeypatch):
-    """PG-tournament + два BR-состава в team_store (мок на границе)."""
+    """PG-tournament + два BR-состава в team_store (реальные строки
+    в PostgreSQL — register_br_team фиксирует их под FOR UPDATE)."""
     guild = _Guild(G)
     bot = _Bot(guild)
     cog = CashCupCog(bot)  # type: ignore[arg-type]
     COG[:] = [cog]
 
-    br_teams = {
-        CAP_A: _br_team("brA", "Alpha", CAP_A,
-                        [CAP_A, P_A2, P_A3, P_A4]),
-        CAP_B: _br_team("brB", "Beta", CAP_B,
-                        [CAP_B, P_B2, P_B3, P_B4]),
-    }
-    monkeypatch.setattr(
-        cashcup_mod.team_store, "get_by_captain",
-        lambda uid: br_teams.get(uid))
+    await _reset_squad_tables(pg_pool)
+    await team_store.create(_br_team(
+        "brA", "Alpha", CAP_A, [CAP_A, P_A2, P_A3, P_A4]))
+    await team_store.create(_br_team(
+        "brB", "Beta", CAP_B, [CAP_B, P_B2, P_B3, P_B4]))
 
     ff_calls: list[tuple[str, str]] = []
 
@@ -620,18 +655,11 @@ async def test_registration_card_survives_restart_alive_message(
     assert card.edit.await_count == 2
 
     # Кнопки работают: новая BR-команда регистрируется в ТОТ ЖЕ
-    # tournament_id (не создаётся новый турнир).
-    br_teams = {
-        940001: _br_team("brC", "Gamma", 940001,
-                         [940001, 940002, 940003, 940004]),
-    }
-    monkeypatch.setattr(
-        cashcup_mod.team_store, "get_by_captain",
-        lambda uid: {**{CAP_A: _br_team("brA", "Alpha", CAP_A,
-                                        [CAP_A, P_A2, P_A3, P_A4]),
-                        CAP_B: _br_team("brB", "Beta", CAP_B,
-                                        [CAP_B, P_B2, P_B3, P_B4])},
-                     **br_teams}.get(uid))
+    # tournament_id (не создаётся новый турнир). Реальная команда
+    # в PG — регистрация берёт её под FOR UPDATE.
+    await team_store.create(_br_team(
+        "brC", "Gamma", 940001,
+        [940001, 940002, 940003, 940004]))
     inter = _interaction(940001, guild2, bot2)
     await cog2.register_br_team(inter)
     state = await cashcup_store.active(G)
@@ -728,3 +756,49 @@ async def test_confirm_ff_verified_reset_only_on_identity_change(
               if p["discord_id"] == P_A2)
     assert p2["verified"] is False
     assert p2["ff_uid"] == "55500123"
+
+
+@pytest.mark.asyncio
+async def test_register_br_team_vs_disband_concurrent(pg_pool,
+                                                     monkeypatch):
+    """Финальный блокер №1: РЕАЛЬНАЯ конкурентная регистрация через
+    существующий handler vs расформирование команды.
+
+    Согласованная блокировка (teams row FOR UPDATE внутри tx
+    cashcup_tournaments) гарантирует ровно один когерентный
+    исход: либо регистрация зафиксирована и disband отклонён
+    защитой турнира, либо команда удалена и в турнире её нет.
+    Регистрация удалённой команды / устаревшего состава
+    невозможна."""
+    from storage.team_store import TeamStoreError
+    cog, guild, bot, tid, _ = await _seed_two_teams(
+        pg_pool, monkeypatch)
+
+    inter = _interaction(CAP_A, guild, bot)
+    reg = asyncio.create_task(cog.register_br_team(inter))
+    dis = asyncio.create_task(team_store.disband("brA", CAP_A))
+    reg_res, dis_res = await asyncio.gather(
+        reg, dis, return_exceptions=True)
+
+    state = await cashcup_store.active(G)
+    registered = any(
+        t.get("br_team_id") == "brA"
+        for t in (state["teams"] if state else []))
+    team_gone = team_store.get("brA") is None
+    # Когерентность: регистрация и удаление не могут оба
+    # «успеть» — зарегистрированная команда обязана существовать.
+    assert registered == (not team_gone), (
+        f"registered={registered} team_gone={team_gone} "
+        f"reg_res={reg_res!r} dis_res={dis_res!r}")
+    if registered:
+        # disband отклонён fail-closed защитой турнира.
+        assert isinstance(dis_res, TeamStoreError)
+        assert dis_res.code == "roster_locked"
+        # Зафиксирован АКТУАЛЬНЫЙ состав под блокировкой.
+        t = next(t for t in state["teams"]
+                 if t.get("br_team_id") == "brA")
+        assert sorted(p["discord_id"] for p in t["members"]) == \
+            sorted([CAP_A, P_A2, P_A3, P_A4])
+    else:
+        # Команда удалена до фиксации — регистрация отклонена.
+        assert team_gone

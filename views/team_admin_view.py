@@ -9,16 +9,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import discord
 
-from config import DATA_DIR
 from models.team import TEAM_MAX_MEMBERS
 from services import squad_service as svc
 from storage import squad_store
@@ -536,19 +533,27 @@ async def _do_reset(interaction: discord.Interaction,
         await interaction.response.send_message(
             "Нет команд для сброса.", ephemeral=True)
         return
-    # Резервная копия: актуальные данные подтверждённого списка
-    # (disband_many сверит составы в транзакции — бэкап совпадает
-    # с тем, что будет удалено).
-    backup_path = await _backup_teams(guild.id, snapshots)
     try:
-        removed = await team_store.disband_many(
+        # Резервная копия формируется ВНУТРИ транзакции из
+        # заблокированных строк PG (teams + invites +
+        # applications), записывается и сверяется до первого
+        # DELETE — при невозможности проверенного backup
+        # удаление отменяется (rollback).
+        result = await team_store.disband_many(
             guild.id, snapshots, interaction.user.id)
+        removed = result["removed"]
+        backup_path = Path(result["backup_path"]).name \
+            if result.get("backup_path") else "—"
     except TeamStoreError as exc:
         code = getattr(exc, "code", "")
         if code in ("list_changed", "tournament_started"):
             # Список изменился — требуем повторного подтверждения.
             await interaction.response.send_message(
                 f"{_err(exc)}\nОткройте предпросмотр заново.",
+                ephemeral=True)
+        elif code == "backup_failed":
+            await interaction.response.send_message(
+                f"Сброс отменён: {_err(exc)}. Ничего не удалено.",
                 ephemeral=True)
         else:
             await interaction.response.send_message(
@@ -582,30 +587,7 @@ async def _do_reset(interaction: discord.Interaction,
         f"**Scope:** {pending.get('desc', scope)}\n"
         f"**Удалено команд:** {len(removed)}\n"
         f"**Игроков затронуто:** {players}\n"
-        f"**Резервная копия:** {backup_path.name}")
+        f"**Резервная копия:** {backup_path}")
     view.row(_b("В меню", "secondary", "adm:rsdone",
                 lambda i: _back_main(i)))
     await interaction.response.edit_message(view=view)
-
-
-async def _backup_teams(guild_id: int,
-                        snapshots: list[dict]) -> Path:
-    """JSONL-дамп подтверждённого списка команд перед сбросом.
-
-    Берём актуальные строки по team_id из снимка — disband_many
-    в транзакции гарантирует, что они не изменятся до удаления.
-    """
-    backup_dir = DATA_DIR / "backups"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    path = backup_dir / f"teams_{guild_id}_{ts}.jsonl"
-    teams = []
-    for snap in snapshots:
-        t = team_store.get(snap["team_id"])
-        if t is not None and int(t.guild_id) == int(guild_id):
-            teams.append(t)
-    with open(path, "w", encoding="utf-8") as f:
-        for t in teams:
-            f.write(json.dumps(t.to_dict(), ensure_ascii=False)
-                    + "\n")
-    return path

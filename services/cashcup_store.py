@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import uuid
 from typing import Any, Callable
@@ -181,7 +182,23 @@ class CashCupStore:
                 tid = state.pop("tournament_id")
                 channel_id = state.pop("channel_id")
                 message_id = state.pop("message_id")
-                result = change(state)
+                # change может принимать (state, conn) — тогда она
+                # работает на том же соединении/транзакции и может
+                # брать согласованные блокировки (например, FOR
+                # UPDATE на teams при регистрации squads). Async
+                # change тоже поддерживается.
+                try:
+                    n_params = sum(
+                        1 for p in inspect.signature(change)
+                        .parameters.values()
+                        if p.kind in (p.POSITIONAL_ONLY,
+                                      p.POSITIONAL_OR_KEYWORD))
+                except (TypeError, ValueError):
+                    n_params = 1
+                result = (change(state, conn) if n_params >= 2
+                          else change(state))
+                if inspect.isawaitable(result):
+                    result = await result
                 await conn.execute("""
                     UPDATE cashcup_tournaments
                     SET status=$2, state=$3::jsonb, version=version+1

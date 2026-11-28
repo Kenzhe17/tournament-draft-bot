@@ -60,8 +60,6 @@ async def render_recruit_card(guild: discord.Guild | None, team,
         from models.team import DEVICE_LABELS
         req_bits.append(
             f"Устройство: {DEVICE_LABELS.get(req['device'], req['device'])}")
-    if req.get("ff_uid_required"):
-        req_bits.append("Подтверждённый FF UID")
     if req.get("role"):
         req_bits.append(f"Роль: {req['role']}")
     if req_bits:
