@@ -272,6 +272,40 @@ class ModerationStore:
                 rows=await conn.fetch('SELECT * FROM moderation_events WHERE guild_id=$1 ORDER BY id DESC LIMIT $2',guild_id,limit)
             return [dict(r) for r in rows]
 
+    async def voice_state(self,guild_id,target_id,field):
+        """Последнее подтверждённое состояние голосового флага
+        ('mute'/'deafen') по журналу модерации.
+
+        Возвращает dict: {'status': 'active'|'inactive'|'unknown'|'none',
+        'at': datetime|None}. '.unknown'-события трактуются консервативно
+        как 'active' — неподтверждённый результат не доказывает,
+        что модерация флаг НЕ ставила."""
+        await self.ensure()
+        pool=await get_pool()
+        async with pool.acquire() as conn:
+            rows=await conn.fetch(
+                """SELECT action, detail, created_at FROM moderation_events
+                   WHERE guild_id=$1 AND action LIKE $2
+                   ORDER BY id DESC LIMIT 100""",
+                guild_id, f'voice.{field}.%')
+        for row in rows:
+            detail=row.get('detail') or {}
+            if isinstance(detail,str):
+                try:detail=json.loads(detail)
+                except ValueError:continue
+            if str(detail.get('target_id'))!=str(target_id):
+                continue
+            action=row['action']
+            if action.endswith('.requested'):
+                continue  # запрос без подтверждения — не доказательство
+            value=detail.get('value')
+            if action.endswith('.unknown'):
+                return {'status':'unknown','at':row['created_at']}
+            if action.endswith('.applied') and value is not None:
+                return {'status':'active' if value else 'inactive',
+                        'at':row['created_at']}
+        return {'status':'none','at':None}
+
     async def reconcile_candidates(self,guild_id,limit=100):
         """Actions that may have completed in Discord despite an API timeout."""
         await self.ensure()

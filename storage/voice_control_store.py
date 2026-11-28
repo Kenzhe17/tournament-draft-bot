@@ -63,13 +63,16 @@ CREATE TABLE IF NOT EXISTS voice_control_restrictions (
     origin TEXT NOT NULL,
     reason TEXT NOT NULL DEFAULT '',
     expires_at TIMESTAMPTZ,
-    state TEXT NOT NULL DEFAULT 'active'
-        CHECK (state IN ('active','released','expired')),
+    state TEXT NOT NULL DEFAULT 'pending_apply'
+        CHECK (state IN ('pending_apply','active','pending_release',
+                         'released','expired','conflict','failed')),
     request_key TEXT,
     created_by BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     released_at TIMESTAMPTZ,
-    released_by BIGINT
+    released_by BIGINT,
+    claim_token TEXT,
+    claim_until TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS vc_restrictions_active_idx
     ON voice_control_restrictions(guild_id, channel_id, user_id, state);
@@ -120,7 +123,30 @@ CREATE INDEX IF NOT EXISTS vc_events_guild_idx
     ON voice_control_events(guild_id, id DESC);
 """
 
-_MODE_FIELDS = ("speaker_mode", "auto_mute", "closed", "name_override", "user_limit")
+# Миграция для баз, созданных ранней версией: расширенный набор
+# состояний durable lifecycle + claim-поля для sweeper'а.
+# Constraint пересоздаётся целиком (CHECK не расширяется ALTER'ом).
+_MIGRATIONS = """
+ALTER TABLE voice_control_restrictions
+    DROP CONSTRAINT IF EXISTS voice_control_restrictions_state_check;
+ALTER TABLE voice_control_restrictions
+    ADD CONSTRAINT voice_control_restrictions_state_check
+    CHECK (state IN ('pending_apply','active','pending_release',
+                     'released','expired','conflict','failed'));
+ALTER TABLE voice_control_restrictions
+    ADD COLUMN IF NOT EXISTS claim_token TEXT;
+ALTER TABLE voice_control_restrictions
+    ADD COLUMN IF NOT EXISTS claim_until TIMESTAMPTZ;
+ALTER TABLE voice_control_modes
+    ADD COLUMN IF NOT EXISTS name_before TEXT;
+ALTER TABLE voice_control_modes
+    ADD COLUMN IF NOT EXISTS user_limit_before INTEGER;
+CREATE INDEX IF NOT EXISTS vc_restrictions_pending_idx
+    ON voice_control_restrictions(state, claim_until);
+"""
+
+_MODE_FIELDS = ("speaker_mode", "auto_mute", "closed", "name_override",
+                "user_limit", "name_before", "user_limit_before")
 _SETTINGS_FIELDS = (
     "allowed_role_ids", "protected_user_ids", "protected_role_ids",
     "protected_channel_ids", "log_channel_id",
@@ -144,6 +170,7 @@ class VoiceControlStore:
                 pool = await get_pool()
                 async with pool.acquire() as conn:
                     await conn.execute(_SCHEMA)
+                    await conn.execute(_MIGRATIONS)
                 self._ready = True
 
     # ------------------------------------------------------------------
@@ -350,18 +377,21 @@ class VoiceControlStore:
     async def add_restriction(self, guild_id: int, channel_id: int, user_id: int,
                               kind: str, origin: str, *, reason: str = "",
                               expires_at=None, request_key: str | None = None,
-                              created_by: int = 0) -> dict[str, Any] | None:
-        """Идемпотентно по request_key. Возвращает None при дубле."""
+                              created_by: int = 0,
+                              state: str = "pending_apply") -> dict[str, Any] | None:
+        """Идемпотентно по request_key. Возвращает None при дубле.
+        Новые записи стартуют в pending_apply — переход в active
+        только после подтверждённого Discord API."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO voice_control_restrictions
-                   (guild_id,channel_id,user_id,kind,origin,reason,expires_at,request_key,created_by)
-                   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                   (guild_id,channel_id,user_id,kind,origin,reason,expires_at,request_key,created_by,state)
+                   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
                    ON CONFLICT DO NOTHING RETURNING *""",
                 guild_id, channel_id, user_id, kind, origin, reason,
-                expires_at, request_key, created_by,
+                expires_at, request_key, created_by, state,
             )
             # ON CONFLICT без target не ловит частичный уникальный индекс —
             # дубли request_key отсекаем явно.
@@ -389,33 +419,124 @@ class VoiceControlStore:
                 args.append(user_id)
                 sql += f" AND user_id=${len(args)}"
             if active_only:
-                sql += " AND state='active'"
+                # pending_apply логически активен (флаг применяется),
+                # pending_release — уже снимается и не покрывает.
+                sql += " AND state IN ('active','pending_apply')"
             sql += " ORDER BY id DESC LIMIT $" + str(len(args) + 1)
             args.append(min(1000, limit))
             rows = await conn.fetch(sql, *args)
         return [dict(r) for r in rows]
 
+    async def set_state(self, guild_id: int, restriction_id: int, state: str, *,
+                        actor_id: int = 0,
+                        from_states: tuple[str, ...] | None = None) -> dict[str, Any] | None:
+        """CAS-переход состояния. from_states=None — безусловный."""
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if from_states:
+                row = await conn.fetchrow(
+                    """UPDATE voice_control_restrictions
+                       SET state=$3,
+                           released_at=CASE WHEN $3 IN ('released','expired','conflict','failed')
+                                            THEN now() ELSE released_at END,
+                           released_by=CASE WHEN $3 IN ('released','expired','conflict','failed')
+                                            THEN $4 ELSE released_by END,
+                           claim_token=NULL, claim_until=NULL
+                       WHERE guild_id=$1 AND id=$2 AND state = ANY($5::text[])
+                       RETURNING *""",
+                    guild_id, restriction_id, state, actor_id, list(from_states),
+                )
+            else:
+                row = await conn.fetchrow(
+                    """UPDATE voice_control_restrictions
+                       SET state=$3,
+                           released_at=CASE WHEN $3 IN ('released','expired','conflict','failed')
+                                            THEN now() ELSE released_at END,
+                           released_by=CASE WHEN $3 IN ('released','expired','conflict','failed')
+                                            THEN $4 ELSE released_by END,
+                           claim_token=NULL, claim_until=NULL
+                       WHERE guild_id=$1 AND id=$2
+                       RETURNING *""",
+                    guild_id, restriction_id, state, actor_id,
+                )
+            return _dict(row)
+
+    async def claim_pending(self, state: str, worker: str, *,
+                            limit: int = 50, lease_seconds: int = 120,
+                            after_id: int = 0) -> list[dict[str, Any]]:
+        """Атомарно захватить записи в состоянии state (durable claim).
+        Лиз не держит PG-транзакцию во время Discord HTTP — claim
+        короткий, обработка вне транзакции, истечение лиза возвращает
+        запись в пул."""
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn, conn.transaction():
+            rows = await conn.fetch(
+                """UPDATE voice_control_restrictions
+                   SET claim_token=$1,
+                       claim_until=now() + make_interval(secs => $2)
+                   WHERE id IN (
+                       SELECT id FROM voice_control_restrictions
+                       WHERE state=$3 AND id>$4
+                         AND (claim_until IS NULL OR claim_until<now())
+                       ORDER BY id LIMIT $5
+                       FOR UPDATE SKIP LOCKED)
+                   RETURNING *""",
+                worker, lease_seconds, state, after_id, limit,
+            )
+        return [dict(r) for r in rows]
+
+    async def release_claim(self, restriction_id: int) -> None:
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE voice_control_restrictions SET claim_token=NULL, claim_until=NULL "
+                "WHERE id=$1",
+                restriction_id,
+            )
+
+    async def pending_states(self) -> dict[str, int]:
+        """Счётчики незавершённых операций — для emergency dry-run."""
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT state, count(*) AS n FROM voice_control_restrictions "
+                "WHERE state IN ('pending_apply','pending_release','active','conflict') "
+                "GROUP BY state",
+            )
+        return {r["state"]: int(r["n"]) for r in rows}
+
     async def release_restriction(self, guild_id: int, restriction_id: int, *,
-                                  actor_id: int = 0) -> dict[str, Any] | None:
+                                  actor_id: int = 0,
+                                  final_state: str = "released") -> dict[str, Any] | None:
+        """Терминальное состояние после подтверждённой очистки.
+        final_state='expired' сохраняет информацию о таймере."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn, conn.transaction():
             row = await conn.fetchrow(
                 """UPDATE voice_control_restrictions
-                   SET state='released', released_at=now(), released_by=$3
-                   WHERE guild_id=$1 AND id=$2 AND state='active'
+                   SET state=$4, released_at=now(), released_by=$3,
+                       claim_token=NULL, claim_until=NULL
+                   WHERE guild_id=$1 AND id=$2
+                     AND state IN ('active','pending_apply','pending_release')
                    RETURNING *""",
-                guild_id, restriction_id, actor_id,
+                guild_id, restriction_id, actor_id, final_state,
             )
             return _dict(row)
 
     async def expire_due_restrictions(self, limit: int = 200) -> list[dict[str, Any]]:
-        """Таймеры с истёкшим сроком. Вызывается sweeper'ом."""
+        """Таймеры с истёкшим сроком → pending_release (очистка
+        флага подтверждается отдельно, см. сервис)."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                """UPDATE voice_control_restrictions SET state='expired', released_at=now()
+                """UPDATE voice_control_restrictions
+                   SET state='pending_release', claim_token=NULL, claim_until=NULL
                    WHERE id IN (
                        SELECT id FROM voice_control_restrictions
                        WHERE state='active' AND expires_at IS NOT NULL AND expires_at<=now()
@@ -426,18 +547,21 @@ class VoiceControlStore:
             )
         return [dict(r) for r in rows]
 
-    async def has_other_active(self, guild_id: int, channel_id: int, user_id: int,
+    async def has_other_active(self, guild_id: int, user_id: int,
                                kind: str, *, exclude_id: int = 0) -> bool:
-        """Есть ли ДРУГОЕ активное ограничение того же kind — значит
-        Discord-флаг снимать нельзя."""
+        """Есть ли ДРУГОЕ активное/pending ограничение того же kind
+        у участника — НЕЗАВИСИМО от канала: server mute/deafen —
+        флаг уровня guild voice state, а не канала. pending_release
+        не считается: оно уже снимается."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
             return bool(await conn.fetchval(
                 """SELECT 1 FROM voice_control_restrictions
-                   WHERE guild_id=$1 AND channel_id=$2 AND user_id=$3 AND kind=$4
-                     AND state='active' AND id<>$5 LIMIT 1""",
-                guild_id, channel_id, user_id, kind, exclude_id,
+                   WHERE guild_id=$1 AND user_id=$2 AND kind=$3
+                     AND state IN ('active','pending_apply') AND id<>$4
+                   LIMIT 1""",
+                guild_id, user_id, kind, exclude_id,
             ))
 
     # ------------------------------------------------------------------
@@ -552,13 +676,42 @@ class VoiceControlStore:
             )
         return [dict(r) for r in rows]
 
+    async def all_active_overwrites(self, limit: int = 1000) -> list[dict[str, Any]]:
+        """Все незавершённые overwrite-записи всех гильдий — для
+        startup-сверки после рестарта."""
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM voice_control_overwrites "
+                "WHERE state IN ('saved','applied','conflict') "
+                "ORDER BY guild_id, channel_id, id LIMIT $1",
+                limit,
+            )
+        return [dict(r) for r in rows]
+
+    async def scan_active(self, *, after_id: int = 0,
+                          limit: int = 500) -> list[dict[str, Any]]:
+        """Курсорная выборка активных ограничений для фоновой сверки —
+        постранично без starvation после первых N записей."""
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM voice_control_restrictions "
+                "WHERE state IN ('active','pending_apply') AND id>$1 "
+                "ORDER BY id LIMIT $2",
+                after_id, limit,
+            )
+        return [dict(r) for r in rows]
+
     async def all_active_restrictions(self, limit: int = 5000) -> list[dict[str, Any]]:
         """Все активные ограничения всех гильдий — для sweeper'а."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM voice_control_restrictions WHERE state='active' "
+                "SELECT * FROM voice_control_restrictions WHERE state IN ('active','pending_apply') "
                 "ORDER BY guild_id, channel_id, user_id LIMIT $1",
                 limit,
             )

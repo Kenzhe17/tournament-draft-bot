@@ -5,12 +5,17 @@
 (поэтому ограничение жизни ~14 минут; по истечении предлагается
 повторно вызвать /voice). Режимы и ограничения живут в PostgreSQL
 и НЕ зависят от жизни панели.
+
+Целостность сессии: каждая панель имеет panel_id, message_id и
+revision. Кнопки старой панели (до повторного /voice) не имеют
+доступа к состоянию новой — callback сверяет message_id.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -41,6 +46,26 @@ MUTATING_ACTIONS = {
     "speaker_stop", "close_do", "open",
     "move_do", "move_confirm", "disconnect_all_do",
     "extra_auto_mute", "extra_undo", "protect_remove",
+    "extra_rename", "extra_limit", "protect_add_user", "protect_add_role",
+    "emergency_execute",
+}
+
+# Длительные операции: ранний defer, чтобы не получить
+# Interaction Failed на массовых действиях (100+ участников).
+LONG_ACTIONS = {
+    "mute_all", "unmute_all",
+    "member_mute", "member_unmute", "member_deafen", "member_undeafen",
+    "member_disconnect", "member_move_do", "member_speaker_toggle",
+    "speaker_add_pick", "speaker_remove_pick", "speaker_start",
+    "speaker_stop", "close_do", "open",
+    "move_confirm", "disconnect_all_do", "extra_undo",
+    "emergency_execute",
+}
+
+# Действия, открывающие модальные окна — defer недопустим
+# (send_modal должен быть первым ответом).
+MODAL_ACTIONS = {
+    "extra_rename", "extra_limit", "protect_add_user", "protect_add_role",
 }
 
 
@@ -61,17 +86,26 @@ def _participants_word(n: int) -> str:
 
 
 class PanelState:
-    """Состояние одной ephemeral-панели администратора."""
+    """Состояние одной ephemeral-панели администратора.
+
+    panel_id/message_id/revision связывают callback с конкретным
+    сообщением: кнопки старой панели после повторного /voice
+    отвергаются."""
 
     __slots__ = (
-        "chan_page", "channel_id", "confirm_kind", "duration",
-        "guild_id", "interaction", "last_touch", "lock", "member_page",
-        "move_pick", "move_target", "page", "selected_member", "user_id",
+        "chan_page", "channel_id", "confirm_kind", "confirm_snapshot",
+        "duration", "guild_id", "interaction", "last_touch", "lock",
+        "member_page", "message_id", "move_pick", "move_target", "page",
+        "panel_id", "revision", "selected_member", "source_interaction",
+        "user_id", "valid",
     )
 
     def __init__(self, guild_id: int, user_id: int) -> None:
         self.guild_id = guild_id
         self.user_id = user_id
+        self.panel_id = uuid.uuid4().hex
+        self.revision = 0
+        self.valid = True
         self.channel_id: int | None = None
         self.page = "main"
         self.chan_page = 0
@@ -81,8 +115,11 @@ class PanelState:
         self.move_pick: set[int] = set()
         self.move_target: int | None = None
         self.confirm_kind: str | None = None
+        self.confirm_snapshot: dict[str, Any] | None = None
+        self.message_id: int | None = None
         self.last_touch = time.monotonic()
         self.interaction: discord.Interaction | None = None
+        self.source_interaction: discord.Interaction | None = None
         self.lock = asyncio.Lock()
 
     def touch(self) -> None:
@@ -91,12 +128,16 @@ class PanelState:
     def expired(self) -> bool:
         return time.monotonic() - self.last_touch > PANEL_TTL
 
+    def invalidate(self) -> None:
+        self.valid = False
+
 
 class VoiceControlCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.panels: dict[tuple[int, int], PanelState] = {}
         self._voice_tasks: dict[tuple[int, int], asyncio.Task] = {}
+        self._voice_pending: set[tuple[int, int]] = set()
         self._refresh_tasks: dict[tuple[int, int], asyncio.Task] = {}
         self._sweep_task: asyncio.Task | None = None
         self._startup_done = False
@@ -119,10 +160,19 @@ class VoiceControlCog(commands.Cog):
             try:
                 await asyncio.sleep(20)
                 await vc.sweep_timers(self.bot)
+                self._cleanup_panels()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.exception("voice control sweep failed")
+
+    def _cleanup_panels(self) -> None:
+        """Удалить просроченные и невалидные панели."""
+        now = time.monotonic()
+        for key, panel in list(self.panels.items()):
+            if not panel.valid or now - panel.last_touch > PANEL_TTL * 2:
+                panel.invalidate()
+                self.panels.pop(key, None)
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:
@@ -143,19 +193,24 @@ class VoiceControlCog(commands.Cog):
         key = (member.guild.id, member.id)
         task = self._voice_tasks.get(key)
         if task and not task.done():
-            task.cancel()
-        self._voice_tasks[key] = asyncio.create_task(
-            self._debounced_reconcile(member))
-        channel_id = after.channel.id if after.channel else (
-            before.channel.id if before.channel else 0)
-        rkey = (member.guild.id, channel_id)
-        rtask = self._refresh_tasks.get(rkey)
-        if rtask and not rtask.done():
-            rtask.cancel()
-        self._refresh_tasks[rkey] = asyncio.create_task(
-            self._debounced_refresh(member.guild.id, channel_id))
+            # Не отменяем уже начатую изменяющую операцию —
+            # помечаем повторную сверку после завершения.
+            self._voice_pending.add(key)
+        else:
+            self._voice_tasks[key] = asyncio.create_task(
+                self._debounced_reconcile(member))
+        channel_ids = {
+            c.id for c in (before.channel, after.channel) if c is not None}
+        for cid in channel_ids or {0}:
+            rkey = (member.guild.id, cid)
+            rtask = self._refresh_tasks.get(rkey)
+            if rtask and not rtask.done():
+                rtask.cancel()
+            self._refresh_tasks[rkey] = asyncio.create_task(
+                self._debounced_refresh(member.guild.id))
 
     async def _debounced_reconcile(self, member: discord.Member) -> None:
+        key = (member.guild.id, member.id)
         try:
             await asyncio.sleep(VOICE_DEBOUNCE)
             await vc.reconcile_member(member)
@@ -163,14 +218,21 @@ class VoiceControlCog(commands.Cog):
             pass
         except Exception:
             log.exception("voice reconcile failed user=%s", member.id)
+        finally:
+            if key in self._voice_pending:
+                self._voice_pending.discard(key)
+                # Повторная сверка актуального состояния после
+                # завершения предыдущей (member — свежий объект кэша).
+                self._voice_tasks[key] = asyncio.create_task(
+                    self._debounced_reconcile(member))
 
-    async def _debounced_refresh(self, guild_id: int, channel_id: int) -> None:
+    async def _debounced_refresh(self, guild_id: int) -> None:
         try:
             await asyncio.sleep(PANEL_REFRESH_DEBOUNCE)
+            # Обновляем ВСЕ панели гильдии: список каналов глобален,
+            # страница «Обзор» показывает любой канал.
             for (gid, _uid), panel in list(self.panels.items()):
-                if gid != guild_id:
-                    continue
-                if panel.channel_id not in (None, channel_id):
+                if gid != guild_id or not panel.valid:
                     continue
                 await self._refresh_panel(panel)
         except asyncio.CancelledError:
@@ -179,14 +241,40 @@ class VoiceControlCog(commands.Cog):
             log.exception("voice panel refresh failed")
 
     async def _refresh_panel(self, panel: PanelState) -> None:
+        async with panel.lock:
+            try:
+                view = await self._render(panel)
+                panel.revision += 1
+                await self._edit_panel_message(panel, view)
+            except Exception:
+                log.debug("voice panel refresh failed", exc_info=True)
+
+    async def _edit_panel_message(self, panel: PanelState,
+                                  view: DesignView) -> None:
+        """Отредактировать сообщение панели. Источник истины —
+        source_interaction (/voice): его токен живёт PANEL_TTL и
+        привязан именно к этому ephemeral-сообщению."""
+        src = panel.source_interaction
+        if src is not None:
+            try:
+                await src.edit_original_response(view=view)
+                return
+            except Exception as exc:
+                log.debug("panel edit via source failed: %s", exc)
         inter = panel.interaction
-        if inter is None:
-            return
-        try:
-            view = await self._render(panel)
-            await inter.edit_original(view=view)
-        except Exception:
-            panel.interaction = None
+        if inter is not None:
+            try:
+                if inter.response.is_done():
+                    if panel.message_id:
+                        await inter.followup.edit_message(
+                            panel.message_id, view=view)
+                    else:
+                        await inter.followup.send(view=view, ephemeral=True)
+                else:
+                    await inter.response.edit_message(view=view)
+                return
+            except Exception as exc:
+                log.debug("panel edit via interaction failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Команда /voice
@@ -204,18 +292,30 @@ class VoiceControlCog(commands.Cog):
         except vc.VoiceControlError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
+        # Повторный /voice инвалидирует предыдущую панель: её кнопки
+        # больше не имеют доступа к новому состоянию.
+        old_key = (interaction.guild.id, interaction.user.id)
+        old = self.panels.pop(old_key, None)
+        if old is not None:
+            old.invalidate()
         panel = PanelState(interaction.guild.id, interaction.user.id)
+        panel.source_interaction = interaction
         voice_state = getattr(member, "voice", None)
         if voice_state and voice_state.channel and \
-                isinstance(voice_state.channel, discord.VoiceChannel):
+                vc._is_voice_channel(voice_state.channel):
             conf = await vc.db.settings(interaction.guild.id)
             if not vc.is_protected_channel(
                     interaction.guild.id, voice_state.channel.id, conf):
                 panel.channel_id = voice_state.channel.id
-        self.panels[(interaction.guild.id, interaction.user.id)] = panel
+        self.panels[old_key] = panel
         view = await self._render(panel)
         panel.interaction = interaction
         await interaction.response.send_message(view=view, ephemeral=True)
+        try:
+            msg = await interaction.original_response()
+            panel.message_id = getattr(msg, "id", None)
+        except Exception:
+            panel.message_id = None
 
     # ------------------------------------------------------------------
     # Диспетчер callback'ов
@@ -223,17 +323,30 @@ class VoiceControlCog(commands.Cog):
     def _panel_for(self, interaction: discord.Interaction) -> PanelState | None:
         if not interaction.guild:
             return None
-        return self.panels.get((interaction.guild.id, interaction.user.id))
+        panel = self.panels.get((interaction.guild.id, interaction.user.id))
+        if panel is None or not panel.valid:
+            return None
+        # Привязка callback к конкретному сообщению панели: кнопки
+        # старой панели после повторного /voice отвергаются.
+        msg = getattr(interaction, "message", None)
+        if panel.message_id is not None and msg is not None \
+                and getattr(msg, "id", None) != panel.message_id:
+            return None
+        return panel
 
     async def _guard(self, interaction: discord.Interaction,
                      panel: PanelState, *, mutating: bool) -> bool:
-        """Проверка прав при КАЖДОМ взаимодействии + TTL + feature flag."""
-        panel.touch()
-        if panel.expired():
-            self.panels.pop((panel.guild_id, panel.user_id), None)
+        """Проверка прав при КАЖДОМ взаимодействии + TTL + feature flag.
+        expired проверяется ДО touch — иначе бесконечные нажатия
+        продлевали бы жизнь панели."""
+        if not panel.valid or panel.expired():
+            if panel.valid:
+                self.panels.pop((panel.guild_id, panel.user_id), None)
+                panel.invalidate()
             await self._safe_text(
                 interaction, "Панель устарела — вызовите /voice заново.")
             return False
+        panel.touch()
         try:
             await vc.require_access(interaction)
         except vc.VoiceControlError as exc:
@@ -249,28 +362,44 @@ class VoiceControlCog(commands.Cog):
     async def _respond(self, interaction: discord.Interaction,
                        panel: PanelState) -> None:
         """Обновить СУЩЕСТВУЮЩУЮ ephemeral-панель (не создавать новую)."""
+        panel.touch()
         try:
             view = await self._render(panel)
+            panel.revision += 1
         except Exception:
             log.exception("voice panel render failed")
             return
         panel.interaction = interaction
-        if interaction.response.is_done():
-            # Modal submit и редкие случаи: правим исходное сообщение.
-            try:
-                await interaction.edit_original(view=view)
-            except Exception:
+        # Modal submit и прочие уже отвеченные взаимодействия:
+        # правим сообщение через токен исходной /voice-команды.
+        if interaction.response.is_done() or \
+                interaction.type == discord.InteractionType.modal_submit:
+            src = panel.source_interaction
+            if src is not None:
                 try:
-                    await interaction.followup.edit_message(
-                        interaction.message.id, view=view) \
-                        if interaction.message else None
+                    await src.edit_original_response(view=view)
+                    return
                 except Exception as exc:
-                    log.debug("voice panel followup edit failed: %s", exc)
+                    log.debug("panel edit via source failed: %s", exc)
+            try:
+                await interaction.followup.edit_message(
+                    panel.message_id, view=view) if panel.message_id else \
+                    await interaction.followup.send(view=view, ephemeral=True)
+            except Exception as exc:
+                log.debug("voice panel followup edit failed: %s", exc)
             return
         try:
             await interaction.response.edit_message(view=view)
         except discord.HTTPException:
-            # Fallback: modal submit может не поддерживать UPDATE_MESSAGE.
+            # Fallback: сообщение могло быть отправлено другим
+            # interaction — правим через исходный токен.
+            src = panel.source_interaction
+            if src is not None:
+                try:
+                    await src.edit_original_response(view=view)
+                    return
+                except Exception as exc:
+                    log.debug("panel fallback edit failed: %s", exc)
             try:
                 await interaction.response.send_message(view=view,
                                                         ephemeral=True)
@@ -288,6 +417,13 @@ class VoiceControlCog(commands.Cog):
         async with panel.lock:
             if not await self._guard(interaction, panel, mutating=mutating):
                 return
+            # Ранний defer для длительных операций — иначе Discord
+            # оборвёт interaction через ~3 секунды.
+            if action in LONG_ACTIONS and not interaction.response.is_done():
+                try:
+                    await interaction.response.defer(ephemeral=True)
+                except discord.HTTPException:
+                    pass
             try:
                 await self._dispatch(interaction, panel, action, **params)
             except vc.StaleTargetError:
@@ -327,6 +463,24 @@ class VoiceControlCog(commands.Cog):
         await self._respond(interaction, panel)
         await self._safe_text(interaction, text)
 
+    def _begin_confirm(self, panel: PanelState, kind: str,
+                       snapshot: dict[str, Any]) -> None:
+        """Фиксирует неизменяемый snapshot для подтверждения:
+        повторное нажатие или смена состояния инвалидирует его."""
+        panel.confirm_kind = kind
+        panel.confirm_snapshot = snapshot
+        panel.page = "confirm"
+
+    def _consume_confirm(self, panel: PanelState, kind: str) -> dict | None:
+        """Снимает подтверждение (защита от повторного нажатия) и
+        возвращает snapshot, если он актуален."""
+        if panel.confirm_kind != kind or panel.confirm_snapshot is None:
+            return None
+        snap = panel.confirm_snapshot
+        panel.confirm_kind = None
+        panel.confirm_snapshot = None
+        return snap
+
     # ------------------------------------------------------------------
     # Диспетчер действий
     # ------------------------------------------------------------------
@@ -342,12 +496,15 @@ class VoiceControlCog(commands.Cog):
         if action == "goto":
             panel.page = params["page"]
             panel.member_page = 0
+            panel.confirm_kind = None
+            panel.confirm_snapshot = None
             await self._respond(interaction, panel)
             return
         if action == "back":
             panel.page = "main"
             panel.member_page = 0
             panel.confirm_kind = None
+            panel.confirm_snapshot = None
             await self._respond(interaction, panel)
             return
         if action == "chan_page":
@@ -358,6 +515,8 @@ class VoiceControlCog(commands.Cog):
             panel.channel_id = params["channel_id"]
             panel.page = "main"
             panel.selected_member = None
+            panel.confirm_kind = None
+            panel.confirm_snapshot = None
             await self._respond(interaction, panel)
             return
         if action == "select_member":
@@ -384,6 +543,10 @@ class VoiceControlCog(commands.Cog):
 
         if action == "mute_all":
             result = await vc.bulk_mute(channel, member, duration=panel.duration)
+            if result.get("error") == "disabled":
+                await self._safe_text(
+                    interaction, "Voice Control отключён.")
+                return
             await self._flash(
                 interaction, panel,
                 f"Микрофоны отключены: {result['done']}\n"
@@ -398,10 +561,13 @@ class VoiceControlCog(commands.Cog):
                     interaction,
                     "Сначала завершите режим ведущего — «Разрешить всем» "
                     "снимает только ограничения Voice Control.")
+            elif result.get("error") == "disabled":
+                await self._safe_text(interaction, "Voice Control отключён.")
             else:
                 await self._flash(
                     interaction, panel,
                     f"Микрофоны включены: {result['done']}\n"
+                    f"Пропущено: {result['skipped']}\n"
                     f"Ошибок: {result['errors']}")
             return
         if action == "member_mute":
@@ -410,10 +576,12 @@ class VoiceControlCog(commands.Cog):
                 await self._safe_text(interaction, "Участник не найден.")
                 await self._respond(interaction, panel)
                 return
+            exceptions = await vc.db.exceptions(guild.id, channel.id)
             result = await vc.apply_restriction(
                 target, channel, "server_mute", vc.ORIGIN_MANUAL,
-                actor_id=member.id, reason="Voice Control: ручной мут",
-                expires_at=self._expiry(panel.duration))
+                actor=member, reason="Voice Control: ручной мут",
+                expires_at=self._expiry(panel.duration),
+                exceptions=exceptions)
             if result.get("skipped") == "foreign_mute":
                 await self._respond(interaction, panel)
                 await self._safe_text(
@@ -425,11 +593,11 @@ class VoiceControlCog(commands.Cog):
                 await self._safe_text(interaction,
                                       "Участник уже ограничен Voice Control.")
             else:
+                rec = result.get("restriction") or {}
                 op_id = f"mute:{guild.id}:{channel.id}:{target.id}:{int(time.time())}"
                 await vc.db.op_create(
                     op_id, guild.id, channel.id, "mute_member", member.id,
-                    {"user_id": target.id,
-                     "restriction_id": (result.get("restriction") or {}).get("id")})
+                    {"user_id": target.id, "restriction_id": rec.get("id")})
                 await vc.db.op_finish(op_id, "done")
                 await self._flash(interaction, panel,
                                   "Микрофон участника выключен.")
@@ -437,12 +605,11 @@ class VoiceControlCog(commands.Cog):
         if action == "member_unmute":
             uid = panel.selected_member
             restrictions = await vc.db.restrictions(
-                guild.id, channel_id=channel.id, user_id=uid,
-                active_only=True)
+                guild.id, user_id=uid, active_only=True)
             released_ids = []
             for r in restrictions:
                 if r["kind"] == "server_mute":
-                    await vc.release_restriction(r, actor_id=member.id)
+                    await vc.release_restriction(r, actor=member)
                     released_ids.append(r["id"])
             op_id = f"unmute:{guild.id}:{channel.id}:{uid}:{int(time.time())}"
             await vc.db.op_create(
@@ -459,16 +626,22 @@ class VoiceControlCog(commands.Cog):
                 await self._safe_text(interaction, "Участник не найден.")
                 await self._respond(interaction, panel)
                 return
+            exceptions = await vc.db.exceptions(guild.id, channel.id)
             result = await vc.apply_restriction(
                 target, channel, "server_deafen", vc.ORIGIN_MANUAL,
-                actor_id=member.id,
+                actor=member,
                 reason="Voice Control: серверное отключение звука",
-                expires_at=self._expiry(panel.duration))
+                expires_at=self._expiry(panel.duration),
+                exceptions=exceptions)
             if result.get("skipped") == "foreign_mute":
                 await self._respond(interaction, panel)
                 await self._safe_text(
                     interaction, "Ограничение уже стоит и не принадлежит "
                                  "Voice Control — не трогаем.")
+            elif result.get("skipped") == "already_restricted":
+                await self._respond(interaction, panel)
+                await self._safe_text(
+                    interaction, "Ограничение уже активно.")
             else:
                 await self._flash(interaction, panel,
                                   "Звук участника отключён.")
@@ -476,12 +649,11 @@ class VoiceControlCog(commands.Cog):
         if action == "member_undeafen":
             uid = panel.selected_member
             restrictions = await vc.db.restrictions(
-                guild.id, channel_id=channel.id, user_id=uid,
-                active_only=True)
+                guild.id, user_id=uid, active_only=True)
             released = 0
             for r in restrictions:
                 if r["kind"] == "server_deafen":
-                    await vc.release_restriction(r, actor_id=member.id)
+                    await vc.release_restriction(r, actor=member)
                     released += 1
             await self._flash(interaction, panel,
                               f"Снято ограничений звука: {released}")
@@ -492,7 +664,8 @@ class VoiceControlCog(commands.Cog):
                 await self._safe_text(interaction, "Участник не найден.")
                 await self._respond(interaction, panel)
                 return
-            await vc.disconnect_member(target, member)
+            await vc.disconnect_member(target, member,
+                                       expected_channel_id=channel.id)
             await self._flash(interaction, panel,
                               "Участник отключён от войса.")
             return
@@ -509,12 +682,13 @@ class VoiceControlCog(commands.Cog):
             target = await self._target_member(guild, panel.selected_member)
             dest = guild.get_channel(panel.move_target) \
                 if panel.move_target else None
-            if target is None or not isinstance(dest, discord.VoiceChannel):
+            if target is None or not vc._is_voice_channel(dest):
                 await self._respond(interaction, panel)
                 await self._safe_text(interaction,
                                       "Сначала выберите канал назначения.")
                 return
-            await vc.move_member(target, dest, member)
+            await vc.move_member(target, dest, member,
+                                 expected_channel_id=channel.id)
             await self._flash(interaction, panel, "Участник перемещён.")
             return
         if action == "member_speaker_toggle":
@@ -578,17 +752,26 @@ class VoiceControlCog(commands.Cog):
             return
         if action == "speaker_start":
             result = await vc.start_speaker_mode(channel, member)
+            if result.get("error") == "disabled":
+                await self._safe_text(interaction, "Voice Control отключён.")
+                return
             await self._flash(
                 interaction, panel,
                 f"Режим ведущего активирован.\n"
                 f"Замучено слушателей: {result['muted']}")
             return
         if action == "speaker_stop_confirm":
-            panel.confirm_kind = "speaker_stop"
-            panel.page = "confirm"
+            self._begin_confirm(panel, "speaker_stop",
+                                {"channel_id": channel.id})
             await self._respond(interaction, panel)
             return
         if action == "speaker_stop":
+            snap = self._consume_confirm(panel, "speaker_stop")
+            if snap is None or snap.get("channel_id") != channel.id:
+                await self._respond(interaction, panel)
+                await self._safe_text(
+                    interaction, "Подтверждение устарело — повторите.")
+                return
             result = await vc.stop_speaker_mode(channel, member)
             await self._flash(
                 interaction, panel,
@@ -602,11 +785,16 @@ class VoiceControlCog(commands.Cog):
                 await self._respond(interaction, panel)
                 await self._safe_text(interaction, "Канал уже закрыт.")
                 return
-            panel.confirm_kind = "close"
-            panel.page = "confirm"
+            self._begin_confirm(panel, "close", {"channel_id": channel.id})
             await self._respond(interaction, panel)
             return
         if action == "close_do":
+            snap = self._consume_confirm(panel, "close")
+            if snap is None or snap.get("channel_id") != channel.id:
+                await self._respond(interaction, panel)
+                await self._safe_text(
+                    interaction, "Подтверждение устарело — повторите.")
+                return
             await vc.close_voice(channel, member)
             await self._flash(interaction, panel,
                               "Войс закрыт для новых участников.")
@@ -658,13 +846,23 @@ class VoiceControlCog(commands.Cog):
                     interaction,
                     "Выберите участников и канал назначения.")
                 return
-            panel.confirm_kind = "move"
-            panel.page = "confirm"
+            # Неизменяемый snapshot: исходный канал, цель, участники.
+            self._begin_confirm(panel, "move", {
+                "channel_id": channel.id,
+                "target_id": panel.move_target,
+                "user_ids": sorted(panel.move_pick),
+            })
             await self._respond(interaction, panel)
             return
         if action == "move_confirm":
-            dest = guild.get_channel(panel.move_target)
-            if not isinstance(dest, discord.VoiceChannel):
+            snap = self._consume_confirm(panel, "move")
+            if snap is None or snap.get("channel_id") != channel.id:
+                await self._respond(interaction, panel)
+                await self._safe_text(
+                    interaction, "Подтверждение устарело — повторите.")
+                return
+            dest = guild.get_channel(snap.get("target_id"))
+            if not vc._is_voice_channel(dest):
                 await self._respond(interaction, panel)
                 await self._safe_text(interaction,
                                       "Канал назначения недоступен.")
@@ -672,7 +870,7 @@ class VoiceControlCog(commands.Cog):
             conf = await vc.db.settings(guild.id)
             exceptions = await vc.db.exceptions(guild.id, channel.id)
             moved = skipped = errors = 0
-            for uid in list(panel.move_pick):
+            for uid in snap.get("user_ids", []):
                 target = guild.get_member(uid)
                 if target is None:
                     continue
@@ -681,7 +879,8 @@ class VoiceControlCog(commands.Cog):
                     skipped += 1
                     continue
                 try:
-                    await vc.move_member(target, dest, member)
+                    await vc.move_member(target, dest, member,
+                                         expected_channel_id=channel.id)
                     moved += 1
                 except vc.StaleTargetError:
                     skipped += 1
@@ -698,11 +897,17 @@ class VoiceControlCog(commands.Cog):
                 + (f"\nОшибок: {errors}" if errors else ""))
             return
         if action == "disconnect_all_confirm":
-            panel.confirm_kind = "disconnect_all"
-            panel.page = "confirm"
+            self._begin_confirm(panel, "disconnect_all",
+                                {"channel_id": channel.id})
             await self._respond(interaction, panel)
             return
         if action == "disconnect_all_do":
+            snap = self._consume_confirm(panel, "disconnect_all")
+            if snap is None or snap.get("channel_id") != channel.id:
+                await self._respond(interaction, panel)
+                await self._safe_text(
+                    interaction, "Подтверждение устарело — повторите.")
+                return
             result = await vc.disconnect_all(channel, member)
             await self._flash(
                 interaction, panel,
@@ -714,6 +919,7 @@ class VoiceControlCog(commands.Cog):
         if action == "confirm_no":
             panel.page = "main"
             panel.confirm_kind = None
+            panel.confirm_snapshot = None
             await self._respond(interaction, panel)
             return
 
@@ -722,6 +928,10 @@ class VoiceControlCog(commands.Cog):
             await self._respond(interaction, panel)
             return
         if action == "extra_auto_mute":
+            if not VOICE_CONTROL_ENABLED:
+                await self._safe_text(interaction,
+                                      "Voice Control отключён.")
+                return
             mode = await vc.db.mode(guild.id, channel.id)
             new_value = not (mode and mode.get("auto_mute"))
             await vc.db.put_mode(guild.id, channel.id, auto_mute=new_value)
@@ -797,7 +1007,7 @@ class VoiceControlCog(commands.Cog):
         if panel.channel_id is None:
             return None
         channel = self.bot.get_channel(panel.channel_id)
-        if isinstance(channel, discord.VoiceChannel) and \
+        if vc._is_voice_channel(channel) and \
                 channel.guild.id == panel.guild_id:
             return channel
         return None
@@ -834,17 +1044,7 @@ class VoiceControlCog(commands.Cog):
         # Валидация выбранного канала: удалённый/пустой без режима —
         # сбрасываем выбор; пустой С режимом остаётся доступным.
         if panel.channel_id is not None and channel is None:
-            mode = await vc.db.mode(guild.id, panel.channel_id)
-            mode_active = bool(mode and (
-                mode.get("speaker_mode") or mode.get("auto_mute")
-                or mode.get("closed") or mode.get("name_override")
-                or mode.get("user_limit")))
-            if mode_active:
-                # Канал есть в кэше, но не VoiceChannel (удалён?) —
-                # невалиден в любом случае.
-                panel.channel_id = None
-            else:
-                panel.channel_id = None
+            panel.channel_id = None
         builders = {
             "main": self._page_main,
             "members": self._page_members,
@@ -872,12 +1072,15 @@ class VoiceControlCog(commands.Cog):
             if channel else 0
         mode = await vc.db.mode(guild.id, channel.id) if channel else None
 
+        # Один TextDisplay: CV2 Container ограничен 10 компонентами —
+        # сводим всю текстовую часть в один блок.
+        lines: list[str] = []
         if channel is None:
-            view.text("Выберите голосовой канал.")
+            lines.append("Выберите голосовой канал.")
             if not chan_list:
-                view.text("Активных голосовых каналов нет.")
+                lines.append("Активных голосовых каналов нет.")
         else:
-            lines = [
+            lines += [
                 f"**Голосовой канал:** {channel.mention}",
                 f"**Участников:** {len(humans)}",
                 f"**Без серверного мута:** {len(humans) - server_muted}",
@@ -885,15 +1088,16 @@ class VoiceControlCog(commands.Cog):
             ]
             if mode and mode.get("speaker_mode"):
                 speakers = await vc.db.speakers(guild.id, channel.id)
-                sp = [guild.get_member(s) for s in speakers]
-                sp = [m for m in sp if m]
-                listeners = len([m for m in humans if m.id not in speakers])
-                view.text("\n".join(lines))
-                view.sep()
-                view.text("**Режим ведущего активен**")
-                view.text("**Ведущие:** "
-                          + (", ".join(f"<@{m.id}>" for m in sp) or "—"))
-                view.text(f"**Слушателей:** {listeners}")
+                sp = [m for m in (guild.get_member(s) for s in speakers)
+                      if m]
+                listeners = len([m for m in humans
+                                 if m.id not in speakers])
+                lines += [
+                    "**Режим ведущего активен**",
+                    "**Ведущие:** "
+                    + (", ".join(f"<@{m.id}>" for m in sp) or "—"),
+                    f"**Слушателей:** {listeners}",
+                ]
             else:
                 flags = []
                 if mode and mode.get("closed"):
@@ -906,7 +1110,10 @@ class VoiceControlCog(commands.Cog):
                     flags.append(f"лимит: {mode['user_limit']}")
                 lines.append("**Режим:** "
                              + (", ".join(flags) if flags else "Обычный"))
-                view.text("\n".join(lines))
+        if lines:
+            view.text("\n".join(lines))
+        else:
+            view.text("*Нет активных войсов с участниками.*")
 
         # Выбор канала с пагинацией (>25 активных).
         if chan_list:
@@ -931,9 +1138,6 @@ class VoiceControlCog(commands.Cog):
                     self._btn("▶", "chan_page",
                               page=min(total_pages - 1, page + 1)),
                 )
-        else:
-            view.text("*Нет активных войсов с участниками.*")
-
         # Длительность мута.
         dur_opts = [
             discord.SelectOption(
@@ -963,16 +1167,28 @@ class VoiceControlCog(commands.Cog):
                 interaction, "set_duration",
                 duration=timedelta(seconds=secs) if secs else None)
 
-        view.row(discord.ui.Select(
-            placeholder="Длительность мута…", options=dur_opts,
-            callback=_dur_cb))
+        view.row(_CallbackSelect(
+            _dur_cb, placeholder="Длительность мута…", options=dur_opts))
 
         if channel is not None:
+            closed = bool(mode and mode.get("closed"))
             view.row(
                 self._btn("Выключить всем", "mute_all",
                           discord.ButtonStyle.danger),
                 self._btn("Разрешить всем", "unmute_all",
                           discord.ButtonStyle.success),
+                self._btn("Участники", "goto", page="members"),
+                self._btn("Режим ведущего", "goto_speakers"),
+                self._btn("Открыть войс" if closed else "Закрыть войс",
+                          "open" if closed else "close_confirm",
+                          discord.ButtonStyle.success if closed
+                          else discord.ButtonStyle.secondary),
+            )
+            view.row(
+                self._btn("Перемещение", "goto_move"),
+                self._btn("Дополнительно", "goto_extras"),
+                self._btn("Обновить", "refresh"),
+                self._btn("Обзор войсов", "goto_overview"),
             )
             if mode and mode.get("speaker_mode"):
                 view.row(
@@ -981,23 +1197,6 @@ class VoiceControlCog(commands.Cog):
                     self._btn("Завершить режим", "speaker_stop_confirm",
                               discord.ButtonStyle.danger),
                 )
-            view.row(
-                self._btn("Участники", "goto", page="members"),
-                self._btn("Режим ведущего", "goto_speakers"),
-            )
-            closed = bool(mode and mode.get("closed"))
-            view.row(
-                self._btn("Открыть войс" if closed else "Закрыть войс",
-                          "open" if closed else "close_confirm",
-                          discord.ButtonStyle.success if closed
-                          else discord.ButtonStyle.secondary),
-                self._btn("Перемещение", "goto_move"),
-            )
-            view.row(
-                self._btn("Дополнительно", "goto_extras"),
-                self._btn("Обновить", "refresh"),
-                self._btn("Обзор войсов", "goto_overview"),
-            )
 
     async def _page_members(self, view, panel, guild, conf, chan_list, channel):
         view.text("**Участники**")
@@ -1100,8 +1299,8 @@ class VoiceControlCog(commands.Cog):
                                 channel):
         view.text("**Переместить участника**")
         dests = [c for c in guild.channels
-                 if isinstance(c, discord.VoiceChannel)
-                 and not vc.is_protected_channel(guild.id, c.id)
+                 if vc._is_voice_channel(c)
+                 and not vc.is_protected_channel(guild.id, c.id, conf)
                  and (channel is None or c.id != channel.id)]
         options = [discord.SelectOption(
             label=f"{c.name} — {len(vc.humans_in(c))}", value=str(c.id),
@@ -1110,7 +1309,7 @@ class VoiceControlCog(commands.Cog):
             view.row(self._chan_select(options, action="move_member_set_target"))
         dest = guild.get_channel(panel.move_target) \
             if panel.move_target else None
-        if isinstance(dest, discord.VoiceChannel):
+        if vc._is_voice_channel(dest):
             view.text(f"Канал назначения: {dest.mention}")
         view.row(
             self._btn("Переместить", "member_move_do",
@@ -1175,17 +1374,17 @@ class VoiceControlCog(commands.Cog):
                       if int(v)]
             await self.handle(interaction, "move_pick_set", user_ids=values)
 
-        view.row(discord.ui.Select(
-            placeholder="Участники (можно несколько)…",
+        view.row(_CallbackSelect(
+            _multi_cb, placeholder="Участники (можно несколько)…",
             options=options[:25], min_values=1,
-            max_values=min(25, max(1, len(humans))), callback=_multi_cb))
+            max_values=min(25, max(1, len(humans)))))
         view.row(
             self._btn("Выбрать всех", "move_pick_all"),
             self._btn("Сбросить", "move_pick_clear"),
         )
         dests = [c for c in guild.channels
-                 if isinstance(c, discord.VoiceChannel)
-                 and not vc.is_protected_channel(guild.id, c.id)
+                 if vc._is_voice_channel(c)
+                 and not vc.is_protected_channel(guild.id, c.id, conf)
                  and c.id != channel.id]
         dest_options = [discord.SelectOption(
             label=f"{c.name} — {len(vc.humans_in(c))}", value=str(c.id),
@@ -1195,7 +1394,7 @@ class VoiceControlCog(commands.Cog):
                                        action="move_set_target"))
         dest = guild.get_channel(panel.move_target) \
             if panel.move_target else None
-        if isinstance(dest, discord.VoiceChannel):
+        if vc._is_voice_channel(dest):
             view.text(f"Цель: {dest.mention}")
         view.row(
             self._btn("Переместить выбранных", "move_do",
@@ -1260,9 +1459,9 @@ class VoiceControlCog(commands.Cog):
                 ptype, _, tid = v.partition(":")
                 await self.handle(interaction, "protect_remove",
                                   target_type=ptype, target_id=int(tid))
-            view.row(discord.ui.Select(
-                placeholder="Убрать исключение…", options=opts[:25],
-                callback=_prot_cb))
+            view.row(_CallbackSelect(
+                _prot_cb, placeholder="Убрать исключение…",
+                options=opts[:25]))
         view.row(self._btn("Назад", "back"))
 
     async def _page_history(self, view, panel, guild, conf, chan_list,
@@ -1277,7 +1476,7 @@ class VoiceControlCog(commands.Cog):
                 actor = f"<@{e['actor_id']}>" if e["actor_id"] else "система"
                 when = (f"<t:{int(e['created_at'].timestamp())}:R>"
                         if e.get("created_at") else "")
-                detail = e.get("detail") or {}
+                detail = vc._jdetail(e.get("detail"))
                 extra = ""
                 for k in ("done", "muted", "released", "moved", "errors"):
                     if k in detail:
@@ -1330,8 +1529,7 @@ class VoiceControlCog(commands.Cog):
                       "смогут войти (кроме тех, у кого уже есть права)."),
             "speaker_stop": ("Завершить режим ведущего? Ограничения режима "
                              "будут сняты."),
-            "move": (f"Переместить {len(panel.move_pick)} участников "
-                     f"из «{channel.name}» в выбранный канал?"),
+            "move": self._confirm_move_text(panel, channel),
             "disconnect_all": (f"Отключить ВСЕХ участников от войса "
                                f"«{channel.name}»? Действие необратимо."),
         }
@@ -1352,6 +1550,60 @@ class VoiceControlCog(commands.Cog):
         else:
             view.row(self._btn("Назад", "back"))
 
+    def _confirm_move_text(self, panel: PanelState,
+                           channel: discord.VoiceChannel) -> str:
+        snap = panel.confirm_snapshot or {}
+        target_id = snap.get("target_id") or panel.move_target
+        dest = self.bot.get_channel(target_id) if target_id else None
+        dest_name = getattr(dest, "name", "канал") if dest else "канал"
+        n = len(snap.get("user_ids") or panel.move_pick)
+        return (f"Переместить {n} участников из «{channel.name}» "
+                f"в «{dest_name}»?")
+
+    # ------------------------------------------------------------------
+    # Аварийная очистка (owner-only)
+    # ------------------------------------------------------------------
+    @app_commands.command(
+        name="voice_emergency",
+        description="Аварийное завершение режимов Voice Control (только владелец)")
+    @app_commands.describe(
+        confirm="false — dry-run отчёт; true — выполнить очистку")
+    async def voice_emergency(self, interaction: discord.Interaction,
+                              confirm: bool = False) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "Только на сервере.", ephemeral=True)
+            return
+        member = interaction.user
+        is_owner = member.id == interaction.guild.owner_id \
+            or member.id == getattr(vc, "BOT_OWNER_ID", 0)
+        if not is_owner:
+            await interaction.response.send_message(
+                "Только для владельца сервера.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            report = await vc.emergency_cleanup(
+                interaction.guild, member, dry_run=not confirm)
+            lines = [
+                f"**dry_run:** {report['dry_run']}",
+                f"Каналов с режимами: {report['channels_with_modes']}",
+                f"Активных ограничений: {report['active_restrictions']}",
+                f"Незавершённых: {report['pending_states']}",
+                f"Overwrite-записей: {report['active_overwrites']}",
+            ]
+            if confirm:
+                lines.append(f"Снято попыток: {report['released_attempted']}")
+                lines.append(f"Осталось pending: {report['pending_remaining']}")
+                lines.append(f"Ошибок: {report['errors']}")
+            else:
+                lines.append("Повторите с confirm=true для выполнения.")
+            await interaction.followup.send("\n".join(lines), ephemeral=True)
+        except Exception as exc:
+            log.exception("voice emergency failed")
+            await interaction.followup.send(
+                f"Ошибка аварийной очистки: {exc}", ephemeral=True)
+
     # ------------------------------------------------------------------
     # Компоненты
     # ------------------------------------------------------------------
@@ -1360,8 +1612,7 @@ class VoiceControlCog(commands.Cog):
              **params) -> discord.ui.Button:
         async def cb(interaction: discord.Interaction) -> None:
             await self.handle(interaction, action, **params)
-        return discord.ui.Button(label=label[:80], style=style,
-                                 callback=cb)
+        return _CallbackButton(cb, label=label[:80], style=style)
 
     def _chan_select(self, options: list[discord.SelectOption],
                      action: str = "select_channel") -> discord.ui.Select:
@@ -1370,9 +1621,9 @@ class VoiceControlCog(commands.Cog):
             if values:
                 await self.handle(interaction, action,
                                   channel_id=int(values[0]))
-        return discord.ui.Select(
-            placeholder="Выбрать голосовой канал…",
-            options=options[:25], callback=cb)
+        return _CallbackSelect(
+            cb, placeholder="Выбрать голосовой канал…",
+            options=options[:25])
 
     def _member_select(self, members: list[discord.Member], action: str,
                        max_values: int = 1) -> discord.ui.Select:
@@ -1389,151 +1640,224 @@ class VoiceControlCog(commands.Cog):
                       if int(v)]
             if values:
                 await self.handle(interaction, action, user_id=values[0])
-        return discord.ui.Select(
-            placeholder="Выбрать участника…", options=options[:25],
-            min_values=1, max_values=max_values, callback=cb)
+        return _CallbackSelect(
+            cb, placeholder="Выбрать участника…", options=options[:25],
+            min_values=1, max_values=max_values)
+
+
+class _CallbackButton(discord.ui.Button):
+    """Button с callback, переданным в конструктор — в discord.py
+    2.7 callback kwarg у Button/Select удалён."""
+
+    def __init__(self, callback, **kwargs):
+        super().__init__(**kwargs)
+        self._cb = callback
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await self._cb(interaction)
+
+
+class _CallbackSelect(discord.ui.Select):
+    """Select с callback, переданным в конструктор
+    (discord.ui.Select не принимает callback kwarg)."""
+
+    def __init__(self, callback, **kwargs):
+        super().__init__(**kwargs)
+        self._cb = callback
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await self._cb(interaction)
 
 
 # ----------------------------------------------------------------------
 # Модальные окна
 # ----------------------------------------------------------------------
-class RenameModal(discord.ui.Modal, title="Переименовать войс"):
+class _PanelModal(discord.ui.Modal):
+    """Базовая модалка: привязка к panel_id/guild/user/каналу.
+    Submit от устаревшей модалки (канал сменился, панель инвалидна)
+    отвергается."""
+
+    def __init__(self, panel: PanelState, cog: VoiceControlCog,
+                 **modal_kwargs):
+        super().__init__(**modal_kwargs)
+        self.panel = panel
+        self.cog = cog
+        self.expected_channel_id = panel.channel_id
+        self.expected_panel_id = panel.panel_id
+
+    async def _panel_alive(self, interaction: discord.Interaction) -> bool:
+        panel = self.panel
+        if not panel.valid or panel.expired():
+            await interaction.response.send_message(
+                "Панель устарела — вызовите /voice заново.", ephemeral=True)
+            return False
+        if self.cog.panels.get((panel.guild_id, panel.user_id)) is not panel \
+                or panel.panel_id != self.expected_panel_id:
+            await interaction.response.send_message(
+                "Панель была пересоздана — повторите действие.",
+                ephemeral=True)
+            return False
+        try:
+            await vc.require_access(interaction)
+        except vc.VoiceControlError:
+            await interaction.response.send_message(
+                "Недостаточно прав.", ephemeral=True)
+            return False
+        if not VOICE_CONTROL_ENABLED:
+            await interaction.response.send_message(
+                "Voice Control отключён.", ephemeral=True)
+            return False
+        return True
+
+    async def _channel_still_valid(self, interaction: discord.Interaction,
+                                   panel: PanelState):
+        if panel.channel_id != self.expected_channel_id:
+            await interaction.response.send_message(
+                "Выбранный канал изменился — повторите действие.",
+                ephemeral=True)
+            return None
+        channel = self.cog._panel_channel(panel)
+        if channel is None:
+            await interaction.response.send_message(
+                "Канал недоступен.", ephemeral=True)
+            return None
+        return channel
+
+    async def _finish(self, interaction: discord.Interaction,
+                      panel: PanelState) -> None:
+        """Modal submit: defer → обновление панели через handle."""
+        panel.touch()
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.HTTPException:
+            pass
+        await self.cog.handle(interaction, "refresh")
+
+
+class RenameModal(_PanelModal, title="Переименовать войс"):
     name = discord.ui.TextInput(label="Новое название", max_length=100)
 
-    def __init__(self, panel: PanelState, cog: VoiceControlCog):
-        super().__init__()
-        self.panel = panel
-        self.cog = cog
-
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await self._guard(interaction)
-        guild = interaction.guild
-        channel = self.cog._panel_channel(self.panel)
-        if channel is None:
-            await interaction.response.send_message(
-                "Канал недоступен.", ephemeral=True)
+        if not await self._panel_alive(interaction):
             return
-        await vc.db.put_mode(guild.id, channel.id,
-                             name_override=self.name.value)
-        try:
-            await channel.edit(name=self.name.value[:100],
-                               reason="r!z3 Voice Control")
-        except discord.HTTPException as exc:
-            await vc.db.put_mode(guild.id, channel.id, name_override=None)
-            await interaction.response.send_message(
-                f"Discord отклонил переименование: {exc}", ephemeral=True)
-            return
-        await vc.log_event(guild.id, interaction.user.id, "voice.rename",
-                           channel_id=channel.id,
-                           detail={"name": self.name.value})
-        await self.cog.handle(interaction, "refresh")
+        panel = self.panel
+        async with panel.lock:
+            channel = await self._channel_still_valid(interaction, panel)
+            if channel is None:
+                return
+            guild = interaction.guild
+            old_name = getattr(channel, "name", None)
+            mode = await vc.db.mode(guild.id, channel.id)
+            await vc.db.put_mode(
+                guild.id, channel.id, name_override=self.name.value,
+                name_before=(mode or {}).get("name_before") or old_name)
+            try:
+                await channel.edit(name=self.name.value[:100],
+                                   reason="r!z3 Voice Control")
+            except discord.HTTPException as exc:
+                await vc.db.put_mode(guild.id, channel.id,
+                                     name_override=None)
+                await interaction.response.send_message(
+                    f"Discord отклонил переименование: {exc}",
+                    ephemeral=True)
+                return
+            await vc.log_event(guild.id, interaction.user.id, "voice.rename",
+                               channel_id=channel.id,
+                               detail={"name": self.name.value})
+            await self._finish(interaction, panel)
 
-    async def _guard(self, interaction: discord.Interaction) -> None:
-        try:
-            await vc.require_access(interaction)
-        except vc.VoiceControlError:
-            await interaction.response.send_message(
-                "Недостаточно прав.", ephemeral=True)
-            raise
-        if not VOICE_CONTROL_ENABLED:
-            await interaction.response.send_message(
-                "Voice Control отключён.", ephemeral=True)
-            raise vc.VoiceControlError("disabled")
 
-
-class LimitModal(discord.ui.Modal, title="Лимит участников"):
+class LimitModal(_PanelModal, title="Лимит участников"):
     limit = discord.ui.TextInput(label="Лимит (0 — без лимита)", max_length=3)
 
-    def __init__(self, panel: PanelState, cog: VoiceControlCog):
-        super().__init__()
-        self.panel = panel
-        self.cog = cog
-
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await self._guard(interaction)
-        try:
-            value = int(self.limit.value.strip())
-        except ValueError:
-            await interaction.response.send_message(
-                "Введите число.", ephemeral=True)
+        if not await self._panel_alive(interaction):
             return
-        if value < 0 or value > 99:
-            await interaction.response.send_message(
-                "Лимит 0–99.", ephemeral=True)
-            return
-        guild = interaction.guild
-        channel = self.cog._panel_channel(self.panel)
-        if channel is None:
-            await interaction.response.send_message(
-                "Канал недоступен.", ephemeral=True)
-            return
-        await vc.db.put_mode(guild.id, channel.id, user_limit=value or None)
-        try:
-            await channel.edit(user_limit=value or None,
-                               reason="r!z3 Voice Control")
-        except discord.HTTPException as exc:
-            await vc.db.put_mode(guild.id, channel.id, user_limit=None)
-            await interaction.response.send_message(
-                f"Discord отклонил изменение лимита: {exc}",
-                ephemeral=True)
-            return
-        await vc.log_event(guild.id, interaction.user.id, "voice.limit",
-                           channel_id=channel.id, detail={"limit": value})
-        await self.cog.handle(interaction, "refresh")
-
-    async def _guard(self, interaction: discord.Interaction) -> None:
-        try:
-            await vc.require_access(interaction)
-        except vc.VoiceControlError:
-            await interaction.response.send_message(
-                "Недостаточно прав.", ephemeral=True)
-            raise
-        if not VOICE_CONTROL_ENABLED:
-            await interaction.response.send_message(
-                "Voice Control отключён.", ephemeral=True)
-            raise vc.VoiceControlError("disabled")
+        panel = self.panel
+        async with panel.lock:
+            try:
+                value = int(self.limit.value.strip())
+            except ValueError:
+                await interaction.response.send_message(
+                    "Введите число.", ephemeral=True)
+                return
+            if value < 0 or value > 99:
+                await interaction.response.send_message(
+                    "Лимит 0–99.", ephemeral=True)
+                return
+            channel = await self._channel_still_valid(interaction, panel)
+            if channel is None:
+                return
+            guild = interaction.guild
+            mode = await vc.db.mode(guild.id, channel.id)
+            await vc.db.put_mode(
+                guild.id, channel.id,
+                user_limit=value or None,
+                user_limit_before=(mode or {}).get("user_limit_before")
+                if (mode or {}).get("user_limit_before") is not None
+                else getattr(channel, "user_limit", None))
+            try:
+                # user_limit=0 в Discord API = снять ограничение.
+                await channel.edit(user_limit=value,
+                                   reason="r!z3 Voice Control")
+            except discord.HTTPException as exc:
+                await vc.db.put_mode(guild.id, channel.id, user_limit=None)
+                await interaction.response.send_message(
+                    f"Discord отклонил изменение лимита: {exc}",
+                    ephemeral=True)
+                return
+            await vc.log_event(guild.id, interaction.user.id, "voice.limit",
+                               channel_id=channel.id, detail={"limit": value})
+            await self._finish(interaction, panel)
 
 
-class ProtectModal(discord.ui.Modal):
+class ProtectModal(_PanelModal):
     def __init__(self, panel: PanelState, cog: VoiceControlCog, kind: str):
-        super().__init__(
-            title="Защищённый участник" if kind == "user"
-            else "Защищённая роль")
-        self.panel = panel
-        self.cog = cog
         self.kind = kind
+        title = ("Защищённый участник" if kind == "user"
+                 else "Защищённая роль")
+        super().__init__(panel, cog, title=title)
         self.raw_id = discord.ui.TextInput(
             label="Discord ID (число)", max_length=25)
         self.add_item(self.raw_id)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        try:
-            await vc.require_access(interaction)
-        except vc.VoiceControlError:
-            await interaction.response.send_message(
-                "Недостаточно прав.", ephemeral=True)
+        if not await self._panel_alive(interaction):
             return
-        if not VOICE_CONTROL_ENABLED:
-            await interaction.response.send_message(
-                "Voice Control отключён.", ephemeral=True)
-            return
-        try:
-            target_id = int(self.raw_id.value.strip())
-        except ValueError:
-            await interaction.response.send_message(
-                "Нужен числовой ID.", ephemeral=True)
-            return
-        guild = interaction.guild
-        key = ("protected_user_ids" if self.kind == "user"
-               else "protected_role_ids")
-        conf = await vc.db.settings(guild.id)
-        ids = set(conf.get(key) or [])
-        ids.add(target_id)
-        await vc.db.put_settings(guild.id, **{key: sorted(ids)})
-        await vc.log_event(guild.id, interaction.user.id,
-                           f"voice.protect_{self.kind}_add",
-                           detail={"target_id": target_id})
-        await self.cog.handle(interaction, "goto", page="protect")
+        panel = self.panel
+        async with panel.lock:
+            try:
+                target_id = int(self.raw_id.value.strip())
+            except ValueError:
+                await interaction.response.send_message(
+                    "Нужен числовой ID.", ephemeral=True)
+                return
+            guild = interaction.guild
+            # Валидация принадлежности цели текущему серверу.
+            if self.kind == "user":
+                try:
+                    await guild.fetch_member(target_id)
+                except discord.HTTPException:
+                    await interaction.response.send_message(
+                        "Участник не найден на этом сервере.",
+                        ephemeral=True)
+                    return
+            else:
+                if guild.get_role(target_id) is None:
+                    await interaction.response.send_message(
+                        "Роль не найдена на этом сервере.",
+                        ephemeral=True)
+                    return
+            key = ("protected_user_ids" if self.kind == "user"
+                   else "protected_role_ids")
+            conf = await vc.db.settings(guild.id)
+            ids = set(conf.get(key) or [])
+            ids.add(target_id)
+            await vc.db.put_settings(guild.id, **{key: sorted(ids)})
+            await vc.log_event(guild.id, interaction.user.id,
+                               f"voice.protect_{self.kind}_add",
+                               detail={"target_id": target_id})
+            await self._finish(interaction, panel)
 
 
 async def setup(bot: commands.Bot) -> None:
