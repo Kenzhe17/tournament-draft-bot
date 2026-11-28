@@ -437,3 +437,32 @@ async def test_public_panel_roundtrip_pg(pg_pool):
     assert p["channel_id"] == 51 and p["message_id"] == 9002
     # Изоляция guild.
     assert await pg_pool.panel(2) is None
+
+
+@pytest.mark.asyncio
+async def test_mod_state_real_store_no_import_substitution(pg_pool):
+    """Regression 4d39ddb: services.voice_control обязан вызывать
+    voice_state() на ЭКЗЕМПЛЯРЕ ModerationStore. Импорт модуля
+    вместо экземпляра давал AttributeError -> status 'unknown'
+    на каждом чтении. Тест идёт по реальному PG-пути без моков."""
+    from services import voice_control as vcsvc
+
+    db = modstore.moderation_store
+    target = 424242
+    # Модерация подтверждённо держит mute.
+    await db.event(1, 1, "voice.mute.applied",
+                   detail={"target_id": target, "value": True})
+    st = await vcsvc._mod_state(1, target, "server_mute")
+    assert st["status"] == "active"
+    # Deafen не трогали — 'none', а не 'unknown' (значит вызов
+    # реально дошёл до журнала, а не упал в except).
+    st = await vcsvc._mod_state(1, target, "server_deafen")
+    assert st["status"] == "none"
+    # Подтверждённое снятие -> inactive; _mod_cleared_after видит его.
+    await db.event(1, 1, "voice.mute.applied",
+                   detail={"target_id": target, "value": False})
+    st = await vcsvc._mod_state(1, target, "server_mute")
+    assert st["status"] == "inactive"
+    assert st["at"] is not None
+    assert await vcsvc._mod_cleared_after(
+        1, target, "server_mute", st["at"] - timedelta(seconds=1))
