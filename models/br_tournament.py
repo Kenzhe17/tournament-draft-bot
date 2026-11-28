@@ -88,6 +88,12 @@ MAP_NAMES_RU = {
     "purgatory": "Чистилище",
     "kalahari": "Калахари",
 }
+# Публичные статусы карты — вычисляются по заполненным результатам.
+MAP_STATUS_LABELS = {
+    "empty": "Ожидает результатов",
+    "partial": "Результаты заполняются",
+    "filled": "Результаты внесены",
+}
 
 # Фазы, в которых турнир ещё активен (удерживает игроков/команды).
 ACTIVE_PHASES = {
@@ -103,6 +109,14 @@ ACTIVE_PHASES = {
 
 # Приглашение Duo живёт до конца регистрации.
 DUO_INVITE_TTL = 24 * 3600
+
+# Фазы, в которых разрешён ввод/правка результатов. COLLECT —
+# legacy-фаза старых турниров («Завершить игры» больше не используется,
+# но сохранённые в ней турниры продолжают работать).
+RESULTS_EDITABLE_PHASES = {
+    BRTournamentPhase.PLAYING,
+    BRTournamentPhase.COLLECT,
+}
 
 
 def br_format_rules(fmt: str | BRFormat) -> dict[str, Any]:
@@ -180,6 +194,9 @@ class BRTournament:
     # опубликованный/архивный результат (Discord и HoF читают его).
     publish_pending: list[dict] | None = None
     results_snapshot: list[dict] | None = None
+    # Фаза до заморозки снимка — uncommit_publish возвращает турнир
+    # в неё (PLAYING или legacy COLLECT), а не всегда в COLLECT.
+    pre_publish_phase: str = ""
     # Замечания миграции legacy-статистики для ведущего.
     migration_notes: list[str] = field(default_factory=list)
     view_page: int = -1  # страница публичной карточки итогов (-1 = сводка)
@@ -276,6 +293,13 @@ class BRTournament:
         return (self.results_published
                 or self.phase in (BRTournamentPhase.RESULTS,
                                   BRTournamentPhase.COMPLETE))
+
+    @property
+    def results_editable(self) -> bool:
+        """Идёт ли приём результатов (игры или legacy-сбор)."""
+        return (self.phase in RESULTS_EDITABLE_PHASES
+                and self.publish_pending is None
+                and self.results_snapshot is None)
 
     def get_team_stats_for_map(self, team: dict, map_index: int) -> dict | None:
         stats = team.get("stats") or {}
@@ -714,14 +738,31 @@ class BRTournament:
             for i, m in enumerate(self.get_map_sequence())
         ]
 
-    def room_credentials(self) -> dict[str, str] | None:
-        """Актуальные ID/пароль комнаты (одно на весь турнир)."""
+    def room_credentials(self, map_index: int | None = None) -> dict[str, str] | None:
+        """ID/пароль комнаты для конкретной карты.
+
+        Приоритет — rooms["{map_index}"]; при отсутствии — legacy
+        глобальный room_data (старые турниры не теряют данные).
+        """
+        if map_index is not None:
+            per_map = (self.rooms or {}).get(str(map_index)) or {}
+            rid = str(per_map.get("id") or "").strip()
+            pwd = str(per_map.get("password") or "").strip()
+            if rid and pwd:
+                return {"id": rid, "password": pwd}
         data = self.room_data or {}
         rid = str(data.get("id") or "").strip()
         pwd = str(data.get("password") or "").strip()
         if not rid or not pwd:
             return None
         return {"id": rid, "password": pwd}
+
+    def set_room(self, map_index: int, room_id: str, password: str) -> None:
+        """Записать ID/пароль комнаты для карты (map_index)."""
+        self.rooms[str(map_index)] = {
+            "id": str(room_id).strip(),
+            "password": str(password).strip(),
+        }
 
     def can_view_room(self, user_id: int) -> bool:
         """Право видеть данные комнаты.
@@ -758,10 +799,10 @@ class BRTournament:
         Returns:
             (ok, error)
         """
-        if self.phase != BRTournamentPhase.COLLECT:
-            return False, "Ввод результатов доступен только после последней карты."
         if self.publish_pending is not None or self.results_snapshot is not None:
             return False, "Итоги зафиксированы для публикации — правки закрыты."
+        if self.phase not in RESULTS_EDITABLE_PHASES:
+            return False, "Ввод результатов сейчас недоступен."
         if not (0 <= map_index < self.map_count):
             return False, "Нет такой карты."
         if not (0 <= slot_index < len(self.teams)):
@@ -820,10 +861,10 @@ class BRTournament:
         Returns:
             (ok, errors) — при ошибке ничего не сохраняется.
         """
-        if self.phase != BRTournamentPhase.COLLECT:
-            return False, ["Ввод результатов доступен только после завершения игр."]
         if self.publish_pending is not None or self.results_snapshot is not None:
             return False, ["Итоги зафиксированы для публикации — правки закрыты."]
+        if self.phase not in RESULTS_EDITABLE_PHASES:
+            return False, ["Ввод результатов сейчас недоступен."]
         errors: list[str] = []
         seen_slots: set[int] = set()
         seen_places: dict[int, int] = {}
@@ -922,6 +963,45 @@ class BRTournament:
                     filled += 1
         return filled, expected
 
+    def map_filled_count(self, map_index: int) -> int:
+        """Сколько слотов имеют запись результата на карте."""
+        return sum(
+            1 for slot in self.teams
+            if self.get_team_stats_for_map(slot, map_index) is not None
+        )
+
+    def map_status(self, map_index: int) -> str:
+        """Статус карты по фактическим данным (не по фазе).
+
+        empty — нет ни одной записи; partial — есть незаполненные;
+        filled — все слоты имеют запись (включая явный DNS).
+        """
+        total = len(self.teams)
+        if total <= 0:
+            return "empty"
+        filled = self.map_filled_count(map_index)
+        if filled <= 0:
+            return "empty"
+        if filled >= total:
+            return "filled"
+        return "partial"
+
+    def missing_results(self) -> list[dict]:
+        """Карты с незаполненными записями — для отчёта о публикации."""
+        out = []
+        for i in range(self.map_count):
+            filled = self.map_filled_count(i)
+            total = len(self.teams)
+            if filled < total:
+                out.append({
+                    "map_index": i,
+                    "name": MAP_NAMES_RU.get(self.get_map_name_for_index(i),
+                                             self.get_map_name_for_index(i)),
+                    "filled": filled,
+                    "expected": total,
+                })
+        return out
+
     def results_complete(self) -> bool:
         filled, expected = self.results_status()
         return expected > 0 and filled >= expected
@@ -958,28 +1038,38 @@ class BRTournament:
     def freeze_results(self) -> tuple[bool, str]:
         """Зафиксировать неизменяемый снимок итогов для публикации.
 
-        Вызывается под блокировкой в фазе COLLECT. После фиксации
-        правки результатов закрыты; повторный вызов возвращает тот же
-        снимок (безопасный повтор/двойной клик).
+        Вызывается под блокировкой в фазе PLAYING/COLLECT. После
+        фиксации правки результатов закрыты; повторный вызов возвращает
+        тот же снимок (безопасный повтор/двойной клик).
         """
-        if self.phase != BRTournamentPhase.COLLECT:
-            return False, "Турнир не в фазе сбора результатов."
+        if self.phase not in RESULTS_EDITABLE_PHASES:
+            return False, "Турнир не готов к публикации итогов."
         if self.results_published or self.results_snapshot is not None:
             return False, "Итоги уже опубликованы."
         if self.publish_pending is not None:
             return True, ""
         if not self.results_complete():
-            filled, expected = self.results_status()
-            return False, f"Не все записи заполнены: {filled}/{expected}."
+            missing = self.missing_results()
+            detail = "\n".join(
+                f"• Карта {m['map_index'] + 1} ({m['name']}): "
+                f"{m['filled']}/{m['expected']}"
+                for m in missing[:10])
+            return False, (
+                f"Не все записи внесены — публикация невозможна.\n{detail}"
+                if detail else "Не все записи внесены."
+            )
+        self.pre_publish_phase = self.phase.value
         self.publish_pending = self.calculate_final_results()
         return True, ""
 
     def commit_publish(self) -> bool:
         """Зафиксировать снимок как опубликованный итог (→ RESULTS).
 
-        Идемпотентно: без publish_pending или не в COLLECT — False.
+        Идемпотентно: без publish_pending или не в редактируемой фазе —
+        False.
         """
-        if self.phase != BRTournamentPhase.COLLECT or self.publish_pending is None:
+        if (self.phase not in RESULTS_EDITABLE_PHASES
+                or self.publish_pending is None):
             return False
         self.results_snapshot = self.publish_pending
         self.publish_pending = None
@@ -992,14 +1082,19 @@ class BRTournament:
     def uncommit_publish(self) -> None:
         """Откат commit_publish при сбое сохранения.
 
-        Возвращает турнир в COLLECT с тем же снимком в publish_pending —
-        повторная публикация пройдёт с неизменными итогами.
+        Возвращает турнир в фазу до заморозки (PLAYING или legacy
+        COLLECT) с тем же снимком в publish_pending — повторная
+        публикация пройдёт с неизменными итогами.
         """
         if self.phase != BRTournamentPhase.RESULTS or self.results_snapshot is None:
             return
         self.publish_pending = self.results_snapshot
         self.results_snapshot = None
-        self.phase = BRTournamentPhase.COLLECT
+        try:
+            self.phase = BRTournamentPhase(self.pre_publish_phase)
+        except ValueError:
+            self.phase = BRTournamentPhase.COLLECT
+        self.pre_publish_phase = ""
         self.results_published = False
         self.published_at = ""
         self.view_page = -1
@@ -1108,6 +1203,7 @@ class BRTournament:
             "games_finished_at": self.games_finished_at,
             "publish_pending": self.publish_pending,
             "results_snapshot": self.results_snapshot,
+            "pre_publish_phase": self.pre_publish_phase,
             "migration_notes": self.migration_notes,
             "view_page": self.view_page,
             "cancel_reason": self.cancel_reason,
@@ -1190,6 +1286,7 @@ class BRTournament:
             games_finished_at=data.get("games_finished_at", ""),
             publish_pending=data.get("publish_pending"),
             results_snapshot=data.get("results_snapshot"),
+            pre_publish_phase=data.get("pre_publish_phase", ""),
             migration_notes=list(data.get("migration_notes") or []),
             view_page=(int(data["view_page"]) if data.get("view_page") is not None else -1),
             cancel_reason=data.get("cancel_reason", ""),

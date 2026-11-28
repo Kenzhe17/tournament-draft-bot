@@ -159,13 +159,75 @@ class TestResults:
         assert t.phase == BRTournamentPhase.COLLECT
         return t
 
-    def test_input_blocked_until_games_finished(self):
+    def test_input_allowed_during_playing(self):
+        """«Завершить игры» убрано: ввод результатов доступен в PLAYING
+        по каждой карте независимо, без перехода в COLLECT."""
         t = make("solo")
         add_players(t, 12)
         t.draw()
         assert t.phase == BRTournamentPhase.PLAYING
         ok, err = t.set_result_entry(0, 0, place=1, kills=5)
-        assert not ok and "после последней карты" in err
+        assert ok, err
+        # карта 1 заполнена не полностью — статус partial
+        assert t.map_status(0) == "partial"
+        # запись на другую карту независима
+        ok, err = t.set_result_entry(1, 0, place=1, kills=0)
+        assert ok, err
+        # до старта (REGISTRATION/DRAFT) ввод закрыт
+        t2 = make("solo")
+        add_players(t2, 12)
+        ok, err = t2.set_result_entry(0, 0, place=1, kills=0)
+        assert not ok
+
+    def test_map_status_and_missing_results(self):
+        t = self._played_tournament("squad", n_slots=5, maps=3)
+        assert t.map_status(0) == "empty"
+        for si in range(5):
+            ok, _ = t.set_result_entry(0, si, place=si + 1, kills=0)
+            assert ok
+        assert t.map_status(0) == "filled"
+        assert t.map_status(1) == "empty"
+        # частичная запись
+        ok, _ = t.set_result_entry(1, 0, place=1, kills=0)
+        assert ok
+        assert t.map_status(1) == "partial"
+        missing = t.missing_results()
+        assert [m["map_index"] for m in missing] == [1, 2]
+        assert missing[0]["filled"] == 1 and missing[0]["expected"] == 5
+
+    def test_per_map_room_credentials(self):
+        t = self._played_tournament("squad", n_slots=5, maps=3)
+        # legacy глобальные данные — fallback для всех карт
+        t.room_data = {"id": "111", "password": "old"}
+        assert t.room_credentials(0) == {"id": "111", "password": "old"}
+        assert t.room_credentials(2) == {"id": "111", "password": "old"}
+        # per-map данные имеют приоритет
+        t.set_room(1, "222", "new")
+        assert t.room_credentials(1) == {"id": "222", "password": "new"}
+        assert t.room_credentials(0) == {"id": "111", "password": "old"}
+        # roundtrip
+        t2 = BRTournament.from_dict(t.to_dict())
+        assert t2.room_credentials(1) == {"id": "222", "password": "new"}
+        assert t2.room_credentials(2) == {"id": "111", "password": "old"}
+
+    def test_publish_from_playing_phase(self):
+        """Публикация доступна прямо из PLAYING после заполнения всех карт."""
+        t = make("squad", "random", maps=1)
+        add_players(t, 20)
+        t.draw()
+        t.begin_games()
+        assert t.phase == BRTournamentPhase.PLAYING
+        for si in range(5):
+            ok, _ = t.set_result_entry(0, si, place=si + 1, kills=0)
+            assert ok
+        ok, err = t.freeze_results()
+        assert ok, err
+        assert t.commit_publish()
+        assert t.phase == BRTournamentPhase.RESULTS
+        # uncommit возвращает в PLAYING (фазу до заморозки)
+        t.uncommit_publish()
+        assert t.phase == BRTournamentPhase.PLAYING
+        assert t.publish_pending is not None
 
     def test_finish_games_idempotent_and_phase_bound(self):
         t = self._played_tournament("squad", n_slots=5, maps=1)

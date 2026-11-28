@@ -34,6 +34,8 @@ from utils.design import compose
 class FakeResponse:
     def __init__(self):
         self.messages = []
+        self.edits = []
+        self.modals = []
         self.deferred = False
         self.defer_kwargs = None
 
@@ -46,6 +48,12 @@ class FakeResponse:
 
     async def send_message(self, *args, **kwargs):
         self.messages.append((args, kwargs))
+
+    async def edit_message(self, *args, **kwargs):
+        self.edits.append((args, kwargs))
+
+    async def send_modal(self, modal):
+        self.modals.append(modal)
 
 
 class FakeFollowup:

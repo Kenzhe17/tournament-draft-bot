@@ -309,9 +309,10 @@ class BRCog(commands.Cog):
                 "Команда доступна только для тестового BR (test_fill/test_teams).",
                 ephemeral=True)
             return
-        if tournament.phase != BRTournamentPhase.COLLECT:
+        if tournament.phase not in (BRTournamentPhase.PLAYING,
+                                    BRTournamentPhase.COLLECT):
             await interaction.response.send_message(
-                "Сначала завершите игры («Завершить игры» в орг-меню).", ephemeral=True)
+                "Сначала начните игры.", ephemeral=True)
             return
         if not tournament.teams:
             await interaction.response.send_message("В турнире нет слотов.", ephemeral=True)
