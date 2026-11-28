@@ -506,17 +506,14 @@ class TournamentBot(commands.Bot):
 
         # BR турниры: persistent views публичных карточек (активные
         # и архивные с итогами — для пагинации «По картам»).
+        # Только регистрация view — Discord-операции (resume pending
+        # publish, sync карточек) выполняются в on_ready, когда кэш
+        # гильдий уже заполнен.
         try:
             from storage.br_store import br_store
-            from views.br_view import (BRCardView, sync_public_card,
-                                       resume_pending_publish)
+            from views.br_view import BRCardView
             for brt in list(br_store.all()) + br_store.history():
                 self._register_view(BRCardView(brt.guild_id, brt.channel_id, brt))
-            for brt in br_store.all():
-                # сначала доводим отложенную публикацию итогов до конца
-                # (тот же снимок), затем синхронизируем карточку
-                await resume_pending_publish(brt, self)
-                await sync_public_card(brt, self)
         except Exception as exc:
             logger.warning("BR views restore failed: %s", exc)
 
@@ -1203,6 +1200,18 @@ class TournamentBot(commands.Bot):
                 )
         except Exception as e:
             logger.error(f"room publish recovery failed: {e}")
+
+        # BR: довести отложенную публикацию итогов до конца (тот же
+        # снимок) и синхронизировать публичные карточки — только здесь,
+        # после READY, когда кэш гильдий/каналов доступен.
+        try:
+            from storage.br_store import br_store
+            from views.br_view import sync_public_card, resume_pending_publish
+            for brt in br_store.all():
+                await resume_pending_publish(brt, self)
+                await sync_public_card(brt, self)
+        except Exception as e:
+            logger.error(f"BR card restore failed: {e}")
 
         # Централизованный журнал турниров: догнать pending-записи,
         # гарантировать карточки активных турниров и ссылки

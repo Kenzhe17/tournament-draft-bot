@@ -122,13 +122,24 @@ class BRStore:
         self.save()
 
     def archive(self, br_tournament: BRTournament) -> None:
-        """Перенести турнир в историю (завершён/отменён)."""
+        """Перенести турнир в историю (завершён/отменён).
+
+        При сбое записи на диск память откатывается: турнир остаётся
+        активным в памяти, как и на диске — повторная попытка возможна.
+        """
         key = (br_tournament.guild_id, br_tournament.channel_id)
-        self._tournaments.pop(key, None)
+        prev_active = self._tournaments.pop(key, None)
+        prev_history = list(self._history)
         # не дублировать в истории
         self._history = [h for h in self._history if h.id != br_tournament.id]
         self._history.append(br_tournament)
-        self.save()
+        try:
+            self.save()
+        except Exception:
+            self._history = prev_history
+            if prev_active is not None:
+                self._tournaments[key] = prev_active
+            raise
 
     def delete(self, guild_id: int, channel_id: int) -> None:
         """Удалить активный BR турнир по guild_id и channel_id."""

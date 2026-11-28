@@ -270,14 +270,23 @@ class BRTournament:
     def get_stats_key(self, map_index: int) -> str:
         return f"map_{map_index}"
 
+    @property
+    def is_published(self) -> bool:
+        """Итоги уже опубликованы/заархивированы — исторические данные."""
+        return (self.results_published
+                or self.phase in (BRTournamentPhase.RESULTS,
+                                  BRTournamentPhase.COMPLETE))
+
     def get_team_stats_for_map(self, team: dict, map_index: int) -> dict | None:
         stats = team.get("stats") or {}
         entry = stats.get(self.get_stats_key(map_index))
         if entry is None:
-            # legacy-ключ по имени карты — только если имя встречается
-            # в расписании один раз, иначе очки «переехали» бы на повтор.
             name = self.get_map_name_for_index(map_index)
-            if self.get_map_sequence().count(name) == 1:
+            # У опубликованных турниров — историческое чтение по имени
+            # безусловно (как было на момент публикации). У активных —
+            # только при уникальном имени в расписании, иначе очки
+            # «переехали» бы на повтор карты.
+            if self.is_published or self.get_map_sequence().count(name) == 1:
                 entry = stats.get(name)
         return normalize_entry(entry)
 
@@ -980,6 +989,21 @@ class BRTournament:
         self.view_page = -1
         return True
 
+    def uncommit_publish(self) -> None:
+        """Откат commit_publish при сбое сохранения.
+
+        Возвращает турнир в COLLECT с тем же снимком в publish_pending —
+        повторная публикация пройдёт с неизменными итогами.
+        """
+        if self.phase != BRTournamentPhase.RESULTS or self.results_snapshot is None:
+            return
+        self.publish_pending = self.results_snapshot
+        self.results_snapshot = None
+        self.phase = BRTournamentPhase.COLLECT
+        self.results_published = False
+        self.published_at = ""
+        self.view_page = -1
+
     def calculate_final_results(self) -> list[dict]:
         """Итоговая таблица.
 
@@ -1182,6 +1206,11 @@ class BRTournament:
         if not has_new_schema:
             t._backfill_member_ids()
         t._migrate_stat_keys()
+        # Исторический итог опубликованных турниров замораживаем в
+        # снимок: дальнейшие изменения логики не смогут изменить
+        # уже показанный победитель.
+        if t.is_published and t.results_snapshot is None:
+            t.results_snapshot = t.calculate_final_results()
         return t
 
     def _migrate_stat_keys(self) -> None:
@@ -1193,8 +1222,11 @@ class BRTournament:
         - Неоднозначный/вне-расписания ключ НЕ копируется: исходная
           запись остаётся, ведущему показывается замечание для сверки.
         Идемпотентно: после миграции map_N существует и повторный
-        прогон ничего не меняет.
+        прогон ничего не меняет. Опубликованные турниры не трогаем —
+        их исторический итог заморожен в results_snapshot.
         """
+        if self.is_published:
+            return
         seq = self.get_map_sequence()
         notes: list[str] = []
         for slot in self.teams:

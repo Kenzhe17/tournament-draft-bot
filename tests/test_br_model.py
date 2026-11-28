@@ -407,6 +407,40 @@ class TestStatKeyMigration:
         assert t2.migration_notes == []
 
 
+class TestPublishedHistory:
+    def test_published_repeated_name_keeps_historical_winner(self):
+        """Опубликованный турнир из 4 карт: имя-ключ bermuda читается
+        исторически (на обеих картах с этим именем) — победитель не
+        меняется после миграции/перезагрузки."""
+        t = make("squad", "random", maps=4)
+        add_players(t, 20)
+        t.draw()
+        # слот 0: legacy-ключ bermuda — место 1 + 10 киллов
+        t.teams[0]["stats"] = {"bermuda": {"place": 1, "kills": 10, "dns": False}}
+        # слот 1: явные map_N — место 3 на всех картах
+        t.teams[1]["stats"] = {
+            f"map_{m}": {"place": 3, "kills": 0, "dns": False} for m in range(4)}
+        d = t.to_dict()
+        d["phase"] = "results"
+        d["results_published"] = True
+        t2 = BRTournament.from_dict(d)
+
+        # историческое чтение: bermuda учитывается на map_0 и map_3
+        assert t2.get_team_stats_for_map(t2.teams[0], 0)["place"] == 1
+        assert t2.get_team_stats_for_map(t2.teams[0], 3)["place"] == 1
+        # миграция опубликованные не трогает, замечаний нет
+        assert "map_0" not in t2.teams[0]["stats"]
+        assert t2.migration_notes == []
+        # снимок заморожен при загрузке: слот 0 — победитель
+        # (44 очка против 32 у слота 1)
+        assert t2.results_snapshot is not None
+        assert t2.results_snapshot[0]["slot_index"] == 0
+        # повторная загрузка — тот же снимок, победитель стабилен
+        t3 = BRTournament.from_dict(t2.to_dict())
+        assert t3.results_snapshot == t2.results_snapshot
+        assert t3.results_snapshot[0]["slot_index"] == 0
+
+
 class TestLegacy:
     def test_old_json_reads_as_squad(self):
         data = {

@@ -273,3 +273,133 @@ async def test_resume_without_pending_is_noop(patched_store):
     ok = await resume_pending_publish(t, FakeClient(FakeGuild({})))
     assert not ok
     assert t.phase == BRTournamentPhase.COLLECT
+
+
+# ---------------------------------------------------------------------------
+# Сбой сохранения после успешного edit → повтор работает
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_commit_save_failure_allows_retry(monkeypatch, patched_store):
+    t = _collect_tournament()
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+    inter = _interaction(guild)
+
+    results_sets = {"n": 0}
+    real_set = br_store.set  # уже замоканный fixture'ом — только запись
+
+    def flaky_set(obj):
+        if obj.phase == BRTournamentPhase.RESULTS:
+            results_sets["n"] += 1
+            if results_sets["n"] == 1:
+                raise IOError("disk full")
+        return real_set(obj)
+
+    monkeypatch.setattr(br_store, "set", flaky_set)
+    btn = PublishResultsButton(1, 2, t.id)
+    await btn.callback(inter)
+
+    # commit упал: объект откачен в COLLECT+pending, карточка уже финал
+    assert t.phase == BRTournamentPhase.COLLECT
+    assert t.publish_pending is not None
+    assert t.results_snapshot is None
+    assert any("сохранение не удалось" in str(m[0][0])
+               for m in inter.response.messages)
+
+    # повторный клик: тот же снимок, коммит успешен
+    await btn.callback(inter)
+    assert t.phase == BRTournamentPhase.RESULTS
+    assert t.results_snapshot is not None
+    assert len(channel.message.edits) == 2  # edit идемпотентен по message_id
+
+
+# ---------------------------------------------------------------------------
+# Отмена vs публикация: карточка и архив всегда совпадают
+# ---------------------------------------------------------------------------
+
+
+def _card_texts(view):
+    texts = []
+    for child in _walk(view):
+        content = getattr(child, "content", None)
+        if isinstance(content, str):
+            texts.append(content)
+    return texts
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_publish_restores_card(patched_store):
+    t = _collect_tournament()
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+    inter = _interaction(guild)
+
+    # имитация: Discord edit финала прошёл, но до commit фазу сменили
+    real_edit = channel.message.edit
+
+    async def edit_then_cancel(**kwargs):
+        await real_edit(**kwargs)
+        t.phase = BRTournamentPhase.CANCELLED
+        t.cancel_reason = "отменено параллельно"
+
+    channel.message.edit = edit_then_cancel
+
+    btn = PublishResultsButton(1, 2, t.id)
+    await btn.callback(inter)
+
+    # турнир остался CANCELLED, карточка перерисована в отменённый вид
+    assert t.phase == BRTournamentPhase.CANCELLED
+    assert len(channel.message.edits) == 2
+    last_texts = _card_texts(channel.message.edits[-1]["view"])
+    assert any("Турнир отменён" in s for s in last_texts)
+    assert any("прервана" in str(m[0][0]) for m in inter.response.messages)
+
+
+# ---------------------------------------------------------------------------
+# Порядок запуска: resume после READY
+# ---------------------------------------------------------------------------
+
+
+def test_br_resume_runs_in_on_ready_not_setup_hook():
+    src = (Path(__file__).resolve().parents[1] / "bot.py").read_text(
+        encoding="utf-8")
+    setup_idx = src.index("async def setup_hook")
+    ready_idx = src.index("async def on_ready")
+    setup_body = src[setup_idx:ready_idx]
+    ready_body = src[ready_idx:]
+    # регистрация persistent views — в setup_hook (рано, безопасно)
+    assert "BRCardView" in setup_body
+    # resume/sync карточек — только после READY (кэш гильдий готов)
+    assert "resume_pending_publish" not in setup_body
+    assert "resume_pending_publish" in ready_body
+    assert "sync_public_card" in ready_body
+
+
+# ---------------------------------------------------------------------------
+# Откат archive при сбое записи (store)
+# ---------------------------------------------------------------------------
+
+
+def test_archive_save_failure_keeps_active_in_memory():
+    from storage.br_store import BRStore
+
+    t = _collect_tournament()
+    t.phase = BRTournamentPhase.RESULTS
+    t.results_published = True
+    store = BRStore.__new__(BRStore)
+    store._tournaments = {(1, 2): t}
+    store._history = []
+
+    def boom():
+        raise IOError("disk full")
+
+    store.save = boom
+    with pytest.raises(IOError):
+        store.set(t)
+    # память откачена: турнир всё ещё активный, история пуста
+    assert store.get(1, 2) is t
+    assert store.history() == []

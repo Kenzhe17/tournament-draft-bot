@@ -1301,11 +1301,23 @@ class CancelConfirmButton(Button):
             if not t.is_active:
                 await interaction.response.send_message("Турнир уже не активен.", ephemeral=True)
                 return
+            prev_phase = t.phase
+            prev_pending = t.publish_pending
             t.phase = BRTournamentPhase.CANCELLED
             t.cancel_reason = self.reason
             t.cancelled_by = interaction.user.id
             t.publish_pending = None  # отмена снимает замороженный снимок
-            br_store.set(t)  # архивирует
+            try:
+                br_store.set(t)  # архивирует
+            except Exception:
+                # сбой записи: вернуть объект в прежнюю фазу — повтор возможен
+                t.phase = prev_phase
+                t.cancel_reason = ""
+                t.cancelled_by = 0
+                t.publish_pending = prev_pending
+                await interaction.response.send_message(
+                    "Не удалось сохранить отмену — повторите.", ephemeral=True)
+                return
         try:
             await strip_tournament_roles(interaction.guild, t)
         except Exception as exc:
@@ -1752,21 +1764,32 @@ class PublishResultsButton(Button):
             return
 
         # 3) Коммит под блокировкой: снимок → RESULTS → архив.
+        #    get_bound находит и архивный турнир — если фазу уже сменили
+        #    (отмена/параллельный коммит), карточку возвращаем к
+        #    актуальному виду, чтобы Discord и архив совпадали.
         try:
             async with get_br_lock_key(self.guild_id, self.channel_id, self.tid):
-                t3 = br_store.get(self.guild_id, self.channel_id)
-                if t3 is None or str(t3.id) != str(self.tid):
+                t3 = get_bound(self.guild_id, self.channel_id, self.tid)
+                if t3 is None:
                     await interaction.response.send_message(STALE_MSG, ephemeral=True)
                     return
-                if t3.phase == BRTournamentPhase.COLLECT and t3.publish_pending is not None:
-                    t3.commit_publish()
-                    br_store.set(t3)  # архивирует в историю
+                if (t3.phase == BRTournamentPhase.COLLECT
+                        and t3.publish_pending is not None
+                        and not t3.results_published):
+                    try:
+                        t3.commit_publish()
+                        br_store.set(t3)  # архивирует в историю
+                    except Exception:
+                        # сбой записи: память откачена store'ом, объект — здесь
+                        t3.uncommit_publish()
+                        raise
                     t = t3
                 elif t3.phase in (BRTournamentPhase.RESULTS, BRTournamentPhase.COMPLETE):
                     # параллельный клик уже закоммитил — идемпотентно
                     t = t3
                 else:
-                    # фазу сменили (например, отмена) — возвращаем карточку
+                    # фазу сменили (например, отмена) — карточка должна
+                    # показывать актуальный статус, а не финал
                     await refresh_main_card(interaction, t3)
                     await interaction.response.send_message(
                         "Публикация прервана: фаза турнира изменилась.", ephemeral=True)
@@ -1827,8 +1850,14 @@ async def resume_pending_publish(tournament: "BRTournament", client=None) -> boo
             if (t2 is not None and str(t2.id) == str(tournament.id)
                     and t2.phase == BRTournamentPhase.COLLECT
                     and t2.publish_pending is not None):
-                t2.commit_publish()
-                br_store.set(t2)
+                try:
+                    t2.commit_publish()
+                    br_store.set(t2)
+                except Exception:
+                    # сбой записи: объект откатываем в COLLECT+pending —
+                    # следующий запуск/повтор доведёт публикацию до конца
+                    t2.uncommit_publish()
+                    raise
                 try:
                     await strip_tournament_roles(guild, t2)
                 except Exception as exc:
