@@ -2663,6 +2663,29 @@ class TournamentCog(commands.Cog):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
+        # Squad Hub: компактный блок команды / поиска команды
+        try:
+            from storage.team_store import team_store
+            from storage import squad_store
+            team = team_store.get_by_member_in_guild(
+                guild_id, user_id)
+            if team is not None:
+                role = ("Капитан" if team.is_captain(user_id)
+                        else "Участник")
+                embed.add_field(
+                    name="Команда",
+                    value=f"**{team.team_name}** · {role}",
+                    inline=False)
+            else:
+                lfg = await squad_store.get_lfg(guild_id, user_id)
+                if lfg is not None and lfg.is_active:
+                    embed.add_field(
+                        name="Статус",
+                        value="**Ищу команду**",
+                        inline=False)
+        except Exception:
+            pass
+
         await interaction.response.send_message( view=compose(embed))
 
     @app_commands.command(name="daily", description="Получить ежедневный бонус (лимит 500 монет)")

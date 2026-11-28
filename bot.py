@@ -1243,6 +1243,24 @@ class TournamentBot(commands.Bot):
         except Exception as e:
             logger.error(f"BR card restore failed: {e}")
 
+        # Squad Hub 2.0: восстановить persistent views публичной
+        # карточки и рекрутинговых карточек команд, создать карточку
+        # хаба если канал настроен и карточки ещё нет.
+        try:
+            from services import squad_service as squad_svc
+            restored = await squad_svc.restore_hub_views(self)
+            if restored:
+                logger.info("Squad Hub views restored: %d", restored)
+            for guild in self.guilds:
+                try:
+                    await squad_svc.ensure_hub_card(self, guild)
+                except Exception as exc:
+                    logger.warning(
+                        "Squad Hub card ensure failed for %s: %s",
+                        guild.id, exc)
+        except Exception as e:
+            logger.error(f"Squad Hub restore failed: {e}")
+
         # Централизованный журнал турниров: догнать pending-записи,
         # гарантировать карточки активных турниров и ссылки
         # итогов ↔ журнал после рестарта.
