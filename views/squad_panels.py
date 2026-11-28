@@ -55,10 +55,32 @@ def _btn(label: str, style: str, cid: str, callback) -> discord.ui.Button:
     return b
 
 
+# Discord требует value опции длиной 1..100 — пустая строка
+# («Любое») отклоняется API с 50035. Пустое значение кодируем
+# сентинелом и возвращаем "" в callback.
+_ANY_VALUE = "__any__"
+
+
 def _sel(options: list[discord.SelectOption], cid: str,
          placeholder: str, callback) -> discord.ui.Select:
-    s = select(options, custom_id=cid, placeholder=placeholder)
-    s.callback = callback  # type: ignore[assignment]
+    fixed = []
+    for o in options:
+        if not o.value:
+            o = discord.SelectOption(
+                label=o.label, value=_ANY_VALUE,
+                description=o.description, emoji=o.emoji,
+                default=o.default)
+        fixed.append(o)
+    s = select(fixed, custom_id=cid, placeholder=placeholder)
+
+    async def _cb(interaction: discord.Interaction) -> None:
+        vals = interaction.data.get("values")
+        if vals:
+            interaction.data["values"] = [
+                "" if v == _ANY_VALUE else v for v in vals]
+        await callback(interaction)
+
+    s.callback = _cb  # type: ignore[assignment]
     return s
 
 
