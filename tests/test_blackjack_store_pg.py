@@ -1711,3 +1711,54 @@ async def test_resync_survives_finish_of_active_op(pg_pool):
     # claim разрешён по verify_after (rendered == version)
     assert await bj.blackjack_store.claim_card_render(
         rid, "op-verify") is True
+
+
+@pytest.mark.asyncio
+async def test_ensure_schema_on_empty_database(pg_pool):
+    """Чистое окружение: без blackjack-таблиц ensure_schema
+    создаёт схему идемпотентно, read-пути sweeper/recover
+    не падают с UndefinedTableError."""
+    store = bj.blackjack_store
+    async with pg_pool.acquire() as conn:
+        await conn.execute("DROP TABLE IF EXISTS blackjack_ledger")
+        await conn.execute("DROP TABLE IF EXISTS blackjack_rounds")
+    store._schema_ready = False
+    # до ensure_schema read-путь действительно падает (контроль)
+    with pytest.raises(asyncpg.UndefinedTableError):
+        await store.list_needing_sync()
+    # инициализация — дважды, идемпотентно
+    await store.ensure_schema()
+    await store.ensure_schema()
+    assert store._schema_ready is True
+    # read-пути sweeper/recover работают на пустой схеме
+    assert await store.list_needing_sync() == []
+    assert await store.list_undelivered(
+        datetime.now(UTC) - timedelta(hours=1)) == []
+    assert await store.list_active() == []
+    # и create_round по-прежнему работает после init
+    await _set_balance(1000)
+    rid, _ = await store.create_round(G, U, 55, 0, _game())
+    assert rid
+
+
+@pytest.mark.asyncio
+async def test_ensure_schema_flag_not_cached_on_tx_rollback(pg_pool):
+    """Если tx с _ensure_schema откатилась, флаг не должен
+    остаться «готовым» — следующий вызов пересоздаст схему."""
+    store = bj.blackjack_store
+    async with pg_pool.acquire() as conn:
+        await conn.execute("DROP TABLE IF EXISTS blackjack_ledger")
+        await conn.execute("DROP TABLE IF EXISTS blackjack_rounds")
+    store._schema_ready = False
+    pool = await dbmod.get_pool()
+    async with pool.acquire() as conn:
+        with pytest.raises(asyncpg.DivisionByZeroError):
+            async with conn.transaction():
+                await store._ensure_schema(conn)
+                await conn.execute("SELECT 1/0")  # гарант. rollback
+    # tx откачена → таблиц нет, флаг не должен врать
+    assert store._schema_ready is False
+    with pytest.raises(asyncpg.UndefinedTableError):
+        await store.list_needing_sync()
+    await store.ensure_schema()
+    assert await store.list_needing_sync() == []
