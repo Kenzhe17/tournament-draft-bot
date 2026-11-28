@@ -144,6 +144,15 @@ DDL_STATEMENTS = [
 ]
 
 
+class CatalogValidationError(ValueError):
+    """Итоговый каталог не прошёл валидацию — транзакция
+    откачена, рабочий каталог не изменён."""
+
+    def __init__(self, errors: list[str]):
+        super().__init__("; ".join(errors[:20]))
+        self.errors = errors
+
+
 class EventContentStore:
     """Каталог + циклическая выдача для event games."""
 
@@ -220,6 +229,11 @@ class EventContentStore:
                     inserted += 1
                 else:
                     updated += 1
+            # Атомарная проверка ИТОГОВОГО каталога: merge-
+            # import может создать дубликат/анаграмму с
+            # существующей записью — отклоняем до commit.
+            final = await self._fetch_all_entries(conn, game)
+            self._validate_final(game, final)
             await conn.execute(
                 """
                     INSERT INTO event_content_catalog
@@ -243,18 +257,67 @@ class EventContentStore:
     async def seed_bundled(self, game: str,
                            entries: list[dict],
                            version: str) -> dict[str, int]:
-        """Первичное наполнение из bundled, если пусто."""
+        """Первичное наполнение из bundled — ТОЛЬКО если для
+        игры ещё нет записи в event_content_catalog.
+
+        Признак «каталог уже управляется» — meta-строка, а не
+        число записей: если владелец удалил ВСЕ задания через
+        Control Center, сид НЕ восстановит их при рестарте
+        (пустой каталог = осознанное состояние → игры
+        word/krokodil просто недоступны)."""
         async with await self._acquire() as conn:
-            n = await conn.fetchval(
-                "SELECT count(*) FROM event_content_entries "
+            meta = await conn.fetchval(
+                "SELECT 1 FROM event_content_catalog "
                 "WHERE game=$1", game)
-        if n:
-            return {"skipped": int(n), "inserted": 0, "updated": 0}
+        if meta:
+            n = await self._count_entries(game)
+            return {"skipped": int(n), "inserted": 0,
+                    "updated": 0}
         res = await self.import_catalog(game, entries,
                                         source="bundled",
                                         version=version,
                                         replace=True)
         return {**res, "skipped": 0}
+
+    async def _count_entries(self, game: str) -> int:
+        async with await self._acquire() as conn:
+            return await conn.fetchval(
+                "SELECT count(*) FROM event_content_entries "
+                "WHERE game=$1", game) or 0
+
+    async def _fetch_all_entries(self, conn, game: str
+                                 ) -> list[dict[str, Any]]:
+        """Все записи игры в виде, совместимом с
+        validate_catalog (payload + колонки)."""
+        rows = await conn.fetch(
+            "SELECT id, enabled, difficulty, category, payload "
+            "FROM event_content_entries WHERE game=$1 ORDER BY id",
+            game)
+        out = []
+        for r in rows:
+            p = r["payload"]
+            if isinstance(p, str):
+                p = json.loads(p)
+            e = dict(p)
+            e["id"] = r["id"]
+            e["enabled"] = r["enabled"]
+            e["difficulty"] = r["difficulty"]
+            e["category"] = r["category"]
+            out.append(e)
+        return out
+
+    @staticmethod
+    def _validate_final(game: str, entries: list[dict]) -> None:
+        """Валидация ИТОГОВОГО полного каталога — вызывается
+        внутри write-транзакции до commit. ValueError →
+        откат всех изменений."""
+        from services.event_content import validate_catalog
+        pseudo = {"schema_version": 1, "content_version": "final",
+                  "locale": "ru", "game": game,
+                  "entries": entries}
+        errors = validate_catalog(pseudo, game)
+        if errors:
+            raise CatalogValidationError(errors)
 
     async def catalog_stats(self, game: str) -> dict[str, Any]:
         async with await self._acquire() as conn:
@@ -369,7 +432,10 @@ class EventContentStore:
     async def upsert_entry(self, game: str, entry: dict[str, Any],
                            actor: str | None = None
                            ) -> tuple[str, str]:
-        """Создать/обновить одну запись. Возвращает (id, op)."""
+        """Создать/обновить одну запись. Валидация ИТОГОВОГО
+        полного каталога и запись — атомарно в одной
+        транзакции (CRUD не обходит проверку дубликатов/
+        анаграмм/формата). Возвращает (id, op)."""
         if game not in ("word", "krokodil"):
             raise ValueError(f"unknown game {game!r}")
         eid = entry.get("id")
@@ -379,32 +445,56 @@ class EventContentStore:
         payload = json.dumps(entry, ensure_ascii=False)
         now = datetime.now(UTC)
         async with await self._acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO event_content_entries
-                    (game, id, enabled, difficulty, category,
-                     payload, created_at, updated_at)
-                VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$7)
-                ON CONFLICT (game, id) DO UPDATE SET
-                    enabled    = EXCLUDED.enabled,
-                    difficulty = EXCLUDED.difficulty,
-                    category   = EXCLUDED.category,
-                    payload    = EXCLUDED.payload,
-                    updated_at = EXCLUDED.updated_at
-                RETURNING (xmax = 0) AS inserted
-                """,
-                game, eid, bool(entry.get("enabled", True)),
-                entry.get("difficulty", "easy"),
-                entry.get("category", ""), payload, now)
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock($1)",
+                    DDL_LOCK_KEY)
+                # Виртуальный merge: текущий каталог + эта
+                # запись → валидация целого до записи.
+                current = await self._fetch_all_entries(conn, game)
+                merged = [e for e in current if e.get("id") != eid]
+                merged.append(dict(entry))
+                self._validate_final(game, merged)
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO event_content_entries
+                        (game, id, enabled, difficulty, category,
+                         payload, created_at, updated_at)
+                    VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$7)
+                    ON CONFLICT (game, id) DO UPDATE SET
+                        enabled    = EXCLUDED.enabled,
+                        difficulty = EXCLUDED.difficulty,
+                        category   = EXCLUDED.category,
+                        payload    = EXCLUDED.payload,
+                        updated_at = EXCLUDED.updated_at
+                    RETURNING (xmax = 0) AS inserted
+                    """,
+                    game, eid, bool(entry.get("enabled", True)),
+                    entry.get("difficulty", "easy"),
+                    entry.get("category", ""), payload, now)
         return eid, ("inserted" if row and row["inserted"]
                      else "updated")
 
     async def delete_entry(self, game: str, entry_id: str) -> bool:
+        """Удаление записи; итоговый каталог валидируется
+        атомарно (подмножество валидного каталога валидно,
+        но проверка страхует от ранее испорченных данных)."""
         async with await self._acquire() as conn:
-            res = await conn.execute(
-                "DELETE FROM event_content_entries "
-                "WHERE game=$1 AND id=$2", game, entry_id)
-        return res.endswith("1")
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock($1)",
+                    DDL_LOCK_KEY)
+                current = await self._fetch_all_entries(conn, game)
+                if not any(e.get("id") == entry_id
+                           for e in current):
+                    return False
+                remaining = [e for e in current
+                             if e.get("id") != entry_id]
+                self._validate_final(game, remaining)
+                await conn.execute(
+                    "DELETE FROM event_content_entries "
+                    "WHERE game=$1 AND id=$2", game, entry_id)
+        return True
 
     async def export_entries(self, game: str) -> list[dict]:
         async with await self._acquire() as conn:
@@ -430,7 +520,7 @@ class EventContentStore:
                   "entries": entries}
         errors = validate_catalog(pseudo, game)
         if errors:
-            raise ValueError("; ".join(errors[:20]))
+            raise CatalogValidationError(errors)
         return await self.import_catalog(game, entries,
                                          source="control_center",
                                          version=version,
@@ -443,12 +533,14 @@ class EventContentStore:
                              difficulties: tuple[str, ...] | None,
                              disabled_categories: set[str],
                              used: set[str] | None = None,
-                             ignore_used: bool = False
+                             ignore_used: bool = False,
+                             ignore_reserved: bool = False
                              ) -> dict[str, list[dict]]:
         """По уровням: записи (enabled, категории разрешены),
         минус ``used`` текущего цикла и активные резервации.
-        ``ignore_used=True`` — пул без учёта used (для
-        проверки «цикл исчерпан vs каталог пуст»)."""
+        ``ignore_used=True`` — пул без учёта used;
+        ``ignore_reserved=True`` — без учёта резерваций
+        (для проверки «есть ли неиспользованные записи»)."""
         where = ["e.game=$1", "e.enabled"]
         args: list[Any] = [game]
         idx = 2
@@ -471,12 +563,16 @@ class EventContentStore:
         # решает, учитывать ли used текущего цикла.
         used = used or set()
         # Активные резервации — глобально по игре
-        res_rows = await conn.fetch(
-            """
-            SELECT entry_id FROM event_content_reservations
-            WHERE game=$1 AND released=FALSE AND expires_at > now()
-            """, game)
-        reserved = {r["entry_id"] for r in res_rows}
+        if ignore_reserved:
+            reserved: set[str] = set()
+        else:
+            res_rows = await conn.fetch(
+                """
+                SELECT entry_id FROM event_content_reservations
+                WHERE game=$1 AND released=FALSE
+                  AND expires_at > now()
+                """, game)
+            reserved = {r["entry_id"] for r in res_rows}
         by_diff: dict[str, list[dict]] = {}
         for r in rows:
             if (not ignore_used and r["id"] in used) or \
@@ -551,42 +647,53 @@ class EventContentStore:
             cycle = int(state["cycle_count"] or 0)
             last_id = state["last_entry_id"]
 
+            # Полный eligible-пул без учёта used И резерваций —
+            # нужен для различения «цикл исчерпан» и «все
+            # неиспользованные записи временно зарезервированы».
+            all_by_diff = await self._eligible_conn(
+                conn, game, difficulties, disabled,
+                ignore_used=True, ignore_reserved=True)
+            all_ids = {e["id"] for lst in all_by_diff.values()
+                       for e in lst}
+            if not all_ids:
+                return None  # каталог пуст / всё выключено
+
+            # Доступные сейчас: eligible − used − reserved.
             by_diff = await self._eligible_conn(
                 conn, game, difficulties, disabled,
                 used=used)
             if not any(by_diff.values()):
-                # Либо цикл исчерпан, либо каталог пуст.
-                raw = await self._eligible_conn(
-                    conn, game, difficulties, disabled,
-                    ignore_used=True)
-                if not any(raw.values()):
-                    return None  # нет допустимых заданий
-                # Новый цикл
+                unused = all_ids - used
+                if unused:
+                    # Есть неиспользованные записи, но все они
+                    # под активными резервациями — временно
+                    # пропускаем игру, цикл НЕ сбрасываем.
+                    return None
+                # Все eligible использованы → новый цикл.
                 cycle += 1
                 used = set()
-                by_diff = raw
+                by_diff = await self._eligible_conn(
+                    conn, game, difficulties, disabled,
+                    used=set())
+                if not any(by_diff.values()):
+                    return None  # всё под резервациями и после reset
+
+            # Исключаем последнее задание из ВСЕХ уровней до
+            # выбора уровня — иначе «уровень с единственной
+            # записью = last_id» мог быть выбран и дать повтор.
+            if last_id:
+                filtered = {
+                    d: [e for e in lst if e["id"] != last_id]
+                    for d, lst in by_diff.items()}
+                if any(filtered.values()):
+                    by_diff = filtered
 
             level = self._pick_level(by_diff, weights, rng)
             if level is None:
                 return None
             candidates = list(by_diff[level])
-            # Если в выбранном уровне всё израсходовано —
-            # берём из любого другого непустого уровня.
-            if not candidates:
-                for d in DIFFICULTIES:
-                    if d != level and by_diff.get(d):
-                        candidates = list(by_diff[d])
-                        level = d
-                        break
             if not candidates:
                 return None
-            # Исключаем немедленный повтор последнего
-            # задания, если есть альтернатива.
-            if len(candidates) > 1 and last_id:
-                alt = [e for e in candidates
-                       if e["id"] != last_id]
-                if alt:
-                    candidates = alt
             entry = rng.choice(candidates)
             eid = entry["id"]
 

@@ -75,6 +75,7 @@ def validate_catalog(data: Any, game: str) -> list[str]:
     seen_ids: set[str] = set()
     seen_norm: set[str] = set()
     seen_clues: set[str] = set()
+    seen_anagrams: dict[str, str] = {}
     for idx, e in enumerate(entries):
         if isinstance(e, dict) and e.get("id"):
             tag = f"entries[{idx}]({e['id']})"
@@ -111,9 +112,29 @@ def validate_catalog(data: Any, game: str) -> list[str]:
                     errors.append(f"{tag}: non-cyrillic word {w!r}")
                 if " " in w or "-" in w:
                     errors.append(f"{tag}: word has space/hyphen {w!r}")
+                # Строгий ответ: только исходное слово —
+                # синонимы/сокращения не принимаются, поле
+                # accepted в word-каталоге запрещено.
+                acc = e.get("accepted")
+                if acc:
+                    errors.append(
+                        f"{tag}: 'accepted' is forbidden for "
+                        "word entries")
+                # Перемешивание обязано отличаться от оригинала —
+                # слово с <2 различными буквами невозможно.
+                if len(set(n)) < 2:
+                    errors.append(
+                        f"{tag}: word cannot be scrambled "
+                        f"(distinct letters < 2): {w!r}")
                 if n in seen_norm:
                     errors.append(f"{tag}: duplicate word {w!r}")
                 seen_norm.add(n)
+                sig = "".join(sorted(n))
+                if sig in seen_anagrams:
+                    errors.append(
+                        f"{tag}: anagram of {seen_anagrams[sig]!r} "
+                        f"({w!r})")
+                seen_anagrams[sig] = w
         else:
             ans = e.get("answer")
             clue = e.get("clue")
@@ -224,11 +245,19 @@ def answer_matches(text: str, accepted: list[str] | tuple[str, ...]
 
 def scramble_word(word: str, rng) -> str:
     """Перемешать буквы слова: тот же мультимножество букв
-    (включая повторяющиеся и ё), результат != оригиналу."""
+    (включая повторяющиеся и ё), результат != оригиналу.
+
+    Fallback — циклические сдвиги (гарантированно отличаются
+    для любого слова с ≥2 различными буквами; word[::-1]
+    мог вернуть palindrome-оригинал)."""
     letters = list(word)
     for _ in range(30):
         rng.shuffle(letters)
         s = "".join(letters)
+        if s != word:
+            return s
+    for i in range(1, len(word)):
+        s = word[i:] + word[:i]
         if s != word:
             return s
     return word[::-1]

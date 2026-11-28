@@ -279,8 +279,10 @@ def make_config(game: str, prize: dict[str, Any],
     elif game == "word":
         if content:
             word = str(content["word"])
-            aliases = [str(a) for a in content.get("accepted") or []]
-            accepted = list(dict.fromkeys([word, *aliases]))
+            # Строгий ответ: ТОЛЬКО исходное слово — синонимы,
+            # сокращения и алиасы не принимаются (поле accepted
+            # word-каталога валидатором запрещено).
+            accepted = [word]
             from services.event_content import scramble_word
             cfg["scrambled"] = scramble_word(word, rng)
         else:

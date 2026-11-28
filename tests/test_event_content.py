@@ -173,7 +173,6 @@ def test_bundled_scramble_all_words():
 def test_make_config_word_with_content():
     rng = random.Random(7)
     entry = {"id": "word_x", "word": "вертолёт",
-             "accepted": ["вертолет", "вертушка"],
              "difficulty": "medium", "category": "Транспорт"}
     cfg = event_games.make_config(
         "word", {"type": "coins", "amount": 100}, {}, rng,
@@ -183,13 +182,18 @@ def test_make_config_word_with_content():
     assert cfg["content_difficulty"] == "medium"
     assert Counter(cfg["scrambled"]) == Counter("вертолёт")
     assert cfg["scrambled"] != "вертолёт"
-    # accepted включает канонический + алиасы, без дублей
-    assert "вертолёт" in cfg["accepted"]
-    assert "вертолет" in cfg["accepted"]
-    assert len(cfg["accepted"]) == len(set(cfg["accepted"]))
-    # ответ матчится через answer_matches
+    # Строгий ответ: ТОЛЬКО исходное слово, без алиасов
+    assert cfg["accepted"] == ["вертолёт"]
     assert event_games.answer_matches("ВЕРТОЛЕТ", cfg["accepted"])
-    assert event_games.answer_matches("вертушка", cfg["accepted"])
+    assert event_games.answer_matches("  вертолёт  ",
+                                    cfg["accepted"])
+    # синонимы/сокращения НЕ принимаются
+    assert not event_games.answer_matches("вертушка",
+                                          cfg["accepted"])
+    assert not event_games.answer_matches("вертолетчик",
+                                          cfg["accepted"])
+    assert not event_games.answer_matches("верто лет",
+                                          cfg["accepted"])
 
 
 def test_make_config_krokodil_with_content():
@@ -305,3 +309,30 @@ def test_reveal_answer_only_for_answer_games():
                                 {"number": 7})) == "7"
     assert _reveal_answer(_sess("speed", {})) is None
     assert _reveal_answer(_sess("word", {})) is None
+
+
+def test_validate_word_forbids_accepted_and_anagrams():
+    errs = event_content.validate_catalog(
+        _cat("word", [
+            _word_entry(id="a", word="котёл", accepted=["котёл"]),
+            _word_entry(id="b", word="лёткo".replace('o','о')),
+        ]), "word")
+    # 'accepted' запрещён + «лётко» — анаграмма «котёл»
+    assert any("accepted" in e for e in errs)
+    assert any("anagram" in e for e in errs)
+
+
+def test_validate_word_rejects_unscramblable():
+    errs = event_content.validate_catalog(
+        _cat("word", [_word_entry(id="u", word="кккк")]),
+        "word")
+    assert any("scrambled" in e for e in errs)
+
+
+def test_scramble_fallback_never_returns_original():
+    """Периодические/сложные слова — rotation fallback."""
+    rng = random.Random(0)
+    for w in ("абаб", "котёл", "шалаш"):
+        for _ in range(10):
+            s = event_content.scramble_word(w, rng)
+            assert s != w and Counter(s) == Counter(w)

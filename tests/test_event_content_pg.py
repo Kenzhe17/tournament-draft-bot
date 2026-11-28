@@ -57,15 +57,22 @@ async def store(pg_uri, monkeypatch):
 
 
 def _entries(prefix, n, difficulty="easy", enabled=True,
-             category="Тест"):
-    return [{"id": f"{prefix}_{i:04d}",
-             "word" if prefix.startswith("w") else "answer":
-                 f"{prefix}{i}",
-             "category": category, "difficulty": difficulty,
-             "enabled": enabled}
-            | ({"accepted": [f"{prefix}{i}"]}
-               if not prefix.startswith("w") else {})
-            for i in range(n)]
+             category="Тест", start=0):
+    """Валидные записи каталога — срез реального bundled-файла
+    (гарантирует прохождение строгой валидации: уникальность,
+    анаграммы, формат)."""
+    from services import event_content
+    game = "word" if prefix.startswith("w") else "krokodil"
+    src = event_content.bundled_entries(game)[start:start + n]
+    out = []
+    for i, e in enumerate(src):
+        e = dict(e)
+        e["id"] = f"{prefix}_{i:04d}"
+        e["difficulty"] = difficulty
+        e["enabled"] = enabled
+        e["category"] = category
+        out.append(e)
+    return out
 
 
 # ------------------------------------------------------------- schema
@@ -188,7 +195,7 @@ async def test_pick_guild_isolation(store):
 @pytest.mark.asyncio
 async def test_pick_disabled_categories(store):
     entries = _entries("w", 6, category="Еда") + \
-        _entries("w", 4, category="Спорт")
+        _entries("w", 4, category="Спорт", start=6)
     # уникальные id
     for i, e in enumerate(entries):
         e["id"] = f"w_{i:04d}"
@@ -209,7 +216,7 @@ async def test_pick_difficulty_weights_zero_fallback(store):
     """Все веса <=0 → равные веса (задокументированный
     fallback), игра не блокируется."""
     entries = _entries("w", 4, difficulty="easy") + \
-        _entries("w", 4, difficulty="hard")
+        _entries("w", 4, difficulty="hard", start=4)
     for i, e in enumerate(entries):
         e["id"] = f"wz_{i:04d}"
     await store.import_catalog("word", entries, replace=True,
@@ -246,9 +253,7 @@ async def test_pick_all_disabled_returns_none(store):
 @pytest.mark.asyncio
 async def test_pick_1000_no_repeat(store):
     """TZ §8.4: 1000 выборов без повтора при полной базе."""
-    entries = [{"id": f"w_{i:04d}", "word": f"слово{i}",
-                "category": "Тест", "difficulty": "easy",
-                "enabled": True} for i in range(1000)]
+    entries = _entries("w", 1000)
     await store.import_catalog("word", entries, replace=True,
                                source="test")
     rng = random.Random(123)
@@ -343,3 +348,162 @@ async def test_recent_draws_history(store):
     assert len(draws) == 4
     assert {d["event_id"] for d in draws} == \
         {"h0", "h1", "h2", "h3"}
+
+
+# ------------------------------------------- hardening (final round)
+
+@pytest.mark.asyncio
+async def test_last_entry_excluded_across_all_levels(store):
+    """last_id исключается из ВСЕХ уровней до выбора уровня:
+    сценарий — last_id единственная запись уровня hard, но
+    пул не должен её вернуть через hard-уровень."""
+    # 2 easy + 1 hard; last = hard-запись
+    entries = _entries("w", 2, difficulty="easy") + \
+        _entries("w", 1, difficulty="hard", start=100)
+    await store.import_catalog("word", entries, replace=True,
+                               source="test")
+    rng = random.Random(11)
+    # Израсходуем easy-записи и hard в цикле gL
+    ids = []
+    for i in range(3):
+        e = await store.pick("word", guild_id="gL",
+                             event_id=f"L{i}", rng=rng)
+        ids.append(e["id"])
+        await store.release_event(f"L{i}")
+    st = await store.state("word", "gL")
+    # Упорядочим: найдём какой id был последним
+    last = st["last_entry_id"]
+    # Новый цикл: last_id не должен быть выбран первым,
+    # даже если его уровень — единственный с записями? Нет:
+    # записей 3, last исключается → 2 кандидата.
+    e = await store.pick("word", guild_id="gL",
+                         event_id="L3", rng=rng)
+    assert e is not None and e["id"] != last
+    await store.release_event("L3")
+
+
+@pytest.mark.asyncio
+async def test_no_cycle_reset_while_reserved_unused(store):
+    """Не сбрасывать цикл, пока есть неиспользованные,
+    но зарезервированные записи: pick → None, cycle_count
+    не меняется; после release — выдача продолжается."""
+    entries = _entries("w", 3)
+    await store.import_catalog("word", entries, replace=True,
+                               source="test")
+    rng = random.Random(12)
+    # guild A резервирует ВСЕ 3 записи (события «в полёте»)
+    for i in range(3):
+        await store.pick("word", guild_id="gA",
+                         event_id=f"A{i}", rng=rng)
+    # guild B: used пуст, но все записи reserved → None,
+    # и state gB не создан/не сброшен
+    e = await store.pick("word", guild_id="gB",
+                         event_id="B0", rng=rng)
+    assert e is None
+    # Те же записи для gA: used покрывает все → новый цикл
+    # для gA тоже упрётся в резервации → None
+    e2 = await store.pick("word", guild_id="gA",
+                          event_id="A3", rng=rng)
+    assert e2 is None
+    stA = await store.state("word", "gA")
+    assert stA["cycle_count"] == 0  # цикл НЕ сброшен
+    # Освобождаем — выдача возобновляется
+    for i in range(3):
+        await store.release_event(f"A{i}")
+    e3 = await store.pick("word", guild_id="gB",
+                          event_id="B1", rng=rng)
+    assert e3 is not None
+    await store.release_event("B1")
+
+
+@pytest.mark.asyncio
+async def test_upsert_rejects_anagram_conflict(store):
+    """CRUD валидирует итоговый каталог: новая запись-анаграмма
+    существующей отклоняется, каталог не меняется."""
+    entries = _entries("w", 5)
+    await store.import_catalog("word", entries, replace=True,
+                               source="test")
+    base_word = entries[0]["word"]
+    # Анаграмма: те же буквы в другом порядке
+    ana = "".join(sorted(base_word, reverse=True))
+    if ana == base_word:
+        ana = base_word[1:] + base_word[0]
+    # Проверим, что это действительно анаграмма и не дубль
+    from services.event_content import normalize_word_key
+    assert normalize_word_key(ana) != normalize_word_key(base_word)
+    assert sorted(ana) == sorted(base_word)
+    with pytest.raises(Exception) as ei:
+        await store.upsert_entry("word", {
+            "id": "ana1", "word": ana, "category": "Тест",
+            "difficulty": "easy", "enabled": True})
+    assert "anagram" in str(ei.value) or \
+        "entries[" in str(ei.value)
+    stats = await store.catalog_stats("word")
+    assert stats["total"] == 5  # не изменился
+
+
+@pytest.mark.asyncio
+async def test_merge_import_rejects_conflict_with_existing(store):
+    """Merge-import (replace=False): incoming сам по себе
+    валиден, но конфликтует с существующей записью →
+    атомарный отказ, рабочий каталог не тронут."""
+    entries = _entries("w", 5)
+    await store.import_catalog("word", entries, replace=True,
+                               source="test")
+    base = entries[0]["word"]
+    ana = "".join(sorted(base, reverse=True))
+    if ana == base:
+        ana = base[1:] + base[0]
+    incoming = [{"id": "new1", "word": ana, "category": "X",
+                 "difficulty": "easy", "enabled": True}]
+    with pytest.raises(Exception):
+        await store.import_entries("word", incoming,
+                                   replace=False)
+    stats = await store.catalog_stats("word")
+    assert stats["total"] == 5
+    # merge без конфликтов — добавляет
+    ok = [{"id": "new2", "word": "глобусный", "category": "X",
+           "difficulty": "easy", "enabled": True}]
+    # 'глобусный' может быть анаграммой bundled? проверим
+    from services.event_content import validate_catalog
+    pseudo = {"schema_version": 1, "content_version": "t",
+              "locale": "ru", "game": "word",
+              "entries": [{"id": e["id"], "word": e["word"],
+                           "category": e["category"],
+                           "difficulty": e["difficulty"],
+                           "enabled": e["enabled"]}
+                          for e in entries] + ok}
+    errs = validate_catalog(pseudo, "word")
+    if errs:
+        ok = [{"id": "new2", "word": "планетаxyz".replace('x','х').replace('y','ы').replace('z','з'),
+               "category": "X", "difficulty": "easy",
+               "enabled": True}]
+    r = await store.import_entries("word", ok, replace=False)
+    assert r["inserted"] == 1
+    stats = await store.catalog_stats("word")
+    assert stats["total"] == 6
+
+
+@pytest.mark.asyncio
+async def test_seed_does_not_restore_after_owner_wipe(store):
+    """Владелец удалил ВСЕ записи → meta-строка остаётся →
+    seed_bundled НЕ восстанавливает каталог при рестарте."""
+    await store.import_catalog("word", _entries("w", 3),
+                               replace=True, source="test")
+    for e in await store.export_entries("word"):
+        await store.delete_entry("word", e["id"])
+    stats = await store.catalog_stats("word")
+    assert stats["total"] == 0
+    # «Рестарт»: повторный сид bundled — пропускается,
+    # т.к. meta-запись существует
+    from services import event_content
+    r = await store.seed_bundled(
+        "word", event_content.bundled_entries("word"),
+        event_content.bundled_version("word"))
+    assert r["skipped"] == 0 or r.get("inserted", 1) == 0
+    stats2 = await store.catalog_stats("word")
+    assert stats2["total"] == 0  # каталог НЕ восстановлен
+    # pick → None (игра недоступна без падения)
+    e = await store.pick("word", guild_id="gw",
+                         event_id="w0", rng=random.Random(0))
+    assert e is None

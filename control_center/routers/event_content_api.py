@@ -64,6 +64,17 @@ def _game(game: str) -> str:
     return game
 
 
+def _validation_http(exc: Exception) -> HTTPException:
+    """CatalogValidationError/ValueError → 422 с ошибками
+    (включая ID записей), а не 500."""
+    errors = getattr(exc, "errors", None)
+    if errors:
+        return HTTPException(422, detail={
+            "message": "catalog validation failed",
+            "errors": errors[:100]})
+    return HTTPException(422, detail=str(exc)[:2000])
+
+
 async def _audit(user: PanelUser, action: str, game: str,
                  object_id: str = "", old: Any = None,
                  new: Any = None) -> None:
@@ -168,8 +179,11 @@ async def upsert_entry(
     errors = event_content.validate_catalog(pseudo, game)
     if errors:
         raise HTTPException(422, detail="; ".join(errors[:10]))
-    eid, op = await event_content_store.upsert_entry(
-        game, entry, actor=str(user.id))
+    try:
+        eid, op = await event_content_store.upsert_entry(
+            game, entry, actor=str(user.id))
+    except ValueError as exc:
+        raise _validation_http(exc) from exc
     await _audit(user, f"event_content.{op}", game, eid,
                  new={k: v for k, v in entry.items()
                       if k not in ("clue", "answer", "accepted",
@@ -206,8 +220,11 @@ async def patch_entry(
     entry = dict(current)
     entry.update(patch)
     entry["id"] = entry_id
-    await event_content_store.upsert_entry(
-        game, entry, actor=str(user.id))
+    try:
+        await event_content_store.upsert_entry(
+            game, entry, actor=str(user.id))
+    except ValueError as exc:
+        raise _validation_http(exc) from exc
     await _audit(user, "event_content.updated", game, entry_id,
                  new={k: ("***" if k in ("answer", "accepted",
                                          "word") else v)
@@ -222,7 +239,10 @@ async def delete_entry(
     _csrf: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
     game = _game(game)
-    ok = await event_content_store.delete_entry(game, entry_id)
+    try:
+        ok = await event_content_store.delete_entry(game, entry_id)
+    except ValueError as exc:
+        raise _validation_http(exc) from exc
     if not ok:
         raise HTTPException(404, "entry not found")
     await _audit(user, "event_content.deleted", game, entry_id)
@@ -241,8 +261,11 @@ async def toggle_entry(
         raise HTTPException(404, "entry not found")
     entry = dict(item)
     entry["enabled"] = not bool(item.get("enabled", True))
-    await event_content_store.upsert_entry(
-        game, entry, actor=str(user.id))
+    try:
+        await event_content_store.upsert_entry(
+            game, entry, actor=str(user.id))
+    except ValueError as exc:
+        raise _validation_http(exc) from exc
     await _audit(user, "event_content.toggled", game, entry_id,
                  new={"enabled": entry["enabled"]})
     return {"id": entry_id, "enabled": entry["enabled"]}
@@ -291,9 +314,12 @@ async def import_catalog(
         raise HTTPException(
             422, detail={"message": "validation failed",
                          "errors": errors[:100]})
-    result = await event_content_store.import_entries(
-        game, body.entries, version=body.version or "import",
-        actor=str(user.id), replace=body.replace)
+    try:
+        result = await event_content_store.import_entries(
+            game, body.entries, version=body.version or "import",
+            actor=str(user.id), replace=body.replace)
+    except ValueError as exc:
+        raise _validation_http(exc) from exc
     await _audit(user, "event_content.imported", game,
                  new={**result, "version": body.version})
     return {"status": "imported", **result}
@@ -322,8 +348,8 @@ def _entry_from_body(body: EntryBody, game: str) -> dict[str, Any]:
         if not body.word:
             raise HTTPException(422, "word is required")
         entry["word"] = body.word.strip().lower()
-        if body.accepted:
-            entry["accepted"] = body.accepted
+        # accepted для word ЗАПРЕЩЁН — ответ только исходное
+        # слово (валидатор отклонит иначе).
     else:
         if not body.answer or not body.clue:
             raise HTTPException(422,

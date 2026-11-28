@@ -865,9 +865,22 @@ class CoinDropCog(commands.Cog):
                      if close_ts else None))
             except Exception:
                 logger.exception("event create failed guild=%s", gid)
+                # Резервирование записи каталога снимаем —
+                # событие не создано, lease не нужен.
+                try:
+                    await self._content_store().release_event(
+                        event_id)
+                except Exception:
+                    pass
                 return "db_error"
             if row is None:
-                # UNIQUE-индекс: активное событие появилось в гонке.
+                # UNIQUE-индекс: активное событие появилось
+                # в гонке — освобождаем резервацию.
+                try:
+                    await self._content_store().release_event(
+                        event_id)
+                except Exception:
+                    pass
                 return "active"
 
         # Публикация карточки — вне лока (сетевой вызов).
