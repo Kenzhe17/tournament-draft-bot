@@ -178,9 +178,23 @@ class GameSelect(Select):
         else:
             status_text = "В разработке"
 
+        if game.id == "blackjack":
+            game_details = " Команда: `/games blackjack`\n Режим: без ставок\n"
+            if GAMES_CHANNEL_ID:
+                game_details = f" Канал: <#{GAMES_CHANNEL_ID}>\n" + game_details
+        else:
+            game_details = (
+                f" Канал: <#{GAMES_CHANNEL_ID}>\n"
+                f" Команда: `/{game.command} bet:100`\n"
+                f" Категория: {category_info['name']}\n"
+                f" Множитель: {game.multiplier}x\n"
+                f" Мин. ставка: {game.min_bet} {get_emoji('money')}\n"
+                f" Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n"
+            )
+
         embed = discord.Embed(
             title=f" {game.name.upper()} | Игровой режим",
-            description=f" {game.short_description}\n\n**Информация об игре:**\n Канал: <#{GAMES_CHANNEL_ID}>\n Команда: `/{game.command} bet:100`\n Категория: {category_info['name']}\n Множитель: {game.multiplier}x\n Мин. ставка: {game.min_bet} {get_emoji('money')}\n Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n Статус: {status_text}\n\n**Правила и особенности:**\n {game.how_to_play}\n\nНажмите кнопку ниже для запуска игры или вернитесь в меню",
+            description=f" {game.short_description}\n\n**Информация об игре:**\n{game_details} Статус: {status_text}\n\n**Правила и особенности:**\n {game.how_to_play}\n\nНажмите кнопку ниже для запуска игры или вернитесь в меню",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -234,6 +248,12 @@ class PlayButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Показать гайд как играть."""
+        if self.game.id == "blackjack":
+            from games.blackjack import start_blackjack
+
+            await start_blackjack(interaction)
+            return
+
         # Build guide message with parameter attributes
         if self.game.category == "economy":
             # Special guide for economy commands
