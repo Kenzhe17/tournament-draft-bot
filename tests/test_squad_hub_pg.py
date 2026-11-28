@@ -840,6 +840,34 @@ async def test_cashcup_registration_blocks_join(pg_pool):
                 "DELETE FROM cashcup_tournaments WHERE id=$1", tid)
 
 
+@pytest.mark.asyncio
+async def test_corrupt_cashcup_state_fails_closed(pg_pool):
+    """Повреждённое state турнира → check_failed, а не пропуск
+    проверки (fail-closed, не fail-open)."""
+    from services.cashcup_store import cashcup_store
+    cashcup_store._ready = False
+    await cashcup_store.ensure_schema()
+    team = await team_store.create(
+        _team("Corrupt", 4000, join_mode=JOIN_OPEN))
+    tid = "cctest-corrupt"
+    async with pg_pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO cashcup_tournaments (id, guild_id, "
+            "channel_id, status, creator_id, state) VALUES "
+            "($1,$2,1,'running',$3,'\"oops\"'::jsonb)",
+            tid, G, 4000)
+        # '"oops"' — валидный JSON, но не dict → fail-closed.
+    try:
+        with pytest.raises(TeamStoreError) as ei:
+            await team_store.join_team(team.team_id, 4001, G,
+                                       via="open")
+        assert ei.value.code == "check_failed"
+    finally:
+        async with pg_pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM cashcup_tournaments WHERE id=$1", tid)
+
+
 # ----------------------------------------------------------------------
 # P0.6 — массовый сброс
 # ----------------------------------------------------------------------

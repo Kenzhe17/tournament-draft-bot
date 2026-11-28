@@ -632,12 +632,38 @@ class TeamStore:
                 "временно запрещена") from exc
         for r in rows:
             raw = r["state"]
+            # Повреждённое состояние турнира → fail-closed: опасная
+            # операция запрещена, а не пропускается с ошибочной
+            # записью (continue здесь был бы fail-open).
             try:
                 state = json.loads(raw) if isinstance(raw, str) \
                     else dict(raw)
-            except (ValueError, TypeError):
-                continue
-            for t in state.get("teams") or []:
+            except (ValueError, TypeError) as exc:
+                logger.warning(
+                    "CashCup state corrupt (tournament %s): %s",
+                    r["id"], exc)
+                raise TeamStoreError(
+                    "check_failed",
+                    "Состояние турнира повреждено — операция "
+                    "временно запрещена") from exc
+            if not isinstance(state, dict):
+                raise TeamStoreError(
+                    "check_failed",
+                    "Состояние турнира повреждено — операция "
+                    "временно запрещена")
+            teams_list = state.get("teams")
+            if teams_list is not None and not isinstance(
+                    teams_list, list):
+                raise TeamStoreError(
+                    "check_failed",
+                    "Состояние турнира повреждено — операция "
+                    "временно запрещена")
+            for t in teams_list or []:
+                if not isinstance(t, dict):
+                    raise TeamStoreError(
+                        "check_failed",
+                        "Состояние турнира повреждено — операция "
+                        "временно запрещена")
                 if t.get("br_team_id") == team_id:
                     return ("Команда зарегистрирована в активном "
                             "CASH CUP — состав менять нельзя")
