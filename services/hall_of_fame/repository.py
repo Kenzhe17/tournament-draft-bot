@@ -184,31 +184,47 @@ async def ultimatum_records() -> dict:
 
 
 async def br_wins_leader(guild_id: int) -> tuple[int, int] | None:
-    """Лидер по победам в BR (из br_tournaments.json через br_store)."""
+    """Лидер по победам в BR (из br_tournaments.json через br_store).
+
+    Победа засчитывается ровно один раз на каждый Discord ID из
+    выигравшего слота (один игрок Solo, оба Duo, все четыре Squad).
+    Тестовые и отменённые турниры исключаются.
+    """
     try:
+        from models.br_tournament import BRTournamentPhase
         from storage.br_store import br_store
         counts: dict[int, int] = {}
-        for t in br_store.get_by_guild(guild_id):
+        tournaments = list(br_store.get_by_guild(guild_id)) + br_store.get_history_by_guild(guild_id)
+        for t in tournaments:
+            if getattr(t, "is_test", False):
+                continue
             phase = getattr(t, "phase", None)
             phase_val = getattr(phase, "value", phase)
-            if phase_val not in ("results", "complete"):
+            if phase_val in (BRTournamentPhase.CANCELLED.value,):
                 continue
-            # Завершённый турнир: есть результаты команд
+            if phase_val not in (BRTournamentPhase.RESULTS.value,
+                                 BRTournamentPhase.COMPLETE.value):
+                continue
+            # только опубликованный итог (legacy results тоже считаются)
+            if not getattr(t, "results_published", phase_val == BRTournamentPhase.RESULTS.value):
+                continue
             results = t.calculate_final_results() if hasattr(t, "calculate_final_results") else []
             if not results:
                 continue
             winner = results[0]
-            # team -> players ids через players list (name->id)
-            id_by_name = {p["name"]: p["id"] for p in getattr(t, "players", [])}
-            team_idx = winner.get("team_index")
+            team_idx = winner.get("team_index", winner.get("slot_index"))
             team = t.teams[team_idx] if team_idx is not None and team_idx < len(t.teams) else None
             if team is None:
                 continue
-            member_names = [team.get("captain", "")] + list(team.get("players", []))
-            for nm in member_names:
-                uid = id_by_name.get(nm)
+            member_ids = winner.get("member_ids") or []
+            if not member_ids:
+                # legacy-слоты без member_ids — резолвим по именам
+                id_by_name = {p["name"]: p["id"] for p in getattr(t, "players", [])}
+                member_names = [team.get("captain", "")] + list(team.get("players", []))
+                member_ids = [id_by_name.get(nm) for nm in member_names]
+            for uid in member_ids:
                 if uid and uid >= MIN_REAL_USER_ID:
-                    counts[uid] = counts.get(uid, 0) + 1
+                    counts[int(uid)] = counts.get(int(uid), 0) + 1
         if not counts:
             return None
         uid, cnt = max(counts.items(), key=lambda kv: kv[1])
