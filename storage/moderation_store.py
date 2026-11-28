@@ -78,6 +78,10 @@ CREATE TABLE IF NOT EXISTS moderation_events (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS moderation_events_case_idx ON moderation_events(guild_id,case_id,created_at);
+-- Голосовая модерация: фильтрация по target_id внутри JSONB до LIMIT,
+-- чтобы чужие события не вытесняли действующее наказание.
+CREATE INDEX IF NOT EXISTS moderation_events_voice_idx
+    ON moderation_events(guild_id, action, ((detail->>'target_id')));
 """
 
 
@@ -271,6 +275,46 @@ class ModerationStore:
             else:
                 rows=await conn.fetch('SELECT * FROM moderation_events WHERE guild_id=$1 ORDER BY id DESC LIMIT $2',guild_id,limit)
             return [dict(r) for r in rows]
+
+    async def voice_state(self,guild_id,target_id,field):
+        """Последнее подтверждённое состояние голосового флага
+        ('mute'/'deafen') по журналу модерации.
+
+        Возвращает dict: {'status': 'active'|'inactive'|'unknown'|'none',
+        'at': datetime|None}. '.unknown'-события трактуются консервативно
+        как 'active' — неподтверждённый результат не доказывает,
+        что модерация флаг НЕ ставила."""
+        await self.ensure()
+        pool=await get_pool()
+        # Фильтрация по target_id в SQL ДО LIMIT: иначе >100 событий
+        # других пользователей вытесняли бы действующее наказание.
+        actions=[f'voice.{field}.requested',f'voice.{field}.applied',
+                 f'voice.{field}.unknown']
+        async with pool.acquire() as conn:
+            rows=await conn.fetch(
+                """SELECT action, detail, created_at FROM moderation_events
+                   WHERE guild_id=$1 AND action = ANY($2::text[])
+                     AND detail->>'target_id' = $3
+                   ORDER BY id DESC LIMIT 50""",
+                guild_id, actions, str(target_id))
+        # Последнее событие решает: '.requested' без подтверждения —
+        # незавершённая операция → 'unknown' (консервативно).
+        for row in rows:
+            detail=row.get('detail') or {}
+            if isinstance(detail,str):
+                try:detail=json.loads(detail)
+                except ValueError:continue
+            action=row['action']
+            if action.endswith('.requested'):
+                return {'status':'unknown','at':row['created_at']}
+            if action.endswith('.unknown'):
+                return {'status':'unknown','at':row['created_at']}
+            if action.endswith('.applied'):
+                value=detail.get('value')
+                if value is not None:
+                    return {'status':'active' if value else 'inactive',
+                            'at':row['created_at']}
+        return {'status':'none','at':None}
 
     async def reconcile_candidates(self,guild_id,limit=100):
         """Actions that may have completed in Discord despite an API timeout."""

@@ -369,3 +369,24 @@ def test_pick_game_no_immediate_repeat():
 
 def test_pick_game_disabled_empty():
     assert event_games.pick_game([], {}, random.Random(1)) is None
+
+
+def test_quick_math_all_ops_no_crash():
+    """Regression 4d39ddb: _math_problem использовал `a` в том же
+    кортеже, где он присваивается — UnboundLocalError на каждом
+    subtraction-задании. Прогон по всем операциям и десяткам seed'ов."""
+    seen_ops = set()
+    for seed in range(300):
+        rng = random.Random(seed)
+        cfg = event_games.make_config("quick_math", _prize(), {}, rng)
+        op, a, b, ans = cfg["op"], cfg["a"], cfg["b"], cfg["answer"]
+        seen_ops.add(op)
+        if op == "+":
+            assert ans == a + b
+        elif op == "-":
+            assert ans == a - b
+            assert 1 <= b <= a
+        else:
+            assert op == "*"
+            assert ans == a * b
+    assert seen_ops == {"+", "-", "*"}
