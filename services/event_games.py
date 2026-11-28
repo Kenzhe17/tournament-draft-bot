@@ -260,9 +260,15 @@ def answer_matches(text: str, accepted: tuple[str, ...] | list[str]
 
 def make_config(game: str, prize: dict[str, Any],
                 settings: dict[str, Any],
-                rng: random.Random) -> dict[str, Any]:
+                rng: random.Random,
+                content: dict[str, Any] | None = None
+                ) -> dict[str, Any]:
     """Сгенерировать скрытую конфигурацию игры. Вызывается ДО
-    публикации карточки — секреты здесь, публично не видны."""
+    публикации карточки — секреты здесь, публично не видны.
+
+    ``content`` — запись каталога (Events Content Expansion)
+    для word/krokodil; без неё — legacy-встроенные списки
+    (совместимость со старыми вызовами/тестами)."""
     cfg: dict[str, Any] = {}
     if game == "chests":
         n = int(GAME_DEFS[game].get("chests", 5))
@@ -271,18 +277,41 @@ def make_config(game: str, prize: dict[str, Any],
         cfg.update(_math_problem(rng))
         cfg["accepted"] = [str(cfg["answer"])]
     elif game == "word":
-        word, aliases = rng.choice(WORDS)
+        if content:
+            word = str(content["word"])
+            aliases = [str(a) for a in content.get("accepted") or []]
+            accepted = list(dict.fromkeys([word, *aliases]))
+            from services.event_content import scramble_word
+            cfg["scrambled"] = scramble_word(word, rng)
+        else:
+            word, aliases = rng.choice(WORDS)
+            accepted = [word, *aliases]
+            cfg["scrambled"] = _scramble(word.replace(" ", ""), rng)
         cfg["word"] = word
-        cfg["scrambled"] = _scramble(word.replace(" ", ""), rng)
-        cfg["accepted"] = [word, *aliases]
+        cfg["accepted"] = accepted
+        if content and content.get("id"):
+            cfg["content_id"] = str(content["id"])
+            cfg["content_difficulty"] = str(
+                content.get("difficulty") or "")
     elif game == "guess_number":
         cfg["number"] = rng.randint(1, 20)
         cfg["accepted"] = [str(cfg["number"])]
     elif game == "krokodil":
-        clue, word, aliases = rng.choice(CLUES)
-        cfg["clue"] = clue
+        if content:
+            word = str(content["answer"])
+            aliases = [str(a) for a in content.get("accepted") or []]
+            accepted = list(dict.fromkeys([word, *aliases]))
+            cfg["clue"] = str(content["clue"])
+        else:
+            clue, word, aliases = rng.choice(CLUES)
+            accepted = [word, *aliases]
+            cfg["clue"] = clue
         cfg["word"] = word
-        cfg["accepted"] = [word, *aliases]
+        cfg["accepted"] = accepted
+        if content and content.get("id"):
+            cfg["content_id"] = str(content["id"])
+            cfg["content_difficulty"] = str(
+                content.get("difficulty") or "")
     elif game == "growing":
         dur = float(GAME_DEFS[game]["duration"])
         bmin = float(settings.get("growing_burn_min_seconds", 15))

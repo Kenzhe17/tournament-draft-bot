@@ -1,0 +1,7008 @@
+{
+ "schema_version": 1,
+ "content_version": "1.0.1",
+ "locale": "ru",
+ "game": "word",
+ "entries": [
+  {
+   "id": "word_f3e4721d6b4fee4d",
+   "word": "альбом",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_86e5e66965ab4a92",
+   "word": "бабочка",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_ede04f58dc4822e9",
+   "word": "ведро",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b636774c73c81cd9",
+   "word": "веник",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6466b4caa2fc7c3d",
+   "word": "весы",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1b502ed2f0bbbc47",
+   "word": "губка",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2415daa86a0b2b64",
+   "word": "дверь",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_ee44be00d52c3c9e",
+   "word": "жалюзи",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_22c2d76051ab51e2",
+   "word": "жилет",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3a2298723fd263f1",
+   "word": "замок",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f6b38d516cdd5934",
+   "word": "зонт",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a29f38a546f7a302",
+   "word": "иголка",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b4db9ecb98be8a02",
+   "word": "карандаш",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_19d167987b1b4cb9",
+   "word": "ковёр",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_9759a07ac1676798",
+   "word": "коврик",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_398c2abb61a29359",
+   "word": "кольцо",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8645b89747c6d89e",
+   "word": "кошелёк",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_95d2adfb7634a595",
+   "word": "кулон",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0ca10bde5194d641",
+   "word": "ластик",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_68a186fdedfa525f",
+   "word": "люстра",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1bb832909226c2d8",
+   "word": "матрас",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a05c5ff03e96b17f",
+   "word": "молния",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4c8fa8ef465c962c",
+   "word": "мыло",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_61998b44f987a588",
+   "word": "носки",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2bc5a53e26e6cdf2",
+   "word": "одеяло",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5943c4045eb8e766",
+   "word": "окно",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d9e4a6c4878615d6",
+   "word": "пальто",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c3e1402e3b6b2a3f",
+   "word": "папка",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c2dd794179f0cf03",
+   "word": "пенал",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_64471c080dfbfc27",
+   "word": "пижама",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5bc82bf675fe3593",
+   "word": "пинцет",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4c2a679c96fee7a7",
+   "word": "подушка",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a8ef96a908dccadf",
+   "word": "полотенце",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d78e48907a9be683",
+   "word": "расчёска",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_936508c4bdaeb872",
+   "word": "ремень",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_401b9e72a5d81ca6",
+   "word": "рюкзак",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_485fd3854b5f680f",
+   "word": "сапоги",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_06a1435c1e914a73",
+   "word": "сейф",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_13b97fe41506dbd6",
+   "word": "серьги",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2b2f1dda7fd7ff55",
+   "word": "совок",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_ee34e4977e204be6",
+   "word": "тазик",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a80d812930e65618",
+   "word": "торшер",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_042d5303a632622c",
+   "word": "утюг",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_08ad21199ead1a73",
+   "word": "фартук",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3eba4e94f29dd900",
+   "word": "халат",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f7ad8c5b63c094d0",
+   "word": "чемодан",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_276a9591012157b3",
+   "word": "шарф",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_911759b714417877",
+   "word": "швабра",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_72ebee7a2503aa48",
+   "word": "штора",
+   "category": "Быт и предметы",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_35a79c9deac5006c",
+   "word": "выключатель",
+   "category": "Быт и предметы",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_fa3b063aaa08082e",
+   "word": "батарейка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_0dd12f56407bc335",
+   "word": "блокнот",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_675767d1e05cf1ca",
+   "word": "браслет",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_601efa51bdf38c89",
+   "word": "будильник",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_984db6bd03abef24",
+   "word": "варежки",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_63b20ff22494223c",
+   "word": "вешалка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_cc999b3576b8c73a",
+   "word": "галстук",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1e2e644d820d6a3e",
+   "word": "ежедневник",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_139a120ad50f1c21",
+   "word": "закладка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a2016d94af92ec31",
+   "word": "зеркало",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_afb65faa2e458f3d",
+   "word": "зубочистка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_25c5ee9e379e5cff",
+   "word": "календарь",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_594b0520c464ad67",
+   "word": "катушка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f9b4d17a5b1bdc6e",
+   "word": "кисточка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4ff9b5c750605756",
+   "word": "ключница",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b8753eff2f1c9626",
+   "word": "конверт",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ce0299e65efb4390",
+   "word": "копилка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e7b6311f21f096de",
+   "word": "кроссовки",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_634878a40f5bc35e",
+   "word": "лампочка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1cb83078f3d641da",
+   "word": "линейка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b5bd66e43b6d1245",
+   "word": "мольберт",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_485a2d5e30fb77cc",
+   "word": "наволочка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_003443f072817c66",
+   "word": "наперсток",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_253173d359f37d71",
+   "word": "ножницы",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f45af69fe471b361",
+   "word": "открытка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_95ab8ea1b5f96696",
+   "word": "палитра",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_75625656a2810243",
+   "word": "перчатки",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d7424bdc4e9e23c8",
+   "word": "подоконник",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1515e0d8782728fc",
+   "word": "портфель",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_702ba703aaeaae8b",
+   "word": "прищепка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ec9a1652be65c91e",
+   "word": "простыня",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f1cb461e45dc678e",
+   "word": "пуговица",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_fd6d1c20b37147ab",
+   "word": "пылесос",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a18bb267928c4919",
+   "word": "розетка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f911c26a092b8452",
+   "word": "рулетка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_82089b286c8e66c6",
+   "word": "сандалии",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_74c0b232d8975c91",
+   "word": "скрепка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_836e45c1b6080c2f",
+   "word": "степлер",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e2f96b95e497f8a2",
+   "word": "тапочки",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_cdb7cab87b48ed57",
+   "word": "термометр",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d0d7457ed104704b",
+   "word": "тетрадь",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_be7bcaf5f8bac7db",
+   "word": "точилка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d6227a03bdbe99d0",
+   "word": "удлинитель",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_27a0153118c0920e",
+   "word": "фломастер",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d57fc48b46314803",
+   "word": "шампунь",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_750cd2044ccd916d",
+   "word": "шкатулка",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f14aa529f0d26fd5",
+   "word": "щеколда",
+   "category": "Быт и предметы",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_47b0070b88dec8b0",
+   "word": "ананас",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b8b8474cb00f6e86",
+   "word": "апельсин",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1976031f91d46d77",
+   "word": "арбуз",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6182fbc92d4f5cb7",
+   "word": "банан",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5b31f264357cf0ae",
+   "word": "батон",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_471424777a7c348d",
+   "word": "блин",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d4dcca0e1d43471f",
+   "word": "борщ",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d2c46b77a8b0af80",
+   "word": "бублик",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_da9b0e5c56948a3d",
+   "word": "бургер",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8b05d5007ce45b43",
+   "word": "вишня",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_268b7a2b7e8291ef",
+   "word": "горох",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_fc0911ae320ee3ec",
+   "word": "гранат",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_505e427d8c9bcc19",
+   "word": "гречка",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1cceffc374acd8be",
+   "word": "груша",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_83dfb68165abd27d",
+   "word": "дрожжи",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c353595c648b5f88",
+   "word": "дыня",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_857a19a3f14ee40c",
+   "word": "зефир",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_66f898f7f971e8da",
+   "word": "инжир",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_95a89b6820bca228",
+   "word": "йогурт",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6362b9a2160b3580",
+   "word": "картофель",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_58a686c981ca848e",
+   "word": "кефир",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_09099282aac695d5",
+   "word": "киви",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4b21d88f6e98a42b",
+   "word": "клубника",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a90b184280aca9a2",
+   "word": "кокос",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_efcf411186759683",
+   "word": "компот",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e2162431045c69e8",
+   "word": "лимон",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_21119e805b780010",
+   "word": "малина",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b960607e7e9fafc0",
+   "word": "манго",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6e0f01fac943e034",
+   "word": "мандарин",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_228a01b156d507f1",
+   "word": "манка",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f8b5178a69920542",
+   "word": "манты",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_251cac94017d61f1",
+   "word": "мороженое",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_9f5aff656efd8171",
+   "word": "мука",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_309ff11850f5bda5",
+   "word": "огурец",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2f6e32784a40d3f9",
+   "word": "оладьи",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5521336ebc847dfa",
+   "word": "омлет",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_98f8601d5767e2ed",
+   "word": "персик",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3a36c05ce802b213",
+   "word": "пицца",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f4b6b060f21e6281",
+   "word": "плов",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_43db869e63682a56",
+   "word": "помидор",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_688267b382d5276f",
+   "word": "пончик",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_313c9139d81394cf",
+   "word": "пшено",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f8f78a4148c99629",
+   "word": "редис",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5572f3ae7657a8f0",
+   "word": "репа",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_59c7ea3a3e526a80",
+   "word": "свёкла",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0a4202f4b434c5b6",
+   "word": "слива",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0a24b63f49079210",
+   "word": "сырник",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_30b94c6b1df6b7ec",
+   "word": "творог",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_44cbb5fb53012aa7",
+   "word": "тыква",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_459ccb13694bafe1",
+   "word": "укроп",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_cc4801660632b15a",
+   "word": "фасоль",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c0cbec0ef9a935b0",
+   "word": "хлеб",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e08a2bd81ffb2289",
+   "word": "хурма",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1c4ab4239538af48",
+   "word": "чеснок",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_484ae2fd960534ca",
+   "word": "шаурма",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_dc267f15d090c85b",
+   "word": "шашлык",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b6563de6a34681f5",
+   "word": "шоколад",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2a2e972da7c5a34b",
+   "word": "шпинат",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_26e03e963a14110d",
+   "word": "яблоко",
+   "category": "Еда и напитки",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6259499207054466",
+   "word": "кинза",
+   "category": "Еда и напитки",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_96b31f47190e8ad8",
+   "word": "маскарпоне",
+   "category": "Еда и напитки",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_f3f1c8507518408e",
+   "word": "абрикос",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a04c4b9b4e595433",
+   "word": "авокадо",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_86aa9926678e94b6",
+   "word": "баклажан",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ad832b511b789d5e",
+   "word": "баурсак",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d97db5b7200a98c2",
+   "word": "бешбармак",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_5f4b1c03ff40fe31",
+   "word": "брокколи",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_da7809b07c52a01a",
+   "word": "вареник",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ce741c8a1f63c5d0",
+   "word": "виноград",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_de7414c33ee94f10",
+   "word": "голубика",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b42a0b9fd6a00c0c",
+   "word": "грейпфрут",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c6fc74635eaade39",
+   "word": "ежевика",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_cb7a6bcd4b9c8095",
+   "word": "кабачок",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_54af9e8fba188b3a",
+   "word": "капуста",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_947aca9ab2a816be",
+   "word": "котлета",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f92228bfeb201aa8",
+   "word": "круассан",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a857799aafef110c",
+   "word": "крыжовник",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2ac2d3eb375aa2ce",
+   "word": "кукуруза",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_70ca5cfd80e830c8",
+   "word": "лазанья",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_180dd45ebb8301b2",
+   "word": "луковица",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_eea9386b18a6d406",
+   "word": "макароны",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d523dfc5bedb04b3",
+   "word": "мармелад",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1ef43ec41d874f9d",
+   "word": "морковь",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_faecb50c90bd5cb4",
+   "word": "овсянка",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_374c5b8635350ea6",
+   "word": "окрошка",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_6bc3e3fbe3424b37",
+   "word": "пельмень",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_bcc0504c13eb3eae",
+   "word": "перловка",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8b4391da8b998dbb",
+   "word": "петрушка",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_cf91cdfa8f7b63b3",
+   "word": "сельдерей",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b91626a52dbb2f02",
+   "word": "сметана",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_81f476223aad1426",
+   "word": "смородина",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f1c2bda5c393ce35",
+   "word": "солянка",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_42a5fc5651847134",
+   "word": "спагетти",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ebeedbde1198cc11",
+   "word": "сэндвич",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ea0625461f557e94",
+   "word": "тефтели",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_44ad40735a026cec",
+   "word": "черешня",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_04fc791a2cb4288f",
+   "word": "черника",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_92e1e3dfc5fd0dda",
+   "word": "чечевица",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_13649451c9948c3f",
+   "word": "яичница",
+   "category": "Еда и напитки",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_43815c5739f86f60",
+   "word": "аист",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_736e7de585d95a8d",
+   "word": "акула",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0ad37fa910fd3cdb",
+   "word": "барсук",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_390ade96d16b970c",
+   "word": "белка",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0ab2f36cca7d5a05",
+   "word": "бобр",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_50b93a1b1aaf1781",
+   "word": "волк",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_eee685094e6f8afa",
+   "word": "ворона",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5ee4765fcc38243e",
+   "word": "выдра",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_00e43a5bad982991",
+   "word": "геккон",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_da8b63b6449b185a",
+   "word": "гепард",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e3817a09c12cad73",
+   "word": "гиена",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1e6b5a7b573e8951",
+   "word": "голубь",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_04be2d466245b6a3",
+   "word": "дятел",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_231ce3c5523d7960",
+   "word": "ёжик",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3c0ace0bae358c39",
+   "word": "енот",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3098f513281847c3",
+   "word": "жираф",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b4c41c93c2e27b6d",
+   "word": "заяц",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_ebcb9878c5939273",
+   "word": "зебра",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_34d96e9bb379c587",
+   "word": "игуана",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_68464b3abf0eceab",
+   "word": "кабан",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_867c576e6d78349e",
+   "word": "коала",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6e10d765aca56a3a",
+   "word": "коза",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_892b35fd2a41528f",
+   "word": "комар",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3f1dc2e04cba4b22",
+   "word": "корова",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6f745a54873eeb58",
+   "word": "косуля",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8dd8bbbac22f7711",
+   "word": "кошка",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f3ba1c6b38d0f72e",
+   "word": "краб",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_094449fd1ade0898",
+   "word": "крокодил",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c58c89e93fefd5e8",
+   "word": "кролик",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a50e1d1c754024f9",
+   "word": "крот",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_eee5e2795e47f79f",
+   "word": "крыса",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c83457b1c24588a8",
+   "word": "лама",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d254e641245f3ceb",
+   "word": "лебедь",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1e3b64b1d8eaf317",
+   "word": "лемур",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_90861461869db965",
+   "word": "лиса",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_af0a1db9d3e59179",
+   "word": "лось",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_349a73ab3e333bcf",
+   "word": "лошадь",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4e8901e1591cc7a6",
+   "word": "медведь",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b54a276df3e06704",
+   "word": "медуза",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_aebfb523f7427551",
+   "word": "морж",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_10c7cb830d10118c",
+   "word": "мышь",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e3e4ca7b03721665",
+   "word": "овца",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_064874b84c3ccfd0",
+   "word": "олень",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d41917f9adc0d918",
+   "word": "омар",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_31ba8db2ccaa0559",
+   "word": "орёл",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2d3f06bd52faf684",
+   "word": "осёл",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_9c1d328f603275da",
+   "word": "пингвин",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_cf8b9a18501a9830",
+   "word": "пума",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d12c9ea57c7b6717",
+   "word": "рысь",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_15a3ddc80405265d",
+   "word": "свинья",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8f33365471cef463",
+   "word": "синица",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b37b813500a38719",
+   "word": "собака",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_da9b9a79f407273f",
+   "word": "сорока",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a31c81dafbda891c",
+   "word": "страус",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_be8bceabaa582907",
+   "word": "сурок",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_36a159bc85484200",
+   "word": "суслик",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_9614451682bf76e2",
+   "word": "тюлень",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_cae438399471ecb5",
+   "word": "улитка",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a7342efe4d01377a",
+   "word": "филин",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3d7024ad9c839104",
+   "word": "хомяк",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f21fe67cabf2d541",
+   "word": "цапля",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6bd8cbcceadb4d5b",
+   "word": "чайка",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_419142ff1f8fcef3",
+   "word": "шакал",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_dcb9b05dcbcfed30",
+   "word": "шмель",
+   "category": "Животные",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b48b97ddb7aedd6e",
+   "word": "альпака",
+   "category": "Животные",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_cfd13fd3f720bc01",
+   "word": "вомбат",
+   "category": "Животные",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_10803165496d2890",
+   "word": "ехидна",
+   "category": "Животные",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_483de4d900803ff8",
+   "word": "антилопа",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_38d734afd5954715",
+   "word": "бегемот",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_bd8624c0ebed14dc",
+   "word": "богомол",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_60f7faada295fcfc",
+   "word": "броненосец",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3bebb67e8327fbde",
+   "word": "верблюд",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_000b28c8925bcc94",
+   "word": "воробей",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_63e500ebd4151fc9",
+   "word": "горилла",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1a0506b8578718d1",
+   "word": "дельфин",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3e5878bba562a7d8",
+   "word": "дикобраз",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a52ec2309482fdd8",
+   "word": "журавль",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_cb86f35846043ab6",
+   "word": "кальмар",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_858d4b8d8eaa5e41",
+   "word": "кенгуру",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_9989a4f8afbbdf23",
+   "word": "косатка",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a89b5dcda6d08e02",
+   "word": "креветка",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e188b35a91db1274",
+   "word": "кузнечик",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b407ca5e068af4c7",
+   "word": "кукушка",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_491d9c026909ea0f",
+   "word": "ласточка",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_73c73f98cfdda8cf",
+   "word": "ленивец",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4cda1e209d8da635",
+   "word": "лягушка",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_495012941b4e8907",
+   "word": "мартышка",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a369dd485517c963",
+   "word": "муравей",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_cd8e3ac29c9a8540",
+   "word": "муравьед",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_964023bf58b18cf4",
+   "word": "носорог",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1b9e478a69e35002",
+   "word": "орангутан",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_333071b1d24de184",
+   "word": "осьминог",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1ebf85ee7743307c",
+   "word": "пантера",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f10183bae0a77a13",
+   "word": "пеликан",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_66a886922c9144b4",
+   "word": "попугай",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_30ca89d800053e8c",
+   "word": "саламандра",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8b96503167836d9c",
+   "word": "сверчок",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d4ed3ae06a3c6e45",
+   "word": "снегирь",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_26ceb4b088f1193b",
+   "word": "соловей",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_88b3de3037eac74b",
+   "word": "стрекоза",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_30ee8b228568d083",
+   "word": "утконос",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f9dca8cc5da721fa",
+   "word": "фламинго",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8ec05839673df87e",
+   "word": "хамелеон",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_7fec593b54c50830",
+   "word": "черепаха",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d2e5b7c4f9a604a5",
+   "word": "шимпанзе",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ea5b99ae6a7be245",
+   "word": "шиншилла",
+   "category": "Животные",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f66fff180daba250",
+   "word": "азот",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_fce42ef96863e2cc",
+   "word": "алмаз",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f1a65a68bf06b44b",
+   "word": "афиша",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_47417fbaf0a440b7",
+   "word": "басня",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2d5670eb4fc189e0",
+   "word": "бубен",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b5cb8338d0677fc4",
+   "word": "вакуум",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3000f4f745e8cdea",
+   "word": "витраж",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2ef1a2da1c1a3416",
+   "word": "гелий",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_14bdecc1a3ea86e2",
+   "word": "гитара",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e83b76c2ca03fec1",
+   "word": "гуашь",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_36a5f034febba2be",
+   "word": "диалог",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a04cc9c24e4f4c25",
+   "word": "дробь",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_90e4dd18579c291f",
+   "word": "катет",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_777ec66e889bfd3f",
+   "word": "линза",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_fd2a36abb4654bc1",
+   "word": "лупа",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_07df844b9abdc87a",
+   "word": "озон",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_20b0719c7aef9026",
+   "word": "опера",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3f113da1ea9f31db",
+   "word": "призма",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1fd585e247b976db",
+   "word": "пролог",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_cd603e7c8d2b0404",
+   "word": "протон",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1873f147cd4349c0",
+   "word": "роман",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4bb2b3916544f34b",
+   "word": "ромб",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_360b22e372234300",
+   "word": "сонет",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_47331821b0af664d",
+   "word": "спектр",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_dc4d93bc20d9cd50",
+   "word": "строфа",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a7a73599bbf1c6d6",
+   "word": "трение",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_693ab441ed194762",
+   "word": "флейта",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5a0048a497a9227f",
+   "word": "фотон",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_51f209ea37b553b2",
+   "word": "фреска",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f44043664d1a958f",
+   "word": "эпилог",
+   "category": "Наука и культура",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_22f20d9a918b384b",
+   "word": "аплодисменты",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_59f66ae08c301bb5",
+   "word": "барельеф",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_729366d0e0bb6bb2",
+   "word": "гипотенуза",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_92be782756ffd57f",
+   "word": "гобой",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_f56433231f9f4155",
+   "word": "диэлектрик",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_45fc6395a003d379",
+   "word": "изотоп",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_e86a2ed0d50f9f23",
+   "word": "калейдоскоп",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_a1c2d037a7716902",
+   "word": "катализатор",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_13924ed13ae6f1b5",
+   "word": "кларнет",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_b0147968b6530316",
+   "word": "конденсатор",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_dafc82623f6580b4",
+   "word": "конденсация",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_bdfd1fc24369d4c4",
+   "word": "натюрморт",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_07c85a9465edcaef",
+   "word": "парабола",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_67669d6b9dacaeba",
+   "word": "предохранитель",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_2aa17ba8beb27e45",
+   "word": "резонанс",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_a39fa53016ec46df",
+   "word": "сопротивление",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_076c0a60c0033c43",
+   "word": "транзистор",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_d37d8bef34c807b0",
+   "word": "треугольник",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_b80af15718c03ef9",
+   "word": "эксперимент",
+   "category": "Наука и культура",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_47ef63f4df844634",
+   "word": "акварель",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_19ea74b48fcd649e",
+   "word": "аккордеон",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8612117421ec8e6a",
+   "word": "аксиома",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4989d6b3784c5dc1",
+   "word": "антология",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_46d1b0decffedc4c",
+   "word": "антракт",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1413043c20f95a0a",
+   "word": "барабан",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1d5b6bb6207408ab",
+   "word": "виолончель",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_7d27e33a214d45df",
+   "word": "водород",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3a91d79aa96f341a",
+   "word": "галерея",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2c1545c63841c548",
+   "word": "гармонь",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_0dcf85a9b900bf8f",
+   "word": "гипотеза",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_dc2842667d76cd5e",
+   "word": "гравюра",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_63c6f32ae8bc8ef6",
+   "word": "давление",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_67f2aa62e1ecc488",
+   "word": "декорация",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_36f31088aa48fe5c",
+   "word": "диаметр",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8745b6c24c26d1a6",
+   "word": "занавес",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_cdd86a826eed25cc",
+   "word": "инерция",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e34d8050fbf64152",
+   "word": "испарение",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_06d016e1d0d505b0",
+   "word": "квадрат",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8c12e625b2e9a345",
+   "word": "кипение",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_7325650e2b6efc6d",
+   "word": "кислород",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_262e631696431017",
+   "word": "контрабас",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_457c6331bbefbca0",
+   "word": "метафора",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_5356b20fa8814e5f",
+   "word": "микроскоп",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e271c3efa429c16e",
+   "word": "молекула",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_de8cf433dfcf5cc7",
+   "word": "монолог",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_67e20d76bb36d2ef",
+   "word": "мощность",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d360a3d0b2d39ed2",
+   "word": "напряжение",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d8c9354ec87cf869",
+   "word": "нейтрон",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_6c7feaee74c43b83",
+   "word": "новелла",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_307d9c06abbf42c0",
+   "word": "оркестр",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3e3a648840fb62d7",
+   "word": "пастель",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_7202324dd42d0c2f",
+   "word": "периметр",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8304e0686db731bc",
+   "word": "перископ",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_208c51ea34ab5340",
+   "word": "пирамида",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2956da30dfcf2ee9",
+   "word": "плавление",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c5db297a4fe73081",
+   "word": "плотность",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b52237f8ef56ec6f",
+   "word": "портрет",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_105fb2b96efbd47e",
+   "word": "премьера",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_728033c33066e205",
+   "word": "проводник",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d89686fe410e0e76",
+   "word": "процент",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8f85909efae00835",
+   "word": "саксофон",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a78d4b1352d05811",
+   "word": "синтезатор",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d819c1ac98c8dbc4",
+   "word": "скорость",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_21fdcebb64ddc5b5",
+   "word": "спектакль",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_6dff4e65a464c947",
+   "word": "сценарий",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f52f562b40c7631f",
+   "word": "теорема",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_6854fee01787e7c5",
+   "word": "трапеция",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ed38a48a176b0483",
+   "word": "углерод",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_5f199947ddcdc129",
+   "word": "формула",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_86d84dac74e6f332",
+   "word": "фортепиано",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1ff2ee493fe700cb",
+   "word": "цилиндр",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f7cddb5656dd0714",
+   "word": "экспонат",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_fb6fdb76b43e55d7",
+   "word": "электролит",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3ddfca6f24cfd76e",
+   "word": "элемент",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_79bfb8e30f70eff9",
+   "word": "энергия",
+   "category": "Наука и культура",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a1e7af37333c231f",
+   "word": "бархан",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b8d01c06290099c0",
+   "word": "болото",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f9fd605e4840363f",
+   "word": "бриз",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2196277b00b40374",
+   "word": "бухта",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0c3576422b7d0029",
+   "word": "вулкан",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_023b40f891025b7e",
+   "word": "гейзер",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_718f388cbf25871f",
+   "word": "глобус",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_69d05a4d1d06cc07",
+   "word": "гора",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5e448fd2f2498f5d",
+   "word": "град",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a4ec432ebe0e5532",
+   "word": "гранит",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8c6203102249aea5",
+   "word": "гроза",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5f047a55c2ea29af",
+   "word": "гром",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_694af312a5e17752",
+   "word": "грот",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4d13cd19deaa2b86",
+   "word": "дельта",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c354afd5c07011f3",
+   "word": "долина",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_dec42a51caf89a3c",
+   "word": "жемчуг",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0cabd00a28ca1910",
+   "word": "залив",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1afe21b9264c36ce",
+   "word": "засуха",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_621a4528a2654c86",
+   "word": "иней",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_eda93e5053fdda03",
+   "word": "исток",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8309b5724afb207f",
+   "word": "каньон",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c6a58e561b0c472b",
+   "word": "кварц",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e17380eb51a32794",
+   "word": "компас",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4bd526749fc93318",
+   "word": "коралл",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b23d4f6ef1a087e4",
+   "word": "кратер",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_38c246e6e5b93b18",
+   "word": "лава",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_eb9d871177355a18",
+   "word": "лавина",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_63b5daa5d4826507",
+   "word": "лагуна",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b152543a8e7a35db",
+   "word": "ледник",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2a1510f252e0ab13",
+   "word": "ливень",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3d5fdd47393c26b0",
+   "word": "магнит",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_ed46fe960ac526ac",
+   "word": "метель",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_127eee75ef5d6b65",
+   "word": "море",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_ff87e9ad1c8022bf",
+   "word": "мрамор",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5e249a884fe34f3c",
+   "word": "оазис",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_92292b2c626f0cbc",
+   "word": "облако",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0aa06209fbac6589",
+   "word": "овраг",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f5c9ac9d93c91b22",
+   "word": "озеро",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e96d6fd930397a1e",
+   "word": "океан",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_dc6151a5473cd6c2",
+   "word": "остров",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e74b30dcdbfcf2a4",
+   "word": "пещера",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_26d7f20871f5d8f4",
+   "word": "плато",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2fd6f9526bf18e21",
+   "word": "поляна",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c7a5bef2de49cce3",
+   "word": "пролив",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d571fd15912faf81",
+   "word": "пруд",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_85b830008d10b72b",
+   "word": "радуга",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e5fc279ec2002cd8",
+   "word": "река",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b8086e6a4274ae2e",
+   "word": "родник",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_771805d071f34315",
+   "word": "роса",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5c0ae07784c9532b",
+   "word": "роща",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4de2e2d5abba7702",
+   "word": "ручей",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5aa3599141cec87b",
+   "word": "скала",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_013301e99125251d",
+   "word": "смерч",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_25eea783ed9af57c",
+   "word": "степь",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_fe54a9550c404aaf",
+   "word": "сугроб",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a174ed3be54cb2ab",
+   "word": "тайга",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2bc4b1e3f2d40904",
+   "word": "туман",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2f2928998745eb3d",
+   "word": "тундра",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4950436109e1f1e3",
+   "word": "ураган",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f4ceef0a502b90bd",
+   "word": "устье",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4cdd47cf5e9dc44d",
+   "word": "утёс",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5d3a83f891818756",
+   "word": "ущелье",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e519d799c07204b3",
+   "word": "холм",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4b7b8f988ccf8af3",
+   "word": "цунами",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d4f92edccda31cf5",
+   "word": "широта",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8c1fcdd90eb8ca3e",
+   "word": "янтарь",
+   "category": "Природа и география",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e77d6fbf01cd0048",
+   "word": "архипелаг",
+   "category": "Природа и география",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_385c988095b9d03f",
+   "word": "землетрясение",
+   "category": "Природа и география",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_3f4ba6b58684d24d",
+   "word": "известняк",
+   "category": "Природа и география",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_871080ed02e5f67e",
+   "word": "меридиан",
+   "category": "Природа и география",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_63fe6db2445dcf47",
+   "word": "муссон",
+   "category": "Природа и география",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_ddb758357660bb8e",
+   "word": "обсидиан",
+   "category": "Природа и география",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_e109daf99638d427",
+   "word": "перешеек",
+   "category": "Природа и география",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_2c735deb72937060",
+   "word": "сталагмит",
+   "category": "Природа и география",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_3f717ec3183390c1",
+   "word": "сталактит",
+   "category": "Природа и география",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_2da5a227cb4ee13f",
+   "word": "айсберг",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_9d07d4e4b5bf0b30",
+   "word": "атмосфера",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f30563255a862c28",
+   "word": "базальт",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_9fb53ec01cea7a0c",
+   "word": "водопад",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_7c3230260ce829e6",
+   "word": "гололёд",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4eab746c9c1eb329",
+   "word": "горизонт",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c3eb5826b22bf403",
+   "word": "джунгли",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_651e922b41ffbe59",
+   "word": "долгота",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_baf23c7715798418",
+   "word": "заморозок",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8329042700cb8a53",
+   "word": "лесопарк",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1a5249a4e4258a29",
+   "word": "материк",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_62f30cf2c7f330b2",
+   "word": "наводнение",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8c7bc2d650f4891c",
+   "word": "оползень",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_de41d59f28246b13",
+   "word": "оттепель",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_5b72704ffbcab07d",
+   "word": "паводок",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_35cda2e2fca637dd",
+   "word": "полуостров",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_57a4fa409fe71547",
+   "word": "пустыня",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f38d4a187016865e",
+   "word": "равнина",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c5257ec3e4a8fdb1",
+   "word": "саванна",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_615cba8c4f73b21d",
+   "word": "снегопад",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b3dfae5489b01e29",
+   "word": "сосулька",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_bf33c22628bb513d",
+   "word": "экватор",
+   "category": "Природа и география",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_6cab20266f05d8cf",
+   "word": "банкир",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f66caa18a9762755",
+   "word": "биолог",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0dd287a1d87ff82a",
+   "word": "блогер",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_fdd881acaf80ec0f",
+   "word": "геолог",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_bfc3ad814e031485",
+   "word": "гример",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4a872fe589faf6b7",
+   "word": "зоолог",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_195372b1733c3adc",
+   "word": "кассир",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_fc2abc32b631b9a7",
+   "word": "курьер",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e9ac9f9dc0cf3e83",
+   "word": "моряк",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3cdef8a957291f59",
+   "word": "пекарь",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8420001d78e14c8d",
+   "word": "пилот",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_eb1d66c8d2b42311",
+   "word": "повар",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_074274301fe0aec2",
+   "word": "фермер",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_7a0a6ec269aff003",
+   "word": "физик",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c91a129f5990482a",
+   "word": "химик",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_acd26dc76ac799c0",
+   "word": "хирург",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_ffa51414be869643",
+   "word": "эколог",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a91c89a52792147d",
+   "word": "ювелир",
+   "category": "Профессии и общество",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c8e682b443ea45a3",
+   "word": "агроном",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_1ab409c327b4e053",
+   "word": "адвокат",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_d37926710b0a20a8",
+   "word": "археолог",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_a37f69f098d77109",
+   "word": "архивариус",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_f7c9f3de6966055d",
+   "word": "библиотекарь",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_514fd3c93fba0911",
+   "word": "воспитатель",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_a0ab25d0a985b32a",
+   "word": "дерматолог",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_f2d307a462dbb50b",
+   "word": "кардиолог",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_7d80ff300a8b9976",
+   "word": "конструктор",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_857caa3d028545fc",
+   "word": "консультант",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_2217a03d86dca2ac",
+   "word": "метеоролог",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_8aaec099d9b25f6c",
+   "word": "невролог",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_c9306b9f07fb6d2f",
+   "word": "нотариус",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_3cc1b24d357f951c",
+   "word": "орнитолог",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_3b34261d3dccabcf",
+   "word": "полицейский",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_7446a8ec824af9eb",
+   "word": "преподаватель",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_c6e1bfced8899e6f",
+   "word": "программист",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_67778a52085c08ff",
+   "word": "реставратор",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_8f4a1afd531abfe8",
+   "word": "следователь",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_e2b1d9f352b823ae",
+   "word": "стюардесса",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_95a52fc82d81c025",
+   "word": "тестировщик",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_9d256670b0844bf9",
+   "word": "фармацевт",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_135938735c2b199a",
+   "word": "энтомолог",
+   "category": "Профессии и общество",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_33bff5b6be90e6ad",
+   "word": "аналитик",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e57708fa3e12dbe8",
+   "word": "архитектор",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_59e72ab07a479e6a",
+   "word": "астроном",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_0963f0583dcdfeb0",
+   "word": "аудитор",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b679e91113f83e72",
+   "word": "бариста",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4eea56f077092842",
+   "word": "ботаник",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_5b3e4da45327e503",
+   "word": "бухгалтер",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_25b3cd660de2ae25",
+   "word": "ветеринар",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_136b4bd62fe6bbb4",
+   "word": "визажист",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ccfe80ce7bf2df5a",
+   "word": "водитель",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2b350aa725671823",
+   "word": "дизайнер",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_391c00329bcc18cd",
+   "word": "директор",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_108fbc031c0cdf66",
+   "word": "дирижёр",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d838cb0826c69283",
+   "word": "диспетчер",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_35329e6dbeabe723",
+   "word": "инженер",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_69b1f135374b973e",
+   "word": "историк",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2715719570ae0027",
+   "word": "каменщик",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_831ca50509b4c610",
+   "word": "композитор",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_be526047c3119e8b",
+   "word": "кондитер",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_feae0f25b78fcceb",
+   "word": "корректор",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_531b43393434a565",
+   "word": "космонавт",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ac8ff6d0728f766e",
+   "word": "лаборант",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a03e5f0edeeea078",
+   "word": "логопед",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_92edfcf218c6884b",
+   "word": "маркетолог",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_931c1420520181ed",
+   "word": "математик",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ae628b1c68013541",
+   "word": "машинист",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ed8353ffe0d5be05",
+   "word": "менеджер",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_42da4a176d83cb29",
+   "word": "механик",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d8fe01b3dd512417",
+   "word": "музыкант",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f81c436ee7d686af",
+   "word": "окулист",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3c66c3f175ba019f",
+   "word": "оператор",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_dbd78e5dfa5e087f",
+   "word": "официант",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_97f9a212c5537656",
+   "word": "парикмахер",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ce51d1676bf269ca",
+   "word": "педиатр",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f52f89061ec21a2f",
+   "word": "переводчик",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ead835ebf32cd5b6",
+   "word": "плиточник",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b04f6f9400e62d4d",
+   "word": "плотник",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ab21b4ec2dfbaa43",
+   "word": "пожарный",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c9df494dbdb6a93e",
+   "word": "портной",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4a82ad50750744c7",
+   "word": "почтальон",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2bd52022ea09c167",
+   "word": "продавец",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_cf6aaf8b9197faac",
+   "word": "психолог",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_7a64ce4adbe62189",
+   "word": "редактор",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e66a2f5be711c4ea",
+   "word": "режиссёр",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_79abf959bad8e7ae",
+   "word": "репортёр",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_88ba272ebfb69ec0",
+   "word": "садовник",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_0dfbf5e88cc60dce",
+   "word": "сантехник",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b84e90a5d4d4a195",
+   "word": "сапожник",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_aee0ff8d2970f716",
+   "word": "сварщик",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_450adfe237fb41f1",
+   "word": "скульптор",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_bebe065d0ae65537",
+   "word": "спасатель",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_5ba1fff471550273",
+   "word": "стоматолог",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_9e9e3a28e15e6488",
+   "word": "строитель",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_560af7b2361e83e5",
+   "word": "сценарист",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_855287644c0e9a28",
+   "word": "терапевт",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a2c9fb78079bb98b",
+   "word": "учитель",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_718f106ee591ee13",
+   "word": "финансист",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e3929847ba2b2a4b",
+   "word": "флорист",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_74e6c839fa2fd719",
+   "word": "фотограф",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c56757c447be9dcf",
+   "word": "часовщик",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b7a630054c7db042",
+   "word": "штукатур",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_faf81b3ded953d49",
+   "word": "штурман",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3e252da313541b5b",
+   "word": "экономист",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_301d744f3f66faad",
+   "word": "электрик",
+   "category": "Профессии и общество",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_6abfcdfa303a63c3",
+   "word": "агава",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_15bc60c08e9a95c7",
+   "word": "алоэ",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_fc25794d60d14bd3",
+   "word": "астра",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6d64caa364916e42",
+   "word": "бамбук",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a0b0d8274cf227b1",
+   "word": "берёза",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8f9169e19bd1f7af",
+   "word": "бутон",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_aa68c0507858e15c",
+   "word": "грабли",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f3e407d94948df30",
+   "word": "грядка",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_06f37c21beae6811",
+   "word": "жасмин",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3b7d33d73b79f6fc",
+   "word": "желудь",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_47d6f225869623bf",
+   "word": "ирис",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1e66018c82d24082",
+   "word": "кактус",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_281570abbcaccab0",
+   "word": "камыш",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_9845cf0786e9ac47",
+   "word": "каштан",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_68e1ee0640c6eff3",
+   "word": "клевер",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_777d65057ba74d73",
+   "word": "клён",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_067dc9ab52bfa6ff",
+   "word": "кожура",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_473146cc7078cb06",
+   "word": "крона",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6504172ec60d77c3",
+   "word": "лейка",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_46cedb2186e0219c",
+   "word": "лилия",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_72e1f11781ce09b6",
+   "word": "липа",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_ef41605157b13248",
+   "word": "лопата",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_dec060f99588796f",
+   "word": "лопух",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_567b49210f15f5db",
+   "word": "лотос",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5614483bf017f52d",
+   "word": "мотыга",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8c8eb419f8e14ed2",
+   "word": "мята",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_afc222f7ea983c27",
+   "word": "овёс",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3f48fba05962927b",
+   "word": "осина",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d78aa02e5da7dc20",
+   "word": "пальма",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e903828e694aac5b",
+   "word": "парник",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_73b0f4955d7be567",
+   "word": "пион",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2c5e30334a7e3dd3",
+   "word": "пихта",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3644a7ab05fb6f0e",
+   "word": "полынь",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_99619526cd0f88d1",
+   "word": "просо",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e5583d58e838704b",
+   "word": "пыльца",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_9df7b1014829aa27",
+   "word": "рожь",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1ad7e9f1a12e4056",
+   "word": "росток",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a7ef83995cab48dc",
+   "word": "рябина",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b9e83f6976d030f7",
+   "word": "сирень",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_efc0f9a4f136f16d",
+   "word": "сосна",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_45305b7cc0d3dde4",
+   "word": "ствол",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_45f99ebb6d7600b2",
+   "word": "тимьян",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d3c7c6ce449d3ef0",
+   "word": "тополь",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_edb60c434d611449",
+   "word": "фиалка",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_479647052b2c2417",
+   "word": "фикус",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_72e97d401a8ec70b",
+   "word": "шалфей",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_fdceb960eca56a5a",
+   "word": "ясень",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f02369bcd634a0a7",
+   "word": "ячмень",
+   "category": "Растения и сад",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_7da8f73ae1601717",
+   "word": "гиацинт",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_a09bbe397b4edc45",
+   "word": "гладиолус",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_cb98581b45c34664",
+   "word": "корневище",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_b6d4725dfd7f5318",
+   "word": "крокус",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_7288980c55c9f09b",
+   "word": "лиственница",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_946d363f155e0318",
+   "word": "можжевельник",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_41904569d05cae49",
+   "word": "пестик",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_d2b7a5a855254a7f",
+   "word": "подсолнечник",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_3b63a894f356f79c",
+   "word": "рапс",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_12461c0161e6511e",
+   "word": "сорго",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_d7a30a23ebd4b14b",
+   "word": "тычинка",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_9fe4b023d0245c10",
+   "word": "хлопчатник",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_7c6fb2a16d06b27b",
+   "word": "хризантема",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_29878d1655cc086b",
+   "word": "чертополох",
+   "category": "Растения и сад",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_0f5a8a31ca38b427",
+   "word": "базилик",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_894e018a2ca803a1",
+   "word": "василёк",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1a2b18efcf2a5930",
+   "word": "водоросль",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ae0fa4e105e7005f",
+   "word": "гвоздика",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_19907e6635650089",
+   "word": "георгин",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ce7e639b5dd28d1b",
+   "word": "дубрава",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2c938fb39ff95dae",
+   "word": "кипарис",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8784601f33b389b3",
+   "word": "клубень",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2f188f8369389f7d",
+   "word": "компост",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e37d4438650712a3",
+   "word": "крапива",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_28b5e1833f5ccd74",
+   "word": "кувшинка",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a44f3406ca45a173",
+   "word": "лаванда",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4dc1e0eba3b7959b",
+   "word": "лишайник",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_fff108a070ab8656",
+   "word": "мелисса",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_0191cf0f0d593089",
+   "word": "монстера",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_6278b1b8a6986f7b",
+   "word": "нарцисс",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e2459e466d1cbe3e",
+   "word": "одуванчик",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f9b64c1e367497da",
+   "word": "орхидея",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_32dc0d393096faf6",
+   "word": "папоротник",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_6ca73d503ca3dcca",
+   "word": "подорожник",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_78e83d56c191a527",
+   "word": "подснежник",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_9b7d69e7dc5c9409",
+   "word": "пшеница",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d816cdfc48b8eafa",
+   "word": "рассада",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a37c195d33475d3b",
+   "word": "розмарин",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3886da6b9c64da34",
+   "word": "ромашка",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_cb4cb055c4a33a57",
+   "word": "саженец",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8b90c35e4e0bb079",
+   "word": "сахарница",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d71d30f15804cd48",
+   "word": "секатор",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b6308c76707f85a9",
+   "word": "семечко",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f1faa9e4eeed1205",
+   "word": "скорлупа",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1e2180c258c8144b",
+   "word": "теплица",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a097522372b9c7d7",
+   "word": "тростник",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f9df5acd155bb8c6",
+   "word": "тюльпан",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_83fd1fec04926ac4",
+   "word": "черенок",
+   "category": "Растения и сад",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3f236176a7416507",
+   "word": "баскетбол",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3acee38caa0fd678",
+   "word": "бокс",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d9b952d06f43f6f5",
+   "word": "борьба",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2d17884c6753315f",
+   "word": "брусья",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4d85d33121d0a063",
+   "word": "волан",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c7d69bee93da54b8",
+   "word": "волейбол",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3338d70e112fe5d7",
+   "word": "гольф",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_03fac35dc029e109",
+   "word": "гребля",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_cf19384953e721bd",
+   "word": "дартс",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_285a3dc6157e7d97",
+   "word": "дзюдо",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5a57a01de4b88d6e",
+   "word": "домино",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3ef7074d4044eb45",
+   "word": "каратэ",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_723f6a46418fb3b7",
+   "word": "квест",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c5d5ccf070f78c77",
+   "word": "клюшка",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_49d8e32ce7afb554",
+   "word": "крикет",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_43a22b51d44690af",
+   "word": "кубок",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_93e66073ab444a85",
+   "word": "медаль",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2d843446502ca9d6",
+   "word": "нарды",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_7d38bba4e2cda85e",
+   "word": "офсайд",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_45b5e811b392fc55",
+   "word": "пазл",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c6fe5225d626754a",
+   "word": "ребус",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_df8223b95d272909",
+   "word": "регби",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2a80a5f3938181b3",
+   "word": "рекорд",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0b99914f72780602",
+   "word": "самбо",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c1af27256b3bb191",
+   "word": "сквош",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a50634223b6a34cc",
+   "word": "скин",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0b99d9f9c6be7e22",
+   "word": "спринт",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_202bae1b6e49d5e3",
+   "word": "судоку",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_dfc25bef5ff331ec",
+   "word": "судья",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3b76ab4f72342f06",
+   "word": "табло",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_bc8400b4bbd16f29",
+   "word": "теннис",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_03ee0672b8d7fdd7",
+   "word": "тренер",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3cc0b6ea01168f84",
+   "word": "турник",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0520d52da88d7a38",
+   "word": "турнир",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_11a73ce7c55191b3",
+   "word": "финал",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d7f159676274cb52",
+   "word": "футбол",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_9ba21e0fa817fe16",
+   "word": "хоккей",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_76f026dcae72fab4",
+   "word": "шайба",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2f0bee99987d2064",
+   "word": "шлем",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_021e2551c399195a",
+   "word": "штанга",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3cc2bc063cc25f23",
+   "word": "эмоция",
+   "category": "Спорт и игры",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8eb8bb1246780ecf",
+   "word": "виндсёрфинг",
+   "category": "Спорт и игры",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_23e4e10fdf30ffab",
+   "word": "головоломка",
+   "category": "Спорт и игры",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_2f87203480154c0e",
+   "word": "кикбоксинг",
+   "category": "Спорт и игры",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_447096df5111810a",
+   "word": "матчмейкинг",
+   "category": "Спорт и игры",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_ea3f37abc6740ffb",
+   "word": "тхэквондо",
+   "category": "Спорт и игры",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_45edee695a349bf7",
+   "word": "акробатика",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1873d9ef50b2b83b",
+   "word": "аптечка",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_91ab955eb7c3648e",
+   "word": "аэрдроп",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b9fd5476f8a82771",
+   "word": "бадминтон",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_80e0b1232e5782df",
+   "word": "бейсбол",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_09b4c0a327212a11",
+   "word": "биатлон",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_665aa371448f72b8",
+   "word": "бильярд",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_47d67699efab8a98",
+   "word": "болельщик",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2ee34f7acf3fc730",
+   "word": "боулинг",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_dc70ac3bf5d13b6d",
+   "word": "бронежилет",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b104a6870db4ec2b",
+   "word": "гандбол",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4859f425379d5ada",
+   "word": "гантель",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b8bec70d406fd211",
+   "word": "гимнастика",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_214759bcb9cc7236",
+   "word": "голкипер",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a2ae1eca6474cdfb",
+   "word": "дриблинг",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_28f6a3c0bb8046e6",
+   "word": "защитник",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1b38a27ec76442d3",
+   "word": "инвентарь",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_0349c7f5ea97ec99",
+   "word": "капитан",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_7aa5dadddfcffaa8",
+   "word": "каякинг",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d9b7b03582307e09",
+   "word": "киберспорт",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8e1afdee43dd48fb",
+   "word": "команда",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8cc0ed2347470c68",
+   "word": "кроссворд",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_be817a5c65a0624b",
+   "word": "лабиринт",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_acf826a2c901df8d",
+   "word": "локация",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_6f7c21a8b815f093",
+   "word": "марафон",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_64cf4b0422902f1e",
+   "word": "наколенник",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_37ddf0feb2cb9071",
+   "word": "налокотник",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4967baee700cced9",
+   "word": "нападающий",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3519f7b39de5856d",
+   "word": "ныряние",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f61cb05ad4697854",
+   "word": "парашют",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_dbfdd9d9ed82db77",
+   "word": "пасьянс",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_477c465d05c05657",
+   "word": "патроны",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d4a38210f97dde37",
+   "word": "пенальти",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_74895eabd11ca848",
+   "word": "плавание",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ffa43a0062b12d7c",
+   "word": "плейофф",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b26a54ce51c46282",
+   "word": "полуфинал",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8c7b2a75acaa5dff",
+   "word": "пьедестал",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_0ebd82b9e069c88b",
+   "word": "ракетка",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_7d7b140fba8320fc",
+   "word": "самокат",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4c63c79546802bde",
+   "word": "секундомер",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ebf12beec427a293",
+   "word": "сёрфинг",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_dd24718d49188aed",
+   "word": "скакалка",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1b7d9df0e6b59f2e",
+   "word": "скамейка",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_23e91f7c6d4b3614",
+   "word": "скейтборд",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_fd4eeaa8ab777334",
+   "word": "сноуборд",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_6671aadb2202a65a",
+   "word": "стадион",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_7d39b0b4f38d8999",
+   "word": "тренажёр",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3386a6e8f83247fe",
+   "word": "триатлон",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_56f40b5c46935c6f",
+   "word": "фехтование",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3eeca110ae1cfc05",
+   "word": "чемпионат",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c772e7e0892f6046",
+   "word": "шахматы",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4133bf5a0871519d",
+   "word": "эстафета",
+   "category": "Спорт и игры",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b230449fda0502d8",
+   "word": "аватар",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0d2913c148e204d3",
+   "word": "архив",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_be3981a9435a9cb9",
+   "word": "блог",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_56a552acf7d054e6",
+   "word": "бэкап",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d3638b68dbf17106",
+   "word": "ветка",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_757a2813bb02d76e",
+   "word": "домен",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b27b70be5947da64",
+   "word": "иконка",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_938ca22e305397ce",
+   "word": "кабель",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_be05ad788437dd17",
+   "word": "капча",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1dd5e6c5993ca4ec",
+   "word": "клавиатура",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e363c544576a000c",
+   "word": "клиент",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_aa5252a92430239b",
+   "word": "коммит",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5a148cf3ffdf6652",
+   "word": "компьютер",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c96180f458db61c7",
+   "word": "кулер",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_782ef62dd8fc557b",
+   "word": "курсор",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e253a0583e2ecf98",
+   "word": "логин",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8f25df7494617713",
+   "word": "массив",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_14dd8ead940b455a",
+   "word": "модем",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_65c2c45acd0bf469",
+   "word": "наушники",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1c90523adf1319fd",
+   "word": "ноутбук",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_9b857c5db3a903d3",
+   "word": "пакет",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2dbc574daca52689",
+   "word": "пароль",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3c03229466300072",
+   "word": "патч",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_9e9e5e80d07ad3b5",
+   "word": "плагин",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b5c3fcf5673a3563",
+   "word": "пост",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_dfd15eefa318bd5f",
+   "word": "разъём",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f3ce032fed53dfbd",
+   "word": "репост",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_4037da5b814a7f06",
+   "word": "роутер",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_88b15327d863bb7a",
+   "word": "сайт",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_98f5cacdb4b8c7a2",
+   "word": "сервер",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2362c0e9141dd46a",
+   "word": "сканер",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_7f193c422f9cadda",
+   "word": "снимок",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e545b93e04ea2c6b",
+   "word": "ссылка",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_1936a005f10b3085",
+   "word": "стикер",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_26e269a1c7a59e38",
+   "word": "тачпад",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_48d8c3e9ee0e8265",
+   "word": "файл",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_43f548d47b5c5bdb",
+   "word": "фильтр",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_baf634108daa4d5e",
+   "word": "фишинг",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d797cd1f1ca17d5c",
+   "word": "флешка",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_9d218d951046dc48",
+   "word": "форум",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_163c495ea76d7e62",
+   "word": "хештег",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_eaed093e7e61aeb7",
+   "word": "цикл",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6f03078c7449007d",
+   "word": "эмодзи",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_ceeaaf6822ceabe7",
+   "word": "ярлык",
+   "category": "Технологии и интернет",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_e95ee8b94dca8fe0",
+   "word": "автоматизация",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_8ff98a18607570ca",
+   "word": "администратор",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_d398e5919d2b410b",
+   "word": "аккумулятор",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_0db2905cc98000e2",
+   "word": "балансировщик",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_e6b52bc5aa784204",
+   "word": "биометрия",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_e5df878d9cd975af",
+   "word": "виртуализация",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_13913967a50c1dee",
+   "word": "дешифратор",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_b7408a4530881958",
+   "word": "интерпретатор",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_b9ffd04ff1cd4522",
+   "word": "итерация",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_9ed4ed0a4aff4d69",
+   "word": "комментарий",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_25559b1b01323cbf",
+   "word": "компилятор",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_8f86269753387064",
+   "word": "логирование",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_fe0bbc2ce221dac3",
+   "word": "рекурсия",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_918aac4a872f7ae4",
+   "word": "репозиторий",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_119525fa4a51b66a",
+   "word": "термопаста",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_f97c9c551382f1cf",
+   "word": "уведомление",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_f4a8abcb69cb3212",
+   "word": "хеширование",
+   "category": "Технологии и интернет",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_ed9c1cf7b81efc15",
+   "word": "адаптер",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_9079736148ca195b",
+   "word": "алгоритм",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c2989fdc5ae95347",
+   "word": "антивирус",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d411366850c0b888",
+   "word": "библиотека",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_47f15c9623746052",
+   "word": "браузер",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_92404397f63220d9",
+   "word": "вебкамера",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_bd3598c8b2ec7804",
+   "word": "видеокарта",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c0bc253552e209b7",
+   "word": "вкладка",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ec29ca7515f8fff1",
+   "word": "геймпад",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_279f2d0ce38e1f69",
+   "word": "джойстик",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f77ce995335939fa",
+   "word": "кластер",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_87b838817bfc50fe",
+   "word": "консоль",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_dea0d3af8312d8bb",
+   "word": "контейнер",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8428e3ef40cfdc3a",
+   "word": "мессенджер",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_9cb3b1f4978d925b",
+   "word": "микрофон",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_856d561514913189",
+   "word": "модератор",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_0ca1f7b0cc8a7950",
+   "word": "монитор",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_13bab465e66863a5",
+   "word": "накопитель",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1ba4199720b4d448",
+   "word": "никнейм",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_75615d22e96e484e",
+   "word": "отладчик",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_b5823a6a3451f18a",
+   "word": "переменная",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_86060ff31ca89698",
+   "word": "пиксель",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_0bcd441071f707b6",
+   "word": "планшет",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c256a54207208426",
+   "word": "поисковик",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ad4ef90f7bd2299d",
+   "word": "принтер",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_67d9c2fdedc2c28d",
+   "word": "проектор",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4366cf3225e876d8",
+   "word": "протокол",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_cb71fc82d6e41404",
+   "word": "процессор",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_f5181b42d7519f45",
+   "word": "радиатор",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_078a698b8dcf12d0",
+   "word": "репитер",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_313dbc68cdf1af52",
+   "word": "слияние",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2e11ab5df0fedcbe",
+   "word": "словарь",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_88559854e4c20120",
+   "word": "смартфон",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_584d9ab2e6d5edb1",
+   "word": "спойлер",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3d31226d5cbeb26e",
+   "word": "терминал",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_dccbfc469c768633",
+   "word": "фаервол",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1390da33c685efd2",
+   "word": "фреймворк",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_832079131ed84a5f",
+   "word": "функция",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d1d920284664b330",
+   "word": "шифрование",
+   "category": "Технологии и интернет",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e452f8c53a5858b3",
+   "word": "автобус",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3c0ba9a946e32e13",
+   "word": "ангар",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_986efd5a35985be6",
+   "word": "багаж",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_07a51690729c9dc5",
+   "word": "бампер",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_04d57c6ab83456a3",
+   "word": "билет",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_cd50c9c7459faeea",
+   "word": "бордюр",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_d42a5dfc101ab149",
+   "word": "вагон",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0469f75bb5f0018e",
+   "word": "велосипед",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_44fc57e576af8f9b",
+   "word": "вертолёт",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b5983479bff1dbf2",
+   "word": "вокзал",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_581786367c8bef0f",
+   "word": "гараж",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_001a0b8adada29bd",
+   "word": "диск",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a30603c4fa2b0029",
+   "word": "капот",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f336ba80bc347587",
+   "word": "каток",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f0dd6315c85b71c7",
+   "word": "колесо",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_c76abca78ae41a68",
+   "word": "кран",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_f86d50182628ce22",
+   "word": "лифт",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_2e016aa4675b4dc7",
+   "word": "лодка",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_bb8cb2d348534e77",
+   "word": "метро",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_0b190d37bf3b7636",
+   "word": "мопед",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_16526a97c2577a4e",
+   "word": "мост",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_25b48fe285a3de2f",
+   "word": "паром",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_187575118edbfc0d",
+   "word": "педаль",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_56ec62fcb3a53037",
+   "word": "перрон",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3fd6306612ea14fe",
+   "word": "планёр",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_87cceae3c4eec975",
+   "word": "поезд",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a68ba6afbc4c6c67",
+   "word": "прицеп",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_6e6699792f09f602",
+   "word": "ракета",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_a06bf3e2f884c9f6",
+   "word": "руль",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_07fa49969aba5dac",
+   "word": "самолёт",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_7b8ae27525025703",
+   "word": "светофор",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8a5bc9825c594877",
+   "word": "сервис",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_418bfe0e4b71e994",
+   "word": "скутер",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_407bcd68dbd17ad5",
+   "word": "тормоз",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_29faf0cca695e226",
+   "word": "трамвай",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_5eee24253b1b991d",
+   "word": "тягач",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_189820f504cd3d6a",
+   "word": "фургон",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_b41e8c98fe747b47",
+   "word": "шаттл",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_3e88c1ef349cb363",
+   "word": "шоссе",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_73683670dd5d380a",
+   "word": "яхта",
+   "category": "Транспорт и город",
+   "difficulty": "easy",
+   "enabled": true
+  },
+  {
+   "id": "word_8fa70b1b6b033de9",
+   "word": "амортизатор",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_dbfbe8785f26f5ec",
+   "word": "аэростат",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_0deea59b406db85d",
+   "word": "батискаф",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_076140ba2755975a",
+   "word": "бетономешалка",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_84da7bc750d725c5",
+   "word": "виадук",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_69a4800347e2519d",
+   "word": "дирижабль",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_c163d60aa853732b",
+   "word": "одометр",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_d9d872c0954cfcad",
+   "word": "перекрёсток",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_f9f8966b72a363a3",
+   "word": "тахометр",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_11e65b41482ca0f6",
+   "word": "экскаватор",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_eb38f939e5fcb913",
+   "word": "электровоз",
+   "category": "Транспорт и город",
+   "difficulty": "hard",
+   "enabled": true
+  },
+  {
+   "id": "word_52875254d4756a4b",
+   "word": "автомобиль",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_d1cc9302aba4ab17",
+   "word": "акваланг",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8ca16642379f6f75",
+   "word": "аэродром",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_fdeed57bd92e4c14",
+   "word": "аэропорт",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c7fe574e557212f7",
+   "word": "багажник",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_94c53733b6d38e36",
+   "word": "бульдозер",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_5d0e62b8db3e51e8",
+   "word": "высадка",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_86f3a9f0ade659b1",
+   "word": "грузовик",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3ef3755f34d40780",
+   "word": "двигатель",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4c6726efeda1ff74",
+   "word": "дворник",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_0ab1c1e3f2f441ea",
+   "word": "заправка",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_3ebf0e231008f7b3",
+   "word": "комбайн",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_dacfa35dff3b06d5",
+   "word": "ледокол",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_83b4a39952b27bdc",
+   "word": "локомотив",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4af6b39481abe007",
+   "word": "магистраль",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8f215472d1dfb55d",
+   "word": "маршрут",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_babef3f8c49ce38b",
+   "word": "мотоцикл",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8aa95f27c67aeaee",
+   "word": "навигатор",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_1353b1cbc4b10d44",
+   "word": "обочина",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ef6f11ebbeb6a0e0",
+   "word": "остановка",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_25767f157c4c4c61",
+   "word": "парковка",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_7fb6d73f606ea5da",
+   "word": "пароход",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_953375927ea3946a",
+   "word": "парусник",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_e98b7d5e2b781c8e",
+   "word": "переход",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_8b17b3d55587a1e2",
+   "word": "платформа",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_4496c97fd6c4273f",
+   "word": "погрузчик",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_432c4f354d8d0404",
+   "word": "подвеска",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_fb58f617941d4546",
+   "word": "покрышка",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_ff7e6e25f543612a",
+   "word": "посадка",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_a4f045ab7c10ace6",
+   "word": "развязка",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_dfe4bd9f7ed910a8",
+   "word": "расписание",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_9f5a46e979d03689",
+   "word": "редуктор",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_fd4790b324fc000e",
+   "word": "спидометр",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_35d55fdec463c409",
+   "word": "спутник",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2c53f0d780659265",
+   "word": "сцепление",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_40cc3d0472710188",
+   "word": "тепловоз",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2ddc48f90c658969",
+   "word": "тоннель",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_99d8c2996539af3f",
+   "word": "трактор",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_30b64dbe76776386",
+   "word": "троллейбус",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_76eac8645dd6e176",
+   "word": "тротуар",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_95ef2fee7224a8e0",
+   "word": "турникет",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c75bf8869393b905",
+   "word": "шлагбаум",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_2e063991094b6171",
+   "word": "эвакуатор",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_fd4dcd156e080b2a",
+   "word": "электричка",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_c70adae83d3db230",
+   "word": "эскалатор",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  },
+  {
+   "id": "word_bbc4341dab64ebd3",
+   "word": "эстакада",
+   "category": "Транспорт и город",
+   "difficulty": "medium",
+   "enabled": true
+  }
+ ]
+}

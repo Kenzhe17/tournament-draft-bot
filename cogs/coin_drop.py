@@ -337,6 +337,18 @@ _PUBLIC_TYPE_LABEL = {
 }
 
 
+def _reveal_answer(session: "_EventSession") -> str | None:
+    """Ответ для финальной карточки — показывается ТОЛЬКО после
+    завершения события (в публичной карточке до финиша его нет)."""
+    if session.game not in ("word", "krokodil", "guess_number",
+                            "quick_math"):
+        return None
+    cfg = session.config or {}
+    ans = cfg.get("word") or cfg.get("number") \
+        or cfg.get("answer")
+    return str(ans) if ans is not None else None
+
+
 def _game_instructions(game: str) -> str:
     return {
         "speed": "Нажмите кнопку как можно быстрее — кто первый, тот забрал приз.",
@@ -622,8 +634,64 @@ class CoinDropCog(commands.Cog):
         self._gate = ActivityGate()
         self._reward_task: asyncio.Task | None = None
         self._rng = random.Random()
+        self._content_store_obj = None
+        self._content_ready = False
 
     # ---------------------------------------------------------- helpers
+
+    def _content_store(self):
+        """Ленивый синглтон PG-каталога контента событий."""
+        if self._content_store_obj is None:
+            from storage.event_content_store import (
+                event_content_store)
+            self._content_store_obj = event_content_store
+        return self._content_store_obj
+
+    async def _ensure_content_ready(self) -> None:
+        """Схема + первичный сид из bundled-каталогов.
+        Идемпотентно; ошибка не роняет cog — pick вернёт
+        None и типы word/krokodil просто не выберутся."""
+        if self._content_ready:
+            return
+        try:
+            from services import event_content
+            store = self._content_store()
+            await store.ensure_schema()
+            for game in event_content.GAMES:
+                entries = event_content.bundled_entries(game)
+                if entries:
+                    await store.seed_bundled(
+                        game, entries,
+                        event_content.bundled_version(game))
+            self._content_ready = True
+        except Exception:
+            logger.exception("event content init failed")
+
+    async def _pick_content(self, game: str, guild_id: int,
+                            settings: dict, event_id: str
+                            ) -> dict[str, Any] | None:
+        """Выбор записи каталога для word/krokodil.
+        None → тип недоступен (пустой каталог/все записи
+        выключены/зарезервированы)."""
+        try:
+            await self._ensure_content_ready()
+            store = self._content_store()
+            wkey = f"content_{game}_difficulty_weights"
+            ckey = f"content_{game}_disabled_categories"
+            weights = settings.get(wkey)
+            cats = settings.get(ckey)
+            return await store.pick(
+                game, guild_id=str(guild_id), event_id=event_id,
+                difficulty_weights=(weights
+                                    if isinstance(weights, dict)
+                                    else None),
+                disabled_categories=(set(cats)
+                                     if isinstance(cats, list)
+                                     else None),
+                rng=self._rng)
+        except Exception:
+            logger.exception("content pick failed game=%s", game)
+            return None
 
     def _target_channel_id(self, guild) -> int:
         from services.discord_cfg import channel_id as _dc
@@ -745,8 +813,13 @@ class CoinDropCog(commands.Cog):
             chosen = None
             prize = None
             game = None
+            content = None
+            event_id = uuid.uuid4().hex[:8]
             # До len(games) попыток: тип без возможности оплаты
             # (item без каталога и т.п.) пропускается до публикации.
+            # word/krokodil дополнительно требуют запись каталога —
+            # пустой/невалидный каталог делает тип недоступным
+            # без падения бота.
             for _ in range(len(games)):
                 game = event_games.pick_game(
                     games, settings.get("type_weights"), rng,
@@ -755,15 +828,24 @@ class CoinDropCog(commands.Cog):
                     break
                 prize = event_rewards.select_prize(
                     gid, settings, game, rng)
-                if prize is not None:
-                    chosen = game
-                    break
-                games = [g for g in games if g != game]
+                if prize is None:
+                    games = [g for g in games if g != game]
+                    continue
+                content = None
+                if game in ("word", "krokodil"):
+                    content = await self._pick_content(
+                        game, gid, settings, event_id)
+                    if content is None:
+                        games = [g for g in games if g != game]
+                        continue
+                chosen = game
+                break
             if chosen is None or prize is None:
                 return "no_prize"
             game = chosen
 
-            cfg = event_games.make_config(game, prize, settings, rng)
+            cfg = event_games.make_config(game, prize, settings, rng,
+                                          content=content)
             start_ts = time.time()
             cfg["started_ts"] = start_ts
             # Кулдаун фиксируется в config: при сбое между
@@ -775,7 +857,6 @@ class CoinDropCog(commands.Cog):
                 game, cfg, start_ts)
             close_ts = event_games.close_deadline(
                 game, cfg, start_ts, deadline_ts)
-            event_id = uuid.uuid4().hex[:8]
             try:
                 row = await event_store.create(
                     event_id, gid, cid, game, prize, cfg,
@@ -799,6 +880,14 @@ class CoinDropCog(commands.Cog):
             try:
                 await event_store.finish(event_id, "cancelled",
                                          {"reason": "send_failed"})
+            except Exception:
+                pass
+            # Резервирование записи каталога снимаем — задание
+            # могло не быть показано; вернётся в пул по TTL/
+            # release. used-запись в цикле остаётся (не
+            # переиспользуется до след. цикла).
+            try:
+                await self._content_store().release_event(event_id)
             except Exception:
                 pass
             return "send_failed"
@@ -1199,6 +1288,13 @@ class CoinDropCog(commands.Cog):
             self._unregister_session(session)
             return
 
+        # Резервирование записи каталога больше не нужно —
+        # событие завершено; запись не переиспользуется в
+        # текущем цикле (used), в следующем — может.
+        try:
+            await self._content_store().release_event(eid)
+        except Exception:
+            pass
         await self._edit_final_card(session, outcome, grant_status,
                                     rewards=rewards_info)
         self._unregister_session(session)
@@ -1328,6 +1424,9 @@ class CoinDropCog(commands.Cog):
             )
             if detail:
                 desc += f" _{detail}_\n"
+            ans = _reveal_answer(session)
+            if ans:
+                desc += f" **Ответ:** {ans}\n"
         else:
             if reason == "tie":
                 title = "**ИВЕНТ ЗАВЕРШЁН | НИЧЬЯ**"
@@ -1342,6 +1441,9 @@ class CoinDropCog(commands.Cog):
                     f"победителя нет.\n")
             if detail:
                 desc += f" _{detail}_\n"
+            ans = _reveal_answer(session)
+            if ans:
+                desc += f" **Ответ:** {ans}\n"
             if session.game == "growing":
                 desc += " Куш сгорел — приз не был выплачен."
 
@@ -2116,6 +2218,8 @@ class CoinDropCog(commands.Cog):
             self._reward_worker())
         asyncio.get_running_loop().create_task(
             self._restore_sessions())
+        asyncio.get_running_loop().create_task(
+            self._ensure_content_ready())
 
     async def cog_unload(self) -> None:
         task = self._reward_task

@@ -12,6 +12,7 @@ import Moderation from "./pages/Moderation";
 import Economy from "./pages/Economy";
 import DiscordSettings from "./pages/DiscordSettings";
 import Design from "./pages/Design";
+import EventContent from "./pages/EventContent";
 
 const NAV: { id: string; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
@@ -19,6 +20,7 @@ const NAV: { id: string; label: string }[] = [
   { id: "settings", label: "Настройки (все модули)" },
   { id: "feature-flags", label: "Feature Flags" },
   { id: "shop", label: "Shop" },
+  { id: "event-content", label: "Event Content" },
   { id: "games", label: "Games" },
   { id: "economy", label: "Economy" },
   { id: "audit", label: "Audit Log" },
@@ -82,6 +84,7 @@ export default function App() {
         {section === "settings" && <Settings module={null} />}
         {section === "feature-flags" && <Settings module="feature" />}
         {section === "shop" && <Shop />}
+        {section === "event-content" && <EventContent />}
         {section === "games" && <Games />}
         {section === "audit" && <Audit />}
         {section === "tournaments" && <Tournaments />}
