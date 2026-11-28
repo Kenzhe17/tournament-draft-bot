@@ -149,21 +149,23 @@ jobs:
           print("SMOKE OK flag=" + os.environ.get(
               "VOICE_CONTROL_ENABLED", "0"))
           PY
+      # Скрипт монтируется в /app: sys.path[0] для python <file>
+      # — каталог скрипта, поэтому импорты bot/cogs/storage работают.
       - name: Smoke — feature flag OFF
         run: >-
           docker run --rm --network host
           -e DATABASE_URL="$SMOKE_DATABASE_URL"
           -e DISCORD_TOKEN=ci-smoke-no-token
-          -v /tmp/vc_smoke.py:/tmp/vc_smoke.py:ro
-          riz3-vc-smoke python /tmp/vc_smoke.py
+          -v /tmp/vc_smoke.py:/app/vc_smoke.py:ro
+          riz3-vc-smoke python vc_smoke.py
       - name: Smoke — feature flag ON
         run: >-
           docker run --rm --network host
           -e DATABASE_URL="$SMOKE_DATABASE_URL"
           -e DISCORD_TOKEN=ci-smoke-no-token
           -e VOICE_CONTROL_ENABLED=1
-          -v /tmp/vc_smoke.py:/tmp/vc_smoke.py:ro
-          riz3-vc-smoke python /tmp/vc_smoke.py
+          -v /tmp/vc_smoke.py:/app/vc_smoke.py:ro
+          riz3-vc-smoke python vc_smoke.py
   docker-build:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
