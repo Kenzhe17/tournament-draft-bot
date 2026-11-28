@@ -11,6 +11,7 @@ fallback — legacy глобальный room_data). Все компоненты
 
 import asyncio
 import logging
+import re
 from typing import TYPE_CHECKING
 
 import discord
@@ -129,6 +130,26 @@ def slot_members(tournament: "BRTournament", slot: dict) -> list[int]:
 
 def slot_member_names(tournament: "BRTournament", slot: dict) -> str:
     """Имена участников без упоминаний — для публичных карточек."""
+    return " ・ ".join(slot_member_names_list(tournament, slot)) or "*"
+
+
+_MENTION_RE = re.compile(r"<[@#][!&]?\d+>|<@&\d+>")
+
+
+def _public_name(name: str) -> str:
+    """Имя для публичной карточки: без пингов/упоминаний и форматирования.
+
+    Используется существующая очистка никнеймов (clean_nickname) +
+    срез <@id>/<@!id>/<@&id>/<#id>. Discord ID не показываем.
+    """
+    from utils.cosmetics import clean_nickname
+    text = _MENTION_RE.sub("", str(name or ""))
+    text = clean_nickname(text).strip()
+    return text or "Игрок"
+
+
+def slot_member_names_list(tournament: "BRTournament", slot: dict) -> list[str]:
+    """Имена участников слота по порядку, без дублей и упоминаний."""
     ids = slot_members(tournament, slot)
     dn = slot.get("display_names") or {}
     if ids:
@@ -136,7 +157,65 @@ def slot_member_names(tournament: "BRTournament", slot: dict) -> str:
     else:
         parts = [slot.get("captain", "")] + [
             n for n in slot.get("players", []) if n]
-    return ", ".join(dict.fromkeys(p for p in parts if p)) or "*"
+    out: list[str] = []
+    seen: set[str] = set()
+    for p in parts:
+        name = _public_name(p)
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
+
+
+def _slot_block_lines(slot: dict, index: int, members: list[str]) -> list[str]:
+    """Блок команды/слота: «NN. **Название**» + строка участников."""
+    pending = " ⏳" if slot.get("pending_invitee_id") else ""
+    title = f"{index + 1:02d}. **{_public_name(slot_label(slot, index))}**{pending}"
+    if members:
+        return [title, f"┗ {' ・ '.join(members)}"]
+    return [title]
+
+
+def _player_lines(players: list[dict]) -> list[str]:
+    """Вертикальный нумерованный список игроков (solo/random-пул)."""
+    lines = []
+    for i, p in enumerate(players):
+        name = _public_name(str(p.get("name") or p.get("display_name") or "?"))
+        lines.append(f"{i + 1:02d}. {name}")
+    return lines
+
+
+def registration_list_lines(tournament: "BRTournament") -> list[str]:
+    """Список зарегистрированных на карточке регистрации.
+
+    Team-режимы — блоки «NN. **Название**» + «┗ игроки» (незаполненные
+    пары с ⏳). Solo — нумерованный список слотов. Random — пул
+    игроков до жеребьёвки.
+    """
+    if tournament.mode == "team":
+        lines: list[str] = []
+        for i, slot in enumerate(tournament.teams):
+            members = slot_member_names_list(tournament, slot)
+            lines.extend(_slot_block_lines(slot, i, members))
+        return lines
+    if tournament.is_solo:
+        return _player_lines([
+            {"name": slot_label(s, i)} for i, s in
+            enumerate(tournament.filled_slots())
+        ])
+    return _player_lines(tournament.players)
+
+
+def registration_counter(tournament: "BRTournament") -> str:
+    """Счётчик участия для шапки карточки регистрации."""
+    if tournament.mode == "team":
+        unit = "Пар" if tournament.format == BRFormat.DUO else "Команд"
+        return f"{unit}: {len(tournament.filled_slots())}/{tournament.max_slots}"
+    if tournament.is_solo:
+        return (f"Участников: {len(tournament.filled_slots())}"
+                f"/{tournament.max_slots}")
+    return (f"Игроков в пуле: {len(tournament.players)}"
+            f"/{tournament.max_players}")
 
 
 def _player_name(tournament: "BRTournament", uid: int) -> str:
@@ -208,9 +287,8 @@ def _clip(text: str, limit: int = 3400) -> str:
 def slots_public_lines(tournament: "BRTournament") -> list[str]:
     lines = []
     for i, slot in enumerate(tournament.filled_slots()):
-        pending = " ⏳" if slot.get("pending_invitee_id") else ""
-        lines.append(f"{_num(i)} **{slot_label(slot, i)}**{pending}\n"
-                     f"┗ {slot_member_names(tournament, slot)}")
+        members = slot_member_names_list(tournament, slot)
+        lines.extend(_slot_block_lines(slot, i, members))
     return lines
 
 
@@ -235,30 +313,15 @@ def public_embed(tournament: "BRTournament") -> discord.Embed:
     title_fmt = format_mode_label(tournament)
 
     if phase == BRTournamentPhase.REGISTRATION:
-        if tournament.mode == "random" or tournament.is_solo:
-            count = (f"Участников: {len(tournament.filled_slots())}/{tournament.max_slots}"
-                     if tournament.is_solo else
-                     f"Игроков в пуле: {len(tournament.players)}/{tournament.max_players}")
-        else:
-            count = f"Составов: {len(tournament.filled_slots())}/{tournament.max_slots}"
-        # компактный список: названия слотов/команд (или имена из пула
-        # random-регистрации — слоты ещё не сформированы), без составов
-        names = [slot_label(s, i) for i, s in
-                 enumerate(tournament.filled_slots())]
-        if not names and tournament.players:
-            names = [str(p.get("name") or p.get("display_name") or "?")
-                     for p in tournament.players]
-        body = ", ".join(names) if names else " *"
-        if len(body) > 900:
-            body = body[:900] + "…"
+        count = registration_counter(tournament)
+        lines = registration_list_lines(tournament)
+        body = "\n".join(lines) if lines else " *"
         return discord.Embed(
             title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {title_fmt} | Регистрация",
             description=(
                 f" **Статус:** Регистрация открыта\n"
-                f" Карт: {tournament.map_count}\n"
-                f" {count}\n\n"
-                f" {body}\n\n"
-                f"Правила и порядок входа — по кнопке «Правила»."
+                f" Карт: {tournament.map_count} ・ {count}\n\n"
+                f"{body}"
             ),
             color=discord.Color.from_rgb(69, 69, 69),
         )

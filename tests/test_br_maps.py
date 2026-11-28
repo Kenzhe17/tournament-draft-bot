@@ -180,16 +180,14 @@ def test_registration_embed_is_compact_with_rules_button(patched_store):
     t.phase = BRTournamentPhase.REGISTRATION
     embed = public_embed(t)
     desc = embed.description or ""
-    # компактно: статус, формат, счётчики, список названий — без правил
-    assert "Регистрация открыта" in desc
+    # компактная шапка: статус + карта/счётчик, без правил и подсказок
+    assert "Статус:** Регистрация открыта" in desc
     assert "Балл" not in desc and "Тай-брейк" not in desc
-    assert "по кнопке «Правила»" in desc
-    # список слотов компактный (без построчных составов), карточка короткая
-    assert len(desc) < 1500
+    assert "по кнопке «Правила»" not in desc
+    assert " ・ " in desc  # «Карт: N ・ Счётчик: X/Y»
     view = BRCardView(t.guild_id, t.channel_id, t)
     labels = [b.label for b in _buttons(view)]
     assert "Правила" in labels
-    assert "Назвать состав" in labels or "Участвовать" in labels or True
 
 
 def test_playing_card_has_map_buttons_and_statuses(patched_store):
@@ -945,3 +943,137 @@ async def test_entry_submit_works_on_fresh_store_object(patched_store):
     await modal.on_submit(_interaction(guild))
     e = t.get_team_stats_for_map(t.teams[0], 0)
     assert e == {"place": 2, "kills": 7, "dns": False}
+
+
+# ---------------------------------------------------------------------------
+# Карточка регистрации: вертикальные списки команд/игроков
+# ---------------------------------------------------------------------------
+
+
+def _squad_team_tournament(n_teams=3, maps=4):
+    t = BRTournament(
+        id="tid-st", guild_id=1, channel_id=2,
+        formation=BRTournamentFormation.TEAM, format=BRFormat.SQUAD,
+        map_count=maps, message_id=555, is_test=True)
+    for s in range(n_teams):
+        ids = [3000 + s * 10 + j for j in range(4)]
+        names = {i: f"Player{s}-{j}<@{i}>" for j, i in enumerate(ids)}
+        ok, err = t.register_team_slot(
+            f"team-{s}", f"Team {s + 1}", ids[0], ids, names)
+        assert ok, err
+    return t
+
+
+def _duo_team_tournament(n_pairs=3, maps=4, pending_last=False):
+    t = BRTournament(
+        id="tid-dt", guild_id=1, channel_id=2,
+        formation=BRTournamentFormation.TEAM, format=BRFormat.DUO,
+        map_count=maps, message_id=555, is_test=True)
+    for p in range(n_pairs):
+        cap, inv = 4000 + p * 2, 4001 + p * 2
+        ok, err, idx = t.create_duo_invite(cap, f"Cap{p}", inv)
+        assert ok, err
+        if not (pending_last and p == n_pairs - 1):
+            ok, err = t.respond_duo_invite(idx, inv, f"Inv{p}", True)
+            assert ok, err
+    return t
+
+
+def _solo_tournament(n=12, maps=4):
+    t = BRTournament(
+        id="tid-so", guild_id=1, channel_id=2,
+        formation=BRTournamentFormation.RANDOM, format=BRFormat.SOLO,
+        map_count=maps, message_id=555, is_test=True)
+    for i in range(n):
+        ok, err = t.register_player(f"Solo{i}<@{6000 + i}>", 6000 + i)
+        assert ok, err
+    return t
+
+
+def test_registration_card_squad_team_vertical_blocks():
+    t = _squad_team_tournament()
+    desc = (public_embed(t).description or "")
+    assert "Статус:** Регистрация открыта" in desc
+    assert "Карт: 4 ・ Команд: 3/12" in desc
+    assert "01. **Team 1**" in desc
+    assert "02. **Team 2**" in desc
+    # все 4 игрока команды на отдельной строке через ・
+    assert "┗ Player0-0 ・ Player0-1 ・ Player0-2 ・ Player0-3" in desc
+    # без упоминаний/ID/хвоста правил
+    assert "<@" not in desc
+    assert "по кнопке «Правила»" not in desc
+    assert "Составов" not in desc
+
+
+def test_registration_card_duo_team_pairs_counter():
+    t = _duo_team_tournament()
+    desc = (public_embed(t).description or "")
+    assert "Карт: 4 ・ Пар: 3/24" in desc
+    assert "01. **Пара 1**" in desc or "01. **" in desc
+    assert "┗ Cap0 ・ Inv0" in desc
+    # незаполненная пара помечена и не считается в счётчике
+    t2 = _duo_team_tournament(n_pairs=2, pending_last=True)
+    desc2 = (public_embed(t2).description or "")
+    assert "Пар: 1/24" in desc2
+    assert "⏳" in desc2
+
+
+def test_registration_card_solo_numbered_players():
+    t = _solo_tournament(n=12)
+    desc = (public_embed(t).description or "")
+    assert "Карт: 4 ・ Участников: 12/48" in desc
+    assert "01. Solo0" in desc
+    assert "12. Solo11" in desc
+    assert "<@" not in desc and "6000" not in desc
+
+
+def test_registration_card_random_pool_numbered():
+    t = BRTournament(
+        id="tid-rp", guild_id=1, channel_id=2,
+        formation=BRTournamentFormation.RANDOM, format=BRFormat.SQUAD,
+        map_count=4, message_id=555, is_test=True)
+    for i in range(20):
+        ok, err = t.register_player(f"Pool{i}", 7000 + i)
+        assert ok, err
+    desc = (public_embed(t).description or "")
+    assert "Карт: 4 ・ Игроков в пуле: 20/48" in desc
+    assert "01. Pool0" in desc and "20. Pool19" in desc
+    # до жеребьёвки нет блоков команд
+    assert "**" not in desc.split("\n", 3)[-1] or "┗" not in desc
+
+
+def test_registration_card_long_names_all_kept_in_cv2_payload():
+    """48 игроков с длинными именами: никто не теряется, упоминания
+    срезаны, Components V2 payload влезает в лимит контейнера."""
+    from utils.design.constants import MAX_CONTAINER_CHILDREN
+    t = BRTournament(
+        id="tid-long", guild_id=1, channel_id=2,
+        formation=BRTournamentFormation.RANDOM, format=BRFormat.SOLO,
+        map_count=4, message_id=555, is_test=True)
+    names = []
+    for i in range(48):
+        nm = f"ОченьДлинноеИмяИгрокаНомер{i:02d}ABCDEFGHIJKLMNOPQRSTUVWXYZ<@{8000 + i}>"
+        names.append(nm)
+        ok, err = t.register_player(nm, 8000 + i)
+        assert ok, err
+    embed = public_embed(t)
+    desc = embed.description or ""
+    assert len(desc) <= 4096
+    for i in range(48):
+        cleaned = br_view._public_name(names[i])
+        assert cleaned in desc, f"lost {cleaned}"
+        assert f"<@{8000 + i}>" not in desc
+    # реальный CV2 payload: ни один контейнер не превышает лимит
+    layout = compose(embed, BRCardView(t.guild_id, t.channel_id, t))
+
+    def containers(view):
+        for child in getattr(view, "children", []):
+            if isinstance(child, discord.ui.Container):
+                yield child
+            yield from containers(child)
+
+    found = list(containers(layout))
+    assert found, "карточка должна содержать Container"
+    for c in found:
+        assert len(c.children) <= MAX_CONTAINER_CHILDREN, (
+            f"container overflow: {len(c.children)} children")
