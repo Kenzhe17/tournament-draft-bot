@@ -216,7 +216,17 @@ async def create_invite(guild_id: int, team_id: str, inviter_id: int,
         return None
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
+            async with conn.transaction():
+                # Истёкшие pending не должны блокировать новое
+                # приглашение (частичный уникальный индекс считает
+                # их занятыми до явного протухания).
+                await conn.execute(
+                    "UPDATE team_invites SET status = 'expired', "
+                    "resolved_at = now() WHERE team_id = $1 "
+                    "AND invited_user_id = $2 AND status = 'pending' "
+                    "AND expires_at < now()",
+                    team_id, invited_user_id)
+                row = await conn.fetchrow(
                 """
                 INSERT INTO team_invites
                     (guild_id, team_id, inviter_id, invited_user_id,
@@ -397,7 +407,14 @@ async def create_application(guild_id: int, team_id: str, user_id: int,
         return None
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
+            async with conn.transaction():
+                await conn.execute(
+                    "UPDATE team_applications SET status = 'expired', "
+                    "resolved_at = now() WHERE team_id = $1 "
+                    "AND user_id = $2 AND status = 'pending' "
+                    "AND expires_at < now()",
+                    team_id, user_id)
+                row = await conn.fetchrow(
                 """
                 INSERT INTO team_applications
                     (guild_id, team_id, user_id, message, expires_at)
@@ -675,6 +692,111 @@ async def deactivate_lfg_for_user(guild_id: int, user_id: int) -> None:
         await deactivate_lfg(guild_id, user_id)
     except Exception:
         pass
+
+
+# ----------------------------------------------------------------------
+# Conn-scoped варианты — для использования ВНУТРИ транзакции
+# team_store.join_team_tx (без вложенного acquire из пула).
+# ----------------------------------------------------------------------
+
+async def audit_on(conn, guild_id: int, team_id: str | None,
+                   actor_id: int, action: str,
+                   target_id: int | None = None,
+                   metadata: dict | None = None) -> None:
+    await conn.execute(
+        """
+        INSERT INTO team_audit
+            (guild_id, team_id, actor_id, action, target_id, metadata)
+        VALUES ($1,$2,$3,$4,$5,$6::jsonb)
+        """,
+        guild_id, team_id, actor_id, action, target_id,
+        json.dumps(metadata or {}),
+    )
+
+
+async def resolve_invite_on(conn, invite_id: int, status: str,
+                            *, require_unexpired: bool = False) -> bool:
+    """resolve_invite на уже открытом соединении.
+
+    ``require_unexpired=True`` — дополнительно ``expires_at > now()``
+    (для принятия: истёкшее приглашение нельзя активировать)."""
+    sql = ("UPDATE team_invites SET status = $2, resolved_at = now() "
+           "WHERE invite_id = $1 AND status = 'pending'")
+    if require_unexpired:
+        sql += " AND expires_at > now()"
+    res = await conn.execute(sql, invite_id, status)
+    return res.endswith("1")
+
+
+async def get_invite_on(conn, invite_id: int) -> SquadInvite | None:
+    row = await conn.fetchrow(
+        f"SELECT {_INVITE_COLS} FROM team_invites WHERE invite_id = $1",
+        invite_id)
+    return SquadInvite.from_row(row) if row else None
+
+
+async def resolve_application_on(conn, application_id: int,
+                                 status: str,
+                                 *, require_unexpired: bool = False
+                                 ) -> bool:
+    sql = ("UPDATE team_applications SET status = $2, "
+           "resolved_at = now() WHERE application_id = $1 "
+           "AND status = 'pending'")
+    if require_unexpired:
+        sql += " AND expires_at > now()"
+    res = await conn.execute(sql, application_id, status)
+    return res.endswith("1")
+
+
+async def get_application_on(conn, application_id: int
+                             ) -> SquadApplication | None:
+    row = await conn.fetchrow(
+        f"SELECT {_APP_COLS} FROM team_applications "
+        "WHERE application_id = $1", application_id)
+    return SquadApplication.from_row(row) if row else None
+
+
+async def close_user_membership_on(conn, guild_id: int, user_id: int,
+                                   reason: str = "joined_team") -> None:
+    """В одной транзакции: закрыть заявки/приглашения игрока и
+    выключить LFG. Вызывать после успешного добавления в команду."""
+    await conn.execute(
+        "UPDATE team_applications SET status = 'cancelled', "
+        "resolved_at = now(), message = message || ' [' || $3 || ']' "
+        "WHERE guild_id = $1 AND user_id = $2 AND status = 'pending'",
+        guild_id, user_id, reason)
+    await conn.execute(
+        "UPDATE team_invites SET status = 'cancelled', "
+        "resolved_at = now(), message = message || ' [' || $3 || ']' "
+        "WHERE guild_id = $1 AND invited_user_id = $2 "
+        "AND status = 'pending'",
+        guild_id, user_id, reason)
+    await conn.execute(
+        "UPDATE team_lfg SET active = FALSE, updated_at = now() "
+        "WHERE guild_id = $1 AND user_id = $2",
+        guild_id, user_id)
+
+
+async def mark_team_full_applications_on(conn, team_id: str) -> int:
+    """Закрыть pending-заявки заполненной команды."""
+    res = await conn.execute(
+        "UPDATE team_applications SET status = 'team_full', "
+        "resolved_at = now() WHERE team_id = $1 AND status = 'pending'",
+        team_id)
+    try:
+        return int(res.split()[-1])
+    except (ValueError, IndexError):
+        return 0
+
+
+async def get_lfg_on(conn, guild_id: int,
+                     user_id: int) -> LfgProfile | None:
+    row = await conn.fetchrow(
+        "SELECT guild_id, user_id, device, play_role, purpose, "
+        "description, active, updated_at, expires_at "
+        "FROM team_lfg WHERE guild_id = $1 AND user_id = $2",
+        guild_id, user_id)
+    return LfgProfile.from_row(row) if row else None
 
 
 # ----------------------------------------------------------------------

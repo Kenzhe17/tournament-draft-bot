@@ -48,18 +48,54 @@ def _err(exc: Exception) -> str:
     return getattr(exc, "message", "") or str(exc) or "Ошибка"
 
 
-async def require_admin(interaction: discord.Interaction) -> bool:
+async def _is_admin_now(interaction: discord.Interaction) -> bool:
+    """Актуальная проверка прав r!z3 на момент callback.
+
+    Использует существующую систему авторизации (administrator /
+    владелец бота / ADMIN_USER_IDS / роли org) — Manage Guild
+    сам по себе админ-доступ к командам не даёт (P0.4)."""
     guild = interaction.guild
-    member = guild.get_member(interaction.user.id) if guild else None
-    if member is None or not (
-            member.guild_permissions.administrator
-            or member.guild_permissions.manage_guild):
-        try:
-            await interaction.response.send_message(
-                "Требуются права администратора.", ephemeral=True)
-        except Exception:
-            pass
+    if guild is None:
         return False
+    member = guild.get_member(interaction.user.id)
+    if member is None:
+        try:
+            member = await guild.fetch_member(interaction.user.id)
+        except Exception:
+            member = None
+    if member is None:
+        return False
+    try:
+        from utils.permissions import is_admin_check
+        return bool(is_admin_check(member, guild))
+    except Exception:
+        return False
+
+
+async def require_admin(interaction: discord.Interaction) -> bool:
+    if await _is_admin_now(interaction):
+        return True
+    try:
+        await interaction.response.send_message(
+            "Требуются права администратора.", ephemeral=True)
+    except Exception:
+        pass
+    return False
+
+
+async def _admin_guard(interaction: discord.Interaction) -> bool:
+    """True — доступ запрещён (ответ уже отправлен)."""
+    if await _is_admin_now(interaction):
+        return False
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(
+                "Недостаточно прав.", ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                "Недостаточно прав.", ephemeral=True)
+    except Exception:
+        pass
     return True
 
 
@@ -145,6 +181,8 @@ async def _render_team_list(interaction: discord.Interaction,
     briefs = {t.team_id: t for t in teams[:25]}
 
     async def _pick(i):
+        if await _admin_guard(i):
+            return
         vals = i.data.get("values") or []
         if vals:
             await _render_team_admin(i, vals[0])
@@ -169,6 +207,8 @@ class AdminSearchModal(discord.ui.Modal, title="Поиск команды"):
         self.add_item(self.q)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        if await _admin_guard(interaction):
+            return
         guild = interaction.guild
         q = self.q.value.strip().lower()
         results = []
@@ -193,6 +233,8 @@ class AdminSearchModal(discord.ui.Modal, title="Поиск команды"):
 
 async def _render_team_admin(interaction: discord.Interaction,
                              team_id: str) -> None:
+    if await _admin_guard(interaction):
+        return
     guild = interaction.guild
     team = await team_store.refresh_from_db(team_id)
     if team is None or team.guild_id != guild.id:
@@ -232,6 +274,8 @@ async def _render_team_admin(interaction: discord.Interaction,
 
 async def _render_admin_disband(interaction: discord.Interaction,
                                 team_id: str) -> None:
+    if await _admin_guard(interaction):
+        return
     guild = interaction.guild
     team = await team_store.refresh_from_db(team_id)
     if team is None:
@@ -264,6 +308,8 @@ async def _render_admin_disband(interaction: discord.Interaction,
 
 async def _do_admin_disband(interaction: discord.Interaction,
                             team_id: str) -> None:
+    if await _admin_guard(interaction):
+        return
     guild = interaction.guild
     team = await team_store.refresh_from_db(team_id)
     if team is None:
@@ -277,25 +323,18 @@ async def _do_admin_disband(interaction: discord.Interaction,
     name = team.team_name
     members = list(team.members)
     try:
-        await team_store.disband(team_id, team.captain_id)
+        await team_store.admin_disband(team_id, guild.id,
+                                       interaction.user.id)
     except TeamStoreError as exc:
-        # disband требует actor==captain; для админа обходим через
-        # прямое удаление после повторной проверки
-        try:
-            await _admin_delete_team(guild.id, team_id)
-        except Exception as exc2:
-            await interaction.response.send_message(
-                _err(exc2), ephemeral=True)
-            return
+        await interaction.response.send_message(_err(exc),
+                                                ephemeral=True)
+        return
     for uid in members:
         await squad_store.cancel_applications_for_user(
             guild.id, uid, "team_disbanded")
         await squad_store.cancel_invites_for_user(
             guild.id, uid, "team_disbanded")
         await squad_store.deactivate_lfg_for_user(guild.id, uid)
-    await squad_store.audit(
-        guild.id, None, interaction.user.id, "admin_disband",
-        metadata={"team_id": team_id, "team_name": name})
     svc.schedule_hub_refresh(guild)
     view = DesignView(title="Готово", accent=colors.BRAND)
     view.text(f"Команда **{name}** расформирована.")
@@ -304,76 +343,123 @@ async def _do_admin_disband(interaction: discord.Interaction,
     await interaction.response.edit_message(view=view)
 
 
-async def _admin_delete_team(guild_id: int, team_id: str) -> None:
-    """Административное удаление команды (минуя проверку капитана)."""
-    if team_store._use_postgres:
-        from storage.db import get_pool
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                await conn.execute(
-                    "UPDATE team_invites SET status='cancelled', "
-                    "resolved_at=now() WHERE team_id=$1 "
-                    "AND status='pending'", team_id)
-                await conn.execute(
-                    "UPDATE team_applications SET status='cancelled', "
-                    "resolved_at=now() WHERE team_id=$1 "
-                    "AND status='pending'", team_id)
-                await conn.execute(
-                    "DELETE FROM teams WHERE team_id=$1 AND guild_id=$2",
-                    team_id, guild_id)
-    team_store._teams.pop(team_id, None)
-    team_store._save()
-
-
 # ----------------------------------------------------------------------
-# Сбросы
+# Сбросы (P0.6)
 # ----------------------------------------------------------------------
+
+# Подтверждённые снапшоты сброса: (guild_id, user_id) → запись.
+# Снапшот фиксирует точный список team_id + версии составов на
+# момент предпросмотра; TTL 10 минут.
+_PENDING_RESETS: dict[tuple[int, int], dict[str, Any]] = {}
+_RESET_TTL = 600.0
 
 
 async def _teams_for_reset(guild_id: int,
-                           scope: str) -> tuple[list, str]:
-    """Список команд под сброс + описание scope.
+                           scope: str) -> tuple[list, str, dict | None]:
+    """Команды под сброс + описание scope + данные последнего
+    завершённого Cash Cup (для сравнения составов).
 
-    past_cashcup — команды, у которых br_team_id совпадает с
-    br_team_id из последнего ЗАВЕРШЁННОГО реального Cash Cup.
+    past_cashcup — команды, у которых team_id совпадает с
+    br_team_id из последнего ЗАВЕРШЁННОГО (status='completed')
+    реального Cash Cup — не latest(), который может вернуть
+    активный или отменённый турнир.
     """
+    cup = None
     if scope == "all":
         return (team_store.get_by_guild(guild_id),
-                "все команды сервера")
-    # past_cashcup
+                "все команды сервера", None)
     from services.cashcup_store import cashcup_store
-    state = await cashcup_store.latest(guild_id)
-    if not state or state.get("status") in ("registration", "running"):
-        return [], "прошлый Cash Cup не найден"
-    br_ids = {t.get("br_team_id") for t in state.get("teams") or []
+    cup = await cashcup_store.last_completed(guild_id)
+    if not cup:
+        return [], "прошлый завершённый Cash Cup не найден", None
+    br_ids = {t.get("br_team_id") for t in cup.get("teams") or []
               if t.get("br_team_id")}
     teams = [t for t in team_store.get_by_guild(guild_id)
              if t.team_id in br_ids]
-    return teams, f"команды прошлого Cash Cup ({state.get('name', '?')})"
+    return (teams,
+            f"команды последнего завершённого Cash Cup "
+            f"({cup.get('name') or cup.get('tournament_id', '?')})",
+            cup)
+
+
+def _cup_members_by_team(cup: dict | None) -> dict[str, set[int]]:
+    """br_team_id → множество discord_id участников по данным
+    завершённого турнира (для пометки «состав изменился»)."""
+    out: dict[str, set[int]] = {}
+    if not cup:
+        return out
+    for t in cup.get("teams") or []:
+        br = t.get("br_team_id")
+        if not br:
+            continue
+        ids = set()
+        for p in (t.get("members") or []) + (t.get("pending") or []):
+            did = p.get("discord_id") if isinstance(p, dict) else p
+            try:
+                ids.add(int(did))
+            except (TypeError, ValueError):
+                pass
+        out[str(br)] = ids
+    return out
+
+
+def _snapshots_for(teams: list) -> list[dict[str, Any]]:
+    """Точный снимок списка для подтверждения и tx-сверки."""
+    return [{
+        "team_id": t.team_id,
+        "updated_at": t.updated_at,
+        "members": sorted(int(m) for m in t.members),
+        "captain_id": int(t.captain_id),
+        "team_name": t.team_name,
+    } for t in teams]
 
 
 async def _render_reset_preview(interaction: discord.Interaction,
                                 scope: str) -> None:
+    if await _admin_guard(interaction):
+        return
     guild = interaction.guild
-    teams, desc = await _teams_for_reset(guild.id, scope)
-    # Исключаем команды в активных турнирах
-    free = []
-    blocked = 0
+    teams, desc, cup = await _teams_for_reset(guild.id, scope)
+    # Команды под защитой активных турниров — не трогаем.
+    free: list = []
+    blocked: list = []
     for t in teams:
-        if await svc.is_team_in_active_tournament(guild.id, t.team_id):
-            blocked += 1
-        else:
-            free.append(t)
-    players = sum(len(t.members) for t in free)
+        reason = await svc.active_tournament_reason(guild.id,
+                                                    t.team_id)
+        (blocked if reason else free).append((t, reason))
+    cup_members = _cup_members_by_team(cup)
     view = DesignView(title="Предпросмотр сброса", accent=colors.BRAND)
-    view.text(
-        f"**Scope:** {desc}\n"
-        f"**Команд к сбросу:** {len(free)}\n"
-        f"**Затронуто игроков:** {players}\n"
-        + (f"**Пропущено (активный турнир):** {blocked}\n" if blocked else "")
-        + "\n-# Перед сбросом создаётся резервная копия, "
-        "действие пишется в аудит.")
+    lines = [
+        f"**Scope:** {desc}",
+        f"**Команд к сбросу:** {len(free)}",
+        f"**Затронуто игроков:** "
+        f"{sum(len(t.members) for t, _ in free)}",
+    ]
+    if blocked:
+        lines.append(f"**Защищено активным турниром:** {len(blocked)}")
+    # Полный список удаляемых команд (капитан + состав).
+    lines.append("")
+    lines.append("**Команды к удалению:**")
+    shown = 0
+    for t, _ in free[:20]:
+        changed = ""
+        cup_ids = cup_members.get(t.team_id)
+        if cup_ids is not None and cup_ids != set(t.members):
+            changed = " ⚠️ состав менялся после турнира"
+        lines.append(
+            f"• **{t.team_name}** — капитан <@{t.captain_id}> · "
+            f"{len(t.members)}/{TEAM_MAX_MEMBERS}{changed}")
+        shown += 1
+    if len(free) > shown:
+        lines.append(f"• …и ещё {len(free) - shown}")
+    if blocked:
+        lines += ["", "**Пропущены (активный турнир):**"]
+        for t, _ in blocked[:10]:
+            lines.append(f"• {t.team_name}")
+    lines += ["", "-# Сброс выполняется одной транзакцией; "
+              "составы сверяются со снимком — при изменении "
+              "потребуется повторное подтверждение."]
+    view.text("\n".join(lines)[:3900])
 
     async def _yes(i):
         await _do_reset(i, scope)
@@ -382,55 +468,119 @@ async def _render_reset_preview(interaction: discord.Interaction,
         await _back_main(i)
 
     if free:
+        # Фиксируем точный список + версии составов. Предварительно
+        # обновляем объекты из БД — updated_at в снапшоте должен
+        # совпадать со строкой, которую заблокирует disband_many.
+        fresh = []
+        for t, _ in free:
+            ft = await team_store.refresh_from_db(t.team_id)
+            fresh.append((ft or t, _))
+        _PENDING_RESETS[(guild.id, interaction.user.id)] = {
+            "scope": scope,
+            "desc": desc,
+            "snapshots": _snapshots_for([t for t, _ in fresh]),
+            "created": time.monotonic(),
+        }
         view.row(
             _b("Подтвердить сброс", "danger", "adm:rsyes", _yes),
             _b("Отмена", "secondary", "adm:rsno", _no))
     else:
-        view.text("Нет команд для сброса.")
+        _PENDING_RESETS.pop((guild.id, interaction.user.id), None)
         view.row(_b("Назад", "secondary", "adm:rsback",
                     lambda i: _back_main(i)))
     await interaction.response.edit_message(view=view)
 
 
-async def _do_reset(interaction: discord.Interaction, scope: str) -> None:
+async def _archive_recruit_cards(guild: discord.Guild | None,
+                                 removed: list[dict]) -> None:
+    """Пост-коммит: заархивировать карточки набора удалённых
+    команд (best effort)."""
+    if guild is None:
+        return
+    for item in removed:
+        cid, mid = (item.get("recruitment_channel_id"),
+                    item.get("recruitment_message_id"))
+        if not cid or not mid:
+            continue
+        try:
+            channel = guild.get_channel(int(cid))
+            if channel is None:
+                channel = await guild.fetch_channel(int(cid))
+            msg = await channel.fetch_message(int(mid))
+            view = DesignView(title="Набор закрыт",
+                              accent=colors.BRAND)
+            view.text(
+                f"Команда **{item.get('team_name', '?')}** "
+                "расформирована — набор закрыт.")
+            await msg.edit(view=view)
+        except Exception as exc:
+            logger.info("recruit card archive failed: %s", exc)
+
+
+async def _do_reset(interaction: discord.Interaction,
+                    scope: str) -> None:
+    if await _admin_guard(interaction):
+        return
     guild = interaction.guild
-    teams, _ = await _teams_for_reset(guild.id, scope)
-    # Повторная проверка активных турниров
-    targets = [t for t in teams
-               if not await svc.is_team_in_active_tournament(
-                   guild.id, t.team_id)]
-    if not targets:
+    key = (guild.id, interaction.user.id)
+    pending = _PENDING_RESETS.pop(key, None)
+    if (pending is None or pending.get("scope") != scope
+            or time.monotonic() - pending.get("created", 0)
+            > _RESET_TTL):
+        await interaction.response.send_message(
+            "Предпросмотр устарел — откройте сброс заново.",
+            ephemeral=True)
+        return
+    snapshots = pending["snapshots"]
+    if not snapshots:
         await interaction.response.send_message(
             "Нет команд для сброса.", ephemeral=True)
         return
-    # Резервная копия
-    backup_path = await _backup_teams(guild.id, targets)
-    removed = 0
+    # Резервная копия: актуальные данные подтверждённого списка
+    # (disband_many сверит составы в транзакции — бэкап совпадает
+    # с тем, что будет удалено).
+    backup_path = await _backup_teams(guild.id, snapshots)
+    try:
+        removed = await team_store.disband_many(
+            guild.id, snapshots, interaction.user.id)
+    except TeamStoreError as exc:
+        code = getattr(exc, "code", "")
+        if code in ("list_changed", "tournament_started"):
+            # Список изменился — требуем повторного подтверждения.
+            await interaction.response.send_message(
+                f"{_err(exc)}\nОткройте предпросмотр заново.",
+                ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                f"Сброс отменён: {_err(exc)}. Ничего не удалено.",
+                ephemeral=True)
+        return
+    except Exception as exc:
+        logger.warning("admin mass reset failed: %s", exc)
+        await interaction.response.send_message(
+            "Ошибка базы данных — сброс откачен, команды не "
+            "удалены.", ephemeral=True)
+        return
+    # Пост-коммит сайд-эффекты.
     players = 0
-    for t in targets:
-        members = list(t.members)
-        try:
-            await _admin_delete_team(guild.id, t.team_id)
-            removed += 1
-            players += len(members)
-            for uid in members:
+    for item in removed:
+        players += len(item.get("members") or [])
+        for uid in item.get("members") or []:
+            try:
                 await squad_store.cancel_applications_for_user(
-                    guild.id, uid, "team_reset")
+                    guild.id, int(uid), "team_reset")
                 await squad_store.cancel_invites_for_user(
-                    guild.id, uid, "team_reset")
-                await squad_store.deactivate_lfg_for_user(guild.id, uid)
-        except Exception as exc:
-            logger.warning("admin reset failed for %s: %s",
-                           t.team_id, exc)
-    await squad_store.audit(
-        guild.id, None, interaction.user.id, "admin_reset",
-        metadata={"scope": scope, "teams": removed,
-                  "players": players, "backup": str(backup_path)})
+                    guild.id, int(uid), "team_reset")
+                await squad_store.deactivate_lfg_for_user(
+                    guild.id, int(uid))
+            except Exception:
+                pass
+    await _archive_recruit_cards(guild, removed)
     svc.schedule_hub_refresh(guild)
     view = DesignView(title="Сброс выполнен", accent=colors.BRAND)
     view.text(
-        f"**Scope:** {scope}\n"
-        f"**Удалено команд:** {removed}\n"
+        f"**Scope:** {pending.get('desc', scope)}\n"
+        f"**Удалено команд:** {len(removed)}\n"
         f"**Игроков затронуто:** {players}\n"
         f"**Резервная копия:** {backup_path.name}")
     view.row(_b("В меню", "secondary", "adm:rsdone",
@@ -439,13 +589,23 @@ async def _do_reset(interaction: discord.Interaction, scope: str) -> None:
 
 
 async def _backup_teams(guild_id: int,
-                        teams: list) -> Path:
-    """JSONL-дамп затрагиваемых команд перед сбросом."""
+                        snapshots: list[dict]) -> Path:
+    """JSONL-дамп подтверждённого списка команд перед сбросом.
+
+    Берём актуальные строки по team_id из снимка — disband_many
+    в транзакции гарантирует, что они не изменятся до удаления.
+    """
     backup_dir = DATA_DIR / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = backup_dir / f"teams_{guild_id}_{ts}.jsonl"
+    teams = []
+    for snap in snapshots:
+        t = team_store.get(snap["team_id"])
+        if t is not None and int(t.guild_id) == int(guild_id):
+            teams.append(t)
     with open(path, "w", encoding="utf-8") as f:
         for t in teams:
-            f.write(json.dumps(t.to_dict(), ensure_ascii=False) + "\n")
+            f.write(json.dumps(t.to_dict(), ensure_ascii=False)
+                    + "\n")
     return path

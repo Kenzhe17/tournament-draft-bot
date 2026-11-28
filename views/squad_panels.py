@@ -179,36 +179,28 @@ async def accept_invite(interaction: discord.Interaction,
         return
     gid = int(team.guild_id)
     guild = interaction.guild or interaction.client.get_guild(gid)
+    # P0.4: при принятии из ЛС проверяем, что игрок всё ещё
+    # участник сервера.
+    if guild is None:
+        await interaction.response.send_message(
+            "Не удалось проверить членство на сервере — "
+            "откройте приглашение на сервере.", ephemeral=True)
+        return
     try:
-        await team_store.join_team(team.team_id, interaction.user.id, gid)
-    except TeamStoreError as exc:
+        member = guild.get_member(interaction.user.id)
+        if member is None:
+            member = await guild.fetch_member(interaction.user.id)
+    except discord.NotFound:
+        member = None
+    except Exception:
+        member = None
+    if member is None:
         await interaction.response.send_message(
-            f"Не удалось вступить: {_err_text(exc)}", ephemeral=True)
+            "Вы больше не участник этого сервера — "
+            "приглашение недействительно.", ephemeral=True)
         return
-    except Exception as exc:
-        logger.warning("invite accept join failed: %s", exc)
-        await interaction.response.send_message(
-            "Ошибка базы данных. Попробуйте позже.", ephemeral=True)
-        return
-    await squad_store.resolve_invite(invite_id, "accepted")
-    # Закрыть остальные заявки/приглашения пользователя
-    await squad_store.cancel_applications_for_user(
-        gid, interaction.user.id, "joined_team")
-    await squad_store.cancel_invites_for_user(
-        gid, interaction.user.id, "joined_team")
-    await squad_store.deactivate_lfg_for_user(gid, interaction.user.id)
-    if guild is not None:
-        svc.schedule_hub_refresh(guild)
-        await svc.sync_recruit_card(interaction.client, guild,
-                                    team.team_id)
-        from views.team_panel_view import send_team_panel
-        await send_team_panel(interaction, team.team_id,
-                              f"Вы вступили в команду "
-                              f"**{team.team_name}** по приглашению.")
-    else:
-        await interaction.response.send_message(
-            f"Вы вступили в команду **{team.team_name}** по "
-            "приглашению.", allowed_mentions=_NO_MENTIONS)
+    await join_team_action(interaction, team.team_id, via="invite",
+                           invite_id=invite_id)
 
 
 async def decline_invite(interaction: discord.Interaction,
@@ -452,11 +444,11 @@ async def _render_catalog(interaction: discord.Interaction,
 
 
 async def _render_catalog_edit(interaction: discord.Interaction) -> None:
-    "|""Перерисовать каталог на месте (component callback)."""
-    try:
-        await interaction.response.defer()
-    except Exception:
-        pass
+    """Перерисовать каталог на месте (component callback).
+
+    edit_message — первый ответ на component-interaction;
+    defer() здесь нельзя: после него edit_message упал бы с
+    InteractionResponded."""
     await _render_catalog(interaction, edit=True)
 
 
@@ -565,58 +557,70 @@ async def build_team_card_view(guild: discord.Guild, team,
     return view
 
 
+async def _user_sr(guild_id: int, user_id: int) -> float | None:
+    """SR игрока из существующей системы (None — нет данных)."""
+    try:
+        from storage.player_stats_store import player_stats_store
+        stats = await player_stats_store.get(guild_id, user_id)
+        if stats is not None and stats.games > 0:
+            return float(stats.skill_rating)
+    except Exception:
+        pass
+    return None
+
+
 async def join_team_action(interaction: discord.Interaction,
-                           team_id: str, *, via: str) -> None:
-    """Вступление в открытую команду / по инвайту — атомарно."""
+                           team_id: str, *, via: str,
+                           password: str = "",
+                           invite_id: int | None = None,
+                           application_id: int | None = None) -> None:
+    """Единая точка вступления: все проверки и сайд-эффекты —
+    в транзакции team_store.join_team (P0.3)."""
     guild = interaction.guild
-    if guild is None:
+    team = team_store.get(team_id)
+    gid = int(team.guild_id) if team is not None else (
+        guild.id if guild else 0)
+    if gid == 0:
         return
-    team = await team_store.refresh_from_db(team_id)
-    if team is None:
-        await interaction.response.send_message(
-            "Команда не найдена.", ephemeral=True)
-        return
-    # Проверка требований капитана (min_sr и т.п.)
-    req = team.requirements or {}
-    min_sr = req.get("min_sr")
-    if min_sr:
+    sr = await _user_sr(gid, interaction.user.id)
+    try:
+        fresh = await team_store.join_team(
+            team_id, interaction.user.id, gid, via=via,
+            password=password, invite_id=invite_id,
+            application_id=application_id, sr=sr)
+    except TeamStoreError as exc:
         try:
-            from storage.player_stats_store import player_stats_store
-            stats = await player_stats_store.get(guild.id,
-                                                 interaction.user.id)
-            if stats is not None and stats.games > 0 \
-                    and stats.skill_rating < float(min_sr):
-                await interaction.response.send_message(
-                    f"Требуется SR от {min_sr} — ваш SR "
-                    f"{stats.skill_rating:.1f}.", ephemeral=True)
-                return
+            await interaction.response.send_message(
+                f"Не удалось вступить: {_err_text(exc)}",
+                ephemeral=True)
         except Exception:
             pass
-    try:
-        await team_store.join_team(team.team_id, interaction.user.id,
-                                   guild.id)
-    except TeamStoreError as exc:
-        await interaction.response.send_message(
-            f"Не удалось вступить: {_err_text(exc)}", ephemeral=True)
         return
     except Exception as exc:
         logger.warning("join_team_action failed: %s", exc)
-        await interaction.response.send_message(
-            "Ошибка базы данных. Попробуйте позже.", ephemeral=True)
+        try:
+            await interaction.response.send_message(
+                "Ошибка базы данных. Попробуйте позже.",
+                ephemeral=True)
+        except Exception:
+            pass
         return
-    await squad_store.cancel_applications_for_user(
-        guild.id, interaction.user.id, "joined_team")
-    await squad_store.cancel_invites_for_user(
-        guild.id, interaction.user.id, "joined_team")
-    await squad_store.deactivate_lfg_for_user(guild.id,
-                                              interaction.user.id)
-    svc.schedule_hub_refresh(guild)
-    await svc.sync_recruit_card(interaction.client, guild,
-                                team.team_id)
-    fresh = await team_store.refresh_from_db(team.team_id) or team
-    from views.team_panel_view import send_team_panel
-    await send_team_panel(interaction, fresh.team_id,
-                          f"Вы вступили в команду **{fresh.team_name}**.")
+    # Пост-коммит сайд-эффекты (карточки/хаб)
+    if guild is not None:
+        svc.schedule_hub_refresh(guild)
+        await svc.sync_recruit_card(interaction.client, guild,
+                                    team_id)
+        from views.team_panel_view import send_team_panel
+        await send_team_panel(interaction, fresh.team_id,
+                              f"Вы вступили в команду "
+                              f"**{fresh.team_name}**.")
+    else:
+        try:
+            await interaction.response.send_message(
+                f"Вы вступили в команду **{fresh.team_name}**.",
+                allowed_mentions=_NO_MENTIONS)
+        except Exception:
+            pass
 
 
 # ----------------------------------------------------------------------
@@ -639,11 +643,9 @@ class PasswordJoinModal(discord.ui.Modal, title="Вступление по па�
             await interaction.response.send_message(
                 "Команда не найдена.", ephemeral=True)
             return
-        if not team.check_password(self.password.value):
-            await interaction.response.send_message(
-                "Неверный пароль.", ephemeral=True)
-            return
-        await join_team_action(interaction, team.team_id, via="password")
+        await join_team_action(interaction, team.team_id,
+                               via="password",
+                               password=self.password.value)
 
 
 async def open_password_modal(interaction: discord.Interaction,
@@ -669,6 +671,11 @@ class ApplyModal(discord.ui.Modal, title="Заявка в команду"):
         if team is None:
             await interaction.response.send_message(
                 "Команда не найдена.", ephemeral=True)
+            return
+        if not svc.can_apply(team):
+            await interaction.response.send_message(
+                "Команда больше не принимает заявки.",
+                ephemeral=True)
             return
         if team_store.get_by_member_in_guild(guild.id,
                                              interaction.user.id):
@@ -808,10 +815,6 @@ async def _render_lfg(interaction: discord.Interaction,
 
 
 async def _render_lfg_edit(interaction: discord.Interaction) -> None:
-    try:
-        await interaction.response.defer()
-    except Exception:
-        pass
     guild = interaction.guild
     profile = await squad_store.get_lfg(guild.id, interaction.user.id) \
         if guild else None
@@ -953,10 +956,6 @@ async def _render_player_search(interaction: discord.Interaction,
 
 
 async def _render_ps_edit(interaction: discord.Interaction) -> None:
-    try:
-        await interaction.response.defer()
-    except Exception:
-        pass
     await _render_player_search(interaction, edit=True)
 
 
@@ -1014,6 +1013,11 @@ async def send_invite(interaction: discord.Interaction, team_id: str,
         return
     target = guild.get_member(target_user_id)
     if target is None:
+        try:
+            target = await guild.fetch_member(target_user_id)
+        except discord.NotFound:
+            target = None
+    if target is None:
         await interaction.response.send_message(
             "Игрок не найден на сервере.", ephemeral=True)
         return
@@ -1024,6 +1028,12 @@ async def send_invite(interaction: discord.Interaction, team_id: str,
     if team.is_member(target_user_id):
         await interaction.response.send_message(
             "Игрок уже в команде.", ephemeral=True)
+        return
+    other = team_store.get_by_member_in_guild(guild.id,
+                                              target_user_id)
+    if other is not None and other.team_id != team.team_id:
+        await interaction.response.send_message(
+            "Игрок уже состоит в другой команде.", ephemeral=True)
         return
     if team.is_full():
         await interaction.response.send_message(
@@ -1038,7 +1048,7 @@ async def send_invite(interaction: discord.Interaction, team_id: str,
     # DM — best effort; приглашение доступно и через Squad Hub
     try:
         dm = await target.create_dm()
-        from views.team_invite_card import build_invite_dm_view
+        from views.team_recruit_view import build_invite_dm_view
         avg = await svc.team_avg_sr(guild.id, team.members, guild)
         msg = await dm.send(
             view=await build_invite_dm_view(guild, team, inv, avg),

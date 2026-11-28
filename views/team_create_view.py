@@ -127,10 +127,8 @@ async def _render_wizard(interaction: discord.Interaction,
 
 
 async def _render_wizard_edit(interaction: discord.Interaction) -> None:
-    try:
-        await interaction.response.defer()
-    except Exception:
-        pass
+    # edit_message — первый ответ; defer() сломал бы его
+    # (InteractionResponded).
     await _render_wizard(interaction, edit=True)
 
 

@@ -101,7 +101,7 @@ class TeamCog(commands.Cog):
 
     @team.command(name="admin", description="Администрирование команд")
     async def admin(self, interaction: discord.Interaction):
-        """Приватный админ-интерфейс команд (administrator/manage_guild)."""
+        """Приватный админ-интерфейс команд (r!z3 admin-права)."""
         from views.team_admin_view import open_admin_panel
         await open_admin_panel(interaction)
 

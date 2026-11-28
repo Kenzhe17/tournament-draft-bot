@@ -258,7 +258,7 @@ async def render_team_panel(guild: discord.Guild, team,
 async def _panel_join_action(interaction: discord.Interaction,
                              team) -> None:
     from views.squad_panels import join_team_action
-    await join_team_action(interaction, team.team_id, via="panel")
+    await join_team_action(interaction, team.team_id, via="open")
 
 
 async def _render_share(interaction: discord.Interaction,
@@ -332,6 +332,10 @@ async def _send_invites_bulk(interaction: discord.Interaction,
             target = guild.get_member(uid) if guild else None
             if target is None or target.bot or team.is_member(uid) \
                     or uid == interaction.user.id:
+                failed.append(str(uid))
+                continue
+            other = team_store.get_by_member_in_guild(guild.id, uid)
+            if other is not None and other.team_id != team.team_id:
                 failed.append(str(uid))
                 continue
             if team.is_full():
@@ -471,6 +475,13 @@ async def _render_application_card(interaction: discord.Interaction,
         await _do_accept_application(i, app_id, tid)
 
     async def _decline(i):
+        # P0.4: перепроверяем актуальные права на момент клика.
+        fresh = await team_store.refresh_from_db(tid)
+        if fresh is None or not fresh.is_captain(i.user.id):
+            await i.response.send_message(
+                "Только капитан команды может отклонять заявки.",
+                ephemeral=True)
+            return
         ok = await squad_store.resolve_application(app_id, "declined")
         await i.response.send_message(
             "Заявка отклонена." if ok else "Заявка уже обработана.",
@@ -520,6 +531,15 @@ async def _do_accept_application(interaction: discord.Interaction,
                                  app_id: int, team_id: str) -> None:
     """Капитан принимает заявку: атомарное вступление + закрытие заявок."""
     guild = interaction.guild
+    # P0.4: актуальные права на момент клика — старый капитан
+    # после передачи капитанства управлять заявками не может.
+    fresh_team = await team_store.refresh_from_db(team_id)
+    if fresh_team is None or not fresh_team.is_captain(
+            interaction.user.id):
+        await interaction.response.send_message(
+            "Только капитан команды может принимать заявки.",
+            ephemeral=True)
+        return
     app = await squad_store.get_application(app_id)
     if app is None or not app.is_pending:
         await interaction.response.send_message(
@@ -529,9 +549,15 @@ async def _do_accept_application(interaction: discord.Interaction,
         await interaction.response.send_message(
             "Заявка не этой команды.", ephemeral=True)
         return
+    # Единое атомарное вступление: заявка проверяется и фиксируется
+    # внутри той же транзакции (P0.3) — устаревшая кнопка не сможет
+    # обойти смену режима/истечение заявки.
+    from views.squad_panels import _user_sr
+    sr = await _user_sr(app.guild_id, app.user_id)
     try:
-        team = await team_store.join_team(team_id, app.user_id,
-                                          guild.id)
+        team = await team_store.join_team(
+            team_id, app.user_id, app.guild_id, via="application",
+            application_id=app_id, sr=sr)
     except TeamStoreError as exc:
         await interaction.response.send_message(
             f"Не удалось принять: {_err(exc)}", ephemeral=True)
@@ -541,13 +567,7 @@ async def _do_accept_application(interaction: discord.Interaction,
         await interaction.response.send_message(
             "Ошибка базы данных. Попробуйте позже.", ephemeral=True)
         return
-    await squad_store.resolve_application(app_id, "accepted")
-    # Остальные заявки/приглашения игрока закрываем
-    await squad_store.cancel_applications_for_user(
-        guild.id, app.user_id, "joined_team")
-    await squad_store.cancel_invites_for_user(
-        guild.id, app.user_id, "joined_team")
-    await squad_store.deactivate_lfg_for_user(guild.id, app.user_id)
+    # Остальные заявки/приглашения/LFG игрока закрыты в транзакции.
     # Заявки в заполненную команду закрываем
     if team.is_full():
         await squad_store.cancel_applications_for_team(
@@ -1110,15 +1130,15 @@ async def _do_request_transfer(interaction: discord.Interaction,
 
 async def _do_confirm_captain(interaction: discord.Interaction,
                               team_id: str, *, via_dm: bool = False) -> None:
-    """Новый капитан подтверждает передачу."""
-    guild = interaction.guild
-    uid = interaction.user.id
+    """Новый капитан подтверждает передачу (можно из ЛС)."""
     team = await team_store.refresh_from_db(team_id)
     if team is None:
         await interaction.response.send_message(
             "Команда не найдена.", ephemeral=True)
         return
-    if not svc.pending_transfer_for(guild.id, team_id, uid):
+    gid = int(team.guild_id)
+    uid = interaction.user.id
+    if not svc.pending_transfer_for(gid, team_id, uid):
         await interaction.response.send_message(
             "Нет активного запроса на передачу капитанства.",
             ephemeral=True)
@@ -1132,26 +1152,30 @@ async def _do_confirm_captain(interaction: discord.Interaction,
     except TeamStoreError as exc:
         await interaction.response.send_message(_err(exc), ephemeral=True)
         return
-    svc.consume_transfer_request(guild.id, team_id, uid)
-    await squad_store.audit(guild.id, team_id, team.captain_id,
+    svc.consume_transfer_request(gid, team_id, uid)
+    await squad_store.audit(gid, team_id, team.captain_id,
                             "captain_transfer", target_id=uid)
-    svc.schedule_hub_refresh(guild)
+    guild = interaction.guild or interaction.client.get_guild(gid)
+    if guild is not None:
+        svc.schedule_hub_refresh(guild)
     fresh = await team_store.refresh_from_db(team_id)
     notice = "Вы стали капитаном команды!"
-    if via_dm:
+    if via_dm or interaction.guild is None:
         await interaction.response.send_message(notice, ephemeral=True)
     else:
         await open_team_panel(interaction, team_id, notice=notice)
     # уведомить старого капитана
-    try:
-        old = guild.get_member(team.captain_id)
-        if old is not None:
-            dm = await old.create_dm()
-            await dm.send(
-                f"Капитанство команды **{team.team_name}** передано "
-                f"<@{uid}>.", allowed_mentions=_NO_MENTIONS)
-    except (discord.Forbidden, discord.HTTPException):
-        pass
+    if guild is not None:
+        try:
+            old = guild.get_member(team.captain_id)
+            if old is not None:
+                dm = await old.create_dm()
+                await dm.send(
+                    f"Капитанство команды **{team.team_name}** "
+                    f"передано <@{uid}>.",
+                    allowed_mentions=_NO_MENTIONS)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
 
 
 # --- выход / расформирование ---

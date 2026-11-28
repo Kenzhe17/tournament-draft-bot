@@ -478,90 +478,361 @@ class TeamStore:
 
     async def _team_in_active_tournament(self, guild_id: int,
                                          team_id: str) -> bool:
+        """Legacy-вариант для вызовов вне транзакции (best-effort)."""
         from services.squad_service import is_team_in_active_tournament
         return await is_team_in_active_tournament(guild_id, team_id)
 
+    # ------------------------------------------------------------------
+    # Fail-closed проверка активных турниров ВНУТРИ транзакции.
+    # Не использует вложенных acquire из пула: BR — in-memory,
+    # Cash Cup — прямой SQL на том же conn с FOR UPDATE (сериализует
+    # с cashcup_store.mutate, который тоже берёт строку FOR UPDATE).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _tournament_blocked_on(conn: "asyncpg.Connection",
+                                    guild_id: int,
+                                    team_id: str) -> str | None:
+        """None — команда свободна; str — текст причины блокировки.
+
+        Любая ошибка проверки (кроме отсутствия таблицы cashcup)
+        → TeamStoreError("check_failed") — fail-closed: опасная
+        операция запрещена до восстановления проверки."""
+        # BR — in-memory store, соединений не требует
+        try:
+            from models.br_tournament import BRTournamentPhase
+            from storage.br_store import br_store
+            for brt in br_store.all():
+                if (brt and not getattr(brt, "is_test", False)
+                        and int(getattr(brt, "guild_id", 0))
+                        == int(guild_id)
+                        and team_id in (brt.registered_teams or [])
+                        and brt.phase not in (
+                            BRTournamentPhase.COMPLETE,
+                            BRTournamentPhase.CANCELLED)):
+                    return ("Команда зарегистрирована в активном "
+                            "BR-турнире — состав менять нельзя")
+        except Exception as exc:
+            logger.warning("BR protection check failed: %s", exc)
+            raise TeamStoreError(
+                "check_failed",
+                "Не удалось проверить статус турнира — операция "
+                "временно запрещена") from exc
+
+        # Cash Cup — та же БД, запрос на текущем соединении.
+        # FOR UPDATE сериализует с регистрацией в турнире
+        # (cashcup_store.mutate держит строку FOR UPDATE): либо мы
+        # ждём её commit и видим регистрацию, либо регистрация
+        # ждёт нас и увидит уже изменённый состав.
+        # to_regclass не падает при отсутствии таблицы — прямой
+        # SELECT по несуществующей таблице абортировал бы всю
+        # транзакцию (InFailedSQLTransaction).
+        try:
+            exists = await conn.fetchval(
+                "SELECT to_regclass('cashcup_tournaments')")
+            if not exists:
+                return None
+            rows = await conn.fetch(
+                "SELECT id, state FROM cashcup_tournaments "
+                "WHERE guild_id = $1 AND status IN "
+                "('registration','running') FOR UPDATE",
+                guild_id)
+        except Exception as exc:
+            logger.warning("CashCup protection check failed: %s",
+                           exc)
+            raise TeamStoreError(
+                "check_failed",
+                "Не удалось проверить статус турнира — операция "
+                "временно запрещена") from exc
+        for r in rows:
+            raw = r["state"]
+            try:
+                state = json.loads(raw) if isinstance(raw, str) \
+                    else dict(raw)
+            except (ValueError, TypeError):
+                continue
+            for t in state.get("teams") or []:
+                if t.get("br_team_id") == team_id:
+                    return ("Команда зарегистрирована в активном "
+                            "CASH CUP — состав менять нельзя")
+        return None
+
+    @staticmethod
+    def _check_requirements(team: Team, *,
+                            sr: float | None,
+                            lfg: Any) -> str | None:
+        """Обязательные требования команды. Возвращает текст ошибки
+        или None. SR=None — данных нет."""
+        req = team.requirements or {}
+        min_sr = req.get("min_sr")
+        if min_sr:
+            try:
+                min_sr_f = float(min_sr)
+            except (TypeError, ValueError) as exc:
+                # Битые требования — fail-closed, а не «пропустить».
+                raise TeamStoreError(
+                    "check_failed",
+                    "Требования команды повреждены — joining "
+                    "временно недоступен") from exc
+            if sr is None:
+                return (f"Требуется SR от {min_sr} — у вас нет "
+                        "данных об SR. Покажите капитану профиль.")
+            if sr < min_sr_f:
+                return (f"Требуется SR от {min_sr} — ваш SR "
+                        f"{sr:.1f}.")
+        dev = req.get("device")
+        if dev:
+            lfg_dev = getattr(lfg, "device", "") if lfg else ""
+            if not lfg_dev:
+                return ("Требуется устройство "
+                        f"{dev} — у вас оно не указано. "
+                        "Заполните профиль в Squad Hub → «Ищу "
+                        "команду».")
+            if lfg_dev != dev:
+                return ("Требуется устройство "
+                        f"{dev} — у вас {lfg_dev}.")
+        role = req.get("role")
+        if role:
+            lfg_role = getattr(lfg, "play_role", "") if lfg else ""
+            if lfg_role and lfg_role != role:
+                return (f"Предпочтительная роль: {role} — у вас "
+                        f"{lfg_role}.")
+        if req.get("ff_uid_required"):
+            ff_uid = getattr(lfg, "ff_uid", "") if lfg else ""
+            if not ff_uid:
+                return ("Требуется подтверждённый Free Fire UID — "
+                        "укажите его в профиле поиска.")
+        return None
+
     async def join_team(self, team_id: str, user_id: int,
-                        guild_id: int) -> Team:
-        """Атомарно добавить пользователя в команду.
+                        guild_id: int, *,
+                        via: str = "open",
+                        password: str = "",
+                        invite_id: int | None = None,
+                        application_id: int | None = None,
+                        sr: float | None = None,
+                        ) -> Team:
+        """Единый транзакционный механизм вступления (P0.3).
 
-        Гарантии (в транзакции):
-        - один пользователь — максимум одна команда в guild
-          (advisory lock на (guild,user) + проверка всех команд);
-        - максимум TEAM_MAX_MEMBERS участников (FOR UPDATE на строке
-          команды);
-        - команда существует, набор открыт и не заполнен.
-
-        Raises TeamStoreError: team_not_found, team_full, already_in_team,
-        recruiting_closed, roster_locked, user_in_other_team, db_error.
+        ``via``: 'open' | 'password' | 'invite' | 'application'.
+        Все проверки — внутри одной транзакции на одном соединении:
+        advisory lock пользователя → блокировка строки команды →
+        актуальные guild/team → режим вступления → валидность и срок
+        приглашения/заявки → полномочия → требования → вместимость →
+        отсутствие другого состава → блокировка турниром → UPDATE →
+        фиксация invite/application → закрытие остальных заявок/
+        приглашений → LFG off → аудит. При любой ошибке — rollback.
+        Кэш обновляется только после COMMIT.
         """
+        if via not in ("open", "password", "invite", "application"):
+            raise TeamStoreError("bad_via", "Неизвестный способ "
+                                 "вступления")
+        team: Team
         if self._pg_mode():
             pool = await self._pg()
             async with pool.acquire() as conn:
                 async with conn.transaction():
-                    await conn.execute(
-                        "SELECT pg_advisory_xact_lock("
-                        "hashtextextended($1, 0))",
-                        self._member_lock_key(guild_id, user_id),
-                    )
-                    row = await self._lock_team_row(conn, team_id)
-                    if row is None or int(row["guild_id"]) != int(guild_id):
-                        raise TeamStoreError("team_not_found",
-                                             "Команда не найдена")
-                    team = self._row_to_team(row)
-                    if not team.recruiting:
-                        raise TeamStoreError("recruiting_closed",
-                                             "Набор в команду закрыт")
-                    if team.is_full():
-                        raise TeamStoreError("team_full",
-                                             "Команда заполнена")
-                    if user_id in team.members:
-                        raise TeamStoreError("already_in_team",
-                                             "Вы уже в этой команде")
-                    other = await conn.fetchval(
-                        "SELECT team_id FROM teams WHERE guild_id = $1 "
-                        "AND $2 = ANY(members) AND team_id <> $3",
-                        guild_id, user_id, team_id)
-                    if other:
-                        raise TeamStoreError(
-                            "user_in_other_team",
-                            "Вы уже состоите в другой команде")
-                    if await self._team_in_active_tournament(
-                            guild_id, team_id):
-                        raise TeamStoreError(
-                            "roster_locked",
-                            "Команда зарегистрирована в активном "
-                            "турнире — состав менять нельзя")
-                    members = list(team.members) + [user_id]
-                    await conn.execute(
-                        "UPDATE teams SET members = $2, updated_at = now() "
-                        "WHERE team_id = $1",
-                        team_id, members)
-                    team.members = members
-                    team.updated_at = _now_iso()
-                    self._teams[team_id] = team
-                    self._remember(team)
+                    team = await self._join_tx(
+                        conn, team_id, user_id, guild_id,
+                        via=via, password=password,
+                        invite_id=invite_id,
+                        application_id=application_id, sr=sr)
+            # Кэш — только после успешного COMMIT.
+            self._teams[team.team_id] = team
+            self._remember(team)
+            self._save()
             return team
+        return await self._join_json(
+            team_id, user_id, guild_id, via=via, password=password,
+            invite_id=invite_id, application_id=application_id,
+            sr=sr)
 
-        # JSON fallback — без транзакций, best-effort
+    async def _join_json(self, team_id: str, user_id: int,
+                         guild_id: int, *, via: str,
+                         password: str, invite_id: int | None,
+                         application_id: int | None,
+                         sr: float | None) -> Team:
+        """JSON-fallback: best-effort без транзакций (dev-режим)."""
         team = self._teams.get(team_id)
         if team is None or team.guild_id != guild_id:
             raise TeamStoreError("team_not_found", "Команда не найдена")
-        if not team.recruiting:
+        if via == "open" and (team.join_mode != "open"
+                              or not team.recruiting):
             raise TeamStoreError("recruiting_closed",
-                                 "Набор в команду закрыт")
+                                 "Открытое вступление недоступно")
+        if via == "password":
+            if team.join_mode != "password":
+                raise TeamStoreError("recruiting_closed",
+                                     "Вход по паролю недоступен")
+            if not team.check_password(password):
+                raise TeamStoreError("bad_password", "Неверный пароль")
+        if via == "application" and (team.join_mode != "applications"
+                                     or not team.recruiting):
+            raise TeamStoreError("mode_changed",
+                                 "Капитан изменил тип вступления")
         if team.is_full():
             raise TeamStoreError("team_full", "Команда заполнена")
         if team.is_member(user_id):
-            raise TeamStoreError("already_in_team", "Вы уже в этой команде")
+            raise TeamStoreError("already_in_team",
+                                 "Вы уже в этой команде")
         for t in self._teams.values():
             if t.guild_id == guild_id and user_id in t.members:
                 raise TeamStoreError(
                     "user_in_other_team",
                     "Вы уже состоите в другой команде")
+        lfg = None
+        try:
+            from storage import squad_store as _ss
+            import asyncio
+            lfg = await _ss.get_lfg(guild_id, user_id)
+        except Exception:
+            pass
+        req_err = self._check_requirements(team, sr=sr, lfg=lfg)
+        if req_err:
+            raise TeamStoreError("requirements", req_err)
+        if await self._team_in_active_tournament(guild_id, team_id):
+            raise TeamStoreError(
+                "roster_locked",
+                "Команда зарегистрирована в активном турнире — "
+                "состав менять нельзя")
         team.add_member(user_id)
         team.updated_at = _now_iso()
         self._save_to_json()
+        return team
+
+    async def _join_tx(self, conn, team_id: str, user_id: int,
+                       guild_id: int, *, via: str, password: str,
+                       invite_id: int | None,
+                       application_id: int | None,
+                       sr: float | None) -> Team:
+        from storage import squad_store as _ss
+
+        # 1. Advisory lock на (guild,user) — сериализуем все
+        #    вступления пользователя в этом сервере.
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            self._member_lock_key(guild_id, user_id))
+        # 2. Блокировка строки команды + актуальность.
+        row = await self._lock_team_row(conn, team_id)
+        if row is None or int(row["guild_id"]) != int(guild_id):
+            raise TeamStoreError("team_not_found", "Команда не найдена")
+        team = self._row_to_team(row)
+        gid = int(team.guild_id)
+
+        # 3–5. Режим вступления + валидность invite/application.
+        if via == "open":
+            if team.join_mode != "open" or not team.recruiting:
+                raise TeamStoreError(
+                    "recruiting_closed",
+                    "Открытое вступление в эту команду недоступно")
+        elif via == "password":
+            # Пароль — самостоятельное согласие капитана: флаг
+            # recruiting (публичный набор) для входа по паролю
+            # не требуется — иначе legacy-команды с паролем
+            # потеряли бы возможность пополнения состава.
+            if team.join_mode != "password":
+                raise TeamStoreError(
+                    "recruiting_closed",
+                    "Вход по паролю для этой команды недоступен")
+            if not team.check_password(password):
+                raise TeamStoreError("bad_password",
+                                     "Неверный пароль")
+        elif via == "invite":
+            if invite_id is None:
+                raise TeamStoreError("invite_required",
+                                     "Приглашение не указано")
+            inv = await _ss.get_invite_on(conn, invite_id)
+            if (inv is None or inv.status != "pending"
+                    or inv.is_expired
+                    or inv.invited_user_id != user_id
+                    or inv.team_id != team_id
+                    or inv.guild_id != gid):
+                raise TeamStoreError(
+                    "invite_invalid",
+                    "Приглашение недействительно или истекло")
+        elif via == "application":
+            if team.join_mode != "applications" or not team.recruiting:
+                raise TeamStoreError(
+                    "mode_changed",
+                    "Капитан изменил тип вступления — "
+                    "подайте заявку заново")
+            if application_id is None:
+                raise TeamStoreError("application_required",
+                                     "Заявка не указана")
+            app = await _ss.get_application_on(conn, application_id)
+            if (app is None or app.status != "pending"
+                    or app.is_expired
+                    or app.user_id != user_id
+                    or app.team_id != team_id
+                    or app.guild_id != gid):
+                raise TeamStoreError(
+                    "application_invalid",
+                    "Заявка недействительна или истекла")
+
+        # 6. Вместимость и членство.
+        if team.is_full():
+            raise TeamStoreError("team_full", "Команда заполнена")
+        if user_id in team.members:
+            raise TeamStoreError("already_in_team",
+                                 "Вы уже в этой команде")
+        other = await conn.fetchval(
+            "SELECT team_id FROM teams WHERE guild_id = $1 "
+            "AND $2 = ANY(members) AND team_id <> $3",
+            gid, user_id, team_id)
+        if other:
+            raise TeamStoreError(
+                "user_in_other_team",
+                "Вы уже состоите в другой команде")
+
+        # 7. Требования капитана (SR передан снаружи — stats store
+        #    использует свой pool; устройство/роль/FF UID — из team_lfg
+        #    на этом же соединении).
+        lfg = await _ss.get_lfg_on(conn, gid, user_id)
+        req_err = self._check_requirements(
+            team, sr=sr, lfg=lfg)
+        if req_err:
+            raise TeamStoreError("requirements", req_err)
+
+        # 8. Блокировка активным турниром (fail-closed).
+        reason = await self._tournament_blocked_on(conn, gid, team_id)
+        if reason:
+            raise TeamStoreError("roster_locked", reason)
+
+        # 9. Добавить участника.
+        members = list(team.members) + [user_id]
+        await conn.execute(
+            "UPDATE teams SET members = $2, updated_at = now() "
+            "WHERE team_id = $1", team_id, members)
+
+        # 10–13. Фиксация invite/application + закрытие остальных
+        # заявок/приглашений + LFG off + аудит.
+        if via == "invite" and invite_id is not None:
+            ok = await _ss.resolve_invite_on(
+                conn, invite_id, "accepted", require_unexpired=True)
+            if not ok:
+                raise TeamStoreError(
+                    "invite_invalid",
+                    "Приглашение уже обработано")
+        if via == "application" and application_id is not None:
+            ok = await _ss.resolve_application_on(
+                conn, application_id, "accepted",
+                require_unexpired=True)
+            if not ok:
+                raise TeamStoreError(
+                    "application_invalid",
+                    "Заявка уже обработана")
+        await _ss.close_user_membership_on(conn, gid, user_id,
+                                           "joined_team")
+        if team.is_full() or len(members) >= 4:
+            await _ss.mark_team_full_applications_on(conn, team_id)
+        await _ss.audit_on(
+            conn, gid, team_id, user_id, "team_join",
+            metadata={"via": via, "invite_id": invite_id,
+                      "application_id": application_id})
+
+        # Объект с актуальным составом — кэш обновится после COMMIT.
+        team.members = members
+        team.updated_at = _now_iso()
         return team
 
     async def remove_member(self, team_id: str, user_id: int,
@@ -569,6 +840,7 @@ class TeamStore:
                             guild_id: int | None = None) -> Team:
         """Атомарно исключить/вывести участника (не капитана)."""
         gid = guild_id
+        team: Team
         if self._pg_mode():
             pool = await self._pg()
             async with pool.acquire() as conn:
@@ -587,12 +859,10 @@ class TeamStore:
                     if user_id not in team.members:
                         raise TeamStoreError("not_member",
                                              "Игрок не в команде")
-                    if await self._team_in_active_tournament(
-                            gid, team_id):
-                        raise TeamStoreError(
-                            "roster_locked",
-                            "Команда зарегистрирована в активном "
-                            "турнире — состав менять нельзя")
+                    reason = await self._tournament_blocked_on(
+                        conn, gid, team_id)
+                    if reason:
+                        raise TeamStoreError("roster_locked", reason)
                     members = [m for m in team.members if m != user_id]
                     await conn.execute(
                         "UPDATE teams SET members = $2, updated_at = now() "
@@ -600,13 +870,19 @@ class TeamStore:
                         team_id, members)
                     team.members = members
                     team.updated_at = _now_iso()
-                    self._teams[team_id] = team
-                    self._remember(team)
+            self._teams[team_id] = team
+            self._remember(team)
+            self._save()
             return team
 
         team = self._teams.get(team_id)
         if team is None:
             raise TeamStoreError("team_not_found", "Команда не найдена")
+        if team.is_captain(user_id):
+            raise TeamStoreError(
+                "is_captain",
+                "Капитана нельзя исключить — сначала передайте "
+                "капитанство")
         if not team.remove_member(user_id):
             raise TeamStoreError("not_member", "Игрок не в команде")
         team.updated_at = _now_iso()
@@ -651,21 +927,19 @@ class TeamStore:
                     if new_captain_id == team.captain_id:
                         raise TeamStoreError("same_captain",
                                              "Игрок уже капитан")
-                    if await self._team_in_active_tournament(
-                            gid, team_id):
-                        raise TeamStoreError(
-                            "roster_locked",
-                            "Команда зарегистрирована в активном "
-                            "турнире — передача капитанства "
-                            "заблокирована")
+                    reason = await self._tournament_blocked_on(
+                        conn, gid, team_id)
+                    if reason:
+                        raise TeamStoreError("roster_locked", reason)
                     await conn.execute(
                         "UPDATE teams SET captain_id = $2, "
                         "updated_at = now() WHERE team_id = $1",
                         team_id, new_captain_id)
                     team.captain_id = new_captain_id
                     team.updated_at = _now_iso()
-                    self._teams[team_id] = team
-                    self._remember(team)
+            self._teams[team_id] = team
+            self._remember(team)
+            self._save()
             return team
 
         team = self._teams.get(team_id)
@@ -703,21 +977,19 @@ class TeamStore:
                     if new_captain_id == team.captain_id:
                         raise TeamStoreError("same_captain",
                                              "Игрок уже капитан")
-                    if await self._team_in_active_tournament(
-                            gid, team_id):
-                        raise TeamStoreError(
-                            "roster_locked",
-                            "Команда зарегистрирована в активном "
-                            "турнире — передача капитанства "
-                            "заблокирована")
+                    reason = await self._tournament_blocked_on(
+                        conn, gid, team_id)
+                    if reason:
+                        raise TeamStoreError("roster_locked", reason)
                     await conn.execute(
                         "UPDATE teams SET captain_id = $2, "
                         "updated_at = now() WHERE team_id = $1",
                         team_id, new_captain_id)
                     team.captain_id = new_captain_id
                     team.updated_at = _now_iso()
-                    self._teams[team_id] = team
-                    self._remember(team)
+            self._teams[team_id] = team
+            self._remember(team)
+            self._save()
             return team
 
         team = self._teams.get(team_id)
@@ -738,6 +1010,7 @@ class TeamStore:
         Возвращает team_name. Закрывает приглашения/заявки/LFG
         через squad_store (вызывается сервисным слоем).
         """
+        team: Team
         if self._pg_mode():
             pool = await self._pg()
             async with pool.acquire() as conn:
@@ -749,27 +1022,19 @@ class TeamStore:
                     team = self._row_to_team(row)
                     gid = int(team.guild_id)
                     if team.captain_id != actor_id:
-                        raise TeamStoreError("not_captain",
-                                             "Только капитан может "
-                                             "расформировать команду")
-                    if await self._team_in_active_tournament(
-                            gid, team_id):
                         raise TeamStoreError(
-                            "roster_locked",
-                            "Команда зарегистрирована в активном "
-                            "турнире — расформирование заблокировано")
-                    # История действий остаётся в team_audit — строки
-                    # приглашений/заявок удаляем, чтобы не блокировать
-                    # удаление команды по FK.
-                    await conn.execute(
-                        "DELETE FROM team_invites WHERE team_id = $1",
-                        team_id)
-                    await conn.execute(
-                        "DELETE FROM team_applications WHERE team_id = $1",
-                        team_id)
-                    await self._delete_pg(conn, team_id)
+                            "not_captain",
+                            "Только капитан может расформировать "
+                            "команду")
+                    reason = await self._tournament_blocked_on(
+                        conn, gid, team_id)
+                    if reason:
+                        raise TeamStoreError("roster_locked", reason)
+                    await self._delete_team_rows(conn, team_id)
                     name = team.team_name
-                    self._teams.pop(team_id, None)
+            self._teams.pop(team_id, None)
+            self._forget(team_id)
+            self._save()
             return name
 
         team = self._teams.get(team_id)
@@ -783,6 +1048,175 @@ class TeamStore:
         self._forget(team_id)
         self._save_to_json()
         return name
+
+    @staticmethod
+    async def _delete_team_rows(conn: "asyncpg.Connection",
+                                team_id: str) -> None:
+        """Удалить команду и связанные invites/applications в
+        текущей транзакции (FK без каскада). История — в team_audit."""
+        await conn.execute(
+            "DELETE FROM team_invites WHERE team_id = $1", team_id)
+        await conn.execute(
+            "DELETE FROM team_applications WHERE team_id = $1",
+            team_id)
+        await conn.execute(
+            "DELETE FROM teams WHERE team_id = $1", team_id)
+
+    async def admin_disband(self, team_id: str, guild_id: int,
+                            actor_id: int) -> str:
+        """Административное расформирование: без проверки капитана,
+        но с проверкой guild и fail-closed защитой турниров.
+        Возвращает team_name."""
+        if self._pg_mode():
+            pool = await self._pg()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    row = await self._lock_team_row(conn, team_id)
+                    if row is None or int(row["guild_id"]) != int(
+                            guild_id):
+                        raise TeamStoreError("team_not_found",
+                                             "Команда не найдена")
+                    team = self._row_to_team(row)
+                    gid = int(team.guild_id)
+                    reason = await self._tournament_blocked_on(
+                        conn, gid, team_id)
+                    if reason:
+                        raise TeamStoreError("roster_locked", reason)
+                    await self._delete_team_rows(conn, team_id)
+                    from storage import squad_store as _ss
+                    await _ss.audit_on(
+                        conn, gid, team_id, actor_id,
+                        "admin_disband",
+                        metadata={"team_name": team.team_name})
+                    name = team.team_name
+            self._teams.pop(team_id, None)
+            self._forget(team_id)
+            self._save()
+            return name
+
+        team = self._teams.get(team_id)
+        if team is None or team.guild_id != guild_id:
+            raise TeamStoreError("team_not_found", "Команда не найдена")
+        if await self._team_in_active_tournament(guild_id, team_id):
+            raise TeamStoreError(
+                "roster_locked",
+                "Команда зарегистрирована в активном турнире")
+        name = team.team_name
+        del self._teams[team_id]
+        self._forget(team_id)
+        self._save_to_json()
+        return name
+
+    @staticmethod
+    def _snapshot_matches(snap: dict, team: Team) -> bool:
+        """Снимок предпросмотра vs актуальная команда.
+
+        Сравниваем updated_at (parse-aware: naive считается UTC)
+        и состав. Поля, которых нет в снимке, не проверяются."""
+        snap_updated = str(snap.get("updated_at") or "")
+        if snap_updated:
+            a = TeamStore._parse_ts(snap_updated)
+            b = TeamStore._parse_ts(team.updated_at or "")
+            if a is not None and b is not None:
+                if a != b:
+                    return False
+            elif snap_updated[:26] != (team.updated_at or "")[:26]:
+                return False
+        snap_members = snap.get("members")
+        if snap_members is not None and sorted(
+                int(m) for m in snap_members) != sorted(team.members):
+            return False
+        return True
+
+    @staticmethod
+    def _parse_ts(value: str):
+        """ISO → aware datetime. Naive трактуем как локальное время:
+        Team.created_at/updated_at пишутся через datetime.now()
+        (naive local), а asyncpg при записи в timestamptz считает
+        naive локальным — иначе снапшот и строка БД «разъедутся»."""
+        from datetime import datetime
+        try:
+            v = value.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(v)
+            if dt.tzinfo is None:
+                dt = dt.astimezone()
+            return dt
+        except (ValueError, TypeError):
+            return None
+
+    async def disband_many(self, guild_id: int,
+                           snapshots: list[dict],
+                           actor_id: int) -> list[dict]:
+        """Массовый сброс команд ОДНОЙ транзакцией (P0.6).
+
+        ``snapshots`` — список {"team_id", "updated_at"} из
+        предпросмотра. В транзакции каждая команда блокируется
+        FOR UPDATE (в порядке team_id — детерминированный порядок
+        против deadlock), сверяется с snapshot (updated_at) и с
+        защитой турниров. Любое расхождение → rollback всей
+        операции (TeamStoreError "list_changed"/"tournament_started").
+
+        Возвращает список {"team_id","team_name","members",
+        "recruitment_channel_id","recruitment_message_id"}.
+        """
+        if not snapshots:
+            return []
+        if not self._pg_mode():
+            raise TeamStoreError(
+                "no_pg", "Массовый сброс требует PostgreSQL")
+        ids = sorted(s["team_id"] for s in snapshots)
+        pool = await self._pg()
+        removed: list[dict] = []
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for snap in sorted(snapshots,
+                                   key=lambda s: s["team_id"]):
+                    tid = snap["team_id"]
+                    row = await self._lock_team_row(conn, tid)
+                    if row is None or int(row["guild_id"]) != int(
+                            guild_id):
+                        raise TeamStoreError(
+                            "list_changed",
+                            "Состав команд изменился — требуется "
+                            "новый предпросмотр")
+                    team = self._row_to_team(row)
+                    # Сверка с подтверждённым снимком
+                    if not self._snapshot_matches(snap, team):
+                        raise TeamStoreError(
+                            "list_changed",
+                            "Команда «%s» изменилась после "
+                            "предпросмотра — подтвердите снова"
+                            % team.team_name)
+                    reason = await self._tournament_blocked_on(
+                        conn, guild_id, tid)
+                    if reason:
+                        raise TeamStoreError(
+                            "tournament_started",
+                            f"Команда «{team.team_name}» вошла в "
+                            "активный турнир — подтвердите снова")
+                    await self._delete_team_rows(conn, tid)
+                    from storage import squad_store as _ss
+                    await _ss.audit_on(
+                        conn, guild_id, tid, actor_id,
+                        "admin_mass_disband",
+                        metadata={"team_name": team.team_name,
+                                  "members": list(team.members)})
+                    removed.append({
+                        "team_id": tid,
+                        "team_name": team.team_name,
+                        "members": list(team.members),
+                        "recruitment_channel_id":
+                            team.recruitment_channel_id,
+                        "recruitment_message_id":
+                            team.recruitment_message_id,
+                    })
+        # После COMMIT — обновить кэш
+        for item in removed:
+            tid = item["team_id"]
+            self._teams.pop(tid, None)
+            self._forget(tid)
+        self._save()
+        return removed
 
     # ------------------------------------------------------------------
     # Legacy-совместимость (BR/cashcup вызывают синхронно)

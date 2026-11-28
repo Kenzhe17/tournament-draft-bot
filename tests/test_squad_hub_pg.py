@@ -220,7 +220,8 @@ async def test_join_last_slot_concurrent(pg_pool):
 
 @pytest.mark.asyncio
 async def test_leave_and_kick(pg_pool):
-    team = await team_store.create(_team("India", 1500))
+    team = await team_store.create(
+        _team("India", 1500, join_mode=JOIN_OPEN))
     await team_store.join_team(team.team_id, 1501, G)
     # Капитан не может выйти
     with pytest.raises(TeamStoreError) as ei:
@@ -242,7 +243,8 @@ async def test_leave_and_kick(pg_pool):
 
 @pytest.mark.asyncio
 async def test_transfer_and_confirm_captain(pg_pool):
-    team = await team_store.create(_team("Juliett", 1600))
+    team = await team_store.create(
+        _team("Juliett", 1600, join_mode=JOIN_OPEN))
     await team_store.join_team(team.team_id, 1601, G)
     # Запрос от капитана
     await team_store.transfer_captain(team.team_id, 1601, actor_id=1600)
@@ -253,7 +255,8 @@ async def test_transfer_and_confirm_captain(pg_pool):
 
 @pytest.mark.asyncio
 async def test_confirm_captain_transfer(pg_pool):
-    team = await team_store.create(_team("Kilo", 1700))
+    team = await team_store.create(
+        _team("Kilo", 1700, join_mode=JOIN_OPEN))
     await team_store.join_team(team.team_id, 1701, G)
     await team_store.confirm_captain_transfer(team.team_id, 1701)
     assert team_store.get(team.team_id).captain_id == 1701
@@ -264,7 +267,8 @@ async def test_confirm_captain_transfer(pg_pool):
 
 @pytest.mark.asyncio
 async def test_disband(pg_pool):
-    team = await team_store.create(_team("Lima", 1800))
+    team = await team_store.create(
+        _team("Lima", 1800, join_mode=JOIN_OPEN))
     await team_store.join_team(team.team_id, 1801, G)
     inv = await squad_store.create_invite(G, team.team_id, 1800, 1802)
     assert inv is not None
@@ -278,7 +282,8 @@ async def test_disband(pg_pool):
 
 @pytest.mark.asyncio
 async def test_disband_not_captain(pg_pool):
-    team = await team_store.create(_team("Mike", 1900))
+    team = await team_store.create(
+        _team("Mike", 1900, join_mode=JOIN_OPEN))
     await team_store.join_team(team.team_id, 1901, G)
     with pytest.raises(TeamStoreError) as ei:
         await team_store.disband(team.team_id, 1901)
@@ -341,10 +346,12 @@ async def test_invite_lifecycle(pg_pool):
     assert dup is None
     pending = await squad_store.list_pending_invites_for_user(G, 2201)
     assert len(pending) == 1
-    # Принятие на уровне store: вступление + resolve
-    await team_store.join_team(team.team_id, 2201, G)
-    ok = await squad_store.resolve_invite(inv.invite_id, "accepted")
-    assert ok
+    # Принятие на уровне store: атомарное вступление по приглашению
+    # + resolve + закрытие остальных приглашений — внутри tx.
+    await team_store.join_team(team.team_id, 2201, G, via="invite",
+                               invite_id=inv.invite_id)
+    inv_after = await squad_store.get_invite(inv.invite_id)
+    assert inv_after.status == "accepted"
     assert await squad_store.list_pending_invites_for_user(G, 2201) == []
 
 
@@ -396,14 +403,16 @@ async def test_application_lifecycle(pg_pool):
     # Ещё одна pending-заявка до вступления
     app3 = await squad_store.create_application(G, team.team_id, 2401)
     assert app3 is not None
-    # Принятие заявки капитаном: join + resolve
-    await team_store.join_team(team.team_id, 2401, G)
-    assert await squad_store.resolve_application(app2.application_id,
-                                                 "accepted")
-    # После вступления остальные заявки закрыты вручную
-    n = await squad_store.cancel_applications_for_user(
-        G, 2401, "joined_team")
-    assert n >= 1
+    # Принятие заявки: единая транзакция — вступление + фиксация
+    # app3 + автоматическое закрытие остальных заявок/приглашений.
+    await team_store.join_team(team.team_id, 2401, G,
+                               via="application",
+                               application_id=app3.application_id)
+    assert (await squad_store.get_application(
+        app3.application_id)).status == "accepted"
+    # Остальные pending-заявки игрока закрыты внутри tx
+    assert (await squad_store.get_application(
+        app2.application_id)).status == "cancelled"
     assert await squad_store.list_pending_applications_for_user(
         G, 2401) == []
 
@@ -515,7 +524,8 @@ async def test_audit_write(pg_pool):
 async def test_br_active_tournament_blocks_roster(pg_pool):
     from models.br_tournament import BRTournament
     from storage.br_store import br_store
-    team = await team_store.create(_team("Victor", 2900))
+    team = await team_store.create(
+        _team("Victor", 2900, join_mode=JOIN_OPEN))
     # Регистрируем команду в активном BR напрямую в кэше
     brt = BRTournament(id="brt1", guild_id=G, channel_id=1,
                        is_test=False)
@@ -583,6 +593,340 @@ async def test_update_team_rejects_roster_change(pg_pool):
     # Состав в БД не пострадал
     fresh = team_store.get(team.team_id)
     assert sorted(fresh.members) == [3010]
+
+
+# ----------------------------------------------------------------------
+# P0.2 — миграция legacy-команд
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_legacy_team_gets_password_mode(pg_pool):
+    """Команда, созданная до Squad Hub (plaintext-пароль, без
+    squad-колонок в данных) → join_mode='password', recruiting
+    выключен, публичный набор недоступен."""
+    async with pg_pool.acquire() as conn:
+        # Имитируем строку до миграции: schema уже применена
+        # фикстурой, но legacy-флаг ловится по password_hash=''.
+        await conn.execute(
+            "INSERT INTO teams (team_id, team_name, password, "
+            "captain_id, guild_id, members, join_mode, recruiting) "
+            "VALUES ('legacy_pw','LegacyPW','secretpw', 3100, $1, "
+            "$2, 'applications', TRUE)", G, [3100])
+        # Прогоняем legacy-миграцию ещё раз — она идемпотентна и
+        # переведёт строку в password-mode.
+        from storage.squad_schema import _LEGACY_MIGRATION
+        for stmt in _LEGACY_MIGRATION:
+            await conn.execute(stmt)
+        row = await conn.fetchrow(
+            "SELECT join_mode, recruiting FROM teams "
+            "WHERE team_id='legacy_pw'")
+        assert row["join_mode"] == "password"
+        assert row["recruiting"] is False
+    await team_store.load_from_postgres()
+    team = team_store.get("legacy_pw")
+    assert team is not None
+    assert team.join_mode == "password"
+    assert not team.recruiting
+    # Пароль работает, открытое вступление — нет
+    joined = await team_store.join_team(
+        "legacy_pw", 3101, G, via="password", password="secretpw")
+    assert 3101 in joined.members
+    team2 = await team_store.create(
+        _team("OpenX", 3110, join_mode=JOIN_OPEN))
+    team2.join_mode = "closed"
+    team2.recruiting = True
+    await team_store.update_team(team2)
+    with pytest.raises(TeamStoreError) as ei:
+        await team_store.join_team(team2.team_id, 3111, G,
+                                   via="open")
+    assert ei.value.code == "recruiting_closed"
+
+
+@pytest.mark.asyncio
+async def test_unique_index_conflict_report(pg_pool):
+    """Дубликаты названий без учёта регистра → уникальный индекс
+    НЕ создаётся, отчёт пишется, команды не трогаются."""
+    from storage.squad_schema import _ensure_unique_name_index
+    async with pg_pool.acquire() as conn:
+        await conn.execute("DROP INDEX IF EXISTS "
+                           "ux_teams_guild_lower_name")
+        # Прямые INSERT — create() сам не даст дубликат.
+        for tid, name in (("dupA", "Same"), ("dupB", "same")):
+            await conn.execute(
+                "INSERT INTO teams (team_id, team_name, password, "
+                "captain_id, guild_id, members) VALUES ($1,$2,'',"
+                " 3200, $3, $4)", tid, name, G, [3200])
+        await _ensure_unique_name_index(conn)
+        idx = await conn.fetchval(
+            "SELECT indexname FROM pg_indexes WHERE tablename='teams' "
+            "AND indexname='ux_teams_guild_lower_name'")
+        assert idx is None  # уникальный индекс не создан
+        # Отчёт сохранён
+        from config import DATA_DIR
+        report = DATA_DIR / "squad_migration_report.json"
+        assert report.exists()
+        report.unlink(missing_ok=True)
+        # Команды не изменены
+        n = await conn.fetchval(
+            "SELECT count(*) FROM teams WHERE team_id IN "
+            "('dupA','dupB')")
+        assert n == 2
+
+
+# ----------------------------------------------------------------------
+# P0.3/P0.9 — гонки и обходы единого join
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_invite_cancelled_before_accept(pg_pool):
+    """Отмена приглашения одновременно с принятием → join
+    отклоняется, игрок не добавлен."""
+    team = await team_store.create(
+        _team("Yankee2", 3300, join_mode=JOIN_OPEN))
+    inv = await squad_store.create_invite(G, team.team_id, 3300, 3301)
+    assert inv is not None
+    await squad_store.resolve_invite(inv.invite_id, "cancelled")
+    with pytest.raises(TeamStoreError) as ei:
+        await team_store.join_team(team.team_id, 3301, G,
+                                   via="invite", invite_id=inv.invite_id)
+    assert ei.value.code == "invite_invalid"
+    assert 3301 not in team_store.get(team.team_id).members
+
+
+@pytest.mark.asyncio
+async def test_application_expired_before_accept(pg_pool):
+    """Заявка, истёкшая к моменту принятия → join отклоняется."""
+    team = await team_store.create(
+        _team("Zulu2", 3400, join_mode=JOIN_APPLICATIONS))
+    app = await squad_store.create_application(G, team.team_id, 3401)
+    assert app is not None
+    async with pg_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE team_applications SET expires_at = now() - "
+            "interval '1 hour' WHERE application_id = $1",
+            app.application_id)
+    with pytest.raises(TeamStoreError) as ei:
+        await team_store.join_team(team.team_id, 3401, G,
+                                   via="application",
+                                   application_id=app.application_id)
+    assert ei.value.code == "application_invalid"
+    assert 3401 not in team_store.get(team.team_id).members
+
+
+@pytest.mark.asyncio
+async def test_mode_change_after_card_opened(pg_pool):
+    """Режим вступления сменился после открытия карточки →
+    устаревший via отклоняется."""
+    team = await team_store.create(
+        _team("Alpha2", 3500, join_mode=JOIN_APPLICATIONS))
+    app = await squad_store.create_application(G, team.team_id, 3501)
+    assert app is not None
+    # Капитан закрыл набор и сменил режим на closed
+    team.join_mode = JOIN_CLOSED
+    team.recruiting = False
+    await team_store.update_team(team)
+    with pytest.raises(TeamStoreError) as ei:
+        await team_store.join_team(team.team_id, 3501, G,
+                                   via="application",
+                                   application_id=app.application_id)
+    assert ei.value.code == "mode_changed"
+
+
+@pytest.mark.asyncio
+async def test_password_change_after_modal_opened(pg_pool):
+    """Пароль сменился после открытия модалки → старый пароль
+    не подходит."""
+    team = _team("Bravo2", 3600, join_mode=JOIN_PASSWORD,
+                 recruiting=True)
+    team.set_password("old-pass")
+    await team_store.create(team)
+    team = team_store.get(team.team_id)
+    team.set_password("new-pass")
+    await team_store.update_team(team)
+    with pytest.raises(TeamStoreError) as ei:
+        await team_store.join_team(team.team_id, 3601, G,
+                                   via="password",
+                                   password="old-pass")
+    assert ei.value.code == "bad_password"
+    joined = await team_store.join_team(
+        team.team_id, 3601, G, via="password", password="new-pass")
+    assert 3601 in joined.members
+
+
+@pytest.mark.asyncio
+async def test_failed_join_leaves_state_untouched(pg_pool):
+    """Ошибка между вступлением и подтверждением (здесь —
+    переполненная команда) → кэш и БД не меняются."""
+    team = await team_store.create(
+        _team("Charlie2", 3700, join_mode=JOIN_OPEN))
+    for uid in (3701, 3702, 3703):
+        await team_store.join_team(team.team_id, uid, G)
+    before = list(team_store.get(team.team_id).members)
+    with pytest.raises(TeamStoreError) as ei:
+        await team_store.join_team(team.team_id, 3704, G,
+                                   via="open")
+    assert ei.value.code == "team_full"
+    assert team_store.get(team.team_id).members == before
+    async with pg_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT members FROM teams WHERE team_id=$1",
+            team.team_id)
+        assert sorted(int(m) for m in row["members"]) == sorted(before)
+
+
+@pytest.mark.asyncio
+async def test_tournament_check_error_fails_closed(pg_pool,
+                                                    monkeypatch):
+    """Ошибка проверки активного турнира → операция запрещена
+    (fail-closed), а не разрешена."""
+    team = await team_store.create(
+        _team("Delta2", 3800, join_mode=JOIN_OPEN))
+    from storage.br_store import br_store
+
+    def _boom():
+        raise RuntimeError("br store down")
+    monkeypatch.setattr(br_store, "all", _boom)
+    with pytest.raises(TeamStoreError) as ei:
+        await team_store.join_team(team.team_id, 3801, G, via="open")
+    assert ei.value.code == "check_failed"
+    assert 3801 not in team_store.get(team.team_id).members
+
+
+@pytest.mark.asyncio
+async def test_cashcup_registration_blocks_join(pg_pool):
+    """Команда, заявленная в активный Cash Cup, не принимает
+    новых игроков (проверка на том же соединении, без вложенных
+    acquire)."""
+    from services.cashcup_store import cashcup_store
+    # _ready мог быть выставлен другим тестом против другого
+    # pgserver-кластера — сбрасываем, чтобы схема создалась
+    # в нашей тестовой БД.
+    cashcup_store._ready = False
+    await cashcup_store.ensure_schema()
+    team = await team_store.create(
+        _team("Echo2", 3900, join_mode=JOIN_OPEN))
+    tid = "cctest1"
+    import json as _json
+    state = {"status": "running", "teams": [
+        {"id": "ct1", "br_team_id": team.team_id,
+         "members": [{"discord_id": 3900}]}]}
+    async with pg_pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO cashcup_tournaments (id, guild_id, "
+            "channel_id, status, creator_id, state) VALUES "
+            "($1,$2,1,'running',$3,$4::jsonb)",
+            tid, G, 3900, _json.dumps(state))
+    try:
+        with pytest.raises(TeamStoreError) as ei:
+            await team_store.join_team(team.team_id, 3901, G,
+                                       via="open")
+        assert ei.value.code == "roster_locked"
+        # Выход обычного участника тоже заблокирован
+        async with pg_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE teams SET members = $2 WHERE team_id = $1",
+                team.team_id, [3900, 3901])
+        with pytest.raises(TeamStoreError) as ei2:
+            await team_store.leave_team(team.team_id, 3901)
+        assert ei2.value.code == "roster_locked"
+    finally:
+        async with pg_pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM cashcup_tournaments WHERE id=$1", tid)
+
+
+# ----------------------------------------------------------------------
+# P0.6 — массовый сброс
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_disband_many_atomic_and_fk(pg_pool):
+    """Массовый сброс: одна транзакция, FK invites/applications
+    обработаны, аудит записан, кэш очищен после COMMIT."""
+    teams = []
+    for i, name in enumerate(("MassA", "MassB")):
+        t = await team_store.create(
+            _team(name, 4000 + i, join_mode=JOIN_OPEN))
+        teams.append(t)
+        await squad_store.create_invite(G, t.team_id, 4000 + i,
+                                        4100 + i)
+        await squad_store.create_application(G, t.team_id, 4200 + i)
+    snaps = [{"team_id": t.team_id, "updated_at": t.updated_at,
+              "members": sorted(t.members)} for t in teams]
+    removed = await team_store.disband_many(G, snaps, 4999)
+    assert len(removed) == 2
+    for t in teams:
+        assert team_store.get(t.team_id) is None
+        async with pg_pool.acquire() as conn:
+            n_inv = await conn.fetchval(
+                "SELECT count(*) FROM team_invites WHERE team_id=$1",
+                t.team_id)
+            n_app = await conn.fetchval(
+                "SELECT count(*) FROM team_applications "
+                "WHERE team_id=$1", t.team_id)
+            assert n_inv == 0 and n_app == 0
+            n_audit = await conn.fetchval(
+                "SELECT count(*) FROM team_audit WHERE team_id=$1 "
+                "AND action='admin_mass_disband'", t.team_id)
+            assert n_audit == 1
+
+
+@pytest.mark.asyncio
+async def test_disband_many_rolls_back_on_change(pg_pool):
+    """Состав изменился после предпросмотра → вся транзакция
+    откатывается, НИ одна команда не удалена."""
+    t1 = await team_store.create(
+        _team("KeepA", 4300, join_mode=JOIN_OPEN))
+    t2 = await team_store.create(
+        _team("KeepB", 4301, join_mode=JOIN_OPEN))
+    snaps = [{"team_id": t1.team_id, "updated_at": t1.updated_at,
+              "members": sorted(t1.members)},
+             {"team_id": t2.team_id, "updated_at": "1999-01-01",
+              "members": sorted(t2.members)}]
+    with pytest.raises(TeamStoreError) as ei:
+        await team_store.disband_many(G, snaps, 4999)
+    assert ei.value.code == "list_changed"
+    # Обе команды на месте — откат полный
+    assert team_store.get(t1.team_id) is not None
+    assert team_store.get(t2.team_id) is not None
+    async with pg_pool.acquire() as conn:
+        n = await conn.fetchval(
+            "SELECT count(*) FROM teams WHERE team_id IN ($1,$2)",
+            t1.team_id, t2.team_id)
+        assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_disband_many_rejects_unknown_team(pg_pool):
+    """Снимок с несуществующей командой → отказ без удалений."""
+    t = await team_store.create(_team("Solo", 4400))
+    snaps = [{"team_id": t.team_id, "updated_at": t.updated_at,
+              "members": sorted(t.members)},
+             {"team_id": "ghost-team", "updated_at": "",
+              "members": []}]
+    with pytest.raises(TeamStoreError) as ei:
+        await team_store.disband_many(G, snaps, 4999)
+    assert ei.value.code == "list_changed"
+    assert team_store.get(t.team_id) is not None
+
+
+# ----------------------------------------------------------------------
+# P0.4 — guild-изоляция join
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_join_wrong_guild_rejected(pg_pool):
+    team = await team_store.create(
+        _team("Iso", 4500, join_mode=JOIN_OPEN))
+    with pytest.raises(TeamStoreError) as ei:
+        await team_store.join_team(team.team_id, 4501, G + 999,
+                                   via="open")
+    assert ei.value.code == "team_not_found"
+    assert team_store.get(team.team_id).members == [4500]
 
 
 # ----------------------------------------------------------------------

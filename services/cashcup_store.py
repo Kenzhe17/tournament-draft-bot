@@ -89,6 +89,22 @@ class CashCupStore:
             """, guild_id)
         return self._decode(row) if row else None
 
+    async def last_completed(self, guild_id: int) -> dict[str, Any] | None:
+        """Последний ЗАВЕРШЁННЫЙ реальный турнир (status='completed').
+
+        latest() может вернуть активный или отменённый турнир —
+        для «сброса команд прошлого Cash Cup» нужен именно
+        завершённый."""
+        await self.ensure_schema()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT * FROM cashcup_tournaments WHERE guild_id=$1
+                AND status='completed'
+                ORDER BY created_at DESC LIMIT 1
+            """, guild_id)
+        return self._decode(row) if row else None
+
     async def create(self, guild_id: int, channel_id: int, creator_id: int,
                      prize: str, pool: int | None = None,
                      prize1: int | None = None, currency: str = "KZT") -> dict[str, Any]:
