@@ -30,6 +30,7 @@ SRC_INVITE = "INVITE"
 SRC_BOOST = "BOOST"
 SRC_ADMIN = "ADMIN_ADJUSTMENT"
 SRC_SERVER_TAG = "SERVER_TAG"
+SRC_EVENT = "EVENT"  # Спонтанные события 2.0 (event_key = grant_key)
 
 
 @dataclass
