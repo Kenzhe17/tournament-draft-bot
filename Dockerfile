@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt -r control_center/requirement
 
 COPY bot.py config.py ./
 COPY cogs/ cogs/
+COPY games/ games/
 COPY services/ services/
 COPY models/ models/
 COPY storage/ storage/
@@ -37,6 +38,8 @@ COPY assets/ assets/
 COPY assets_ds_server/ assets_ds_server/
 COPY content/ content/
 COPY --from=panel-build /panel/dist panel/dist
+
+RUN python -c "from games.blackjack import start_blackjack"
 
 EXPOSE 8080
 
