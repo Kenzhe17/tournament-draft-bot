@@ -156,7 +156,9 @@ async def test_event_store_cooldown_persists(pg_pool):
     (читается из БД, не из памяти)."""
     store = es.event_store
     until = datetime.now(timezone.utc) + timedelta(minutes=15)
-    await store.mark_started(3, 300, until, "speed", "evt00020")
+    started = datetime.now(timezone.utc) - timedelta(seconds=5)
+    await store.mark_started(3, 300, until, "speed", "evt00020",
+                             started_at=started)
     assert await store.cooldown_active(3, 300) is True
     assert await store.last_event_type(3, 300) == "speed"
     # «Рестарт»: новый инстанс на той же БД видит кулдаун.
@@ -166,42 +168,74 @@ async def test_event_store_cooldown_persists(pg_pool):
     # pool; новый инстанс просто не имеет _ddl_done-кэша.
     assert await fresh.cooldown_active(3, 300) is True
     past = datetime.now(timezone.utc) - timedelta(seconds=1)
-    await store.mark_started(3, 301, past, "dice", "evt00021")
+    await store.mark_started(3, 301, past, "dice", "evt00021",
+                             started_at=datetime.now(timezone.utc))
     assert await store.cooldown_active(3, 301) is False
 
 
 @pytest.mark.asyncio
 async def test_ensure_channel_state_never_overwrites_newer(pg_pool):
-    """Guarded backfill: старое событие не перезаписывает
-    cooldown/last_type более нового; своё — может."""
+    """Guarded backfill: сравнение по last_event_started_at
+    (момент старта), а не cooldown_until — старое событие не
+    перезаписывает состояние более нового ДАЖЕ при другой
+    продолжительности cooldown; своё — может."""
     store = es.event_store
     now = datetime.now(timezone.utc)
-    new_until = now + timedelta(minutes=20)
-    old_until = now + timedelta(minutes=5)
-    # «Новое» событие уже записано штатным mark_started.
-    await store.mark_started(5, 500, new_until, "dice", "new01")
-    # Backfill СТАРОГО события — не должен ничего изменить.
+    new_start = now - timedelta(minutes=1)
+    old_start = now - timedelta(minutes=30)
+    # «Новое» событие: старт 1 мин назад, cooldown 5 мин.
+    await store.mark_started(
+        5, 500, now + timedelta(minutes=5), "dice", "new01",
+        started_at=new_start)
+    # Backfill СТАРОГО события (старт 30 мин назад) с БОЛЬШИМ
+    # cooldown_until (60 мин) — recency по started_at, не по
+    # until: не должен ничего изменить.
     await store.ensure_channel_state(
-        5, 500, old_until, "speed", "old01")
-    # Проверяем прямым SELECT.
+        5, 500, now + timedelta(minutes=60), "speed", "old01",
+        started_at=old_start)
     pool = await store._pool()
     async with pool.acquire() as conn:
         r = await conn.fetchrow(
-            "SELECT cooldown_until, last_event_type, last_event_id "
+            "SELECT cooldown_until, last_event_type, last_event_id,"
+            " last_event_started_at "
             "FROM event_channel_state "
             "WHERE guild_id=5 AND channel_id=500")
     assert str(r["last_event_id"]) == "new01"
     assert str(r["last_event_type"]) == "dice"
-    assert r["cooldown_until"] == new_until or \
-        abs((r["cooldown_until"] - new_until)
-            .total_seconds()) < 1
+    assert abs((r["cooldown_until"]
+                - (now + timedelta(minutes=5)))
+               .total_seconds()) < 2
     # Backfill того ЖЕ события — проходит (идемпотентен).
     await store.ensure_channel_state(
-        5, 500, new_until, "dice", "new01")
+        5, 500, now + timedelta(minutes=5), "dice", "new01",
+        started_at=new_start)
     # Пустой канал: INSERT создаёт запись.
     await store.ensure_channel_state(
-        5, 501, old_until, "raffle", "old02")
+        5, 501, old_start + timedelta(minutes=15), "raffle",
+        "old02", started_at=old_start)
     assert await store.last_event_type(5, 501) == "raffle"
+
+
+@pytest.mark.asyncio
+async def test_ensure_channel_state_newer_start_wins(pg_pool):
+    """Обратный случай: backfill события, стартовавшего ПОЗЖЕ
+    записанного, обновляет состояние (даже при меньшем
+    cooldown_until — cooldown мог уменьшиться в настройках)."""
+    store = es.event_store
+    now = datetime.now(timezone.utc)
+    # Сначала «старое» через backfill.
+    await store.ensure_channel_state(
+        6, 600, now + timedelta(minutes=60), "speed", "oldA",
+        started_at=now - timedelta(minutes=40))
+    # «Новое» событие стартовало позже, но cooldown короче —
+    # по started_at оно новее и обязано перезаписать.
+    await store.ensure_channel_state(
+        6, 600, now + timedelta(minutes=5), "dice", "newB",
+        started_at=now - timedelta(minutes=2))
+    assert await store.last_event_type(6, 600) == "dice"
+    state = await store.get_channel_state(6, 600)
+    assert str(state["last_event_id"]) == "newB"
+    assert await store.cooldown_active(6, 600) is True
 
 
 @pytest.mark.asyncio
@@ -281,6 +315,40 @@ async def test_finish_rejects_invalid_transitions(pg_pool):
     # settling → finished с outcome в result — разрешён.
     assert await store.finish("evt00060", "finished",
                               {"grant": "none"}) is not None
+
+
+@pytest.mark.asyncio
+async def test_patch_result_merges_only_finished(pg_pool):
+    """patch_result — jsonb || мёрж grant/rewards в result
+    завершённого события; settling/active не трогает."""
+    store = es.event_store
+    # active-событие: patch_result отклонён.
+    await store.create(
+        "evt00080", 9, 900, "speed",
+        {"type": "coins", "amount": 100, "item_id": None},
+        {}, _deadline())
+    assert await store.patch_result(
+        "evt00080", {"grant": "credited"}) is False
+    # finishing flow → patch_result мёржит, outcome сохраняется.
+    await store.settle("evt00080", {"winners": [1],
+                                    "reason": "x", "payout": 100,
+                                    "detail": ""})
+    await store.finish("evt00080", "finished",
+                       {"grant": "queued",
+                        "outcome": {"winners": [1]}})
+    assert await store.patch_result("evt00080", {
+        "grant": "credited",
+        "rewards": {"1": {"status": "credited",
+                          "mode": "comp:100"}}}) is True
+    row = await store.get("evt00080")
+    res = row["result"]
+    if isinstance(res, str):
+        import json as _j
+        res = _j.loads(res)
+    assert res["grant"] == "credited"
+    assert res["rewards"]["1"]["mode"] == "comp:100"
+    # outcome не перезаписан.
+    assert res["outcome"]["winners"] == [1]
 
 
 @pytest.mark.asyncio

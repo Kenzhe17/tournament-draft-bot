@@ -231,8 +231,10 @@ async def test_two_competing_finalizers_single_finish():
         await asyncio.gather(
             cog._settle_and_finish(s1, {"winners": [1]}, "t"),
             cog._settle_and_finish(s2, {"winners": [9]}, "t"))
-    s1.message.edit.assert_awaited_once()
-    s2.message.edit.assert_not_awaited()
+    # Кто именно выиграл гонку finish — недетерминировано;
+    # важно: правка карточки ровно одна, у победителя.
+    assert s1.message.edit.await_count + \
+        s2.message.edit.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -1007,6 +1009,45 @@ async def test_finish_backfills_cooldown_and_last_type():
     # cooldown_until ≈ started_ts + 900s
     assert abs(until.timestamp() - (start + 900)) < 2
     assert args[3] == "speed" and args[4] == s.event_id
+    # started_at — момент старта (recency-guard), не until.
+    started_at = mark.await_args.kwargs.get("started_at")
+    assert started_at is not None
+    assert abs(started_at.timestamp() - start) < 2
+
+
+@pytest.mark.asyncio
+async def test_channel_state_written_before_finish():
+    """Крэш между finish и channel_state: backfill
+    (ensure_channel_state) обязан выполниться ДО finish() —
+    иначе finished без кулдауна невосстановим."""
+    cog = _cog()
+    s = _session("speed", actions={"winner": 5},
+                 config={"started_ts": time.time() - 5,
+                         "cooldown_s": 900})
+    s.message = _msg()
+    cog._register_session(s)
+    order = []
+
+    async def _ensure(*a, **kw):
+        order.append("ensure")
+
+    async def _finish(*a, **kw):
+        order.append("finish")
+        return {"state": "finished"}
+
+    with patch.object(coin_drop.event_store, "finish",
+                      new=AsyncMock(side_effect=_finish)), \
+         patch.object(coin_drop.event_store,
+                      "ensure_channel_state",
+                      new=AsyncMock(side_effect=_ensure)), \
+         patch("cogs.coin_drop.grant_event_reward",
+               new=AsyncMock(return_value="credited")), \
+         patch.object(cog, "_edit_final_card",
+                      new=AsyncMock()), \
+         patch.object(coin_drop.event_store, "mark_card_edit",
+                      new=AsyncMock()):
+        await cog._finish_event(s, "first_click")
+    assert order == ["ensure", "finish"]
 
 
 @pytest.mark.asyncio
@@ -1228,8 +1269,17 @@ async def test_reward_card_sync_after_late_retry():
                   "guild_id": 1, "user_id": 5, "amount": 100,
                   "item_id": "sword", "status": "completed",
                   "result": "comp:100"}
+    persisted = {}
+
+    async def _patch(eid_, updates):
+        persisted["eid"] = eid_
+        persisted["updates"] = updates
+        return True
+
     with patch.object(coin_drop.event_store, "get",
                       new=AsyncMock(return_value=row)), \
+         patch.object(coin_drop.event_store, "patch_result",
+                      new=AsyncMock(side_effect=_patch)), \
          patch.object(coin_drop.event_reward_store, "get_many",
                       new=AsyncMock(return_value=[reward_row])), \
          patch.object(cog, "_edit_final_card",
@@ -1237,3 +1287,66 @@ async def test_reward_card_sync_after_late_retry():
         await cog._sync_reward_card(f"event:{eid}:5")
     assert edited["rewards"]["5"]["mode"] == "comp:100"
     assert edited["rewards"]["5"]["status"] == "credited"
+    # grant_status пересчитан по живым строкам: queued →
+    # credited, и актуальное состояние сохранено в result.
+    assert edited["grant"] == "credited"
+    assert persisted["updates"]["grant"] == "credited"
+    assert persisted["updates"]["rewards"]["5"]["mode"] \
+        == "comp:100"
+
+
+@pytest.mark.asyncio
+async def test_reward_card_sync_still_pending_stays_queued():
+    """Retry ещё не завершён (status=pending): карточка
+    продолжает показывать 'подтверждается', grant остаётся
+    queued — completed-статус не выдумывается."""
+    cog = _cog()
+    eid = "abcd1234"
+    row = {
+        "event_id": eid, "guild_id": 1, "channel_id": 200,
+        "game_type": "speed",
+        "prize": {"type": "coins", "amount": 100, "item_id": None},
+        "config": {"started_ts": time.time() - 100},
+        "actions": {"winner": 5},
+        "state": "finished",
+        "result": {"grant": "credited",
+                   "outcome": {"winners": [5], "reason": "x",
+                               "payout": 100, "detail": ""},
+                   "rewards": {"5": {"status": "credited",
+                                     "mode": "coins"}}},
+        "deadline_at": datetime.now(timezone.utc)
+        - timedelta(seconds=5),
+        "close_at": None, "message_id": 999,
+    }
+    edited = {}
+
+    async def _fake_edit(session, outcome, grant_status,
+                         rewards=None):
+        edited["grant"] = grant_status
+        edited["rewards"] = rewards
+
+    reward_row = {"grant_key": f"event:{eid}:5", "kind": "coins",
+                  "guild_id": 1, "user_id": 5, "amount": 100,
+                  "item_id": None, "status": "pending",
+                  "result": None}
+    persisted = {}
+
+    async def _patch(eid_, updates):
+        persisted["updates"] = updates
+        return True
+
+    with patch.object(coin_drop.event_store, "get",
+                      new=AsyncMock(return_value=row)), \
+         patch.object(coin_drop.event_store, "patch_result",
+                      new=AsyncMock(side_effect=_patch)), \
+         patch.object(coin_drop.event_reward_store, "get_many",
+                      new=AsyncMock(return_value=[reward_row])), \
+         patch.object(cog, "_edit_final_card",
+                      new=AsyncMock(side_effect=_fake_edit)):
+        await cog._sync_reward_card(f"event:{eid}:5")
+    # Хранимый grant='credited' УСТАРЕЛ — строка pending:
+    # пересчёт даёт queued, и это честно сохраняется.
+    assert edited["grant"] == "queued"
+    assert persisted["updates"]["grant"] == "queued"
+    assert persisted["updates"]["rewards"]["5"]["status"] \
+        == "pending"

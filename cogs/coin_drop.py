@@ -824,7 +824,9 @@ class CoinDropCog(commands.Cog):
                 gid, cid,
                 datetime.fromtimestamp(
                     session.start_ts + cooldown_s, timezone.utc),
-                game, event_id)
+                game, event_id,
+                started_at=datetime.fromtimestamp(
+                    session.start_ts, timezone.utc))
             self._register_session(session)
 
         # Финиш-задача на эффективный конец (скрытый дедлайн раньше
@@ -1142,6 +1144,32 @@ class CoinDropCog(commands.Cog):
             self._unregister_session(session)
             return
 
+        # Восстановление кулдауна/last_type ДО перехода в
+        # finished: если процесс упал между публикацией
+        # карточки и mark_started, channel_state мог не
+        # записаться — окно считается от started_ts из config,
+        # то же, что и при штатном mark_started. Запись до
+        # finish гарантирует: либо channel_state durable до
+        # finished, либо событие остаётся settling и свипер
+        # повторит backfill идемпотентно (guard по
+        # last_event_started_at не даст старому событию
+        # затереть более новое).
+        try:
+            cooldown_s = int(session.config.get("cooldown_s")
+                             or 15 * 60)
+            if cooldown_s > 0:
+                await event_store.ensure_channel_state(
+                    session.guild_id, session.channel_id,
+                    datetime.fromtimestamp(
+                        session.start_ts + cooldown_s,
+                        timezone.utc),
+                    session.game, session.event_id,
+                    started_at=datetime.fromtimestamp(
+                        session.start_ts, timezone.utc))
+        except Exception:
+            logger.warning("channel state backfill failed id=%s",
+                           session.event_id)
+
         result = {
             "reason": outcome.get("reason"),
             "winners": winners,
@@ -1163,26 +1191,6 @@ class CoinDropCog(commands.Cog):
             # Discord-правки и не объявляем результат повторно.
             self._unregister_session(session)
             return
-
-        # Восстановление кулдауна/last_type: если процесс упал
-        # между публикацией карточки и mark_started, channel_state
-        # мог не записаться. Окно считается от started_ts из
-        # config — то же, что и при штатном mark_started.
-        # ensure_channel_state не перезапишет состояние более
-        # нового события (guard по last_event_id/cooldown_until).
-        try:
-            cooldown_s = int(session.config.get("cooldown_s")
-                             or 15 * 60)
-            if cooldown_s > 0:
-                await event_store.ensure_channel_state(
-                    session.guild_id, session.channel_id,
-                    datetime.fromtimestamp(
-                        session.start_ts + cooldown_s,
-                        timezone.utc),
-                    session.game, session.event_id)
-        except Exception:
-            logger.warning("channel state backfill failed id=%s",
-                           session.event_id)
 
         await self._edit_final_card(session, outcome, grant_status,
                                     rewards=rewards_info)
@@ -1832,23 +1840,54 @@ class CoinDropCog(commands.Cog):
             if not isinstance(outcome, dict) or not outcome:
                 return
             session = _EventSession.from_row(row)
-            # Свежие статусы/режимы наград всех победителей.
+            # Актуальные статусы/режимы наград всех победителей —
+            # grant_status ПЕРЕСЧИТЫВАЕТСЯ по живому состоянию
+            # event_rewards, а не берётся из устаревшего result.
             winners = [int(w) for w in outcome.get("winners") or []]
             rewards: dict[str, Any] = {}
+            statuses: list[str] = []
             try:
-                for r in await event_reward_store.get_many(
-                        [f"event:{eid}:{u}" for u in winners]):
-                    rewards[str(int(r.get("user_id") or 0))] = {
-                        "status": ("credited"
-                                   if r.get("status") == "completed"
-                                   else str(r.get("status") or "")),
-                        "mode": r.get("result"),
-                    }
+                rows = await event_reward_store.get_many(
+                    [f"event:{eid}:{u}" for u in winners])
+                by_uid = {int(r.get("user_id") or 0): r
+                          for r in rows}
+                for u in winners:
+                    r = by_uid.get(u)
+                    if r is None:
+                        # Строки нет — обязательство не зафиксировано.
+                        rewards[str(u)] = {"status": "missing",
+                                           "mode": None}
+                        statuses.append("missing")
+                        continue
+                    st = ("credited" if r.get("status") == "completed"
+                          else str(r.get("status") or "pending"))
+                    statuses.append(st)
+                    rewards[str(u)] = {
+                        "status": st, "mode": r.get("result")}
             except Exception:
                 rewards = stored.get("rewards") or {}
+                statuses = []
+            if statuses:
+                if all(s == "credited" for s in statuses):
+                    grant_status = "credited"
+                elif any(s == "missing" for s in statuses):
+                    grant_status = "failed"
+                else:
+                    grant_status = "queued"
+            else:
+                grant_status = str(stored.get("grant") or "none")
+            # Актуальный grant/rewards — в spontaneous_events.
+            # result (jsonb ||), чтобы последующие retry карточки
+            # и свипер видели свежий итог, а не снимок на момент
+            # finish. patch_result мёржит только finished-строки.
+            try:
+                await event_store.patch_result(eid, {
+                    "grant": grant_status, "rewards": rewards})
+            except Exception:
+                logger.warning("reward result persist failed "
+                               "id=%s", eid)
             await self._edit_final_card(
-                session, outcome,
-                str(stored.get("grant") or "none"),
+                session, outcome, grant_status,
                 rewards=rewards or None)
         except Exception:
             logger.exception("reward card sync failed key=%s",

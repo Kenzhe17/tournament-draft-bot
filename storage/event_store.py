@@ -71,9 +71,18 @@ CREATE TABLE IF NOT EXISTS event_channel_state (
     cooldown_until TIMESTAMPTZ,
     last_event_type TEXT,
     last_event_id TEXT,
+    last_event_started_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (guild_id, channel_id)
 )
+"""
+# Аддитивная миграция для существующих таблиц: время старта
+# последнего события — recency-guard для backfill (сравниваем
+# МОМЕНТ старта, а не cooldown_until — продолжительность
+# кулдауна между событиями может отличаться).
+CHANNEL_ALTER_DDL = """
+ALTER TABLE event_channel_state
+ADD COLUMN IF NOT EXISTS last_event_started_at TIMESTAMPTZ
 """
 
 
@@ -95,6 +104,7 @@ class EventStore:
                 await conn.execute(DDL)
                 await conn.execute(INDEX_DDL)
                 await conn.execute(CHANNEL_DDL)
+                await conn.execute(CHANNEL_ALTER_DDL)
             finally:
                 await conn.execute("SELECT pg_advisory_unlock(727001)")
             self._ddl_done = True
@@ -339,6 +349,29 @@ class EventStore:
             )
             return dict(row) if row else None
 
+    async def patch_result(self, event_id: str,
+                           updates: dict[str, Any]) -> bool:
+        """Долить ключи в ``result`` завершённого события
+        (jsonb || — мёрж, не перезапись). Только для
+        ``state='finished'``: settling-результат с outcome
+        трогать нельзя, активный — тем более. True — применено."""
+        if not updates:
+            return True
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_ddl(conn)
+            res = await conn.execute(
+                """
+                UPDATE spontaneous_events
+                SET result = COALESCE(result, '{}'::jsonb)
+                             || $2::jsonb
+                WHERE event_id = $1 AND state = 'finished'
+                """,
+                event_id,
+                json.dumps(updates, ensure_ascii=False),
+            )
+            return res == "UPDATE 1"
+
     async def mark_card_edit(self, event_id: str,
                              status: str) -> None:
         """Отметить исход финального редактирования карточки
@@ -395,8 +428,12 @@ class EventStore:
 
     async def mark_started(self, guild_id: int, channel_id: int,
                            cooldown_until: datetime,
-                           event_type: str, event_id: str) -> None:
-        """Кулдаун отсчитывается от успешного СТАРТА события."""
+                           event_type: str, event_id: str,
+                           started_at: datetime | None = None
+                           ) -> None:
+        """Кулдаун отсчитывается от успешного СТАРТА события.
+        ``started_at`` — зафиксированный момент старта: recency-
+        guard для последующего backfill."""
         pool = await self._pool()
         async with pool.acquire() as conn:
             await self._ensure_ddl(conn)
@@ -404,30 +441,37 @@ class EventStore:
                 """
                 INSERT INTO event_channel_state
                     (guild_id, channel_id, cooldown_until,
-                     last_event_type, last_event_id, updated_at)
-                VALUES ($1, $2, $3, $4, $5, now())
+                     last_event_type, last_event_id,
+                     last_event_started_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, now())
                 ON CONFLICT (guild_id, channel_id) DO UPDATE SET
                     cooldown_until = EXCLUDED.cooldown_until,
                     last_event_type = EXCLUDED.last_event_type,
                     last_event_id = EXCLUDED.last_event_id,
+                    last_event_started_at =
+                        EXCLUDED.last_event_started_at,
                     updated_at = now()
                 """,
                 guild_id, channel_id, cooldown_until,
-                event_type, event_id,
+                event_type, event_id, started_at,
             )
 
     async def ensure_channel_state(self, guild_id: int,
                                    channel_id: int,
                                    cooldown_until: datetime,
-                                   event_type: str, event_id: str
+                                   event_type: str, event_id: str,
+                                   started_at: datetime | None = None
                                    ) -> None:
         """Долговечное восстановление channel_state (backfill).
 
         В отличие от mark_started — НЕ перезаписывает состояние
         более нового события: UPDATE применяется только если
-        записи нет, она уже указывает на это событие, или её
-        cooldown_until старше восстанавливаемого (т.е. событие
-        действительно новее). Старое событие не может затереть
+        записи нет, она уже указывает на это событие, или
+        зафиксированный ``last_event_started_at`` старше
+        восстанавливаемого (сравнение МОМЕНТА старта —
+        продолжительность cooldown между событиями может
+        отличаться, поэтому cooldown_until для recency не
+        подходит). Старое событие не может затереть
         cooldown/last_type свежего."""
         pool = await self._pool()
         async with pool.acquire() as conn:
@@ -436,22 +480,26 @@ class EventStore:
                 """
                 INSERT INTO event_channel_state
                     (guild_id, channel_id, cooldown_until,
-                     last_event_type, last_event_id, updated_at)
-                VALUES ($1, $2, $3, $4, $5, now())
+                     last_event_type, last_event_id,
+                     last_event_started_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, now())
                 ON CONFLICT (guild_id, channel_id) DO UPDATE SET
                     cooldown_until = EXCLUDED.cooldown_until,
                     last_event_type = EXCLUDED.last_event_type,
                     last_event_id = EXCLUDED.last_event_id,
+                    last_event_started_at =
+                        EXCLUDED.last_event_started_at,
                     updated_at = now()
                 WHERE event_channel_state.last_event_id IS NULL
                    OR event_channel_state.last_event_id
                       = EXCLUDED.last_event_id
-                   OR event_channel_state.cooldown_until IS NULL
-                   OR event_channel_state.cooldown_until
-                      < EXCLUDED.cooldown_until
+                   OR event_channel_state.last_event_started_at
+                      IS NULL
+                   OR event_channel_state.last_event_started_at
+                      < EXCLUDED.last_event_started_at
                 """,
                 guild_id, channel_id, cooldown_until,
-                event_type, event_id,
+                event_type, event_id, started_at,
             )
 
     async def cooldown_active(self, guild_id: int, channel_id: int,

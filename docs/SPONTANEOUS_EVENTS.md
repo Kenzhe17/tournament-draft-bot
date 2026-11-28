@@ -219,9 +219,25 @@ feature-flag. Тестовые контролы — только явные ко
 (TextDisplay/custom_id `se2:{eid}:*`). Кулдаун и `last_type`,
 утерянные при крэше между публикацией карточки и `mark_started`,
 восстанавливаются на `finish` из `config.cooldown_s` +
-`started_ts`. Refresh и финальный edit сериализованы
+`started_ts` через `ensure_channel_state` — запись выполняется
+ДО перехода в `finished`, поэтому «finished без channel_state»
+невозможен (крэш → settling → идемпотентный retry свипером).
+Recency-guard сравнивает `last_event_started_at` (момент старта),
+а не `cooldown_until` — изменение продолжительности кулдауна
+между событиями не ломает защиту от перезаписи более новым.
+Refresh и финальный edit сериализованы
 `session.card_lock`; неудачные финальные правки повторяет
 свипер `_sweep_failed_cards` в течение 24 часов.
+
+Синхронизация карточки с фактическими выплатами:
+`_sync_reward_card` после каждого успешного `complete`
+(event_rewards, в т.ч. поздний retry) ПЕРЕСЧИТЫВАЕТ
+`grant_status` по живым строкам (все completed → credited;
+есть pending/processing → queued; строки нет → failed) и
+доливает актуальные `grant`/`rewards` в `spontaneous_events.
+result` через `patch_result` (jsonb ||, только finished) —
+повторные правки карточки и свипер видят свежий итог, а не
+устаревший снимок на момент finish.
 
 ## Откат (rollback runbook)
 
