@@ -272,3 +272,38 @@ feature-flag. Тестовые контролы — только явные ко
   дедлайн 45с. Текущая сумма линейно растёт от `prize.start` к
   `prize.amount`; клейм до burn → победа с payout=текущая сумма;
   после burn → «сгорел», выплаты нет. Никаких ставок.
+
+## Staging-деплой (изолированный экземпляр)
+
+Staging = отдельный процесс бота с собственными `.env`, БД и
+токеном — production не затрагивается. Минимальный `.env.staging`:
+
+```
+DISCORD_TOKEN=<токен ТЕСТОВОГО бота — НЕ production>
+DATABASE_URL=<URL отдельной staging-БД PostgreSQL>
+GUILD_ID=<ID тестового сервера>
+ALLOWED_GUILD_IDS=<ID тестового сервера>
+BOT_OWNER_ID=<ID владельца для /forcedrop>
+```
+
+Запуск (из корня репо, отдельная data-директория):
+
+```
+docker compose -f docker-compose.yml --env-file .env.staging up -d --build
+# или локально: python -m bot   (с env из .env.staging, DATA_DIR=./data-staging)
+```
+
+Важно: `data/` содержит JSON-инвентарь и pending-файлы — для
+staging использовать ОТДЕЛЬНУЮ директорию (`./data-staging`),
+иначе тестовые выдачи предметов попадут в production-инвентарь.
+Миграции аддитивны и применяются автоматически при первом
+обращении к стору (`CREATE TABLE/INDEX IF NOT EXISTS`).
+
+Чеклист staging E2E: все 11 игр × 4 типа наград; живой рендер
+Components V2 (карточка, кнопки, модалки); ephemeral-приватность
+ответов; отсутствие спама в чат; кулдаун 15 мин; sliding-гейт
+(3 юзера/10 сообщений/4 на автора/2 активных за 60с); рестарт
+бота во время активного события и во время выплаты; `/forcedrop`
+от владельца и отказ посторонним; ключи `events.*` в Control
+Center; дубликат предмета → компенсация с суммой из
+`events.item_dup_compensation_coins`.
