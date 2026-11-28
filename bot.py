@@ -504,6 +504,18 @@ class TournamentBot(commands.Bot):
             view = self.build_view_for_tournament(tournament)
             self._register_view(view)
 
+        # BR турниры: persistent views публичных карточек (активные
+        # и архивные с итогами — для пагинации «По картам»).
+        try:
+            from storage.br_store import br_store
+            from views.br_view import BRCardView, sync_public_card
+            for brt in list(br_store.all()) + br_store.history():
+                self._register_view(BRCardView(brt.guild_id, brt.channel_id, brt))
+            for brt in br_store.all():
+                await sync_public_card(brt, self)
+        except Exception as exc:
+            logger.warning("BR views restore failed: %s", exc)
+
         # MM-матчи: persistent DynamicItem-шаблоны кнопок карточки
         # матча (K/D, победитель, статистика, отмена, правила).
         try:
