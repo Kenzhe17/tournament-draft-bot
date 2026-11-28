@@ -1,10 +1,42 @@
-"""Lucky Coins Event Module - Spontaneous coin drops in chat."""
+"""Спонтанные события 2.0 — Coin Drop cog.
+
+Двенадцать... ровно 11 игровых типов (services/event_games.py):
+speed, raffle, chests, quick_math, minority, dice, growing,
+word, last_click, guess_number, krokodil.
+
+Ключевые гарантии:
+- Активити-гейт: sliding 5-мин окно (services/activity_tracker.py),
+  оценка ТОЛЬКО на входящем сообщении; кулдаун 15 мин от успешного
+  старта персистентен в event_channel_state (переживает рестарт).
+- Одно активное событие на guild/channel — частичный UNIQUE-
+  индекс spontaneous_events; естественный триггер и /forcedrop
+  делят один атомарный claim.
+- Приз выбирается и фиксируется ДО публикации карточки
+  (services/event_rewards.py): coins/xp/rep/item.
+- Выплаты — event_rewards ledger (как drop_coin_rewards):
+  grant_key PK, lease+fencing, exactly-once через
+  add_balance_once / add_xp_once / award_rep_logged(event_key) /
+  инвентарь по item_id. Legacy drop_coin_rewards и pending-файл
+  продолжают обслуживаться тем же worker'ом.
+- Одна публичная карточка на событие; результаты — edit той же
+  карточки с убранными кнопками. Кнопки — persistent DynamicItem
+  ``se2:{event_id}:{action}`` (dispatch и после рестарта);
+  модалки пересоздаются в callback — состояние в PostgreSQL.
+- Дедлайны — серверное UTC время (deadline_at/close_at в БД +
+  time.time() на клиенте); скрытые дедлайны (burn, last_click)
+  не раскрываются в карточке.
+"""
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Set
+import re
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any
 
 import discord
 from utils.design import compose, smart_view
@@ -12,10 +44,14 @@ from utils.design import compose, smart_view
 from discord import app_commands
 from discord.ext import commands
 
-from config import get_emoji, BOT_OWNER_ID, NOTIFICATION_CHANNEL_ID
-from storage.user_balance_store import user_balance_store
+from config import get_emoji, BOT_OWNER_ID, NOTIFICATION_CHANNEL_ID, DATA_DIR
+from services import event_config, event_games, event_rewards
+from services.activity_tracker import ActivityGate
 from storage.drop_reward_store import drop_reward_store
-from storage.drop_pending_store import drop_pending_store
+from storage.drop_pending_store import DropPendingStore, drop_pending_store
+from storage.event_reward_store import event_reward_store
+from storage.event_store import event_store, _json_field
+from storage.user_balance_store import user_balance_store
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -30,16 +66,13 @@ def is_bot_owner():
     return app_commands.check(predicate)
 
 
-# Глобальный словарь для отслеживания количества сообщений по каналам: {channel_id: message_count}
-CHANNEL_MESSAGE_COUNTERS: dict[int, int] = {}
-
-# Глобальный словарь для отслеживания последнего ивента: {channel_id: last_event_time}
-LAST_EVENT_TIME: dict[int, datetime] = {}
-
-
 # ==========================================
-# Вспомогательные функции работы с БД
+# Legacy coin-drop grant path (drop_coin_rewards)
 # ==========================================
+# Сохранён для обратной совместимости: старые pending-обязательства
+# и возможные внешние вызовы. Новые события используют
+# event_reward_store/event_pending_store.
+
 
 async def add_balance(guild_id: int, user_id: int, amount: int) -> None:
     """Зачисление монет пользователю."""
@@ -51,11 +84,11 @@ async def add_balance(guild_id: int, user_id: int, amount: int) -> None:
 _DROP_BACKOFF_BASE = 30.0
 _DROP_BACKOFF_CAP = 1800.0
 _DROP_WORKER_INTERVAL = 15.0
+# Троттлинг перерисовки карточки «Растущий куш» и join-обновлений.
+_CARD_EDIT_MIN_INTERVAL = 4.0
 
 
 def _drop_backoff(attempts: int) -> float:
-    """Ограниченный экспоненциальный backoff: 30с, 60с, 120с, ...
-    максимум 30 минут. Без бесконечного быстрого повторения."""
     return min(_DROP_BACKOFF_BASE * (2 ** max(0, attempts - 1)),
                _DROP_BACKOFF_CAP)
 
@@ -63,42 +96,20 @@ def _drop_backoff(attempts: int) -> float:
 async def grant_drop_reward(cog, guild_id: int, user_id: int,
                             amount: int, grant_key: str,
                             kind: str) -> str:
-    """Фиксация победителя в надёжном хранилище + попытка выплаты.
+    """Legacy-протокол фиксации награды drop_coin_rewards.
 
-    Хранилища по приоритету:
-    1. drop_reward_store.record() — PostgreSQL (grant_key PK);
-    2. drop_pending_store.add() — атомарный JSON-файл, переживает
-       рестарт процесса (используется только при недоступности PG).
-
-    Награда НЕ считается зафиксированной, пока обязательство не
-    попало хотя бы в одно из них — «failed» означает, что
-    объявлять победителя нельзя.
-
-    Возвращает:
-      "credited" — монеты уже на балансе;
-      "queued"   — обязательство durable, worker доведёт до
-                   completed (включая случай, когда строку PG
-                   уже держит lease другого обработчика);
-      "other"    — grant_key уже принадлежит другому участнику
-                   (повторная фиксация с другим user_id);
-      "failed"   — зафиксировать не удалось нигде.
+    Возвращает "credited" | "queued" | "other" | "failed".
     """
     if amount <= 0:
         return "credited"
 
     async def _fixate() -> str:
-        # Протокол единственного владельца grant_key (внутри
-        # _grant_lock — сериализовано с worker drain):
-        # 1) СНАЧАЛА pending-файл: победитель, записанный туда
-        #    во время PG outage, имеет приоритет над новым
-        #    PG-обязательством — иначе B «перехватил» бы ключ.
         item = drop_pending_store.get(grant_key)
         if item is not None:
             owner = int(item.get("user_id") or -1)
             if owner != int(user_id):
                 return "other"
             return await cog._settle_pending_item(item)
-        # 2) PG — атомарная запись обязательства.
         try:
             row = await drop_reward_store.record(
                 grant_key, kind, guild_id, user_id, amount)
@@ -131,11 +142,8 @@ async def grant_drop_reward(cog, guild_id: int, user_id: int,
             return "other"
         if (row or {}).get("status") == "completed":
             return "credited"
-        # Единый claim-механизм: кнопка и worker не обрабатывают
-        # одну награду параллельно (lease + fencing по attempts).
         claimed = await drop_reward_store.claim_key(grant_key)
         if claimed is None:
-            # Строку уже держит worker — он доведёт начисление.
             return "queued"
         return ("credited" if await cog._process_drop_reward(claimed)
                 else "queued")
@@ -148,131 +156,386 @@ async def grant_drop_reward(cog, guild_id: int, user_id: int,
 
 
 # ==========================================
-# UI Компоненты Ивента
+# Новые события 2.0: pending-файл и грант-протокол
 # ==========================================
 
-# 1. Режим «На скорость» (Speed Drop)
-class SpeedDropView(discord.ui.View):
-    def __init__(self, reward_amount: int, event_id: str):
-        super().__init__(timeout=60.0)
-        self.reward_amount = reward_amount
-        self.event_id = event_id
-        self.claimed = False
+# Durable JSON-мост для event_rewards при недоступности PG —
+# тот же атомарный DropPendingStore, отдельный файл.
+event_pending_store = DropPendingStore(
+    DATA_DIR / "event_pending_rewards.json")
 
-    @discord.ui.button(
-        label="Забрать монеты!",
-        style=discord.ButtonStyle.green,
-        custom_id="speed_coin_drop_btn"  # Will be dynamically updated
-    )
-    async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Флаг занимаем ДО ответа: два быстрых клика не должны
-        # оба пройти проверку claimed и получить двойную выплату.
-        if self.claimed:
-            await interaction.response.send_message(
-                f" Кто-то оказался быстрее вас!",
-                ephemeral=True
-            )
-            return
 
-        # Defer — только ack «бот думает», победитель ещё НЕ
-        # объявлен: фиксация обязательства идёт после defer,
-        # иначе медленный PG даст Discord 10062.
-        await interaction.response.defer()
+async def grant_event_reward(cog, guild_id: int, user_id: int,
+                             prize: dict[str, Any], grant_key: str
+                             ) -> str:
+    """Фиксация победителя event-награды (все 4 типа).
 
-        # Сначала durable-фиксация победителя (PG → pending-файл):
-        # claimed НЕ потребляется и ивент не завершается, пока
-        # обязательство не сохранено в надёжном хранилище.
-        cog = interaction.client.get_cog("CoinDropCog")
-        result = await grant_drop_reward(
-            cog, interaction.guild_id, interaction.user.id,
-            self.reward_amount, f"speeddrop:{self.event_id}", "speed")
+    Протокол идентичен grant_drop_reward, но поверх
+    event_reward_store (kind=тип награды, item_id для item).
+    """
+    rtype = str(prize.get("type") or "")
+    amount = int(prize.get("amount") or 0)
+    item_id = prize.get("item_id")
 
-        if result == "other":
-            await interaction.followup.send(
-                "Награда по этому событию уже зафиксирована за "
-                "другим участником.", ephemeral=True)
-            return
-        if result == "failed":
-            # Ни PG, ни durable-файл не приняли обязательство —
-            # claimed не потреблён, ивент жив, клик можно повторить.
-            await interaction.followup.send(
-                "Временная ошибка сохранения — попробуйте забрать "
-                "награду ещё раз.", ephemeral=True)
-            return
-
-        # Зафиксировано — теперь занимаем claim (гонка двух кликов:
-        # второй увидит claimed и получит «кто-то быстрее»).
-        if self.claimed:
-            await interaction.followup.send(
-                " Кто-то оказался быстрее вас!", ephemeral=True)
-            return
-        self.claimed = True
-        self.stop()
-
-        result_embed = discord.Embed(
-            title=f"**ИВЕНТ ЗАВЕРШЁН | НАГРАДА ЗАБРАНА**",
-            description=(
-                f" **Счастливчик:** {interaction.user.mention}\n"
-                f" **Выигрыш:** **`{self.reward_amount:,}`** {get_emoji('money')}\n\n"
-                + ("*Монеты зачислены на ваш баланс. Проверить: `/balance`*"
-                   if result == "credited" else
-                   "*Зачисление подтверждается — при задержке монеты "
-                   "появятся автоматически, повторное начисление "
-                   "исключено.*")
-            ),
-            color=0x2ECC71
-        )
+    async def _fixate() -> str:
+        item = event_pending_store.get(grant_key)
+        if item is not None:
+            owner = int(item.get("user_id") or -1)
+            if owner != int(user_id):
+                return "other"
+            return await cog._settle_event_pending(item)
         try:
-            await interaction.edit_original_response(view=smart_view(await interaction.original_response(), None))
-            await interaction.followup.send( view=compose(result_embed))
-        except discord.HTTPException:
-            # Ответ Discord потерян — монеты уже зачислены
-            # идемпотентно, пользователь не пострадает.
-            logger.warning("speed drop notify failed user=%s",
-                           interaction.user.id)
+            row = await event_reward_store.record(
+                grant_key, rtype, guild_id, user_id,
+                amount=amount, item_id=item_id)
+        except Exception:
+            logger.critical(
+                "event reward PG record failed key=%s guild=%s "
+                "user=%s type=%s — durable pending file",
+                grant_key, guild_id, user_id, rtype)
+            try:
+                item = event_pending_store.add({
+                    "grant_key": grant_key, "kind": rtype,
+                    "guild_id": guild_id, "user_id": user_id,
+                    "amount": amount, "item_id": item_id,
+                })
+            except Exception:
+                logger.critical(
+                    "event reward fixation FAILED key=%s — ни PG, "
+                    "ни pending-файл недоступны", grant_key)
+                return "failed"
+            owner = int(item.get("user_id") or -1)
+            if owner != int(user_id):
+                return "other"
+            return await cog._settle_event_pending(item)
+        owner = int((row or {}).get("user_id") or -1)
+        if owner != int(user_id):
+            logger.warning(
+                "event reward grant_key %s уже принадлежит "
+                "user=%s — отклонён user=%s",
+                grant_key, owner, user_id)
+            return "other"
+        if (row or {}).get("status") == "completed":
+            return "credited"
+        claimed = await event_reward_store.claim_key(grant_key)
+        if claimed is None:
+            return "queued"
+        return ("credited" if await cog._process_event_reward(claimed)
+                else "queued")
 
-
-# 2. Режим «Розыгрыш / 60 секунд» (Raffle Drop)
-class RaffleDropView(discord.ui.View):
-    def __init__(self, reward_amount: int, event_id: str):
-        super().__init__(timeout=60.0)
-        self.reward_amount = reward_amount
-        self.event_id = event_id
-        self.participants: Set[int] = set()  # Store user IDs instead of User objects
-
-    def build_embed(self) -> discord.Embed:
-        return discord.Embed(
-            title=f"**СПОНТАННЫЙ ИВЕНТ | ЛОТЕРЕЯ МОНЕТ**",
-            description=(
-                f" В чате разыгрывается мешок с монетами!\n"
-                f" Награда: **`{self.reward_amount:,}`** {get_emoji('money')}\n"
-                f" Участников: **`{len(self.participants)}`**\n\n"
-                f" *Победитель решится случайно <t:{int(datetime.now().timestamp()) + 60}:R>*"
-            ),
-            color=0xF1C40F
-        )
-
-    @discord.ui.button(
-        label="Участвовать в розыгрыше",
-        style=discord.ButtonStyle.blurple,
-        custom_id="raffle_coin_drop_btn"  # Will be dynamically updated
-    )
-    async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-
-        if interaction.user.id in self.participants:
-            await interaction.followup.send(
-                f" Вы уже участвуете в этом розыгрыше!",
-                ephemeral=True
-            )
-            return
-
-        self.participants.add(interaction.user.id)
-        await interaction.edit_original_response( view=compose(self.build_embed(), self))
+    lock = getattr(cog, "_grant_lock", None)
+    if lock is not None:
+        async with lock:
+            return await _fixate()
+    return await _fixate()
 
 
 # ==========================================
-# Cog Модуль Автоматического Спавна
+# Сессия активного события
+# ==========================================
+
+class _EventSession:
+    """In-memory состояние активного события.
+
+    Источник истины — строка spontaneous_events (state/actions/
+    deadline); объект — рабочая копия для UI и обработчиков.
+    Все изменения actions проходят через session.lock и
+    event_store.patch_actions (jsonb ||) — рестарт не теряет ходы.
+    """
+
+    def __init__(self, row: dict[str, Any]):
+        self.event_id = str(row["event_id"])
+        self.guild_id = int(row["guild_id"])
+        self.channel_id = int(row["channel_id"])
+        self.game = str(row["game_type"])
+        self.prize = _json_field(row, "prize") or {}
+        self.config = _json_field(row, "config") or {}
+        self.actions = _json_field(row, "actions") or {}
+        self.message_id = row.get("message_id")
+        self.lock = asyncio.Lock()
+        self.finished = False
+        self.message: discord.Message | None = None
+        self.task: asyncio.Task | None = None
+        self.refresher: asyncio.Task | None = None
+        self.last_card_edit = 0.0
+
+    @property
+    def start_ts(self) -> float:
+        return float(self.config.get("started_ts")
+                     or self.config.get("start_ts") or 0.0)
+
+    @property
+    def deadline_ts(self) -> float:
+        return float(getattr(self, "_deadline_ts", 0.0))
+
+    @property
+    def end_ts(self) -> float:
+        """Эффективный конец события (min публичного и скрытого)."""
+        return float(getattr(self, "_end_ts", self.deadline_ts))
+
+    def set_deadlines(self, deadline_ts: float,
+                      close_ts: float | None) -> None:
+        self._deadline_ts = deadline_ts
+        ends = [deadline_ts]
+        if close_ts is not None:
+            ends.append(close_ts)
+        self._end_ts = min(ends)
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> "_EventSession":
+        s = cls(row)
+        dl = row.get("deadline_at")
+        dl_ts = dl.timestamp() if hasattr(dl, "timestamp") else 0.0
+        cl = row.get("close_at")
+        cl_ts = cl.timestamp() if hasattr(cl, "timestamp") else None
+        s.set_deadlines(dl_ts, cl_ts)
+        return s
+
+
+# ==========================================
+# UI: карточка события и persistent-кнопки
+# ==========================================
+
+T_SE2 = re.compile(
+    r"^se2:(?P<eid>[0-9a-f]{8}):(?P<rest>[a-z0-9_:]+)$")
+
+_MODAL_TITLES = {
+    "quick_math": "Быстрый счёт",
+    "word": "Перепутанное слово",
+    "guess_number": "Угадай число",
+    "krokodil": "Крокодил",
+}
+
+
+def _prize_line(prize: dict[str, Any], game: str = "") -> str:
+    rtype = prize.get("type")
+    if game == "growing":
+        return (f"**{event_rewards.prize_public_label(prize)}** "
+                f"{_PUBLIC_TYPE_LABEL.get(rtype, '')}".strip())
+    label = event_rewards.prize_public_label(prize)
+    suffix = _PUBLIC_TYPE_LABEL.get(rtype, "")
+    if rtype == "item":
+        return f"**{label}**"
+    return f"**{label}** {suffix}".strip()
+
+
+_PUBLIC_TYPE_LABEL = {
+    "coins": get_emoji("money"),
+    "xp": "✨ XP",
+    "rep": "🏆 REP",
+    "item": "",
+}
+
+
+def _game_instructions(game: str) -> str:
+    return {
+        "speed": "Нажмите кнопку как можно быстрее — кто первый, тот забрал приз.",
+        "raffle": "Нажмите «Участвовать» — победитель будет выбран случайно.",
+        "chests": "Выберите один из 5 сундуков. Победит случайный "
+                  "игрок, выбравший правильный.",
+        "quick_math": "Решите пример — ответьте через кнопку и модальное окно.",
+        "minority": "Тайно выберите красных или синих. Победит меньшая "
+                    "сторона (при равенстве — никто).",
+        "dice": "Бросьте кубик (1–100) — один бросок на игрока, "
+                "побеждает максимум.",
+        "growing": "Нажмите «Забрать куш» — сумма растёт, но куш может "
+                   "сгореть в любой момент.",
+        "word": "Угадайте слово по перемешанным буквам.",
+        "last_click": "Кликните кнопку — победит последний кликнувший "
+                      "перед скрытым дедлайном.",
+        "guess_number": "Угадайте число от 1 до 20 (одна попытка).",
+        "krokodil": "Угадайте слово по подсказке.",
+    }.get(game, "")
+
+
+def _actions_summary(game: str, actions: dict[str, Any]) -> dict[str, int]:
+    """Счётчики для публичной карточки (без раскрытия секретов)."""
+    out: dict[str, int] = {}
+    if game == "raffle":
+        out["participants"] = sum(
+            1 for k in actions if k.startswith("p:"))
+    elif game == "chests":
+        out["choices"] = sum(
+            1 for k in actions if k.startswith("choice:"))
+    elif game == "minority":
+        out["red"] = sum(1 for k, v in actions.items()
+                         if k.startswith("choice:") and v == "red")
+        out["blue"] = sum(1 for k, v in actions.items()
+                          if k.startswith("choice:") and v == "blue")
+    elif game == "dice":
+        out["rolls"] = sum(1 for k in actions if k.startswith("roll:"))
+    elif game == "last_click":
+        out["clicks"] = sum(1 for k in actions if k.startswith("click:"))
+    elif game == "growing":
+        out["claims"] = sum(1 for k in actions if k.startswith("claim:"))
+    return out
+
+
+def _build_card(session: _EventSession,
+                now: float | None = None) -> discord.Embed:
+    """Публичная карточка активного события. Секреты не раскрываются."""
+    game = session.game
+    cfg = session.config
+    prize = session.prize
+    title = f"**СПОНТАННЫЙ ИВЕНТ | {event_games.GAME_DEFS[game]['title'].upper()}**"
+    now = time.time() if now is None else now
+
+    if game == "growing":
+        dur = float(event_games.GAME_DEFS[game]["duration"])
+        elapsed = max(0.0, now - session.start_ts)
+        value = event_games.growing_value(prize, elapsed, dur)
+        prize_part = (f"**{value:,} → {int(prize.get('amount') or 0):,}** "
+                      f"{_PUBLIC_TYPE_LABEL.get(prize.get('type'), '')}")
+        desc = (
+            " В чате растёт куш! Сумма увеличивается с каждой секундой,\n"
+            " но в любой момент может **сгореть** — кто успеет нажать\n"
+            " «Забрать куш» первым, тот и забирает текущую сумму.\n\n"
+            f" Текущий куш: {prize_part}\n"
+        )
+    else:
+        desc = (
+            f" {event_games.GAME_DEFS[game]['title']}!\n\n"
+            f" {_game_instructions(game)}\n\n"
+            f" Приз: {_prize_line(prize, game)}\n"
+        )
+        riddle = event_games.scramble_display(game, cfg)
+        if riddle:
+            desc += f"\n {riddle}\n"
+        if game == "chests":
+            desc += "\n Выберите один из пяти сундуков ниже.\n"
+        if game != "last_click":
+            ts = int(session.deadline_ts)
+            desc += f"\n ⏱ Завершение <t:{ts}:R>"
+
+    summ = _actions_summary(game, session.actions)
+    if summ:
+        if game == "raffle":
+            desc += f"\n\n Участников: **{summ['participants']}**"
+        elif game == "chests":
+            desc += f"\n\n Выбрали сундук: **{summ['choices']}**"
+        elif game == "minority":
+            desc += (f"\n\n 🔴 {summ['red']}  —  🔵 {summ['blue']}")
+        elif game == "dice":
+            desc += f"\n\n Бросков: **{summ['rolls']}**"
+        elif game == "last_click":
+            desc += f"\n\n Кликов: **{summ['clicks']}**"
+        elif game == "growing":
+            desc += f"\n\n Клеймов: **{summ['claims']}**"
+
+    color = 0xF1C40F
+    if game == "growing":
+        color = 0xE67E22
+    return discord.Embed(title=title, description=desc, color=color)
+
+
+def _build_view(session: _EventSession) -> discord.ui.View:
+    """Кнопки карточки. custom_id ``se2:{eid}:{action}`` —
+    persistent dispatch через DynamicItem после рестарта."""
+    eid = session.event_id
+    view = discord.ui.View(timeout=None)
+    game = session.game
+
+    def _btn(label: str, style: discord.ButtonStyle, action: str,
+             emoji: str | None = None, row: int = 0):
+        btn = discord.ui.Button(
+            label=label, style=style, emoji=emoji,
+            custom_id=f"se2:{eid}:{action}", row=row)
+        # callback НЕ назначаем: диспетч идёт через persistent
+        # DynamicItem Se2Button — единый код-путь и после рестарта.
+        view.add_item(btn)
+
+    if game == "speed":
+        _btn("Забрать!", discord.ButtonStyle.green, "claim",
+             emoji="⚡")
+    elif game == "raffle":
+        _btn("Участвовать", discord.ButtonStyle.blurple, "join",
+             emoji="🎟️")
+    elif game == "chests":
+        n = int(event_games.GAME_DEFS[game].get("chests", 5))
+        for i in range(n):
+            _btn(f"Сундук {i + 1}", discord.ButtonStyle.secondary,
+                 f"chest:{i}", row=0)
+    elif game in ("quick_math", "word", "krokodil", "guess_number"):
+        _btn("Ответить", discord.ButtonStyle.primary, "answer",
+             emoji="✏️")
+    elif game == "minority":
+        _btn("За красных", discord.ButtonStyle.danger, "red",
+             emoji="🔴", row=0)
+        _btn("За синих", discord.ButtonStyle.primary, "blue",
+             emoji="🔵", row=0)
+    elif game == "dice":
+        _btn("Бросить кубик", discord.ButtonStyle.blurple, "roll",
+             emoji="🎲")
+    elif game == "growing":
+        _btn("Забрать куш", discord.ButtonStyle.green, "claim",
+             emoji="💰")
+    elif game == "last_click":
+        _btn("Кликнуть", discord.ButtonStyle.secondary, "click",
+             emoji="👆")
+    return view
+
+
+class EventAnswerModal(discord.ui.Modal):
+    """Модалка ответа для quick_math/word/guess_number/krokodil.
+
+    Живёт только в памяти процесса — после рестарта кнопка
+    «Ответить» просто пересоздаёт её; состояние в PostgreSQL.
+    """
+
+    def __init__(self, cog: "CoinDropCog", event_id: str,
+                 game: str):
+        super().__init__(title=_MODAL_TITLES.get(game, "Ответ"))
+        self.cog = cog
+        self.event_id = event_id
+        self.game = game
+        self.answer = discord.ui.TextInput(
+            label="Ваш ответ", required=True, max_length=100)
+        self.add_item(self.answer)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await self.cog.handle_modal_answer(
+            interaction, self.event_id, self.game,
+            str(self.answer.value))
+
+
+class Se2Button(discord.ui.DynamicItem[discord.ui.Button],
+                 template=T_SE2):
+    """Persistent-диспетчер кнопок ``se2:*`` — срабатывает и после
+    рестарта бота (сессия и действия восстанавливаются из PG)."""
+
+    def __init__(self, custom_id: str) -> None:
+        super().__init__(discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            label="…",
+            custom_id=custom_id,
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(str(interaction.data.get("custom_id")
+                       or item.custom_id))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        cog = interaction.client.get_cog("CoinDropCog")
+        if cog is None:
+            return
+        m = T_SE2.match(str(interaction.data.get("custom_id") or ""))
+        if not m:
+            return
+        # rest может содержать ':' (chest:3) — передаём целиком.
+        await cog.handle_button(interaction, m.group("rest"))
+
+
+class EventCardTemplateView(discord.ui.View):
+    """Регистрируется один раз в cog_load — dynamic-item шаблон."""
+
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+        self.add_item(Se2Button("se2:00000000:claim"))
+
+
+# ==========================================
+# Cog
 # ==========================================
 
 from cogs.groups import admin_group, bind_commands
@@ -283,12 +546,14 @@ class CoinDropCog(commands.Cog):
         self.bot = bot
         self._default_channel_id = NOTIFICATION_CHANNEL_ID
         self._drop_lock = asyncio.Lock()
-        # Сериализует ВСЕ операции фиксации владельца grant_key
-        # (PG record ↔ pending-файл ↔ drain) — иначе при
-        # восстановлении PG возможна гонка: B записывается в PG
-        # раньше, чем файл с победителем A перенесён в PG.
         self._grant_lock = asyncio.Lock()
+        self._sessions: dict[str, _EventSession] = {}
+        self._by_channel: dict[tuple[int, int], str] = {}
+        self._gate = ActivityGate()
         self._reward_task: asyncio.Task | None = None
+        self._rng = random.Random()
+
+    # ---------------------------------------------------------- helpers
 
     def _target_channel_id(self, guild) -> int:
         from services.discord_cfg import channel_id as _dc
@@ -296,190 +561,843 @@ class CoinDropCog(commands.Cog):
         return _dc(gid, "discord.notification_channel_id",
                    self._default_channel_id)
 
+    def _session_for(self, event_id: str) -> _EventSession | None:
+        return self._sessions.get(event_id)
+
+    def _active_for(self, guild_id: int,
+                    channel_id: int) -> _EventSession | None:
+        eid = self._by_channel.get((guild_id, channel_id))
+        if eid is None:
+            return None
+        s = self._sessions.get(eid)
+        if s is None or s.finished:
+            self._by_channel.pop((guild_id, channel_id), None)
+            self._sessions.pop(eid, None)
+            return None
+        return s
+
+    def _register_session(self, session: _EventSession) -> None:
+        self._sessions[session.event_id] = session
+        self._by_channel[(session.guild_id, session.channel_id)] = \
+            session.event_id
+
+    def _unregister_session(self, session: _EventSession) -> None:
+        self._sessions.pop(session.event_id, None)
+        if self._by_channel.get((session.guild_id,
+                                 session.channel_id)) == \
+                session.event_id:
+            self._by_channel.pop((session.guild_id,
+                                  session.channel_id), None)
+
+    # ---------------------------------------------------------- messages
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Игнорируем сообщения ботов и системные сообщения
-        if message.author.bot or not message.guild:
+        # Боты, вебхуки и системные сообщения не считаются.
+        if message.author.bot or message.webhook_id \
+                or not message.guild:
             return
-
-        # Проверяем нужный канал
+        if getattr(message, "type", None) != discord.MessageType.default:
+            return
+        # Команды (!...) не считаются.
+        if (message.content or "").startswith("!"):
+            return
         if message.channel.id != self._target_channel_id(message.guild):
             return
 
-        channel_id = message.channel.id
-
-        # Проверяем 30-минутный cooldown перед счётом
-        last_event = LAST_EVENT_TIME.get(channel_id)
-        if last_event:
-            time_since_last = datetime.now() - last_event
-            if time_since_last < timedelta(minutes=30):
-                return  # В кулдауне, не считаем сообщения
-
-        # Считаем сообщения
-        CHANNEL_MESSAGE_COUNTERS[channel_id] = CHANNEL_MESSAGE_COUNTERS.get(channel_id, 0) + 1
-
-        # Каждые 100 сообщений запускаем ивент
-        if CHANNEL_MESSAGE_COUNTERS[channel_id] >= 100:
-            CHANNEL_MESSAGE_COUNTERS[channel_id] = 0  # Сбрасываем счетчик
-            await self.trigger_drop(message.channel)
-
-    async def trigger_drop(self, channel: discord.TextChannel):
-        """Логика генерации случайного ивента (сумма 100-500, шанс 50/50)."""
-        # Check if coin drops are enabled: Control Center (PG) →
-        # legacy settings.json fallback внутри peek.
-        from services.settings_service import settings_service
-        if not settings_service.peek(channel.guild.id if channel.guild else None,
-                                      "feature.coin_drop_enabled"):
+        gid = message.guild.id
+        cid = message.channel.id
+        settings = event_config.event_settings(gid)
+        if not event_config.feature_enabled(gid):
             return
 
-        # Защита от параллельного запуска (естественный ивент + forcedrop).
+        # Обновить пороги гейта из настроек (дешёвые peek).
+        self._gate.window_s = settings.get(
+            "window_minutes", 5) * 60.0
+        self._gate.min_messages = int(settings.get("min_messages", 10))
+        self._gate.min_unique_users = int(
+            settings.get("min_unique_users", 3))
+        self._gate.max_per_author = int(
+            settings.get("max_per_author", 4))
+        self._gate.min_interval_s = float(
+            settings.get("min_message_interval_seconds", 10))
+        self._gate.min_active_authors = int(
+            settings.get("min_active_authors_60s", 2))
+
+        key = (gid, cid)
+        now = time.time()
+        # Сообщение учитывается ВСЕГДА (в т.ч. во время кулдауна и
+        # активного события) — гейт «тёплый» к моменту оценки.
+        self._gate.record(key, message.author.id,
+                          message.content or "", now)
+        if not self._gate.evaluate(key, now):
+            return
+        await self._try_start(message.channel, message.guild,
+                              settings, natural=True)
+
+    # ---------------------------------------------------------- start
+
+    async def _try_start(self, channel, guild, settings: dict,
+                         natural: bool,
+                         force_type: str | None = None) -> str:
+        """Атомарный запуск события. Возвращает статус-строку."""
+        gid = guild.id if guild else channel.guild.id
+        cid = channel.id
         async with self._drop_lock:
-            # Повторная проверка кулдауна под локом.
-            last_event = LAST_EVENT_TIME.get(channel.id)
-            if last_event and (datetime.now() - last_event) < timedelta(minutes=30):
-                return
+            if self._active_for(gid, cid) is not None:
+                return "active"
+            if natural:
+                # Кулдаун — persisted, от успешного старта.
+                if await event_store.cooldown_active(gid, cid):
+                    return "cooldown"
+            last_type = await event_store.last_event_type(gid, cid)
 
-            # Записываем время ивента до отправки — повторный триггер
-            # в окне отправки не создаст второй дроп.
-            LAST_EVENT_TIME[channel.id] = datetime.now()
+            games = event_games.enabled_games(
+                settings.get("disabled_types"),
+                settings.get("type_weights"))
+            if force_type:
+                games = [g for g in games if g == force_type]
+                if not games:
+                    return "disabled_type"
+            elif not games:
+                return "no_games"
 
-            reward = random.randint(100, 500)
-            is_speed_mode = random.choice([True, False])
+            rng = self._rng
+            chosen = None
+            prize = None
+            game = None
+            # До len(games) попыток: тип без возможности оплаты
+            # (item без каталога и т.п.) пропускается до публикации.
+            for _ in range(len(games)):
+                game = event_games.pick_game(
+                    games, settings.get("type_weights"), rng,
+                    last_type=last_type)
+                if game is None:
+                    break
+                prize = event_rewards.select_prize(
+                    gid, settings, game, rng)
+                if prize is not None:
+                    chosen = game
+                    break
+                games = [g for g in games if g != game]
+            if chosen is None or prize is None:
+                return "no_prize"
+            game = chosen
 
-            # Генерируем уникальный ID для ивента (чтобы избежать конфликтов кнопок)
-            event_id = str(datetime.now().timestamp())
+            cfg = event_games.make_config(game, prize, settings, rng)
+            start_ts = time.time()
+            cfg["started_ts"] = start_ts
+            deadline_ts = event_games.public_deadline(
+                game, cfg, start_ts)
+            close_ts = event_games.close_deadline(
+                game, cfg, start_ts, deadline_ts)
+            event_id = uuid.uuid4().hex[:8]
+            try:
+                row = await event_store.create(
+                    event_id, gid, cid, game, prize, cfg,
+                    datetime.fromtimestamp(deadline_ts, timezone.utc),
+                    (datetime.fromtimestamp(close_ts, timezone.utc)
+                     if close_ts else None))
+            except Exception:
+                logger.exception("event create failed guild=%s", gid)
+                return "db_error"
+            if row is None:
+                # UNIQUE-индекс: активное событие появилось в гонке.
+                return "active"
 
-        if is_speed_mode:
-            # === РЕЖИМ 1: НА СКОРОСТЬ ===
-            view = SpeedDropView(reward, event_id)
-            # Обновляем custom_id кнопки чтобы был уникальным
-            for item in view.children:
-                item.custom_id = f"speed_coin_drop_{event_id}"
-
-            embed = discord.Embed(
-                title=f"**СПОНТАННЫЙ ИВЕНТ | БЫСТРЫЕ МОНЕТЫ**",
-                description=(
-                    f" В чате обнаружен мешок с монетами!\n"
-                    f" Нажмите кнопку как можно быстрее — кто успеет первым, тот забрал куш.\n\n"
-                    f" Награда: **`{reward:,}`** {get_emoji('money')} | *Режим: На скорость*"
-                ),
-                color=0xF1C40F
-            )
-            await channel.send( view=compose(embed, view))
-
-        else:
-            # === РЕЖИМ 2: РОЗЫГРЫШ (60 СЕКУНД) ===
-            view = RaffleDropView(reward, event_id)
-            # Обновляем custom_id кнопки чтобы был уникальным
-            for item in view.children:
-                item.custom_id = f"raffle_coin_drop_{event_id}"
-
-            embed = view.build_embed()
-            msg = await channel.send( view=compose(embed, view))
-
-            # Ожидание 60 секунд для сбора участников — в фоне,
-            # чтобы не держать обработчик сообщения.
-            self.bot.loop.create_task(
-                self._raffle_finish(msg, view, reward, channel))
-
-    async def _raffle_finish(self, msg: discord.Message, view: "RaffleDropView",
-                             reward: int, channel: discord.TextChannel) -> None:
-        """Финализация розыгрыша через 60 секунд (фоновая задача)."""
+        # Публикация карточки — вне лока (сетевой вызов).
+        session = _EventSession.from_row(row)
         try:
-            await asyncio.sleep(60.0)
-            if not view.participants:
-                no_p_embed = discord.Embed(
-                    title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | НИКОГО**",
-                    description=f" Никто не успел принять участие за 60 секунд. Мешок с {get_emoji('money')} сгорел!",
-                    color=0xED4245
-                )
+            msg = await channel.send(
+                view=compose(_build_card(session), _build_view(session)))
+        except Exception:
+            logger.exception("event card send failed id=%s", event_id)
+            try:
+                await event_store.finish(event_id, "cancelled",
+                                         {"reason": "send_failed"})
+            except Exception:
+                pass
+            return "send_failed"
+        session.message = msg
+        await event_store.set_message_id(event_id, msg.id)
+
+        async with self._drop_lock:
+            # Кулдаун и last_type — только после успешной публикации.
+            cooldown_s = int(settings.get("cooldown_minutes", 15)) * 60
+            await event_store.mark_started(
+                gid, cid,
+                datetime.now(timezone.utc) + timedelta(seconds=cooldown_s),
+                game, event_id)
+            self._register_session(session)
+
+        # Финиш-задача на эффективный конец (скрытый дедлайн раньше
+        # публичного — growing/last_click учитываются через close_at).
+        delay = max(0.0, session.end_ts - time.time())
+        session.task = asyncio.get_running_loop().create_task(
+            self._finish_at(session, delay))
+        if game == "growing":
+            session.refresher = asyncio.get_running_loop().create_task(
+                self._growing_refresher(session))
+        logger.info("event started id=%s guild=%s channel=%s game=%s "
+                    "prize=%s", event_id, gid, cid, game,
+                    prize.get("type"))
+        return "started"
+
+    # ---------------------------------------------------------- finish
+
+    async def _finish_at(self, session: _EventSession,
+                         delay: float) -> None:
+        try:
+            await asyncio.sleep(delay)
+            await self._finish_event(session, "timeout")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("event finish task failed id=%s",
+                             session.event_id)
+
+    async def _growing_refresher(self, session: _EventSession) -> None:
+        """Периодическая перерисовка растущего куша (троттлинг
+        _CARD_EDIT_MIN_INTERVAL — без per-second edits)."""
+        try:
+            while not session.finished:
+                await asyncio.sleep(_CARD_EDIT_MIN_INTERVAL)
+                if session.finished:
+                    break
+                await self._refresh_card(session, force=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("growing refresher failed id=%s",
+                             session.event_id)
+
+    async def _refresh_card(self, session: _EventSession,
+                            force: bool = False) -> None:
+        """Обновить публичную карточку (троттлинг)."""
+        now = time.time()
+        if not force and now - session.last_card_edit < \
+                _CARD_EDIT_MIN_INTERVAL:
+            return
+        msg = session.message
+        if msg is None and session.message_id:
+            try:
+                channel = await self._resolve_channel(session)
+                if channel is not None:
+                    msg = await channel.fetch_message(
+                        session.message_id)
+                    session.message = msg
+            except Exception:
+                msg = None
+        if msg is None:
+            return
+        session.last_card_edit = now
+        try:
+            await msg.edit(
+                view=compose(_build_card(session, now),
+                             _build_view(session)))
+        except discord.HTTPException:
+            logger.warning("event card refresh failed id=%s",
+                           session.event_id)
+
+    async def _resolve_channel(self, session: _EventSession):
+        guild = self.bot.get_guild(session.guild_id)
+        if guild is None:
+            try:
+                guild = await self.bot.fetch_guild(session.guild_id)
+            except Exception:
+                return None
+        channel = guild.get_channel(session.channel_id)
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(
+                    session.channel_id)
+            except Exception:
+                return None
+        return channel
+
+    async def _finish_event(self, session: _EventSession,
+                            reason: str, *, locked: bool = False) -> None:
+        """Единственный финализатор: outcome → durable grant →
+        finish() (атомарно) → edit карточки.
+
+        Идемпотентно: повторный вызов (overdue-sweeper после
+        рестарта) видит state != active и завершается; grant_key
+        защищает от двойной выплаты.
+
+        locked=True — вызывающий уже держит session.lock
+        (asyncio.Lock не реентерабелен).
+        """
+        if locked:
+            await self._finish_event_inner(session, reason)
+            return
+        async with session.lock:
+            await self._finish_event_inner(session, reason)
+
+    async def _finish_event_inner(self, session: _EventSession,
+                                  reason: str) -> None:
+        if session.finished:
+            return
+        session.finished = True
+        current = asyncio.current_task()
+        for t in (session.task, session.refresher):
+            # Не отменяем саму себя: _finish_event часто
+            # вызывается ИЗ finish-задачи.
+            if t is not None and t is not current:
+                t.cancel()
+        now = time.time()
+        outcome = event_games.compute_outcome(
+            session.game, session.config, session.actions,
+            session.prize, now)
+        winners = [int(w) for w in outcome.get("winners") or []]
+
+        grant_status = "none"
+        if winners:
+            # Фиксация обязательства ДО закрытия события:
+            # crash между grant и finish → sweeper доведёт
+            # (grant_key идемпотентен).
+            prize = dict(session.prize)
+            if outcome.get("payout") is not None:
+                prize["amount"] = int(outcome["payout"])
+            results = []
+            try:
+                for uid in winners:
+                    res = await grant_event_reward(
+                        self, session.guild_id, uid, prize,
+                        f"event:{session.event_id}:{uid}")
+                    results.append(res)
+            except Exception:
+                logger.exception(
+                    "event grant raised id=%s", session.event_id)
+                results.append("failed")
+            if any(r in ("failed", "other") for r in results):
+                grant_status = "failed"
+            elif all(r == "credited" for r in results):
+                grant_status = "credited"
+            else:
+                grant_status = "queued"
+        else:
+            prize = session.prize
+
+        result = {
+            "reason": outcome.get("reason"),
+            "winners": winners,
+            "payout": outcome.get("payout"),
+            "detail": outcome.get("detail"),
+            "grant": grant_status,
+            "finished_ts": now,
+        }
+        try:
+            closed = await event_store.finish(
+                session.event_id, "finished", result)
+        except Exception:
+            logger.exception("event finish DB failed id=%s",
+                             session.event_id)
+            closed = None
+        if closed is None:
+            # Другой процесс уже закрыл событие — не дублируем
+            # Discord-правки и не объявляем результат повторно.
+            self._unregister_session(session)
+            return
+
+        await self._edit_final_card(session, outcome, grant_status)
+        self._unregister_session(session)
+        logger.info("event finished id=%s game=%s reason=%s "
+                    "winners=%s grant=%s",
+                    session.event_id, session.game,
+                    outcome.get("reason"), winners, grant_status)
+
+    async def _edit_final_card(self, session: _EventSession,
+                               outcome: dict[str, Any],
+                               grant_status: str) -> None:
+        """Edit исходной карточки: финальный результат, кнопки
+        убраны. Чужие сообщения не трогаем — только message_id
+        события."""
+        msg = session.message
+        if msg is None and session.message_id:
+            try:
+                channel = await self._resolve_channel(session)
+                if channel is not None:
+                    msg = await channel.fetch_message(
+                        session.message_id)
+                    session.message = msg
+            except Exception:
+                msg = None
+        if msg is None:
+            logger.warning("event card missing id=%s", session.event_id)
+            return
+
+        game = session.game
+        prize = session.prize
+        winners = [int(w) for w in outcome.get("winners") or []]
+        reason = str(outcome.get("reason") or "")
+
+        if winners:
+            title = (f"**ИВЕНТ ЗАВЕРШЁН | "
+                     f"{event_games.GAME_DEFS[game]['title'].upper()}**")
+            mentions = " ".join(f"<@{u}>" for u in winners)
+            if grant_status == "failed":
+                prize_txt = ("⛔ Награда не зафиксирована — "
+                             "обратитесь к администратору.")
+            else:
+                if session.game == "growing" and \
+                        outcome.get("payout") is not None:
+                    rtype = prize.get("type")
+                    prize_txt = (f"**{int(outcome['payout']):,}** "
+                                 f"{_PUBLIC_TYPE_LABEL.get(rtype, '')}")
+                elif prize.get("type") == "item":
+                    prize_txt = (f"**{prize.get('item_name') or 'предмет'}"
+                                 f"** — добавлен в инвентарь")
+                else:
+                    prize_txt = _prize_line(prize, game)
+                if grant_status == "queued":
+                    prize_txt += ("\n*Зачисление подтверждается — "
+                                  "повторное начисление исключено.*")
+                elif prize.get("type") == "coins":
+                    prize_txt += "\n*Проверить баланс: `/balance`*"
+            detail = outcome.get("detail") or ""
+            desc = (
+                f" **Победитель:** {mentions}\n"
+                f" **Приз:** {prize_txt}\n"
+            )
+            if detail:
+                desc += f" _{detail}_\n"
+        else:
+            if reason == "tie":
+                title = "**ИВЕНТ ЗАВЕРШЁН | НИЧЬЯ**"
+            elif reason == "burned":
+                title = "**ИВЕНТ ЗАВЕРШЁН | КУШ СГОРЕЛ**"
+            elif reason == "no_correct":
+                title = "**ИВЕНТ ЗАВЕРШЁН | НИКТО НЕ УГАДАЛ**"
+            else:
+                title = "**ИВЕНТ ЗАВЕРШЁН | БЕЗ ПОБЕДИТЕЛЯ**"
+            detail = outcome.get("detail") or reason
+            desc = (f" {event_games.GAME_DEFS[game]['title']}: "
+                    f"победителя нет.\n")
+            if detail:
+                desc += f" _{detail}_\n"
+            if session.game == "growing":
+                desc += " Куш сгорел — приз не был выплачен."
+
+        embed = discord.Embed(title=title, description=desc,
+                              color=0x2ECC71 if winners else 0xED4245)
+        try:
+            await msg.edit(
+                view=compose(embed, None),
+                allowed_mentions=discord.AllowedMentions(
+                    users=True, roles=False, everyone=False))
+        except discord.HTTPException:
+            logger.warning("event final edit failed id=%s",
+                           session.event_id)
+
+    # ---------------------------------------------------------- buttons
+
+    async def handle_button(self, interaction: discord.Interaction,
+                            action: str) -> None:
+        """Обработчик persistent-кнопки ``se2:*``."""
+        m = T_SE2.match(str(interaction.data.get("custom_id") or ""))
+        if not m:
+            return
+        event_id = m.group("eid")
+        session = self._session_for(event_id)
+        if session is None:
+            # Возможно, рестарт: восстанавливаем из БД.
+            row = await event_store.get(event_id)
+            if row is None or row.get("state") != "active":
+                await interaction.response.send_message(
+                    "Событие уже завершено.", ephemeral=True)
+                return
+            session = _EventSession.from_row(row)
+            self._register_session(session)
+            delay = max(0.0, session.end_ts - time.time())
+            if delay <= 0:
+                asyncio.get_running_loop().create_task(
+                    self._finish_event(session, "timeout"))
+            else:
+                session.task = asyncio.get_running_loop().create_task(
+                    self._finish_at(session, delay))
+            if session.game == "growing":
+                session.refresher = asyncio.get_running_loop() \
+                    .create_task(self._growing_refresher(session))
+
+        if interaction.user.bot:
+            return
+        now = time.time()
+        async with session.lock:
+            if session.finished or now >= session.end_ts:
+                await interaction.response.send_message(
+                    "Время события истекло.", ephemeral=True)
+                return
+            # Действия, открывающие модалку, не defer'ятся.
+            if action == "answer":
+                if self._modal_game(session.game) is None:
+                    await interaction.response.send_message(
+                        "Это действие недоступно.", ephemeral=True)
+                    return
+                await interaction.response.send_modal(
+                    EventAnswerModal(self, session.event_id,
+                                     session.game))
+                return
+            await interaction.response.defer(ephemeral=True)
+            await self._apply_action(session, interaction, action)
+
+    @staticmethod
+    def _modal_game(game: str) -> str | None:
+        return game if game in _MODAL_TITLES else None
+
+    async def _apply_action(self, session: _EventSession,
+                            interaction: discord.Interaction,
+                            action: str) -> None:
+        """Применить действие под session.lock (defer уже сделан)."""
+        game = session.game
+        uid = interaction.user.id
+        now = time.time()
+        actions = session.actions
+        eid = session.event_id
+
+        async def _persist(patch: dict[str, Any]) -> bool:
+            try:
+                await event_store.patch_actions(eid, patch)
+            except Exception:
+                logger.warning("patch_actions failed id=%s", eid)
+                return False
+            actions.update(patch)
+            return True
+
+        async def _ack(text: str) -> None:
+            try:
+                await interaction.followup.send(text, ephemeral=True)
+            except Exception:
+                pass
+
+        async def _deny(text: str) -> None:
+            await _ack(text)
+
+        if game == "speed" and action == "claim":
+            if "winner" in actions:
+                await _deny("Кто-то уже успел первым!")
+                return
+            if not await _persist({"winner": uid}):
+                await _deny("Временная ошибка — попробуйте ещё раз.")
+                return
+            await self._finish_event(session, "first_click",
+                                     locked=True)
+            await _ack("Вы первый! Результат — в карточке события.")
+            return
+
+        if game == "raffle" and action == "join":
+            key = f"p:{uid}"
+            if key in actions:
+                await _deny("Вы уже участвуете в розыгрыше!")
+                return
+            await _persist({key: 1})
+            await _ack("Вы в игре! Победителя выберут случайно.")
+            await self._refresh_card(session)
+            return
+
+        if game == "chests" and action.startswith("chest:"):
+            try:
+                idx = int(action.split(":", 1)[1])
+            except (ValueError, IndexError):
+                await _deny("Некорректный сундук.")
+                return
+            n = int(event_games.GAME_DEFS[game].get("chests", 5))
+            if not (0 <= idx < n):
+                await _deny("Некорректный сундук.")
+                return
+            ckey = f"choice:{uid}"
+            if ckey in actions:
+                await _deny("Вы уже сделали выбор — он не меняется.")
+                return
+            await _persist({ckey: idx})
+            await _ack(f"Вы выбрали сундук **{idx + 1}**. "
+                       "Удачи!")
+            await self._refresh_card(session)
+            return
+
+        if game == "minority" and action in ("red", "blue"):
+            # Перевыбор разрешён до дедлайна (последний выбор важен).
+            await _persist({f"choice:{uid}": action})
+            side = "красных" if action == "red" else "синих"
+            await _ack(f"Вы за {side}. Выбор можно изменить до конца.")
+            await self._refresh_card(session)
+            return
+
+        if game == "dice" and action == "roll":
+            rkey = f"roll:{uid}"
+            if rkey in actions:
+                await _deny(f"Ваш бросок уже сделан: "
+                            f"**{int(actions[rkey])}**")
+                return
+            value = self._rng.randint(1, 100)
+            await _persist({rkey: value})
+            await _ack(f"Ваш бросок: **{value}**. Один бросок на игрока.")
+            await self._refresh_card(session)
+            return
+
+        if game == "growing" and action == "claim":
+            # Скрытый burn-дедлайн: клейм валиден только до него.
+            burn_ts = session.start_ts + float(
+                session.config.get("burn_after", 0.0))
+            if now >= burn_ts:
+                await _deny("Куш уже сгорел — поздно.")
+                return
+            ckey = f"claim:{uid}"
+            if any(k.startswith("claim:") for k in actions):
+                await _deny("Куш уже забран другим игроком!")
+                return
+            elapsed = max(0.0, now - session.start_ts)
+            if not await _persist({ckey: elapsed}):
+                await _deny("Временная ошибка — попробуйте ещё раз.")
+                return
+            await self._finish_event(session, "claimed",
+                                     locked=True)
+            await _ack("Вы успели забрать куш!")
+            return
+
+        if game == "last_click" and action == "click":
+            ckey = f"click:{uid}"
+            if ckey in actions:
+                await _deny("Вы уже кликали — один клик на игрока.")
+                return
+            await _persist({ckey: now})
+            await _ack("Клик засчитан! Победит последний кликнувший.")
+            await self._refresh_card(session)
+            return
+
+        await _deny("Неизвестное действие.")
+
+    async def handle_modal_answer(self, interaction: discord.Interaction,
+                                  event_id: str, game: str,
+                                  text: str) -> None:
+        """Ответ модалки: defer ephemeral → проверка → итог."""
+        session = self._session_for(event_id)
+        if session is None:
+            row = await event_store.get(event_id)
+            if row is None or row.get("state") != "active":
+                await interaction.response.send_message(
+                    "Событие уже завершено.", ephemeral=True)
+                return
+            session = _EventSession.from_row(row)
+            self._register_session(session)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            return
+        uid = interaction.user.id
+        now = time.time()
+        async with session.lock:
+            if session.finished or now >= session.end_ts:
+                await interaction.followup.send(
+                    "Время события истекло.", ephemeral=True)
+                return
+            actions = session.actions
+            cfg = session.config
+
+            async def _persist(patch):
                 try:
-                    await msg.edit(view=smart_view(msg, None))
-                    await msg.reply( view=compose(no_p_embed))
-                except discord.HTTPException:
+                    await event_store.patch_actions(
+                        session.event_id, patch)
+                except Exception:
+                    return False
+                actions.update(patch)
+                return True
+
+            async def _deny(msg):
+                try:
+                    await interaction.followup.send(msg, ephemeral=True)
+                except Exception:
                     pass
+
+            if "winner" in actions:
+                await _deny("Победитель уже найден — событие завершено.")
                 return
 
-            winner_id = random.choice(list(view.participants))
-            winner = channel.guild.get_member(winner_id)
-            if not winner:
-                # Если пользователь не найден, выбираем другого
-                view.participants.discard(winner_id)
-                if view.participants:
-                    winner_id = random.choice(list(view.participants))
-                    winner = channel.guild.get_member(winner_id)
-
-            if winner:
-                result = await grant_drop_reward(
-                    self, channel.guild.id, winner.id, reward,
-                    f"raffledrop:{view.event_id}", "raffle")
-                if result in ("failed", "other"):
-                    # Обязательство не зафиксировано durable —
-                    # НЕ объявляем победителя и НЕ обещаем выплату.
-                    # CRITICAL-лог содержит все данные для
-                    # ручного восстановления.
-                    logger.critical(
-                        "raffle winner NOT persisted event=%s "
-                        "winner=%s amount=%s result=%s",
-                        view.event_id, winner.id, reward, result)
-                    try:
-                        await msg.edit(view=smart_view(msg, None))
-                        await msg.reply(view=compose(discord.Embed(
-                            title="**ЛОТЕРЕЯ ОТМЕНЕНА | ТЕХНИЧЕСКАЯ ОШИБКА**",
-                            description=(
-                                "Розыгрыш не завершён: временная "
-                                "ошибка сохранения данных. Победитель "
-                                "не объявлен — обратитесь к "
-                                "администратору."),
-                            color=0xED4245)))
-                    except discord.HTTPException:
-                        pass
+            correct = False
+            if game == "quick_math":
+                accepted = cfg.get("accepted") or []
+                correct = event_games.answer_matches(text, accepted)
+            elif game == "guess_number":
+                gkey = f"guess:{uid}"
+                if gkey in actions:
+                    await _deny("Попытка уже использована — "
+                                "одна попытка на игрока.")
                     return
+                accepted = cfg.get("accepted") or []
+                correct = event_games.answer_matches(text, accepted)
+                # Одна попытка — фиксируем даже неверный ответ.
+                await _persist({gkey: 1})
+                if not correct:
+                    await _deny("Неверно — попытка использована.")
+                    return
+            elif game == "word":
+                accepted = cfg.get("accepted") or []
+                correct = event_games.answer_matches(text, accepted)
+            elif game == "krokodil":
+                accepted = cfg.get("accepted") or []
+                correct = event_games.answer_matches(text, accepted)
+            else:
+                await _deny("Это действие недоступно.")
+                return
 
-                result_embed = discord.Embed(
-                    title=f"**ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
-                    description=(
-                        f" **Победитель:** {winner.mention}\n"
-                        f" **Выигрыш:** **`{reward:,}`** {get_emoji('money')}\n"
-                        f" **Всего участников:** `{len(view.participants)}`\n\n"
-                        + ("*Монеты зачислены на ваш баланс. Проверить: `/balance`*"
-                           if result == "credited" else
-                           "*Зачисление подтверждается — при задержке монеты "
-                           "появятся автоматически.*")
-                    ),
-                    color=0x2ECC71
-                )
-                try:
-                    await msg.edit(view=smart_view(msg, None))
-                    await msg.reply( view=compose(result_embed))
-                except discord.HTTPException:
-                    pass
+            if not correct:
+                await _deny("Неверно — попробуйте ещё раз.")
+                return
+            if not await _persist({"winner": uid}):
+                await _deny("Временная ошибка — попробуйте ещё раз.")
+                return
+            await self._finish_event(session, "correct_answer",
+                                     locked=True)
+            await _deny("Верно! Вы победили — смотрите карточку.")
+
+    # ---------------------------------------------------------- recovery
+
+    async def _restore_sessions(self) -> None:
+        """Восстановление активных событий после рестарта:
+        сессии из БД, финиш-задачи по оставшемуся времени,
+        просроченные — финализируются сразу (без двойных выплат
+        благодаря grant_key и атомарному finish())."""
+        try:
+            rows = await event_store.list_active()
         except Exception:
-            import logging
-            logging.getLogger(__name__).exception("coin_drop raffle finish failed")
+            logger.exception("event restore: list_active failed")
+            return
+        now = time.time()
+        for row in rows:
+            try:
+                session = _EventSession.from_row(row)
+                self._register_session(session)
+                delay = session.end_ts - now
+                if delay <= 0:
+                    asyncio.get_running_loop().create_task(
+                        self._finish_event(session, "timeout"))
+                else:
+                    session.task = \
+                        asyncio.get_running_loop().create_task(
+                            self._finish_at(session, delay))
+                    if session.game == "growing":
+                        session.refresher = \
+                            asyncio.get_running_loop().create_task(
+                                self._growing_refresher(session))
+                logger.info("event restored id=%s game=%s "
+                            "ends_in=%.0fs", session.event_id,
+                            session.game, max(0.0, delay))
+            except Exception:
+                logger.exception("event restore failed row=%s",
+                                 (row or {}).get("event_id"))
 
-    # Админ-команда для принудительного вызова ивента
-    async def cog_load(self) -> None:
-        bind_commands(admin_group, self, ["forcedrop"])
-        # Восстановление долговременных наград: незавершённые
-        # обязательства из drop_coin_rewards подхватываются
-        # автоматически после рестарта/восстановления PG.
-        self._reward_task = asyncio.get_running_loop().create_task(
-            self._reward_worker())
+    # ---------------------------------------------------------- worker
 
-    async def cog_unload(self) -> None:
-        task = self._reward_task
-        self._reward_task = None
-        if task:
-            task.cancel()
+    async def _process_event_reward(self, row: dict) -> bool:
+        """Одна попытка начисления event-награды (все 4 типа).
+        Идемпотентно на уровне целевого хранилища."""
+        key = row["grant_key"]
+        attempts = int(row.get("attempts") or 0)
+        user_name = ""
+        try:
+            gid = int(row["guild_id"])
+            uid = int(row["user_id"])
+            guild = self.bot.get_guild(gid)
+            member = guild.get_member(uid) if guild else None
+            if member is not None:
+                user_name = member.display_name
+        except Exception:
+            pass
+        try:
+            await event_rewards.apply_reward(row, user_name=user_name)
+        except Exception as exc:
+            delay = _drop_backoff(attempts or 1)
+            try:
+                ok = await event_reward_store.retry(
+                    key, attempts, f"{type(exc).__name__}: {exc}",
+                    delay)
+                if not ok:
+                    logger.info(
+                        "event reward retry skipped — lease lost "
+                        "key=%s", key)
+            except Exception:
+                logger.critical(
+                    "event reward retry-mark failed key=%s — row "
+                    "stays processing until lease expiry", key)
+            logger.warning(
+                "event reward deferred key=%s attempts=%s next_in=%.0fs",
+                key, attempts, delay)
+            return False
+        try:
+            ok = await event_reward_store.complete(key, attempts)
+            if not ok:
+                logger.info(
+                    "event reward complete skipped — lease lost "
+                    "key=%s", key)
+        except Exception:
+            logger.exception(
+                "event reward complete failed key=%s", key)
+        logger.info("event reward credited key=%s user=%s kind=%s",
+                    key, row.get("user_id"), row.get("kind"))
+        return True
+
+    async def _settle_event_pending(self, item: dict) -> str:
+        """event pending-файл → PG record → claim → process."""
+        key = item["grant_key"]
+        prize = {"type": item.get("kind"),
+                 "amount": int(item.get("amount") or 0),
+                 "item_id": item.get("item_id")}
+        try:
+            row = await event_reward_store.record(
+                key, prize["type"], int(item["guild_id"]),
+                int(item["user_id"]), amount=prize["amount"],
+                item_id=prize["item_id"])
+        except Exception:
+            logger.warning("event reward still unpersisted key=%s",
+                           key)
+            return "queued"
+        event_pending_store.remove(key)
+        logger.info("event reward persisted from pending file key=%s",
+                    key)
+        owner = int((row or {}).get("user_id") or -1)
+        if owner != int(item["user_id"]):
+            return "other"
+        if (row or {}).get("status") == "completed":
+            return "credited"
+        claimed = await event_reward_store.claim_key(key)
+        if claimed is None:
+            return "queued"
+        return ("credited" if await self._process_event_reward(claimed)
+                else "queued")
+
+    async def _drain_event_pending(self) -> None:
+        for item in event_pending_store.all():
+            try:
+                async with self._grant_lock:
+                    await self._settle_event_pending(item)
+            except Exception:
+                logger.exception(
+                    "event pending drain failed key=%s",
+                    item.get("grant_key"))
+                return
+
+    async def _sweep_overdue(self) -> None:
+        """Закрыть активные события с истёкшим эффективным
+        дедлайном (страховка на случай потерянной finish-задачи)."""
+        try:
+            rows = await event_store.overdue()
+        except Exception:
+            logger.exception("event overdue sweep failed")
+            return
+        for row in rows:
+            try:
+                session = self._session_for(str(row["event_id"]))
+                if session is None:
+                    session = _EventSession.from_row(row)
+                    self._register_session(session)
+                await self._finish_event(session, "timeout")
+            except Exception:
+                logger.exception("overdue finalize failed id=%s",
+                                 (row or {}).get("event_id"))
+
+    # ---------------------------------------------------------- legacy
 
     async def _process_drop_reward(self, row: dict) -> bool:
-        """Одна попытка начисления по зафиксированному обязательству.
-        row — результат claim_key/claim_due: содержит attempts
-        текущего lease. complete/retry fencing'ятся по attempts —
-        устаревший worker не сможет перезаписать чужую обработку.
-        Идемпотентно: add_balance_once дедуплицирует по grant_key
-        даже при повторной обработке после потерянного ответа."""
+        """Legacy: начисление монет drop_coin_rewards."""
         key = row["grant_key"]
         attempts = int(row.get("attempts") or 0)
         try:
@@ -513,9 +1431,6 @@ class CoinDropCog(commands.Cog):
                     "drop reward complete skipped — lease lost key=%s",
                     key)
         except Exception:
-            # Начисление закоммичено, но отметка потеряна:
-            # lease истечёт → worker повторит → add_balance_once
-            # вернёт существующий грант без двойного кредита.
             logger.exception(
                 "drop reward complete failed key=%s", key)
         logger.info("drop reward credited key=%s user=%s amount=%s",
@@ -523,9 +1438,6 @@ class CoinDropCog(commands.Cog):
         return True
 
     async def _settle_pending_item(self, item: dict) -> str:
-        """Pending-файл → PG record → claim → process.
-        При повторном сбое PG элемент остаётся в файле до
-        следующего тика worker (файл переживает рестарт)."""
         key = item["grant_key"]
         try:
             row = await drop_reward_store.record(
@@ -535,7 +1447,8 @@ class CoinDropCog(commands.Cog):
             logger.warning("drop reward still unpersisted key=%s", key)
             return "queued"
         drop_pending_store.remove(key)
-        logger.info("drop reward persisted from pending file key=%s", key)
+        logger.info("drop reward persisted from pending file key=%s",
+                    key)
         owner = int((row or {}).get("user_id") or -1)
         if owner != int(item["user_id"]):
             return "other"
@@ -548,13 +1461,6 @@ class CoinDropCog(commands.Cog):
                 else "queued")
 
     async def _drain_pending_file(self) -> None:
-        """Перенос обязательств из durable pending-файла в PG.
-        Каждый settle идёт под _grant_lock — той же сериализацией,
-        что и grant_drop_reward: файл проверяется ДО создания
-        нового PG-обязательства, поэтому победитель из файла
-        не может быть «перехвачен» при восстановлении PG.
-        Вызывается worker'ом каждые _DROP_WORKER_INTERVAL секунд
-        и после восстановления PostgreSQL."""
         for item in drop_pending_store.all():
             try:
                 async with self._grant_lock:
@@ -563,31 +1469,96 @@ class CoinDropCog(commands.Cog):
                 logger.exception(
                     "drop pending drain failed key=%s",
                     item.get("grant_key"))
-                # PG может лежать — остальные элементы подождут
-                # следующего тика.
                 return
 
     async def _reward_worker(self) -> None:
-        """Фоновый цикл восстановления наград. Тикает каждые
-        _DROP_WORKER_INTERVAL секунд; ошибки PG не роняют цикл —
-        backoff задаётся next_attempt_at на уровне строк."""
+        """Единый цикл: legacy drop-награды + event-награды +
+        закрытие просроченных событий. Тикает каждые
+        _DROP_WORKER_INTERVAL секунд; ошибки PG не роняют цикл."""
         while True:
             try:
                 await self._drain_pending_file()
                 for row in await drop_reward_store.claim_due(limit=10):
                     await self._process_drop_reward(row)
+                await self._drain_event_pending()
+                for row in await event_reward_store.claim_due(limit=10):
+                    await self._process_event_reward(row)
+                await self._sweep_overdue()
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception("drop reward worker tick failed")
+                logger.exception("reward worker tick failed")
             await asyncio.sleep(_DROP_WORKER_INTERVAL)
 
-    @admin_group.command(name="forcedrop", description="Принудительно запустить ивент 'Счастливые монеты' (Только владелец бота)")
+    # ---------------------------------------------------------- commands
+
+    async def cog_load(self) -> None:
+        bind_commands(admin_group, self, ["forcedrop"])
+        # Persistent DynamicItem-диспетчер кнопок se2:*.
+        try:
+            self.bot.add_view(EventCardTemplateView())
+        except Exception as exc:
+            logger.warning("event view registration failed: %s", exc)
+        self._reward_task = asyncio.get_running_loop().create_task(
+            self._reward_worker())
+        asyncio.get_running_loop().create_task(
+            self._restore_sessions())
+
+    async def cog_unload(self) -> None:
+        task = self._reward_task
+        self._reward_task = None
+        if task:
+            task.cancel()
+        for s in list(self._sessions.values()):
+            for t in (s.task, s.refresher):
+                if t is not None:
+                    t.cancel()
+        self._sessions.clear()
+        self._by_channel.clear()
+
+    async def trigger_drop(self, channel: discord.TextChannel,
+                           force_type: str | None = None) -> str:
+        """Ручной запуск (/forcedrop): обходит активити-гейт и
+        кулдаун, НО не обходит guard активного события и feature-
+        flag. Только для владельца — тестовый контроль."""
+        gid = channel.guild.id if channel.guild else None
+        if not event_config.feature_enabled(gid):
+            return "disabled"
+        settings = event_config.event_settings(gid)
+        return await self._try_start(channel, channel.guild, settings,
+                                     natural=False,
+                                     force_type=force_type)
+
+    @admin_group.command(
+        name="forcedrop",
+        description="Принудительно запустить спонтанное событие "
+                    "(только владелец бота; активное событие не "
+                    "обходит)")
+    @app_commands.describe(game_type="Тип события (пусто — случайный)")
+    @app_commands.choices(game_type=[
+        app_commands.Choice(name=g, value=g)
+        for g in event_games.GAME_ORDER])
     @is_bot_owner()
-    async def force_drop(self, interaction: discord.Interaction):
+    async def force_drop(self, interaction: discord.Interaction,
+                         game_type: str | None = None):
         await interaction.response.defer(ephemeral=True)
-        await self.trigger_drop(interaction.channel)
-        await interaction.followup.send(f" Ивент успешно вызван принудительно!", ephemeral=True)
+        status = await self.trigger_drop(interaction.channel,
+                                         force_type=game_type)
+        msgs = {
+            "started": "✅ Событие запущено!",
+            "active": "⛔ На канале уже идёт событие — дубликат "
+                      "не создан.",
+            "cooldown": "⏳ Кулдаун ещё активен.",
+            "disabled": "⛔ Спонтанные события выключены "
+                        "(feature.coin_drop_enabled).",
+            "disabled_type": "⛔ Указанный тип события отключён.",
+            "no_games": "⛔ Нет доступных типов событий.",
+            "no_prize": "⛔ Не удалось выбрать приз.",
+            "db_error": "⛔ Ошибка базы данных.",
+            "send_failed": "⛔ Не удалось отправить карточку.",
+        }
+        await interaction.followup.send(
+            msgs.get(status, f"Статус: {status}"), ephemeral=True)
 
 
 async def setup(bot: "TournamentBot"):

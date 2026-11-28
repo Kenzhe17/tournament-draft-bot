@@ -266,6 +266,88 @@ _reg(key="vac.decay_hours", type="int", default=24,
 
 
 # ------------------------------------------------------------------
+# Спонтанные события 2.0 (cogs/coin_drop.py) — активити-гейт,
+# кулдаун, веса типов/наград, границы призов, политика предметов.
+# scope=both: guild override → global default. Читается через
+# settings_service.peek на каждое сообщение — без рестарта.
+# ------------------------------------------------------------------
+
+_reg(key="events.cooldown_minutes", type="int", default=15,
+     module="events", scope="both", min=1, max=1440,
+     permission="settings.manage",
+     description="Кулдаун после успешного старта события (мин)")
+_reg(key="events.window_minutes", type="int", default=5,
+     module="events", scope="both", min=1, max=60,
+     permission="settings.manage",
+     description="Скользящее окно активности (мин)")
+_reg(key="events.min_unique_users", type="int", default=3,
+     module="events", scope="both", min=1, max=50,
+     permission="settings.manage",
+     description="Мин. уникальных авторов credited-сообщений в окне")
+_reg(key="events.min_messages", type="int", default=10,
+     module="events", scope="both", min=1, max=500,
+     permission="settings.manage",
+     description="Мин. credited-сообщений в окне")
+_reg(key="events.max_per_author", type="int", default=4,
+     module="events", scope="both", min=1, max=50,
+     permission="settings.manage",
+     description="Макс. credited-сообщений одного автора в окне")
+_reg(key="events.min_message_interval_seconds", type="int", default=10,
+     module="events", scope="both", min=0, max=600,
+     permission="settings.manage",
+     description="Мин. секунд между credited-сообщениями автора")
+_reg(key="events.min_active_authors_60s", type="int", default=2,
+     module="events", scope="both", min=1, max=50,
+     permission="settings.manage",
+     description="Мин. авторов с credited-сообщением за последние 60с")
+_reg(key="events.reward_weights", type="json",
+     default={"coins": 50, "xp": 30, "rep": 15, "item": 5},
+     module="events", scope="both", permission="settings.manage",
+     description="Веса типов наград (coins/xp/rep/item), %")
+_reg(key="events.type_weights", type="json", default={},
+     module="events", scope="both", permission="settings.manage",
+     description="Веса игровых типов ({} = равные), без немедленного повтора")
+_reg(key="events.disabled_types", type="json", default=[],
+     module="events", scope="both", permission="settings.manage",
+     description="Отключённые типы событий (JSON-массив)")
+_reg(key="events.coins_min", type="int", default=100,
+     module="events", scope="both", min=1, max=10**9,
+     permission="settings.manage",
+     description="Мин. монет в призе")
+_reg(key="events.coins_max", type="int", default=500,
+     module="events", scope="both", min=1, max=10**9,
+     permission="settings.manage",
+     description="Макс. монет в призе")
+_reg(key="events.xp_min", type="int", default=50,
+     module="events", scope="both", min=1, max=10**9,
+     permission="settings.manage",
+     description="Мин. XP в призе")
+_reg(key="events.xp_max", type="int", default=200,
+     module="events", scope="both", min=1, max=10**9,
+     permission="settings.manage",
+     description="Макс. XP в призе")
+_reg(key="events.rep_min", type="int", default=1,
+     module="events", scope="both", min=1, max=10**6,
+     permission="settings.manage",
+     description="Мин. REP в призе")
+_reg(key="events.rep_max", type="int", default=3,
+     module="events", scope="both", min=1, max=10**6,
+     permission="settings.manage",
+     description="Макс. REP в призе")
+_reg(key="events.item_exclude_categories", type="json",
+     default=["roles", "access", "privilege", "admin"],
+     module="events", scope="both", permission="settings.manage",
+     description="Категории магазина, исключённые из призов-итемов")
+_reg(key="events.growing_burn_min_seconds", type="int", default=15,
+     module="events", scope="both", min=1, max=300,
+     permission="settings.manage",
+     description="Мин. скрытый дедлайн сгорания «Растущего куша» (сек)")
+_reg(key="events.growing_burn_max_seconds", type="int", default=40,
+     module="events", scope="both", min=1, max=300,
+     permission="settings.manage",
+     description="Макс. скрытый дедлайн сгорания «Растущего куша» (сек)")
+
+# ------------------------------------------------------------------
 # Валидация значений по реестру.
 # ------------------------------------------------------------------
 

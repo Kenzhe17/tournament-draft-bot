@@ -10,6 +10,19 @@ from config import DATA_DIR  # noqa: E402 — единый путь из config
 from storage.json_atomic import atomic_write_json
 STATS_FILE = DATA_DIR / "player_stats.json"
 
+# Идемпотентные XP-гранты (Spontaneous Events 2.0): одна строка на
+# grant_key — атомарный маркер «XP уже начислен», в одной
+# транзакции с обновлением player_stats.xp/level.
+XP_GRANTS_DDL = """
+CREATE TABLE IF NOT EXISTS player_xp_grants (
+    grant_key TEXT PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    amount INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+"""
+
 
 class PlayerStatsStore:
     """Хранилище статистики игроков в PostgreSQL."""
@@ -106,6 +119,89 @@ class PlayerStatsStore:
         else:
             key = f"{guild_id}:{user_id}"
             return self._stats.get(key)
+
+    async def add_xp_once(
+        self,
+        guild_id: int,
+        user_id: int,
+        amount: int,
+        grant_key: str,
+        name: str = "",
+    ) -> dict:
+        """Идемпотентное начисление XP по grant_key (одна транзакция).
+
+        Маркер player_xp_grants вставляется ПЕРВЫМ: повторный вызов
+        с тем же ключом возвращает {"applied": False} без повторного
+        начисления. Уровни пересчитываются по правилам
+        PlayerStats.add_xp (xp — прогресс внутри уровня).
+        Только PostgreSQL — без durable-хранилища XP не начисляется.
+        """
+        if amount <= 0:
+            return {"applied": True, "duplicate": False, "amount": 0}
+        if not self._use_db:
+            raise RuntimeError("XP grants require PostgreSQL")
+        from storage.db import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(XP_GRANTS_DDL)
+                marker = await conn.fetchval(
+                    """
+                    INSERT INTO player_xp_grants
+                        (grant_key, guild_id, user_id, amount)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (grant_key) DO NOTHING
+                    RETURNING grant_key
+                    """,
+                    grant_key, guild_id, user_id, amount,
+                )
+                if marker is None:
+                    return {"applied": False, "duplicate": True}
+                row = await conn.fetchrow(
+                    "SELECT xp, level, name FROM player_stats "
+                    "WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+                    guild_id, user_id,
+                )
+                if row is None:
+                    await conn.execute(
+                        """
+                        INSERT INTO player_stats
+                            (guild_id, user_id, name, xp, level,
+                             xp_to_next_level)
+                        VALUES ($1, $2, $3, 0, 1, 250)
+                        ON CONFLICT (guild_id, user_id) DO NOTHING
+                        """,
+                        guild_id, user_id, name or "",
+                    )
+                    row = await conn.fetchrow(
+                        "SELECT xp, level, name FROM player_stats "
+                        "WHERE guild_id = $1 AND user_id = $2 "
+                        "FOR UPDATE",
+                        guild_id, user_id,
+                    )
+                xp = int((row or {}).get("xp") or 0)
+                level = int((row or {}).get("level") or 1)
+                xp_next = PlayerStats._calculate_xp_to_next_level(level)
+                xp += amount
+                levels_gained = 0
+                while xp >= xp_next:
+                    xp -= xp_next
+                    level += 1
+                    levels_gained += 1
+                    xp_next = PlayerStats._calculate_xp_to_next_level(level)
+                await conn.execute(
+                    """
+                    UPDATE player_stats
+                    SET xp = $3, level = $4, xp_to_next_level = $5
+                    WHERE guild_id = $1 AND user_id = $2
+                    """,
+                    guild_id, user_id, xp, level, xp_next,
+                )
+                return {
+                    "applied": True, "duplicate": False,
+                    "amount": amount, "level": level,
+                    "levels_gained": levels_gained, "xp": xp,
+                }
 
     async def get_many(
         self, guild_id: int, user_ids
