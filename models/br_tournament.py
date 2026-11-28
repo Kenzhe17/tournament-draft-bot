@@ -174,6 +174,7 @@ class BRTournament:
     results_history: list[dict] = field(default_factory=list)
     results_published: bool = False
     published_at: str = ""
+    games_finished_at: str = ""
     view_page: int = -1  # страница публичной карточки итогов (-1 = сводка)
     cancel_reason: str = ""
     cancelled_by: int = 0
@@ -266,8 +267,11 @@ class BRTournament:
         stats = team.get("stats") or {}
         entry = stats.get(self.get_stats_key(map_index))
         if entry is None:
-            # legacy-ключ по имени карты (только если карт ≤3 и без повторов)
-            entry = stats.get(self.get_map_name_for_index(map_index))
+            # legacy-ключ по имени карты — только если имя встречается
+            # в расписании один раз, иначе очки «переехали» бы на повтор.
+            name = self.get_map_name_for_index(map_index)
+            if self.get_map_sequence().count(name) == 1:
+                entry = stats.get(name)
         return normalize_entry(entry)
 
     # ---------- слоты ----------
@@ -664,7 +668,7 @@ class BRTournament:
             self.teams.append(slot)
 
     def begin_games(self) -> None:
-        """Переход из DRAFT к первой карте."""
+        """Переход из DRAFT к играм («Игры идут»)."""
         if self.phase == BRTournamentPhase.DRAFT:
             self.phase = BRTournamentPhase.PLAYING
             self._enter_first_map()
@@ -675,22 +679,49 @@ class BRTournament:
         if len(self.map_played) < self.map_count:
             self.map_played = (self.map_played + [False] * self.map_count)[: self.map_count]
 
-    def mark_map_played(self) -> bool:
-        """Отметить текущую карту сыгранной и перейти к следующей.
+    def finish_games(self) -> bool:
+        """PLAYING → COLLECT: «Все N карт сыграны».
 
-        Returns:
-            True если турнир перешёл к сбору результатов.
+        Единственный переход к приватному вводу результатов.
+        Идемпотентно: повторный вызов ничего не меняет.
         """
         if self.phase != BRTournamentPhase.PLAYING:
             return False
-        if 0 <= self.current_map_index < len(self.map_played):
-            self.map_played[self.current_map_index] = True
-        if self.current_map_index >= self.map_count - 1:
-            self.phase = BRTournamentPhase.COLLECT
-            return True
-        self.current_map_index += 1
-        self.current_map = self.current_map_name()
-        return False
+        self.phase = BRTournamentPhase.COLLECT
+        self.games_finished_at = datetime.now().isoformat()
+        return True
+
+    def schedule_lines(self) -> list[str]:
+        """Расписание карт для публичной карточки (1..N)."""
+        return [
+            f"{i + 1}. {MAP_NAMES_RU.get(m, m)}"
+            for i, m in enumerate(self.get_map_sequence())
+        ]
+
+    def room_credentials(self) -> dict[str, str] | None:
+        """Актуальные ID/пароль комнаты (одно на весь турнир)."""
+        data = self.room_data or {}
+        rid = str(data.get("id") or "").strip()
+        pwd = str(data.get("password") or "").strip()
+        if not rid or not pwd:
+            return None
+        return {"id": rid, "password": pwd}
+
+    def can_view_room(self, user_id: int) -> bool:
+        """Право видеть данные комнаты.
+
+        Участникам Solo/Duo/Random и всем членам Random-составов; в
+        Squad team — только капитанам готовых отрядов.
+        """
+        found = self.find_slot_by_user(user_id)
+        if not found:
+            return False
+        _idx, slot = found
+        if slot.get("pending_invitee_id"):
+            return False
+        if self.mode == "team" and self.format == BRFormat.SQUAD:
+            return slot.get("captain_id") == user_id
+        return True
 
     # ---------- результаты ----------
 
@@ -998,6 +1029,7 @@ class BRTournament:
             "results_history": self.results_history,
             "results_published": self.results_published,
             "published_at": self.published_at,
+            "games_finished_at": self.games_finished_at,
             "view_page": self.view_page,
             "cancel_reason": self.cancel_reason,
             "cancelled_by": self.cancelled_by,
@@ -1076,11 +1108,14 @@ class BRTournament:
                 "results_published",
                 phase in (BRTournamentPhase.RESULTS, BRTournamentPhase.COMPLETE))),
             published_at=data.get("published_at", ""),
+            games_finished_at=data.get("games_finished_at", ""),
             view_page=(int(data["view_page"]) if data.get("view_page") is not None else -1),
             cancel_reason=data.get("cancel_reason", ""),
             cancelled_by=data.get("cancelled_by", 0),
             is_test=bool(data.get("is_test", False)),
-            legacy_scoring=not has_new_schema,
+            # legacy_scoring сохраняем явно: после первого save в JSON
+            # появляется "format", и без поля флаг терялся бы при reload.
+            legacy_scoring=bool(data.get("legacy_scoring", not has_new_schema)),
             created_at=data.get("created_at", ""),
             team_rename_start_time=data.get("team_rename_start_time", ""),
             organizer_id=data.get("organizer_id", 0),

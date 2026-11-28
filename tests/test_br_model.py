@@ -84,13 +84,13 @@ class TestRegistration:
         ok, _ = t.draw()
         assert ok and len(t.teams) == 6
 
-    def test_solo_draw_goes_straight_to_map(self):
+    def test_solo_draw_goes_straight_to_games(self):
         t = make("solo")
         add_players(t, 12)
         ok, _ = t.draw()
         assert ok
         assert t.phase == BRTournamentPhase.PLAYING
-        assert t.current_map_index == 0 and t.current_map == "bermuda"
+        assert t.schedule_lines()[0] == "1. Бермуды"
 
     def test_duo_team_invite_flow(self):
         t = make("duo", "team")
@@ -154,19 +154,32 @@ class TestResults:
         t.draw()
         if t.phase == BRTournamentPhase.DRAFT:
             t.begin_games()
-        # сыграть все карты
-        for _ in range(maps):
-            t.mark_map_played()
+        # «Завершить игры» — единственный переход к вводу результатов
+        assert t.finish_games()
         assert t.phase == BRTournamentPhase.COLLECT
         return t
 
-    def test_input_blocked_before_last_map(self):
+    def test_input_blocked_until_games_finished(self):
         t = make("solo")
         add_players(t, 12)
         t.draw()
         assert t.phase == BRTournamentPhase.PLAYING
         ok, err = t.set_result_entry(0, 0, place=1, kills=5)
         assert not ok and "после последней карты" in err
+
+    def test_finish_games_idempotent_and_phase_bound(self):
+        t = self._played_tournament("squad", n_slots=5, maps=1)
+        # повторный вызов не меняет состояние
+        assert not t.finish_games()
+        assert t.phase == BRTournamentPhase.COLLECT
+        # из других фаз — тоже нет
+        t2 = make("squad", "random")
+        add_players(t2, 20)
+        t2.draw()
+        t2.begin_games()
+        assert t2.phase == BRTournamentPhase.PLAYING
+        assert t2.finish_games()
+        assert t2.phase == BRTournamentPhase.COLLECT
 
     def test_map_keys_by_index_not_name(self):
         t = self._played_tournament(maps=4)  # bermuda дважды
@@ -312,12 +325,77 @@ class TestLegacy:
         add_players(t, 10)
         t.draw()
         t.begin_games()
-        t.set_result_entry  # noqa
-        d = t.to_dict()
-        t2 = BRTournament.from_dict(d)
+        t2 = BRTournament.from_dict(t.to_dict())
         assert t2.format == BRFormat.DUO
         assert len(t2.teams) == 5
         assert t2.phase == BRTournamentPhase.PLAYING
+
+    def test_legacy_scoring_survives_reload(self):
+        """Миграция: legacy-турнир после save/load остаётся на
+        исторической сортировке (раньше флаг терялся при наличии "format")."""
+        data = {
+            "id": "x", "guild_id": 1, "channel_id": 2,
+            "formation": "random", "phase": "bermuda",
+            "players": [{"name": "A", "id": 10}],
+            "teams": [], "map_count": 3,
+        }
+        t = BRTournament.from_dict(data)
+        assert t.legacy_scoring is True
+        t2 = BRTournament.from_dict(t.to_dict())  # имитация reload
+        assert t2.legacy_scoring is True
+        assert t2.phase == BRTournamentPhase.PLAYING
+
+    def test_no_score_copy_on_repeated_map_names(self):
+        """Миграция: legacy-статистика по имени карты не копируется
+        на повтор карты в расписании."""
+        t = make("squad", "random", maps=4)  # bermuda встречается дважды
+        add_players(t, 20)
+        t.draw()
+        t.begin_games()
+        t.finish_games()
+        stats = t.teams[0].setdefault("stats", {})
+        stats["bermuda"] = {"place": 1, "kills": 3, "dns": False}
+        stats["purgatory"] = {"place": 2, "kills": 1, "dns": False}
+        # map_1 (purgatory, уникально) читает legacy-ключ
+        e1 = t.get_team_stats_for_map(t.teams[0], 1)
+        assert e1 is not None and e1["place"] == 2
+        # bermuda повторяется → legacy-ключ неоднозначен, не читается
+        assert t.get_team_stats_for_map(t.teams[0], 0) is None
+        assert t.get_team_stats_for_map(t.teams[0], 3) is None
+        # map_i ключи всегда работают
+        t.set_result_entry(0, 0, place=4, kills=0)
+        t.set_result_entry(3, 0, place=5, kills=0)
+        assert t.get_team_stats_for_map(t.teams[0], 0)["place"] == 4
+        assert t.get_team_stats_for_map(t.teams[0], 3)["place"] == 5
+
+    def test_room_visibility_rules(self):
+        # squad team: комнату видит только капитан
+        t = make("squad", "team")
+        ids = [1, 2, 3, 4]
+        names = {i: f"P{i}" for i in ids}
+        t.register_team_slot("tm", "T", 1, ids, names)
+        t.phase = BRTournamentPhase.PLAYING
+        assert t.can_view_room(1) is True    # капитан
+        assert t.can_view_room(2) is False   # член отряда
+        assert t.can_view_room(99) is False  # посторонний
+        # squad random: видят все члены слота
+        t2 = make("squad", "random")
+        add_players(t2, 20)
+        t2.draw()
+        t2.begin_games()
+        member = t2.teams[0]["member_ids"][0]
+        assert t2.can_view_room(member) is True
+        # duo team: оба игрока пары
+        t3 = make("duo", "team")
+        t3.create_duo_invite(7, "Cap", 8)
+        t3.respond_duo_invite(0, 8, "Mate", True)
+        t3.phase = BRTournamentPhase.PLAYING
+        assert t3.can_view_room(7) and t3.can_view_room(8)
+        # pending-инвайт слот не даёт доступа
+        t4 = make("duo", "team")
+        t4.create_duo_invite(7, "Cap", 8)
+        t4.phase = BRTournamentPhase.PLAYING
+        assert t4.can_view_room(7) is False
 
 
 class TestPlacePoints:

@@ -57,6 +57,7 @@ class BRCog(commands.Cog):
         format="Формат: solo/duo/squad",
         formation="Способ формирования: team (готовые составы) / random (жеребьёвка)",
         maps="Количество карт (1-10)",
+        test="Тестовый турнир (только для staging: разрешает test_* команды)",
     )
     @app_commands.choices(format=[
         app_commands.Choice(name="Solo — 1 игрок", value="solo"),
@@ -73,6 +74,7 @@ class BRCog(commands.Cog):
         format: str | None = None,
         formation: str | None = None,
         maps: int = 3,
+        test: bool = False,
     ) -> None:
         """Создать BR турнир."""
         # Проверка на владельца бота
@@ -109,10 +111,6 @@ class BRCog(commands.Cog):
             await interaction.response.send_message(
                 "BR_ROLE_ID не настроен в конфигурации.", ephemeral=True)
             return
-        if BR_ROOM_CHANNEL_ID == 0:
-            await interaction.response.send_message(
-                "BR_ROOM_CHANNEL_ID не настроен в конфигурации.", ephemeral=True)
-            return
 
         # Один активный BR на канал: повторное создание → ссылка на карточку
         existing = br_store.get(interaction.guild_id, interaction.channel_id)
@@ -137,6 +135,7 @@ class BRCog(commands.Cog):
             room_channel_id=BR_ROOM_CHANNEL_ID,
             organizer_id=interaction.user.id,
             map_count=maps,
+            is_test=bool(test),
         )
         br_store.set(tournament)
 
@@ -192,6 +191,12 @@ class BRCog(commands.Cog):
             await interaction.response.send_message(
                 "В этом канале нет BR турнира.", ephemeral=True)
             return
+        if not tournament.is_test:
+            await interaction.response.send_message(
+                "Команда доступна только для тестового BR "
+                "(создайте турнир с параметром test=true на staging).",
+                ephemeral=True)
+            return
         if tournament.phase != BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
                 "BR турнир не в фазе регистрации.", ephemeral=True)
@@ -204,7 +209,6 @@ class BRCog(commands.Cog):
         base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
         tournament.clear_players()
         tournament.teams = []
-        tournament.is_test = True
 
         need = tournament.max_players if not tournament.is_solo else tournament.max_slots
         for i in range(1, need + 1):
@@ -228,6 +232,12 @@ class BRCog(commands.Cog):
             await interaction.response.send_message(
                 "В этом канале нет BR турнира.", ephemeral=True)
             return
+        if not tournament.is_test:
+            await interaction.response.send_message(
+                "Команда доступна только для тестового BR "
+                "(создайте турнир с параметром test=true на staging).",
+                ephemeral=True)
+            return
         if tournament.phase != BRTournamentPhase.REGISTRATION:
             await interaction.response.send_message(
                 "BR турнир не в фазе регистрации.", ephemeral=True)
@@ -238,7 +248,6 @@ class BRCog(commands.Cog):
             return
 
         base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
-        tournament.is_test = True
 
         if tournament.format == BRFormat.SQUAD:
             for n in range(1, tournament.max_slots + 1):
@@ -284,9 +293,9 @@ class BRCog(commands.Cog):
                 "Команда доступна только для тестового BR (test_fill/test_teams).",
                 ephemeral=True)
             return
-        if tournament.phase not in (BRTournamentPhase.COLLECT,):
+        if tournament.phase != BRTournamentPhase.COLLECT:
             await interaction.response.send_message(
-                "Сначала завершите все карты («Карта сыграна»).", ephemeral=True)
+                "Сначала завершите игры («Завершить игры» в орг-меню).", ephemeral=True)
             return
         if not tournament.teams:
             await interaction.response.send_message("В турнире нет слотов.", ephemeral=True)
