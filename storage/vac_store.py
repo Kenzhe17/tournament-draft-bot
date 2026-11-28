@@ -35,6 +35,15 @@ MAX_VAC_LEVEL = len(VAC_LADDER)
 VIOLATION_DECAY = timedelta(hours=24)
 
 
+
+def _decay_seconds() -> float:
+    """Динамический период затухания нарушений (vac.decay_hours)."""
+    try:
+        from services.settings_service import settings_service
+        return float(settings_service.peek(None, "vac.decay_hours")) * 3600.0
+    except Exception:
+        return VIOLATION_DECAY.total_seconds()
+
 def effective_level(
     level: int,
     last_violation_at: datetime | None,
@@ -51,7 +60,7 @@ def effective_level(
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
     periods = int((now - last_violation_at).total_seconds()
-                  // VIOLATION_DECAY.total_seconds())
+                  // _decay_seconds())
     return max(0, min(level - periods, MAX_VAC_LEVEL))
 
 
@@ -72,6 +81,11 @@ CREATE TABLE IF NOT EXISTS vac_bans (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT vac_expiry_check CHECK (expires_at > issued_at)
 );
+-- Миграция старых таблиц: новые колонки добавляются ДО индексов,
+-- которые на них ссылаются (event_key в частичном уникальном индексе).
+ALTER TABLE vac_bans ADD COLUMN IF NOT EXISTS level INT;
+ALTER TABLE vac_bans ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE vac_bans ADD COLUMN IF NOT EXISTS event_key TEXT;
 CREATE INDEX IF NOT EXISTS idx_vac_user
     ON vac_bans(guild_id, user_id, expires_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vac_one_unrevoked
@@ -81,9 +95,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_vac_event_key
     ON vac_bans(guild_id, user_id, event_key)
     WHERE event_key IS NOT NULL
       AND revoked_at IS NULL AND expired_at IS NULL;
-ALTER TABLE vac_bans ADD COLUMN IF NOT EXISTS level INT;
-ALTER TABLE vac_bans ADD COLUMN IF NOT EXISTS reason TEXT;
-ALTER TABLE vac_bans ADD COLUMN IF NOT EXISTS event_key TEXT;
 
 CREATE TABLE IF NOT EXISTS vac_profiles (
     guild_id BIGINT NOT NULL,

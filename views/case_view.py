@@ -23,7 +23,7 @@ class CaseOpenButton(discord.ui.Button):
         """Открыть кейс с анимацией и reactions."""
         case = case_store.get_case(self.case_id)
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Кейс не найден."), ephemeral=True)
             return
 
         # Проверить баланс
@@ -67,7 +67,8 @@ class CaseOpenButton(discord.ui.Button):
             pass
 
         # Открыть кейс
-        result = await case_store.open_case(
+        from services.shop_purchase_service import open_case_safe
+        result = await open_case_safe(
             interaction.guild_id,
             interaction.user.id,
             self.case_id,
@@ -75,8 +76,12 @@ class CaseOpenButton(discord.ui.Button):
         )
 
         # Формировать результат
-        if result["type"] == "nothing":
-            message = "😢 Ничего не выпало!"
+        if result.get("type") == "pending":
+            message = result.get("value", "Операция обрабатывается.")
+            color = discord.Color.blurple()
+            reaction_emoji = "gear"
+        elif result["type"] == "nothing":
+            message = "Ничего не выпало!"
             color = discord.Color.red()
             reaction_emoji = "cross"
         elif result["type"] == "coins":
@@ -89,7 +94,7 @@ class CaseOpenButton(discord.ui.Button):
             if pet_bonus.get("mimic_bonus", 0) > 0:
                 mimic_bonus = pet_bonus["mimic_bonus"]
                 mimic_name = pet_bonus["mimic_name"]
-                message += f"\n\n🐾 ✨ **Мимик-собиратель ({mimic_name}):** Сработал «Секретный тайник»! Питомец нашел еще +{mimic_bonus} монет."
+                message += f"\n\n🐾 **Мимик-собиратель ({mimic_name}):** Сработал «Секретный тайник»! Питомец нашел еще +{mimic_bonus} монет."
             if pet_bonus.get("golden_fox_bonus", 0) > 0:
                 fox_bonus = pet_bonus["golden_fox_bonus"]
                 fox_name = pet_bonus["golden_fox_name"]
@@ -118,12 +123,12 @@ class CaseOpenButton(discord.ui.Button):
             name_emoji = "emoji_special_case"
 
         embed = discord.Embed(
-            title=f" Результат открытия {replace_emojis(name_emoji)} {case.name}",
+            title=f"Результат открытия {replace_emojis(name_emoji)} {case.name}",
             description=message,
             color=color
         )
 
-        await interaction.edit_original_response( view=compose(embed, text="🎉")
+        await interaction.edit_original_response( view=compose(embed, text="")
         )
 
         # Добавить reaction результата
@@ -170,7 +175,7 @@ class CaseSelect(discord.ui.Select):
         case = case_store.get_case(case_id)
 
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Кейс не найден."), ephemeral=True)
             return
 
         # Проверить баланс
@@ -214,7 +219,8 @@ class CaseSelect(discord.ui.Select):
             pass
 
         # Открыть кейс
-        result = await case_store.open_case(
+        from services.shop_purchase_service import open_case_safe
+        result = await open_case_safe(
             interaction.guild_id,
             interaction.user.id,
             case_id,
@@ -222,8 +228,12 @@ class CaseSelect(discord.ui.Select):
         )
 
         # Формировать результат
-        if result["type"] == "nothing":
-            message = "😢 Ничего не выпало!"
+        if result.get("type") == "pending":
+            message = result.get("value", "Операция обрабатывается.")
+            color = discord.Color.blurple()
+            reaction_emoji = "gear"
+        elif result["type"] == "nothing":
+            message = "Ничего не выпало!"
             color = discord.Color.red()
             reaction_emoji = "cross"
         elif result["type"] == "coins":
@@ -236,7 +246,7 @@ class CaseSelect(discord.ui.Select):
             if pet_bonus.get("mimic_bonus", 0) > 0:
                 mimic_bonus = pet_bonus["mimic_bonus"]
                 mimic_name = pet_bonus["mimic_name"]
-                message += f"\n\n🐾 ✨ **Мимик-собиратель ({mimic_name}):** Сработал «Секретный тайник»! Питомец нашел еще +{mimic_bonus} монет."
+                message += f"\n\n🐾 **Мимик-собиратель ({mimic_name}):** Сработал «Секретный тайник»! Питомец нашел еще +{mimic_bonus} монет."
             if pet_bonus.get("golden_fox_bonus", 0) > 0:
                 fox_bonus = pet_bonus["golden_fox_bonus"]
                 fox_name = pet_bonus["golden_fox_name"]
@@ -265,12 +275,12 @@ class CaseSelect(discord.ui.Select):
             name_emoji = "emoji_special_case"
 
         embed = discord.Embed(
-            title=f" Результат открытия {replace_emojis(name_emoji)} {case.name}",
+            title=f"Результат открытия {replace_emojis(name_emoji)} {case.name}",
             description=message,
             color=color
         )
 
-        await interaction.edit_original_response( view=compose(embed, text="🎉")
+        await interaction.edit_original_response( view=compose(embed, text="")
         )
 
         # Добавить reaction результата
@@ -286,7 +296,7 @@ class OpenAgainButton(discord.ui.Button):
     def __init__(self, case_id: str):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="🎲 Открыть ещё 1",
+            label="Открыть ещё 1",
             custom_id=f"case_open_again:{case_id}"
         )
         self.case_id = case_id

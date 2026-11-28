@@ -49,7 +49,7 @@ class HelpBackButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         """Вернуться в главное меню."""
         embed = discord.Embed(
-            title="📚 Справка по командам",
+            title="Справка по командам",
             description="Выберите категорию для просмотра команд",
             color=discord.Color.dark_blue()
         )
@@ -71,8 +71,8 @@ class HelpMainView(discord.ui.View):
 
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(HelpCategoryButton("tournament", "🏆 Турниры"))
+        self.add_item(HelpCategoryButton("tournament", "Турниры"))
         self.add_item(HelpCategoryButton("economy", get_emoji("money") + " Экономика"))
-        self.add_item(HelpCategoryButton("shop", "🛍️ Магазин"))
-        self.add_item(HelpCategoryButton("profile", "👤 Профиль"))
-        self.add_item(HelpCategoryButton("admin", "⚙️ Админ"))
+        self.add_item(HelpCategoryButton("shop", "Магазин"))
+        self.add_item(HelpCategoryButton("profile", "Профиль"))
+        self.add_item(HelpCategoryButton("admin", "Админ"))

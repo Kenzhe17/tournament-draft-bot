@@ -27,7 +27,7 @@ CATEGORIES = [
     ("results", "Результаты матчей"),
     ("rating", "Рейтинг"),
     ("tournaments", "Турниры"),
-    ("ultimatum", "Ultimatum"),
+    ("ultimatum", "Ультиматум"),
     ("economy", "Экономика"),
     ("community", "Сообщество"),
 ]
@@ -168,40 +168,14 @@ async def compute_all(guild_id: int) -> dict[str, CategoryData]:
         p = max(eligible, key=lambda x: x.kd_ratio)
         c.records.append(stat_rec(p, "Лучший K/D",
                                   f"{p.kd_ratio:.2f}", f"{p.games} матчей"))
-        p = max(eligible, key=lambda x: x.kda_ratio)
-        c.records.append(stat_rec(p, "Лучший KDA",
-                                  f"{p.kda_ratio:.2f}", f"{p.games} матчей"))
-        p = max(eligible, key=lambda x: x.avg_damage)
-        c.records.append(stat_rec(p, "Наибольший AVG Damage",
-                                  f"{p.avg_damage:.0f}", f"{p.games} матчей"))
     else:
-        for t in ("Наибольший AVG Kills", "Лучший K/D", "Лучший KDA",
-                  "Наибольший AVG Damage"):
+        for t in ("Наибольший AVG Kills", "Лучший K/D"):
             c.records.append(Record(t, available=False))
-
-    def match_row_rec(title: str, row_key: str, val_key: str,
-                      unit: str) -> None:
-        r = agg.get(row_key)
-        if r:
-            uid, nm = rec_for(int(r["user_id"]))
-            c.records.append(Record(
-                title, f"{int(r[val_key])} {unit}",
-                uid, nm, _match_ctx(r)))
-        else:
-            c.records.append(Record(title, available=False))
-
-    match_row_rec("Больше всего ассистов за матч", "top_assists",
-                  "assists", "ASSISTS")
-    match_row_rec("Максимальный урон за матч", "top_damage",
-                  "damage", "DMG")
 
     if stats:
         p = max(stats, key=lambda x: x.total_kills)
         c.records.append(stat_rec(p, "Больше всего убийств за всё время",
                                   f"{p.total_kills} KILLS", f"{p.games} матчей"))
-        p = max(stats, key=lambda x: x.total_damage)
-        c.records.append(stat_rec(p, "Наибольший суммарный урон",
-                                  f"{p.total_damage} DMG", f"{p.games} матчей"))
 
     # ======================= 2. РЕЗУЛЬТАТЫ =======================
     c = cats["results"]
@@ -321,10 +295,10 @@ async def compute_all(guild_id: int) -> dict[str, CategoryData]:
         r = ulti["top_elo"]
         uid = int(r["discord_id"])
         u, nm = rec_for(uid, r.get("username") or "")
-        c.records.append(Record("Максимальный Ultimatum ELO",
+        c.records.append(Record("Максимальный рейтинг Ультиматума",
                                 f"{int(r['peak_elo']):,} ELO", u, nm))
     else:
-        c.records.append(Record("Максимальный Ultimatum ELO", available=False))
+        c.records.append(Record("Максимальный рейтинг Ультиматума", available=False))
     if ulti.get("top_wins"):
         r = ulti["top_wins"]
         uid = int(r["discord_id"])
@@ -339,11 +313,11 @@ async def compute_all(guild_id: int) -> dict[str, CategoryData]:
         uid = int(r["discord_id"])
         u, nm = rec_for(uid, r.get("username") or "")
         wr = int(r["wins"]) / max(1, int(r["rated_matches"])) * 100
-        c.records.append(Record("Лучший WinRate Ultimatum",
+        c.records.append(Record("Лучший WinRate Ультиматума",
                                 f"{wr:.1f}%", u, nm,
                                 f"{int(r['rated_matches'])} дуэлей"))
     else:
-        c.records.append(Record("Лучший WinRate Ultimatum", available=False))
+        c.records.append(Record("Лучший WinRate Ультиматума", available=False))
     if ulti.get("top_duels"):
         r = ulti["top_duels"]
         uid = int(r["discord_id"])

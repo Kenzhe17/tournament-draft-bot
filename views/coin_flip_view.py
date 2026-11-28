@@ -21,7 +21,7 @@ class CoinBetModal(Modal, title="Введите ставку"):
             bet = int(self.bet.value)
             if bet < 10:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Минимальная ставка: 10 монет"),
+                    replace_emojis("Минимальная ставка: 10 монет"),
                 ephemeral=True,
                 )
                 return
@@ -33,7 +33,7 @@ class CoinBetModal(Modal, title="Введите ставку"):
 
             if not session:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Недостаточно монет"),
+                    replace_emojis("Недостаточно монет"),
                 ephemeral=True,
                 )
                 return
@@ -41,7 +41,7 @@ class CoinBetModal(Modal, title="Введите ставку"):
             # Show game view
             view = CoinFlipGameView(session, is_pve=True)
             embed = discord.Embed(
-                title="🦅 Монетка",
+                title="Монетка",
                 description=f"Ставка: {bet} 🪙\nВыберите: орел или решка!",
                 color=discord.Color.gold(),
             )
@@ -49,7 +49,7 @@ class CoinBetModal(Modal, title="Введите ставку"):
 
         except ValueError:
             await interaction.response.send_message(
-                replace_emojis("❌ Введите корректное число"),
+                replace_emojis("Введите корректное число"),
                 ephemeral=True,
             )
 
@@ -62,12 +62,12 @@ class CoinFlipGameView(View):
         self.session = session
         self.is_pve = is_pve
 
-    @discord.ui.button(label="🦅 Орел", style=discord.ButtonStyle.primary, custom_id="coin_heads")
+    @discord.ui.button(label="Орел", style=discord.ButtonStyle.primary, custom_id="coin_heads")
     async def heads_button(self, interaction: discord.Interaction, button: Button) -> None:
         """Handle heads choice."""
         await self.handle_choice(interaction, CoinSide.HEADS)
 
-    @discord.ui.button(label="🪙 Решка", style=discord.ButtonStyle.primary, custom_id="coin_tails")
+    @discord.ui.button(label="Решка", style=discord.ButtonStyle.primary, custom_id="coin_tails")
     async def tails_button(self, interaction: discord.Interaction, button: Button) -> None:
         """Handle tails choice."""
         await self.handle_choice(interaction, CoinSide.TAILS)
@@ -92,7 +92,7 @@ class CoinFlipGameView(View):
                 color = discord.Color.red()
 
             embed = discord.Embed(
-                title="🦅 Монетка",
+                title="Монетка",
                 description=f"Ваш выбор: {choice.emoji} {choice.name}\n"
                 f"Выбор бота: {bot_choice.emoji} {bot_choice.name}\n\n"
                 f"{result}",

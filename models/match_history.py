@@ -33,8 +33,6 @@ class MatchHistory:
     deaths: int
     result: str  # win/loss
     elo_change: int
-    assists: int = 0
-    damage: int = 0
     duration_seconds: int = 0  # длительность матча (от «Начало» до результата)
 
     # Ставки (опционально)
@@ -62,8 +60,6 @@ class MatchHistory:
             "deaths": self.deaths,
             "result": self.result,
             "elo_change": self.elo_change,
-            "assists": self.assists,
-            "damage": self.damage,
             "duration_seconds": self.duration_seconds,
             "bet_amount": self.bet_amount,
             "bet_win": self.bet_win,
@@ -75,6 +71,8 @@ class MatchHistory:
         """Create from dictionary for JSON deserialization."""
         if isinstance(data.get("date"), str):
             data["date"] = datetime.fromisoformat(data["date"])
+        # Легаси-ключи (assists/damage и пр.) игнорируем
+        data = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
         return cls(**data)
 
 

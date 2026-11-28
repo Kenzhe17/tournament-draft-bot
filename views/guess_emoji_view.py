@@ -8,7 +8,7 @@ from discord.ui import Modal, TextInput, View, Button, button
 from games.guess_emoji import GuessEmojiGame
 
 
-class EmojiBetModal(Modal, title="🎭 Угадай эмодзи"):
+class EmojiBetModal(Modal, title="Угадай эмодзи"):
     """Modal для ввода ставки и эмодзи."""
 
     bet = TextInput(label="Ставка (монеты)", placeholder="Введите сумму ставки", min_length=1, max_length=10)
@@ -27,24 +27,24 @@ class EmojiBetModal(Modal, title="🎭 Угадай эмодзи"):
             bet = int(self.bet.value)
             guess = self.guess.value.strip()
         except ValueError:
-            await interaction.response.send_message(replace_emojis("❌ Введите корректную ставку!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Введите корректную ставку!"), ephemeral=True)
             return
 
         if not guess or len(guess) > 5:
-            await interaction.response.send_message(replace_emojis("❌ Введите эмодзи (1-5 символов)!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Введите эмодзи (1-5 символов)!"), ephemeral=True)
             return
 
         if bet < 15:
-            await interaction.response.send_message(replace_emojis("❌ Минимальная ставка: 15 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Минимальная ставка: 15 🪙"), ephemeral=True)
             return
 
         if bet > 300:
-            await interaction.response.send_message(replace_emojis("❌ Максимальная ставка: 300 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Максимальная ставка: 300 🪙"), ephemeral=True)
             return
 
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
         if balance < bet:
-            await interaction.response.send_message(replace_emojis("❌ Недостаточно монет!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Недостаточно монет!"), ephemeral=True)
             return
 
         # Списать ставку
@@ -56,7 +56,7 @@ class EmojiBetModal(Modal, title="🎭 Угадай эмодзи"):
 
         # Создать embed
         embed = discord.Embed(
-            title="🎭 Угадай эмодзи",
+            title="Угадай эмодзи",
             description=message,
             color=discord.Color.blue() if result == "correct" else discord.Color.orange()
         )
@@ -90,19 +90,19 @@ class GuessEmojiGameView(View):
         self.bet = bet
         self.game = game
 
-    @button(label="Сделать попытку", style=discord.ButtonStyle.primary, emoji="🎯")
+    @button(label="Сделать попытку", style=discord.ButtonStyle.primary)
     async def make_guess(self, interaction: discord.Interaction, button: Button) -> None:
         """Открыть modal для ввода эмодзи."""
         modal = EmojiGuessModal(self.guild_id, self.user_id, self.bet, self.game)
         await interaction.response.send_modal(modal)
 
-    @button(label="Сдаться", style=discord.ButtonStyle.danger, emoji="🏳️")
+    @button(label="Сдаться", style=discord.ButtonStyle.danger)
     async def give_up(self, interaction: discord.Interaction, button: Button) -> None:
         """Сдаться и потерять ставку."""
         self.game.game_over = True
         embed = discord.Embed(
-            title="🎭 Угадай эмодзи",
-            description=f"😢 Вы сдались! Загаданный эмодзи был {self.game.secret_emoji}.",
+            title="Угадай эмодзи",
+            description=f"Вы сдались! Загаданный эмодзи был {self.game.secret_emoji}.",
             color=discord.Color.red()
         )
         embed.add_field(name="Потеряно", value=f"{self.bet} 🪙", inline=False)
@@ -110,7 +110,7 @@ class GuessEmojiGameView(View):
         await interaction.response.edit_message( view=compose(embed, None))
 
 
-class EmojiGuessModal(Modal, title=replace_emojis("🎯 Сделать попытку"):
+class EmojiGuessModal(Modal, title="Сделать попытку"):
     """Modal для ввода эмодзи."""
 
     guess = TextInput(label="Ваш эмодзи", placeholder="Введите эмодзи (например: 🐕)", min_length=1, max_length=5)
@@ -129,14 +129,14 @@ class EmojiGuessModal(Modal, title=replace_emojis("🎯 Сделать попы�
         guess = self.guess.value.strip()
 
         if not guess or len(guess) > 5:
-            await interaction.response.send_message(replace_emojis("❌ Введите эмодзи (1-5 символов)!"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Введите эмодзи (1-5 символов)!"), ephemeral=True)
             return
 
         result, message = self.game.make_guess(guess)
 
         # Создать embed
         embed = discord.Embed(
-            title="🎭 Угадай эмодзи",
+            title="Угадай эмодзи",
             description=message,
             color=discord.Color.blue() if result == "correct" else discord.Color.orange()
         )

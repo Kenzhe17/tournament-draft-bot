@@ -25,7 +25,7 @@ class ReactionTimeView(discord.ui.View):
     async def start_game(self, interaction: discord.Interaction) -> None:
         """Начать игру."""
         embed = discord.Embed(
-            title="⚡ Время реакции",
+            title="Время реакции",
             description=f"**Ставка:** {self.bet} 🪙\n**Множитель:** 2x\n\nПодготовьтесь! Эмодзи появится через 2-5 секунд...",
             color=discord.Color.orange()
         )
@@ -42,7 +42,7 @@ class ReactionTimeView(discord.ui.View):
         self.can_click = True
 
         embed = discord.Embed(
-            title="⚡ НАЖМИ!",
+            title="НАЖМИ!",
             description=f"{self.emoji}",
             color=discord.Color.red()
         )
@@ -77,13 +77,13 @@ class ReactionButtonView(discord.ui.View):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Победа!"),
+                title=replace_emojis("Победа!"),
                 description=f"**Время реакции:** {reaction_time:.3f} секунд\n**Ваше время:** {reaction_time:.3f}с < 1.0с\n\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title=replace_emojis("❌ Проигрыш"),
+                title=replace_emojis("Проигрыш"),
                 description=f"**Время реакции:** {reaction_time:.3f} секунд\n**Ваше время:** {reaction_time:.3f}с > 1.0с\n\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )

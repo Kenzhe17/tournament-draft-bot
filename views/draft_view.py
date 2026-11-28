@@ -94,16 +94,16 @@ class PlayerSelect(discord.ui.Select):
 
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await self._ephemeral(interaction, "❌ Турнир не найден.")
+            await self._ephemeral(interaction, "Турнир не найден.")
             return
 
         if tournament.phase != TournamentPhase.DRAFT:
-            await self._ephemeral(interaction, "❌ Драфт не активен.")
+            await self._ephemeral(interaction, "Драфт не активен.")
             return
 
         picker_pos = tournament.current_picker_position()
         if picker_pos is None:
-            await self._ephemeral(interaction, "❌ Сейчас не ваш ход.")
+            await self._ephemeral(interaction, "Сейчас не ваш ход.")
             return
 
         expected_captain_name = tournament.captains[
@@ -112,20 +112,33 @@ class PlayerSelect(discord.ui.Select):
         user_name = interaction.user.display_name
         from utils.cosmetics import clean_nickname
 
-        cleaned_name = clean_nickname(user_name)
         cleaned_captain_name = clean_nickname(expected_captain_name)
 
+        def _is_current_picker() -> bool:
+            """Ход капитана: по Discord user_id, fallback — по имени
+            (legacy-записи без ID и тестовые игроки)."""
+            expected_uid = tournament.player_user_ids.get(
+                expected_captain_name
+            )
+            try:
+                expected_uid = int(expected_uid) if expected_uid else 0
+            except (TypeError, ValueError):
+                expected_uid = 0
+            if expected_uid > 0:
+                return interaction.user.id == expected_uid
+            return clean_nickname(user_name) == cleaned_captain_name
+
         # In test mode, allow anyone to pick
-        if not tournament.is_test and cleaned_name != cleaned_captain_name:
+        if not tournament.is_test and not _is_current_picker():
             await self._ephemeral(
-                interaction, f"❌ Сейчас выбирает {expected_captain_name}"
+                interaction, f"Сейчас выбирает {expected_captain_name}"
             )
             return
 
         player = self.values[0]
         key = str(tournament.current_circle)
         if player not in tournament.available.get(key, []):
-            await self._ephemeral(interaction, "❌ Этот игрок уже выбран.")
+            await self._ephemeral(interaction, "Этот игрок уже выбран.")
             return
 
         mark("validation")
@@ -156,27 +169,27 @@ class PlayerSelect(discord.ui.Select):
                     expected = tournament.captains[
                         tournament.captain_order[pos]
                     ]
-                    if not tournament.is_test and (
-                        clean_nickname(interaction.user.display_name)
-                        != clean_nickname(expected)
-                    ):
+                    expected_uid = tournament.player_user_ids.get(expected)
+                    try:
+                        expected_uid = int(expected_uid) if expected_uid else 0
+                    except (TypeError, ValueError):
+                        expected_uid = 0
+                    picker_ok = (
+                        interaction.user.id == expected_uid
+                        if expected_uid > 0
+                        else clean_nickname(interaction.user.display_name)
+                        == clean_nickname(expected)
+                    )
+                    if not tournament.is_test and not picker_ok:
                         stale = f"Сейчас выбирает {expected}"
                     elif player not in tournament.available.get(
                         str(tournament.current_circle), []
                     ):
                         stale = "Этот игрок уже выбран."
             if stale is not None:
-                await self._ephemeral(interaction, f"❌ {stale}")
+                await self._ephemeral(interaction, f"{stale}")
                 return
             picker_pos = tournament.current_picker_position()
-
-            # Автоочистка ника от эмодзи — косметика, после ack и вне
-            # критического пути (ошибка не должна ломать выбор).
-            if cleaned_name != user_name:
-                try:
-                    await interaction.user.edit(nick=cleaned_name)
-                except Exception as exc:  # noqa: BLE001 - косметика
-                    logger.debug("Nick cleanup failed: %s", exc)
 
             tournament.pick_player(picker_pos, player)
             draft_complete = tournament.advance_after_pick()
@@ -185,6 +198,22 @@ class PlayerSelect(discord.ui.Select):
             # Критическое сохранение выбора — до Discord-обновлений.
             store.set(tournament)
             mark("database_save")
+
+            # Аудит выбора игрока капитаном (после фактического save).
+            try:
+                from services import tournament_audit_service as audit_svc
+                _picker_name = tournament.captains[
+                    tournament.captain_order[picker_pos]
+                ] if picker_pos is not None else None
+                await audit_svc.record_interaction(
+                    interaction,
+                    tournament_id=str(tournament.id),
+                    action=audit_svc.A.DRAFT_PICK,
+                    before={"picker": _picker_name},
+                    after={"picked": player},
+                )
+            except Exception as _exc:
+                logger.warning("audit draft_pick failed: %s", _exc)
 
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
@@ -258,24 +287,59 @@ class PlayerSelect(discord.ui.Select):
             perf_metrics.record(name, value)
 
         if draft_complete:
-            await self._ephemeral(interaction, "✅ Драфт завершён!")
+            await self._ephemeral(interaction, "Драфт завершён!")
 
 
 class DraftView(discord.ui.View):
     """Persistent View с Select Menu для драфта."""
 
-    def __init__(self, guild_id: int, channel_id: int, available_players: list[str]):
+    def __init__(self, guild_id: int, channel_id: int,
+                 available_players: list[str],
+                 player_user_ids: dict[str, int] | None = None):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.channel_id = channel_id
-        options = [
-            discord.SelectOption(label=p, value=p) for p in available_players[:25]
-        ]
+        self.available_players = list(available_players)
+        self.player_user_ids = player_user_ids or {}
+        self._sr_by_uid: dict[int, float] = {}
+        self._add_select()
+
+    def _options(self) -> list[discord.SelectOption]:
+        options = []
+        for p in self.available_players[:25]:
+            sr = self._sr_by_uid.get(self.player_user_ids.get(p, 0))
+            description = f"SR {sr:.1f}" if sr is not None else None
+            options.append(discord.SelectOption(
+                label=p, value=p, description=description))
+        return options
+
+    def _add_select(self) -> None:
+        options = self._options()
         if options:
-            self.add_item(PlayerSelect(guild_id, channel_id, options))
-        # Add warning if more than 25 players available
-        if len(available_players) > 25:
-            self._warning = replace_emojis(f"⚠️ Показано 25 из {len(available_players)} игроков")
+            self.add_item(PlayerSelect(
+                self.guild_id, self.channel_id, options))
+
+    async def enrich_with_sr(self, guild_id: int) -> None:
+        """Подтянуть SR игроков в description опций Select.
+
+        Вызывается из update_tournament_message (async) — View
+        остаётся синхронным для build_view_for_tournament.
+        """
+        try:
+            from storage.player_stats_store import player_stats_store
+            stats_list = await player_stats_store.get_all(guild_id)
+        except Exception:
+            return
+        self._sr_by_uid = {
+            s.user_id: float(getattr(s, "skill_rating", 0) or 0)
+            for s in stats_list
+            if getattr(s, "skill_rating", None)
+        }
+        # Пересобрать Select с обновлёнными описаниями
+        for item in list(self.children):
+            if isinstance(item, PlayerSelect):
+                self.remove_item(item)
+        self._add_select()
 
 
 def build_draft_view(tournament: Tournament) -> DraftView | None:
@@ -290,4 +354,7 @@ def build_draft_view(tournament: Tournament) -> DraftView | None:
     picker_pos = tournament.current_picker_position()
     if picker_pos is None:
         return None
-    return DraftView(tournament.guild_id, tournament.channel_id, available)
+    return DraftView(
+        tournament.guild_id, tournament.channel_id, available,
+        player_user_ids=dict(getattr(tournament, "player_user_ids", {}) or {}),
+    )

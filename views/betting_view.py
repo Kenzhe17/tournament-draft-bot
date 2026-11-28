@@ -77,7 +77,7 @@ class MatchButton(discord.ui.Button):
         elif self.match_type == "final":
             match = self.tournament.final_teams
         else:
-            await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Неверный тип матча."), ephemeral=True)
             return
 
         # Get team names with match position (0 for team_a, 1 for team_b)
@@ -92,7 +92,7 @@ class MatchButton(discord.ui.Button):
         team_view = TeamSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, teams)
 
         embed = discord.Embed(
-            title=replace_emojis("🎯 Выберите команду"),
+            title="Выберите команду",
             description=f"{teams[0][1]} vs {teams[1][1]}",
             color=discord.Color.gold()
         )
@@ -192,23 +192,23 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
         try:
             amount = int(self.amount_input.value)
         except ValueError:
-            await interaction.response.send_message(replace_emojis("❌ Неверная сумма. Введите число."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Неверная сумма. Введите число."), ephemeral=True)
             return
 
         if amount < 20:
-            await interaction.response.send_message(replace_emojis("❌ Минимальная ставка 20 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Минимальная ставка 20 🪙"), ephemeral=True)
             return
 
         # Check user balance
         balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
         if balance < amount:
-            await interaction.response.send_message(replace_emojis(f"❌ Недостаточно средств. Ваш баланс: {balance} 🪙"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis(f"Недостаточно средств. Ваш баланс: {balance} 🪙"), ephemeral=True)
             return
 
         # Check if user is in the match and betting against themselves
         user_team_index = self._get_user_team_index(interaction.user.id)
         if user_team_index is not None and user_team_index != self.team_index:
-            await interaction.response.send_message(replace_emojis("❌ Вы не можете ставить против своей команды."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("Вы не можете ставить против своей команды."), ephemeral=True)
             return
 
         # Get match ID early for bet checking
@@ -220,7 +220,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
         if existing_bet:
             # User already has a bet in this phase - reject
             await interaction.response.send_message(
-                replace_emojis("❌ Можно ставить только 1 раз за этап."),
+                replace_emojis("Можно ставить только 1 раз за этап."),
                 ephemeral=True
             )
             return
@@ -280,7 +280,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
         await bot.update_tournament_message(interaction.guild, self.tournament)
 
         await interaction.response.send_message(
-            replace_emojis(f"✅ Ставка {amount} 🪙 на {self.team_name} добавлена! Коэффициент: {actual_odds:.2f}x"),
+            replace_emojis(f"Ставка {amount} 🪙 на {self.team_name} добавлена! Коэффициент: {actual_odds:.2f}x"),
             ephemeral=True
         )
 

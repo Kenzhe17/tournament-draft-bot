@@ -1,10 +1,12 @@
-"""Тесты логики дневного баннера: очки, тай-брейк, форматирование."""
+"""Тесты логики дневного баннера: очки, тай-брейк, рендер PNG."""
 
 from datetime import date
 
+import pytest
+
 from services.banner import activity as act
 from services.banner.renderer import (
-    _format_voice, _plural_matches, build_banner_html,
+    _format_voice, _plural_matches, render_banner_png,
 )
 
 
@@ -17,9 +19,17 @@ def test_score_matches_only():
     assert act.activity_score(0, 4) == 40
 
 
-def test_score_combined_and_cap():
-    # 10 часов войса капается до 6ч=72 очка + 2 матча=20 -> 92
-    assert act.activity_score(10 * 3600, 2) == 72 + 20
+def test_score_combined_no_daily_cap():
+    # 10 часов войса без лимита = 120 очков + 2 матча=20 -> 140
+    assert act.activity_score(10 * 3600, 2) == 120 + 20
+
+
+def test_score_voice_long_days():
+    # Начисление за 6, 8, 12 и 18 часов без дневного лимита
+    assert act.activity_score(6 * 3600, 0) == 72
+    assert act.activity_score(8 * 3600, 0) == 96
+    assert act.activity_score(12 * 3600, 0) == 144
+    assert act.activity_score(18 * 3600, 0) == 216
 
 
 def test_score_partial_5min():
@@ -58,21 +68,25 @@ def test_plural_matches():
     assert _plural_matches(21) == "матч"
 
 
-def test_empty_state_html():
-    html = build_banner_html(
+@pytest.mark.asyncio
+async def test_render_empty_state_png():
+    png = await render_banner_png(
         nickname=None, avatar_png=None, has_activity=False,
         report_day_label="Отчёт: 8 нояб")
-    assert "Вчера активных участников не было" in html
-    assert "Участников не было" in html
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    from PIL import Image
+    import io
+    im = Image.open(io.BytesIO(png))
+    assert im.size == (1672, 941)
 
 
-def test_active_state_html_escapes():
-    html = build_banner_html(
-        nickname="<b>A&Б</b>", avatar_png=b"\x89PNGfake",
+@pytest.mark.asyncio
+async def test_render_active_state_png_escapes():
+    # недопустимые символы ника не должны ломать рендер
+    png = await render_banner_png(
+        nickname="<b>A&Б</b>", avatar_png=None,
         voice_seconds=3600, matches=3, has_activity=True)
-    assert "&lt;b&gt;" in html  # экранирование ника
-    assert "1 ч" in html
-    assert "3 матча" in html
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
 
 
 def test_almaty_day_bounds():

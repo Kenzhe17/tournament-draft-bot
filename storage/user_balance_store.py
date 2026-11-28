@@ -18,6 +18,15 @@ DECAY_THRESHOLD = 10000  # Balance above this gets decayed
 DECAY_PERCENT = 0.05  # 5% decay per day
 
 
+def _max_balance() -> int:
+    """Dynamic cap (economy.max_balance) → config fallback."""
+    try:
+        from services.settings_service import settings_service
+        return int(settings_service.peek(None, "economy.max_balance"))
+    except Exception:  # noqa: BLE001
+        return MAX_BALANCE
+
+
 class DecayTracker:
     """Track daily decay for users."""
 
@@ -180,7 +189,7 @@ class UserBalanceStore:
                     balance = await self._apply_decay(
                         conn, guild_id, user_id, row["balance"]
                     )
-                    add = min(amount, max(0, MAX_BALANCE - balance))
+                    add = min(amount, max(0, _max_balance() - balance))
                     new_balance = balance + add
                     await conn.execute(
                         "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
@@ -190,9 +199,223 @@ class UserBalanceStore:
         else:
             if key not in self._balances:
                 self._balances[key] = 100
-            self._balances[key] = min(self._balances[key] + amount, MAX_BALANCE)
+            self._balances[key] = min(self._balances[key] + amount, _max_balance())
             self.save()
             return self._balances[key]
+
+    async def deduct_balance(self, guild_id: int, user_id: int, amount: int) -> int:
+        """Списать монеты (админ-операции). Пол не ниже 0.
+
+        Возвращает фактически списанную сумму. Транзакция с
+        SELECT ... FOR UPDATE — конкурентно-безопасно, без обхода
+        бизнес-логики (decay применяется так же, как в add_balance).
+        """
+        if amount <= 0:
+            raise ValueError("Amount must be positive")
+        key = f"{guild_id}:{user_id}"
+
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    await self._ensure_row(conn, guild_id, user_id)
+                    row = await conn.fetchrow(
+                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+                        guild_id, user_id
+                    )
+                    balance = await self._apply_decay(
+                        conn, guild_id, user_id, row["balance"]
+                    )
+                    taken = min(amount, balance)
+                    await conn.execute(
+                        "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
+                        balance - taken, guild_id, user_id
+                    )
+                    return taken
+        else:
+            if key not in self._balances:
+                self._balances[key] = 100
+            taken = min(amount, self._balances[key])
+            self._balances[key] -= taken
+            self.save()
+            return taken
+
+    # Админ-корректировки: операция и изменение баланса — одна
+    # транзакция; op_id UNIQUE защищает от повторного исполнения
+    # (retry после сбоя, дублированный action request).
+    _FINANCE_DDL = """
+    CREATE TABLE IF NOT EXISTS admin_finance_ops (
+        op_id TEXT PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        user_id BIGINT NOT NULL,
+        amount INTEGER NOT NULL,
+        applied INTEGER NOT NULL,
+        new_balance INTEGER NOT NULL,
+        actor_id BIGINT NOT NULL DEFAULT 0,
+        reason TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """
+
+    async def admin_adjust(
+        self, guild_id: int, user_id: int, amount: int,
+        op_id: str, *, actor_id: int = 0, reason: str = "",
+    ) -> dict:
+        """Атомарная админ-корректировка с идемпотентностью.
+
+        Возвращает {"status": "applied"|"duplicate", ...}.
+        """
+        if amount == 0:
+            raise ValueError("amount must be non-zero")
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(self._FINANCE_DDL)
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO admin_finance_ops
+                            (op_id, guild_id, user_id, amount, applied,
+                             new_balance, actor_id, reason)
+                        VALUES ($1,$2,$3,$4,0,0,$5,$6)
+                        ON CONFLICT (op_id) DO NOTHING
+                        RETURNING op_id
+                        """,
+                        op_id, guild_id, user_id, amount,
+                        actor_id, reason[:500])
+                    if row is None:
+                        prev = await conn.fetchrow(
+                            "SELECT applied, new_balance FROM"
+                            " admin_finance_ops WHERE op_id=$1", op_id)
+                        return {"status": "duplicate",
+                                "applied": prev["applied"],
+                                "new_balance": prev["new_balance"]}
+                    await self._ensure_row(conn, guild_id, user_id)
+                    bal_row = await conn.fetchrow(
+                        "SELECT balance FROM user_balance"
+                        " WHERE guild_id=$1 AND user_id=$2 FOR UPDATE",
+                        guild_id, user_id)
+                    balance = await self._apply_decay(
+                        conn, guild_id, user_id, bal_row["balance"])
+                    if amount > 0:
+                        applied = min(amount,
+                                      max(0, _max_balance() - balance))
+                    else:
+                        applied = -min(-amount, balance)
+                    new_balance = balance + applied
+                    await conn.execute(
+                        "UPDATE user_balance SET balance=$1"
+                        " WHERE guild_id=$2 AND user_id=$3",
+                        new_balance, guild_id, user_id)
+                    await conn.execute(
+                        "UPDATE admin_finance_ops SET applied=$2,"
+                        " new_balance=$3 WHERE op_id=$1",
+                        op_id, applied, new_balance)
+                    return {"status": "applied", "applied": applied,
+                            "new_balance": new_balance}
+        # non-DB fallback: in-memory + файл ops не поддерживается —
+        # возвращаем applied без дедупликации (dev-режим).
+        if amount > 0:
+            new_balance = await self.add_balance(
+                guild_id, user_id, amount)
+            applied = amount
+        else:
+            taken = await self.deduct_balance(
+                guild_id, user_id, -amount)
+            applied = -taken
+            new_balance = await self.get_balance(guild_id, user_id)
+        return {"status": "applied", "applied": applied,
+                "new_balance": new_balance}
+
+    # Идемпотентные награды за матч: одна строка гранта на
+    # (match_id, user_id). Грант и начисление баланса — в одной
+    # транзакции: либо оба, либо ни одного. Повторный вызов с тем же
+    # match_id возвращает ранее выданную сумму БЕЗ повторного
+    # начисления — покрывает падение процесса между грантами
+    # разных игроков и повторную финализацию.
+    _GRANT_DDL = """
+    CREATE TABLE IF NOT EXISTS match_coin_grants (
+        match_id TEXT NOT NULL,
+        guild_id BIGINT NOT NULL,
+        user_id BIGINT NOT NULL,
+        amount INTEGER NOT NULL,
+        granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (match_id, user_id)
+    )
+    """
+
+    async def add_balance_once(
+        self, guild_id: int, user_id: int, amount: int, match_id: str
+    ) -> int:
+        """Идемпотентное начисление монет за матч.
+
+        Возвращает фактически зачисленную сумму для статистики
+        (total_earnings): при первом вызове — amount с учётом cap
+        MAX_BALANCE, при повторном — та же зафиксированная сумма.
+        Баланс изменяется только при первом вызове.
+        """
+        if amount <= 0:
+            return 0
+
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(self._GRANT_DDL)
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO match_coin_grants
+                            (match_id, guild_id, user_id, amount)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (match_id, user_id) DO NOTHING
+                        RETURNING amount
+                        """,
+                        match_id, guild_id, user_id, amount,
+                    )
+                    if row is None:
+                        # Грант уже выдан — возвращаем зафиксированную
+                        # сумму, баланс не трогаем.
+                        existing = await conn.fetchrow(
+                            "SELECT amount FROM match_coin_grants "
+                            "WHERE match_id = $1 AND user_id = $2",
+                            match_id, user_id,
+                        )
+                        return int(existing["amount"]) if existing else 0
+
+                    # Новый грант — начислить баланс в той же транзакции.
+                    await self._ensure_row(conn, guild_id, user_id)
+                    bal = await conn.fetchrow(
+                        "SELECT balance FROM user_balance "
+                        "WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+                        guild_id, user_id,
+                    )
+                    balance = await self._apply_decay(
+                        conn, guild_id, user_id, bal["balance"]
+                    )
+                    # Фактически зачисленная сумма может быть меньше
+                    # amount при достижении MAX_BALANCE — фиксируем её
+                    # в гранте, чтобы total_earnings и повторные
+                    # вызовы учитывали реальное начисление.
+                    add = min(amount, max(0, _max_balance() - balance))
+                    await conn.execute(
+                        "UPDATE user_balance SET balance = $1 "
+                        "WHERE guild_id = $2 AND user_id = $3",
+                        balance + add, guild_id, user_id,
+                    )
+                    await conn.execute(
+                        "UPDATE match_coin_grants SET amount = $1 "
+                        "WHERE match_id = $2 AND user_id = $3",
+                        add, match_id, user_id,
+                    )
+                    return add
+
+        # JSON-режим: PG нет — фолбэк на обычное начисление
+        # (защита только in-memory processed-флагом).
+        await self.add_balance(guild_id, user_id, amount)
+        return amount
 
     async def subtract_balance(self, guild_id: int, user_id: int, amount: int) -> int:
         """Subtract coins from user balance. Returns new balance.

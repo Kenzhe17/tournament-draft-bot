@@ -308,9 +308,11 @@ def test_ff_cooldown_store(tmp_path, monkeypatch):
     assert 6 * 3600 - 5 < left <= 6 * 3600
     # Другой пользователь не затронут
     assert store.seconds_left(2) == 0
-    # Персистентность: новый экземпляр читает тот же файл
+    # Персистентность: новый экземпляр читает тот же файл.
+    # Допуск ±1с: seconds_left() вычисляется от time.time(),
+    # между двумя вызовами может тикнуть секунда.
     store2 = mod.FFCooldownStore("test_cd.json")
-    assert store2.seconds_left(1) == left
+    assert abs(store2.seconds_left(1) - left) <= 1
 
 
 def test_ff_cooldown_expired(tmp_path, monkeypatch):
