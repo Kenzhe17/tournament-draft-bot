@@ -185,17 +185,22 @@ class CashCupStore:
                 # change может принимать (state, conn) — тогда она
                 # работает на том же соединении/транзакции и может
                 # брать согласованные блокировки (например, FOR
-                # UPDATE на teams при регистрации squads). Async
-                # change тоже поддерживается.
+                # UPDATE на teams при регистрации squads). Второй
+                # параметр должен быть ОБЯЗАТЕЛЬНЫМ позиционным —
+                # callback'и с опциональными аргументами (st, x=def)
+                # получают только state. Async change поддерживается.
                 try:
-                    n_params = sum(
-                        1 for p in inspect.signature(change)
+                    params = [
+                        p for p in inspect.signature(change)
                         .parameters.values()
                         if p.kind in (p.POSITIONAL_ONLY,
-                                      p.POSITIONAL_OR_KEYWORD))
+                                      p.POSITIONAL_OR_KEYWORD)]
+                    wants_conn = (len(params) >= 2
+                                  and params[1].default
+                                  is inspect.Parameter.empty)
                 except (TypeError, ValueError):
-                    n_params = 1
-                result = (change(state, conn) if n_params >= 2
+                    wants_conn = False
+                result = (change(state, conn) if wants_conn
                           else change(state))
                 if inspect.isawaitable(result):
                     result = await result
