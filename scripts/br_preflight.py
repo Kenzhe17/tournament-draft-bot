@@ -46,6 +46,9 @@ def main() -> None:
     if pending:
         print(f"ВНИМАНИЕ: {len(pending)} турниров с отложенной публикацией — "
               "после деплоя resume_pending_publish доведёт их до конца.")
+    if br_store.corrupt_count:
+        print(f"КРИТИЧНО: {br_store.corrupt_count} повреждённых записей BR "
+              "в карантине — восстановите данные до деплоя!")
 
 
 if __name__ == "__main__":

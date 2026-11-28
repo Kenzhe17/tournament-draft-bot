@@ -36,14 +36,31 @@ class BRStore:
     def __init__(self) -> None:
         self._tournaments: dict[tuple[int, int], BRTournament] = {}
         self._history: list[BRTournament] = []
+        # Сырые записи, не прошедшие from_dict: хранятся отдельно и
+        # записываются обратно при save — повреждённые данные не
+        # исчезают бесследно при следующем сохранении.
+        self._corrupt_active: dict[str, object] = {}
+        self._corrupt_history: list[object] = []
+        # файл целиком не распарсился — при первом save() сохраняем
+        # его копию отдельно, чтобы save не уничтожил данные безвозвратно
+        self._preserve_corrupt_file = False
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.load()
 
+    @property
+    def corrupt_count(self) -> int:
+        """Число повреждённых записей, сохранённых в карантине."""
+        return len(self._corrupt_active) + len(self._corrupt_history)
+
     def load(self) -> None:
         """Загрузить все BR турниры из файла."""
+        self._preserve_corrupt_file = False
         if not BR_DATA_FILE.exists():
             self._tournaments = {}
             self._history = []
+            self._corrupt_active = {}
+            self._corrupt_history = []
+            self._preserve_corrupt_file = False
             return
 
         try:
@@ -61,32 +78,52 @@ class BRStore:
                 history_raw = []
 
             loaded: dict[tuple[int, int], BRTournament] = {}
+            corrupt_active: dict[str, object] = {}
             for key, data in active_raw.items():
                 try:
                     parts = str(key).split(":")
                     if len(parts) != 2:
-                        continue
+                        raise ValueError(f"некорректный ключ {key!r}")
                     gid, cid = int(parts[0]), int(parts[1])
                     loaded[(gid, cid)] = BRTournament.from_dict(data)
                 except Exception as exc:
-                    # битая запись не должна ронять весь store при старте
-                    logger.error("BR load: пропущен активный турнир %s: %s",
+                    # битая запись не должна ронять весь store при старте,
+                    # но и не должна исчезнуть при следующем save —
+                    # сохраняем сырые данные в карантин.
+                    logger.error("BR load: повреждён активный турнир %s: %s",
                                  key, exc)
+                    corrupt_active[str(key)] = data
             self._tournaments = loaded
+            self._corrupt_active = corrupt_active
 
             history: list[BRTournament] = []
+            corrupt_history: list[object] = []
             for data in history_raw:
                 if isinstance(data, dict):
                     try:
                         history.append(BRTournament.from_dict(data))
+                        continue
                     except Exception as exc:
-                        logger.error("BR load: пропущен архивный турнир: %s", exc)
+                        logger.error("BR load: повреждён архивный турнир: %s",
+                                     exc)
+                else:
+                    logger.error("BR load: повреждён архивный турнир "
+                                 "(не объект): %r", data)
+                corrupt_history.append(data)
+            self._corrupt_history = corrupt_history
             # legacy-турниры в архивных фазах тоже уходят в history
             for (gid, cid), t in list(self._tournaments.items()):
                 if t.phase in ARCHIVE_PHASES:
                     history.append(t)
                     del self._tournaments[(gid, cid)]
             self._history = history
+            if self.corrupt_count:
+                logger.error(
+                    "BR load: хранилище загружено ЧАСТИЧНО — "
+                    "%d повреждённых записей в карантине (corrupt_count). "
+                    "Восстановите данные перед доверием файлу.",
+                    self.corrupt_count,
+                )
             logger.info(
                 "Загружено %d активных и %d архивных BR турниров",
                 len(self._tournaments), len(self._history),
@@ -95,16 +132,44 @@ class BRStore:
             logger.error("Ошибка загрузки BR JSON: %s", exc)
             self._tournaments = {}
             self._history = []
+            self._corrupt_active = {}
+            self._corrupt_history = []
+            # файл на диске не тронут; save() сохранит его копию
+            # отдельно перед перезаписью (_preserve_corrupt_file)
+            self._preserve_corrupt_file = BR_DATA_FILE.exists()
 
     def save(self) -> None:
-        """Сохранить все BR турниры в файл."""
+        """Сохранить все BR турниры в файл.
+
+        Повреждённые записи (карантин) записываются обратно в исходном
+        виде — load → save → reload их не теряет. Если исходный файл
+        не парсился целиком, перед перезаписью сохраняем его копию.
+        """
         DATA_DIR.mkdir(parents=True, exist_ok=True)
+        if self._preserve_corrupt_file and BR_DATA_FILE.exists():
+            import shutil
+            import time
+            backup = BR_DATA_FILE.with_name(
+                f"{BR_DATA_FILE.name}.corrupt-{int(time.time())}")
+            try:
+                shutil.copy2(BR_DATA_FILE, backup)
+                logger.error(
+                    "BR store: исходный файл не парсился — копия сохранена: %s",
+                    backup)
+            except Exception as exc:
+                logger.error("BR store: не удалось сохранить копию "
+                             "повреждённого файла: %s", exc)
+            self._preserve_corrupt_file = False
+        active = {
+            f"{gid}:{cid}": t.to_dict()
+            for (gid, cid), t in self._tournaments.items()
+        }
+        for key, raw in getattr(self, "_corrupt_active", {}).items():
+            active.setdefault(key, raw)  # не затирать валидные записи
         raw = {
-            "active": {
-                f"{gid}:{cid}": t.to_dict()
-                for (gid, cid), t in self._tournaments.items()
-            },
-            "history": [t.to_dict() for t in self._history],
+            "active": active,
+            "history": [t.to_dict() for t in self._history]
+                       + list(getattr(self, "_corrupt_history", [])),
         }
         atomic_write_json(BR_DATA_FILE, raw)
 
@@ -128,6 +193,9 @@ class BRStore:
             self.archive(br_tournament)
             return
         self._tournaments[(br_tournament.guild_id, br_tournament.channel_id)] = br_tournament
+        # валидная запись на этом ключе замещает карантинную копию
+        self._corrupt_active.pop(
+            f"{br_tournament.guild_id}:{br_tournament.channel_id}", None)
         self.save()
 
     def archive(self, br_tournament: BRTournament) -> None:

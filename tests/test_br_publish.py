@@ -35,12 +35,14 @@ class FakeResponse:
     def __init__(self):
         self.messages = []
         self.deferred = False
+        self.defer_kwargs = None
 
     def is_done(self):
         return self.deferred
 
     async def defer(self, **kwargs):
         self.deferred = True
+        self.defer_kwargs = kwargs
 
     async def send_message(self, *args, **kwargs):
         self.messages.append((args, kwargs))
@@ -577,3 +579,234 @@ def test_store_remove_and_load_resilience(tmp_path, monkeypatch):
     assert len(s2._tournaments) == 1
     # {"id": "h1"} — минимальный dict, from_dict его проглотит или пропустит
     assert all(isinstance(h, BRTournament) for h in s2._history)
+
+
+# ---------------------------------------------------------------------------
+# Safety gate: роли, карантин повреждённых данных, откаты publish
+# ---------------------------------------------------------------------------
+
+
+class _FakeRole:
+    pass
+
+
+class _FakeMember:
+    def __init__(self, role):
+        self.roles = [role]
+        self.removed = []
+
+    async def remove_roles(self, role):
+        self.removed.append(role)
+        self.roles.remove(role)
+
+
+class _RoleGuild(FakeGuild):
+    def __init__(self, channels, role=None, members=None):
+        super().__init__(channels)
+        self._role = role
+        self._members = members or {}
+
+    def get_role(self, role_id):
+        return self._role
+
+    def get_member(self, user_id):
+        return self._members.get(user_id)
+
+
+def _role_tournament(is_test, member_ids):
+    t = _collect_tournament()
+    t.is_test = is_test
+    # участники слота 0 — проверяемые ID
+    t.teams[0]["member_ids"] = list(member_ids)
+    t.players = [{"id": uid, "name": f"P{uid}"} for uid in member_ids]
+    return t
+
+
+@pytest.mark.asyncio
+async def test_strip_roles_noop_for_test_tournament(monkeypatch):
+    from views.br_view import strip_tournament_roles
+
+    role = _FakeRole()
+    member = _FakeMember(role)
+    guild = _RoleGuild({2: FakeChannel()}, role=role, members={1001: member})
+    t = _role_tournament(is_test=True, member_ids=[1001])
+
+    monkeypatch.setattr(br_store, "get_by_guild", lambda gid: [t])
+    await strip_tournament_roles(guild, t)
+    assert member.removed == []
+    assert role in member.roles
+
+
+@pytest.mark.asyncio
+async def test_strip_roles_ignores_test_tournaments_in_busy(monkeypatch):
+    """Участник тестового BR не «удерживает» реальную роль: при снятии
+    роли у реального турнира test-записи не учитываются как busy."""
+    from views.br_view import strip_tournament_roles
+
+    role = _FakeRole()
+    member = _FakeMember(role)
+    guild = _RoleGuild({2: FakeChannel()}, role=role, members={1001: member})
+    real_t = _role_tournament(is_test=False, member_ids=[1001])
+    test_t = _role_tournament(is_test=True, member_ids=[1001])
+    test_t.id = "tid-test-other"
+
+    # оба «активны» в одном guild: реальный + тестовый с тем же uid
+    monkeypatch.setattr(br_store, "get_by_guild",
+                        lambda gid: [real_t, test_t])
+    await strip_tournament_roles(guild, real_t)
+    # роль снята: test-турнир не считается занятостью
+    assert member.removed == [role]
+
+
+def test_corrupt_entries_survive_save_reload(tmp_path, monkeypatch):
+    import json
+    import storage.br_store as br_store_mod
+    from storage.br_store import BRStore
+
+    valid = _collect_tournament()
+    src = tmp_path / "br.json"
+    src.write_text(json.dumps({
+        "active": {"1:2": valid.to_dict(), "3:4": "broken-entry"},
+        "history": [{"id": "h-ok"}, "junk-item"],
+    }), encoding="utf-8")
+    monkeypatch.setattr(br_store_mod, "BR_DATA_FILE", src)
+
+    s1 = BRStore.__new__(BRStore)
+    s1.load()
+    assert s1.corrupt_count == 2
+    assert (1, 2) in s1._tournaments
+
+    # save → reload: повреждённые записи не теряются
+    s1.save()
+    raw = json.loads(src.read_text(encoding="utf-8"))
+    assert raw["active"]["3:4"] == "broken-entry"
+    assert "junk-item" in raw["history"]
+
+    s2 = BRStore.__new__(BRStore)
+    s2.load()
+    assert s2.corrupt_count == 2
+    assert (1, 2) in s2._tournaments
+
+
+def test_whole_file_corrupt_preserved_before_overwrite(tmp_path, monkeypatch):
+    import storage.br_store as br_store_mod
+    from storage.br_store import BRStore
+
+    src = tmp_path / "br.json"
+    original = b'{"active": {broken json!!!'
+    src.write_bytes(original)
+    monkeypatch.setattr(br_store_mod, "BR_DATA_FILE", src)
+
+    s = BRStore.__new__(BRStore)
+    s.load()
+    assert s._tournaments == {} and s._history == []
+    assert s._preserve_corrupt_file is True
+
+    s.save()  # перезапись — но исходник сохранён отдельным файлом
+    backups = list(tmp_path.glob("br.json.corrupt-*"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == original
+    # основной файл — валидный JSON новой схемы
+    import json
+    assert json.loads(src.read_text(encoding="utf-8"))["active"] == {}
+
+
+@pytest.mark.asyncio
+async def test_freeze_rollback_when_pending_save_fails(patched_store,
+                                                        monkeypatch):
+    """Сбой br_store.set после freeze_results: publish_pending откачен."""
+    from views.br_view import PublishResultsButton
+
+    t = _collect_tournament()
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+    inter = _interaction(guild)
+
+    calls = {"n": 0}
+
+    def flaky_set(obj):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise IOError("disk full")
+        patched_store["sets"].append(obj)
+
+    monkeypatch.setattr(br_store, "set", flaky_set)
+    await PublishResultsButton(1, 2, t.id).callback(inter)
+
+    # freeze откачен: pending не завис в памяти, фаза COLLECT
+    assert t.phase == BRTournamentPhase.COLLECT
+    assert t.publish_pending is None
+    assert t.results_snapshot is None
+    assert any("не удалось сохранить снимок" in str(m[0][0]).lower()
+               for m in inter.response.messages)
+
+
+@pytest.mark.asyncio
+async def test_resume_restores_card_when_phase_changed(patched_store):
+    """resume: cancel/purge между edit и commit → карточка возвращается."""
+    from views.br_view import resume_pending_publish
+
+    t = _collect_tournament()
+    t.phase = BRTournamentPhase.COLLECT
+    snap = t.calculate_final_results()
+    t.publish_pending = snap
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+
+    # к моменту commit турнир уже отменён (другой объект в store)
+    cancelled = _collect_tournament()
+    cancelled.id = t.id
+    cancelled.phase = BRTournamentPhase.CANCELLED
+    cancelled.cancel_reason = "отменён параллельно"
+    patched_store["t"] = cancelled
+
+    ok = await resume_pending_publish(t, FakeClient(guild))
+    assert ok is False
+    # edit финала + edit восстановления актуального вида
+    assert len(channel.message.edits) == 2
+
+
+@pytest.mark.asyncio
+async def test_resume_restores_card_when_purged(patched_store):
+    from views.br_view import resume_pending_publish
+
+    t = _collect_tournament()
+    t.phase = BRTournamentPhase.COLLECT
+    t.publish_pending = t.calculate_final_results()
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+
+    # purge: store.get → None (турнира больше нет)
+    patched_store["t"] = None
+
+    ok = await resume_pending_publish(t, FakeClient(guild))
+    assert ok is False
+    assert len(channel.message.edits) == 2
+
+
+@pytest.mark.asyncio
+async def test_defer_kwargs_include_thinking(patched_store):
+    t = _collect_tournament()
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+    inter = _interaction(guild)
+    await PublishResultsButton(1, 2, t.id).callback(inter)
+    assert inter.response.defer_kwargs == {"ephemeral": True, "thinking": True}
+
+
+def test_discord_interaction_types_support_defer_and_followup():
+    """Проверка реальных типов discord.py, а не только mock."""
+    import inspect
+    from discord import Interaction, InteractionResponse, Webhook
+
+    sig = inspect.signature(InteractionResponse.defer)
+    assert {"ephemeral", "thinking"} <= set(sig.parameters)
+    assert hasattr(InteractionResponse, "is_done")
+    # interaction.followup — Webhook, send принимает ephemeral и view
+    assert "followup" in dir(Interaction)
+    send_sig = inspect.signature(Webhook.send)
+    assert "ephemeral" in send_sig.parameters
