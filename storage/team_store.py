@@ -168,15 +168,35 @@ class TeamStore:
         except Exception as exc:
             logger.error("Ошибка сохранения команды в PostgreSQL: %s", exc)
 
-    async def _delete_from_postgres(self, team_id: str) -> None:
-        """Удалить команду из PostgreSQL."""
-        try:
-            from storage.db import get_pool
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                await conn.execute("DELETE FROM teams WHERE team_id = $1", team_id)
-        except Exception as exc:
-            logger.error("Ошибка удаления команды из PostgreSQL: %s", exc)
+    async def _delete_from_postgres(self, team_id: str) -> bool:
+        """Удалить команду из PostgreSQL.
+
+        Rollback-compat (Squad Hub): сначала удаляются связанные
+        строки team_applications/team_invites — у них FK на
+        teams(team_id) без каскада. Таблицы могут отсутствовать,
+        если миграция Squad Hub ещё не применялась — проверяем
+        через to_regclass. Всё в одной транзакции: либо команда
+        и все её squad-строки удалены, либо ничего.
+        team_audit/team_lfg не имеют FK на teams — история
+        сохраняется.
+
+        Returns:
+            True — строка teams удалена; False — не найдена.
+        """
+        from storage.db import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for tbl in ("team_applications", "team_invites"):
+                    exists = await conn.fetchval(
+                        "SELECT to_regclass($1)", tbl)
+                    if exists:
+                        await conn.execute(
+                            f"DELETE FROM {tbl} WHERE team_id = $1",
+                            team_id)
+                res = await conn.execute(
+                    "DELETE FROM teams WHERE team_id = $1", team_id)
+                return res.strip().endswith("1")
 
     async def create(self, team: Team) -> Team:
         """Создать новую команду.
@@ -308,10 +328,19 @@ class TeamStore:
         if team_id not in self._teams:
             return False
 
-        del self._teams[team_id]
         if self._use_postgres:
-            await self._delete_from_postgres(team_id)
-        else:
+            # Сначала PG (включая squad-строки): при ошибке кэш
+            # не трогаем — иначе был бы ложный успех удаления.
+            try:
+                ok = await self._delete_from_postgres(team_id)
+            except Exception as exc:
+                logger.error(
+                    "Ошибка удаления команды из PostgreSQL: %s", exc)
+                return False
+            if not ok:
+                return False
+        del self._teams[team_id]
+        if not self._use_postgres:
             self._save_to_json()
         return True
 
