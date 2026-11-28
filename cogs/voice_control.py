@@ -148,6 +148,7 @@ class VoiceControlCog(commands.Cog):
         self._voice_pending: set[tuple[int, int]] = set()
         self._refresh_tasks: dict[tuple[int, int], asyncio.Task] = {}
         self._sweep_task: asyncio.Task | None = None
+        self._publish_locks: dict[int, asyncio.Lock] = {}
         self._startup_done = False
         vc.set_bot(bot)
 
@@ -352,40 +353,62 @@ class VoiceControlCog(commands.Cog):
             self, guild: discord.Guild,
             stored: dict[str, Any] | None) -> discord.Message | None:
         """Найти опубликованное сообщение карточки по записи в PG.
-        None — записи нет, канал/сообщение удалены."""
+        None — только при ПОДТВЕРЖДЁННОМ удалении (NotFound):
+        канал или сообщение реально не существуют. Транзиентные
+        сбои (сеть, 5xx, rate-limit) пробрасываются — иначе
+        параллельный/неудачный fetch мог бы спровоцировать
+        дублирование карточки."""
         if not stored:
             return None
         channel = guild.get_channel(stored["channel_id"])
         if channel is None:
             try:
                 channel = await guild.fetch_channel(stored["channel_id"])
-            except Exception:
+            except discord.NotFound:
                 return None
         try:
             return await channel.fetch_message(stored["message_id"])
-        except Exception:
+        except discord.NotFound:
             return None
 
     async def _publish_public_panel(
             self, interaction: discord.Interaction) -> None:
         """Одна карточка на сервер: обновить существующую или
-        опубликовать новую в текущем текстовом канале. Повторный
-        вызов не создаёт дубликатов; удалённое сообщение
-        восстанавливается."""
+        опубликовать новую в текущем текстовом канале. Per-guild
+        блокировка исключает дубликаты при одновременных вызовах.
+        Пересоздание — только при подтверждённом удалении."""
         guild = interaction.guild
-        card = self._public_card_view()
-        stored = await vc.db.panel(guild.id)
-        msg = await self._find_panel_message(guild, stored)
-        if msg is not None:
-            try:
-                await msg.edit(view=card)
-            except discord.HTTPException:
-                msg = None
-        if msg is None:
-            msg = await interaction.channel.send(view=card)
-        if stored is None or stored.get("channel_id") != msg.channel.id \
-                or stored.get("message_id") != msg.id:
-            await vc.db.put_panel(guild.id, msg.channel.id, msg.id)
+        lock = self._publish_locks.setdefault(guild.id, asyncio.Lock())
+        async with lock:
+            card = self._public_card_view()
+            stored = await vc.db.panel(guild.id)
+            msg = await self._find_panel_message(guild, stored)
+            if msg is not None:
+                try:
+                    await msg.edit(view=card)
+                except discord.NotFound:
+                    # Подтверждённое удаление между fetch и edit.
+                    msg = None
+                # Прочие ошибки НЕ приводят к пересозданию:
+                # сообщение может существовать — дубль недопустим.
+            if msg is None:
+                msg = await interaction.channel.send(view=card)
+            if stored is None or stored.get("channel_id") != msg.channel.id \
+                    or stored.get("message_id") != msg.id:
+                try:
+                    await vc.db.put_panel(guild.id, msg.channel.id, msg.id)
+                except Exception:
+                    # Без записи в PG кнопка новой карточки не пройдёт
+                    # проверку привязки — удаляем сироту, чтобы не
+                    # осталась «мёртвая» публичная панель.
+                    log.exception(
+                        "voice panel binding save failed guild=%s",
+                        guild.id)
+                    try:
+                        await msg.delete()
+                    except Exception as exc:
+                        log.debug("orphan panel delete failed: %s", exc)
+                    raise
 
     async def _open_ephemeral(
             self, interaction: discord.Interaction) -> None:
@@ -395,10 +418,30 @@ class VoiceControlCog(commands.Cog):
         if not interaction.guild:
             await self._safe_text(interaction, "Только на сервере.")
             return
+        if not VOICE_CONTROL_ENABLED:
+            await self._safe_text(
+                interaction,
+                "Voice Control отключён (VOICE_CONTROL_ENABLED=0).")
+            return
         try:
             await vc.require_access(interaction)
         except vc.VoiceControlError as exc:
             await self._safe_text(interaction, str(exc))
+            return
+        # Целостность публичной карточки: кнопка работает только на
+        # С АКТУАЛЬНОЙ записи в PostgreSQL — guild_id, channel_id и
+        # message_id должны совпадать. Старые/посторонние карточки
+        # с тем же custom_id панель не откроют.
+        stored = await vc.db.panel(interaction.guild.id)
+        msg = getattr(interaction, "message", None)
+        if not stored or msg is None \
+                or stored.get("message_id") != getattr(msg, "id", None) \
+                or stored.get("channel_id") != getattr(
+                    interaction, "channel_id", None):
+            await self._safe_text(
+                interaction,
+                "Эта карточка устарела — используйте актуальную "
+                "панель Voice Control Center.")
             return
         # Повторное открытие инвалидирует предыдущую панель этого
         # администратора: её кнопки больше не имеют доступа.

@@ -2045,9 +2045,12 @@ def _text_channel(cid, guild, *, fetch_message=None):
               send=AsyncMock())
 
 
-def _interaction(guild, user, channel, *, message_id=None):
+def _interaction(guild, user, channel, *, message_id=None,
+                 channel_id=None):
     inter = NS(
         guild=guild, user=user, channel=channel,
+        channel_id=(channel_id if channel_id is not None
+                    else (channel.id if channel else None)),
         message=NS(id=message_id) if message_id else None,
         type=None,
         response=NS(is_done=lambda: False,
@@ -2072,6 +2075,22 @@ def _cog(env, extra_bot=None):
                  (c for c in env.guild.channels if c.id == cid), None),
              **(extra_bot or {}))
     return VoiceControlCog(bot)
+
+
+async def _click_card(env, cog, user, *, channel_id=500, message_id=777,
+                      seed=True):
+    """Клик по кнопке публичной карточки с валидной привязкой PG.
+    seed=False — для проверки отказа по устаревшей карточке."""
+    if seed:
+        await vc.db.put_panel(GUILD_ID, channel_id, message_id)
+    inter = _interaction(env.guild, user, None,
+                         message_id=message_id, channel_id=channel_id)
+    view = cog._public_card_view()
+    btn = next(c for c in view.walk_children()
+               if isinstance(c, discord.ui.Button)
+               and c.custom_id == "vc_open_panel")
+    await btn.callback(inter)
+    return inter
 
 
 @pytest.mark.asyncio
@@ -2123,34 +2142,24 @@ async def test_public_button_access_matrix(env, vc_owner):
     открывают ephemeral-панель; обычный игрок — отказ."""
     g = env.guild
     cog = _cog(env)
-    view = cog._public_card_view()
-    btn = next(c for c in view.walk_children()
-               if isinstance(c, discord.ui.Button)
-               and c.custom_id == "vc_open_panel")
-    assert btn.label == "Открыть панель управления"
-
-    async def click(user):
-        inter = _interaction(g, user, None)
-        await btn.callback(inter)
-        return inter
 
     # Обычный игрок — отказ, панель не создана.
     player = make_member(77, g)
-    inter = await click(player)
+    inter = await _click_card(env, cog, player)
     assert (GUILD_ID, 77) not in cog.panels
     assert "Недостаточно прав" in str(
         inter.response.send_message.await_args)
 
     # Administrator — открывает свою панель.
     admin = make_member(ACTOR_ID, g, admin=True)
-    inter = await click(admin)
+    inter = await _click_card(env, cog, admin)
     assert (GUILD_ID, ACTOR_ID) in cog.panels
     assert inter.response.send_message.await_args.kwargs.get(
         "ephemeral") is True
 
     # BOT_OWNER_ID без administrator — тоже открывает.
     owner = make_member(VC_OWNER, g)
-    inter = await click(owner)
+    inter = await _click_card(env, cog, owner)
     assert (GUILD_ID, VC_OWNER) in cog.panels
 
 
@@ -2169,7 +2178,9 @@ async def test_public_button_after_restart(env, vc_owner):
                    if isinstance(c, discord.ui.Button)
                    and c.custom_id == "vc_open_panel")
         admin = make_member(ACTOR_ID, g, admin=True)
-        inter = _interaction(g, admin, None)
+        await vc.db.put_panel(GUILD_ID, 500, 777)
+        inter = _interaction(g, admin, None,
+                             message_id=777, channel_id=500)
         await btn.callback(inter)
         assert (GUILD_ID, ACTOR_ID) in cog.panels
     finally:
@@ -2236,11 +2247,7 @@ async def test_two_admins_independent_panels(env, vc_owner):
     a2 = make_member(102, g, admin=True)
 
     for u in (a1, a2):
-        inter = _interaction(g, u, None)
-        view = cog._public_card_view()
-        btn = next(c for c in view.walk_children()
-                   if isinstance(c, discord.ui.Button))
-        await btn.callback(inter)
+        await _click_card(env, cog, u)
 
     p1 = cog.panels[(GUILD_ID, 101)]
     p2 = cog.panels[(GUILD_ID, 102)]
@@ -2256,11 +2263,7 @@ async def test_revoked_admin_loses_access(env, vc_owner):
     g = env.guild
     cog = _cog(env)
     admin = make_member(ACTOR_ID, g, admin=True)
-    inter = _interaction(g, admin, None)
-    view = cog._public_card_view()
-    btn = next(c for c in view.walk_children()
-               if isinstance(c, discord.ui.Button))
-    await btn.callback(inter)
+    await _click_card(env, cog, admin)
     panel = cog.panels[(GUILD_ID, ACTOR_ID)]
     panel.message_id = 555
 
@@ -2273,27 +2276,18 @@ async def test_revoked_admin_loses_access(env, vc_owner):
 
 
 @pytest.mark.asyncio
-async def test_flag_off_blocks_panel_mutations(env, vc_owner,
-                                               monkeypatch):
-    """8. Feature flag OFF: мутации панели запрещены."""
+async def test_flag_off_blocks_panel_open(env, vc_owner, monkeypatch):
+    """8. Feature flag OFF: кнопка публичной карточки показывает
+    понятное уведомление и не открывает панель."""
     import cogs.voice_control as vc_cog
     monkeypatch.setattr(vc_cog, "VOICE_CONTROL_ENABLED", False)
     g = env.guild
     make_channel(10, g, "A")
     cog = _cog(env)
     admin = make_member(ACTOR_ID, g, admin=True)
-    inter = _interaction(g, admin, None)
-    view = cog._public_card_view()
-    btn = next(c for c in view.walk_children()
-               if isinstance(c, discord.ui.Button))
-    await btn.callback(inter)
-    panel = cog.panels[(GUILD_ID, ACTOR_ID)]
-    panel.message_id = 555
-
-    inter2 = _interaction(g, admin, None, message_id=555)
-    await cog.handle(inter2, "mute_all")
-    text = str(inter2.response.send_message.await_args
-               or inter2.followup.send.await_args)
+    inter = await _click_card(env, cog, admin)
+    assert (GUILD_ID, ACTOR_ID) not in cog.panels
+    text = str(inter.response.send_message.await_args)
     assert "отключён" in text
 
 
@@ -2324,3 +2318,127 @@ async def test_emergency_only_bot_owner(env, vc_owner):
     inter = await call(owner)
     # Владелец бота проходит проверку и доходит до defer.
     assert inter.response.defer.await_count == 1
+
+
+# ----------------------------------------------------------------------
+# Public Panel Integrity
+# ----------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_stale_public_card_rejected(env, vc_owner):
+    """Кнопка на устаревшей/чужой карточке не открывает панель:
+    message_id/channel_id обязаны совпадать с записью в PG."""
+    g = env.guild
+    cog = _cog(env)
+    admin = make_member(ACTOR_ID, g, admin=True)
+    await vc.db.put_panel(GUILD_ID, 500, 777)  # актуальная карточка
+
+    # Другой message_id — старая карточка.
+    inter = await _click_card(env, cog, admin, message_id=999, seed=False)
+    assert (GUILD_ID, ACTOR_ID) not in cog.panels
+    assert "устарела" in str(inter.response.send_message.await_args)
+
+    # Другой channel_id — карточка из другого канала.
+    inter = await _click_card(env, cog, admin, channel_id=501, seed=False)
+    assert "устарела" in str(inter.response.send_message.await_args)
+
+    # Записи в PG нет вообще.
+    await vc.db.put_panel(GUILD_ID, 500, 777)
+    env.store._panels.clear()
+    inter = await _click_card(env, cog, admin, seed=False)
+    assert "устарела" in str(inter.response.send_message.await_args)
+    assert (GUILD_ID, ACTOR_ID) not in cog.panels
+
+
+@pytest.mark.asyncio
+async def test_concurrent_voice_single_card(env, vc_owner):
+    """Per-guild блокировка: два одновременных /voice не создают
+    дубликат карточки."""
+    from cogs import voice_control as vc_cog
+    g = env.guild
+    ch = _text_channel(500, g)
+    sent = NS(id=777, channel=ch, edit=AsyncMock())
+    ch.send = AsyncMock(return_value=NS(id=777, channel=ch))
+    ch.fetch_message = AsyncMock(return_value=sent)
+    g.channels.append(ch)
+    cog = _cog(env)
+    owner = make_member(VC_OWNER, g)
+
+    async def call():
+        inter = _interaction(g, owner, ch)
+        await vc_cog.VoiceControlCog.voice.callback(cog, inter)
+
+    await asyncio.gather(call(), call())
+    assert ch.send.await_count == 1
+    assert sent.edit.await_count == 1
+    assert len(env.store._panels) == 1
+
+
+@pytest.mark.asyncio
+async def test_edit_http_error_does_not_duplicate(env, vc_owner):
+    """HTTPException при edit — НЕ основание для пересоздания:
+    сообщение может существовать, дубль недопустим."""
+    from cogs import voice_control as vc_cog
+    g = env.guild
+    ch = _text_channel(500, g)
+    msg = NS(id=111, channel=ch,
+             edit=AsyncMock(side_effect=discord.HTTPException(
+                 MagicMockResponse(status=500), "err")))
+    ch.fetch_message = AsyncMock(return_value=msg)
+    ch.send = AsyncMock()
+    g.channels.append(ch)
+    await vc.db.put_panel(GUILD_ID, ch.id, 111)
+    cog = _cog(env)
+    owner = make_member(VC_OWNER, g)
+
+    inter = _interaction(g, owner, ch)
+    await vc_cog.VoiceControlCog.voice.callback(cog, inter)
+
+    assert ch.send.await_count == 0
+    assert "Не удалось" in str(inter.followup.send.await_args)
+
+
+@pytest.mark.asyncio
+async def test_notfound_between_fetch_and_edit_resends(env, vc_owner):
+    """Подтверждённое удаление (NotFound при edit) → пересоздание."""
+    from cogs import voice_control as vc_cog
+    g = env.guild
+    ch = _text_channel(500, g)
+    msg = NS(id=111, channel=ch,
+             edit=AsyncMock(side_effect=discord.NotFound(
+                 MagicMockResponse(), "deleted")))
+    ch.fetch_message = AsyncMock(return_value=msg)
+    ch.send = AsyncMock(return_value=NS(id=222, channel=ch))
+    g.channels.append(ch)
+    await vc.db.put_panel(GUILD_ID, ch.id, 111)
+    cog = _cog(env)
+    owner = make_member(VC_OWNER, g)
+
+    inter = _interaction(g, owner, ch)
+    await vc_cog.VoiceControlCog.voice.callback(cog, inter)
+
+    assert ch.send.await_count == 1
+    stored = await vc.db.panel(GUILD_ID)
+    assert stored["message_id"] == 222
+
+
+@pytest.mark.asyncio
+async def test_put_panel_failure_removes_orphan(env, vc_owner,
+                                                monkeypatch):
+    """Сбой сохранения message_id: сирота удаляется, владельцу —
+    понятная ошибка, PG не ссылается на мёртвую карточку."""
+    from cogs import voice_control as vc_cog
+    g = env.guild
+    ch = _text_channel(500, g)
+    orphan = NS(id=777, channel=ch, delete=AsyncMock())
+    ch.send = AsyncMock(return_value=orphan)
+    g.channels.append(ch)
+    env.store.put_panel = AsyncMock(side_effect=RuntimeError("pg down"))
+    cog = _cog(env)
+    owner = make_member(VC_OWNER, g)
+
+    inter = _interaction(g, owner, ch)
+    await vc_cog.VoiceControlCog.voice.callback(cog, inter)
+
+    assert orphan.delete.await_count == 1
+    assert "Не удалось" in str(inter.followup.send.await_args)
+    assert env.store._panels == {}
