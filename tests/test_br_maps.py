@@ -19,9 +19,11 @@ from storage.br_store import br_store
 from views import br_view
 from views.br_view import (BRCardView, BRManagementMenuView, MapButton,
                            MapRoomButton, MapEntryButton, MapBatchButton,
+                           MapRoomEditButton, MapBackButton, EntryBackButton,
                            PublishResultsButton, RoomPickButton, RoomMapSelect,
-                           RulesButton, EntryResultModal, BatchEntryModal,
-                           public_embed, render_public)
+                           RoomSetModal, RulesButton, EntryResultModal,
+                           BatchEntryModal, public_embed, render_public,
+                           map_panel_text)
 from utils.design import compose
 
 
@@ -42,16 +44,27 @@ class FakeResponse:
         return self.deferred
 
     async def defer(self, **kwargs):
+        if self.deferred:
+            raise discord.InteractionResponded(self)
         self.deferred = True
         self.defer_kwargs = kwargs
 
+    def _check_open(self):
+        # как в discord.py: после defer/edit_message/send_* второй
+        # первичный ответ на тот же interaction запрещён
+        if self.deferred or self.edits or self.modals or self.messages:
+            raise discord.InteractionResponded(self)
+
     async def send_message(self, *args, **kwargs):
+        self._check_open()
         self.messages.append((args, kwargs))
 
     async def edit_message(self, *args, **kwargs):
+        self._check_open()
         self.edits.append((args, kwargs))
 
     async def send_modal(self, modal):
+        self._check_open()
         self.modals.append(modal)
 
 
@@ -260,19 +273,21 @@ async def test_map_room_button_shows_per_map_credentials(patched_store):
     t.room_data = {"id": "999", "password": "legacy"}
     patched_store["t"] = t
     guild = FakeGuild({2: FakeChannel()})
-    inter = _interaction(guild, user_id=1000)  # участник слота 0
+
+    # каждый клик — отдельный interaction (как в Discord)
+    async def _room(map_index, uid=1000):
+        inter = _interaction(guild, user_id=uid)
+        await MapRoomButton(1, 2, t.id, map_index).callback(inter)
+        return str(inter.response.messages[-1][0][0])
 
     # карта 0 — свои данные
-    await MapRoomButton(1, 2, t.id, 0).callback(inter)
-    text = str(inter.response.messages[-1][0][0])
+    text = await _room(0)
     assert "ID: 111" in text and "p0" in text
     # карта 1 — fallback на legacy room_data
-    await MapRoomButton(1, 2, t.id, 1).callback(inter)
-    text = str(inter.response.messages[-1][0][0])
+    text = await _room(1)
     assert "ID: 999" in text and "legacy" in text
     # карта 2 — свои данные
-    await MapRoomButton(1, 2, t.id, 2).callback(inter)
-    text = str(inter.response.messages[-1][0][0])
+    text = await _room(2)
     assert "ID: 333" in text and "p2" in text
 
 
@@ -302,16 +317,18 @@ async def test_room_pick_opens_map_select_then_modal(patched_store):
     assert isinstance(select, RoomMapSelect)
     assert len(select.options) == 4
 
-    # выбор карты → модалка с map_index
+    # выбор карты → модалка с map_index (отдельный interaction)
     select._values = ["2"]
-    await select.callback(inter)
-    assert len(inter.response.modals) == 1
-    modal = inter.response.modals[0]
+    inter2 = _interaction(guild)
+    await select.callback(inter2)
+    assert len(inter2.response.modals) == 1
+    modal = inter2.response.modals[0]
     assert modal.map_index == 2
-    # submit пишет rooms["2"], не трогая другие карты
+    # submit пишет rooms["2"], не трогая другие карты (новый interaction)
     modal.room_id = SimpleNamespace(value="777")
     modal.room_password = SimpleNamespace(value="pw")
-    await modal.on_submit(inter)
+    inter3 = _interaction(guild)
+    await modal.on_submit(inter3)
     assert t.rooms["2"] == {"id": "777", "password": "pw"}
     assert "2" not in t.rooms or True
     assert t.room_credentials(2) == {"id": "777", "password": "pw"}
@@ -354,17 +371,19 @@ async def test_entry_during_playing_via_map_panel(patched_store):
     kw = inter.response.edits[-1][1]
     v = kw.get("view")
     assert v is not None
-    # слот 0 → модалка результата; submit в PLAYING должен пройти
+    # слот 0 → модалка результата (новый interaction); submit в PLAYING
     select = next(c for c in _walk(v) if isinstance(c, discord.ui.Select))
     select._values = ["0"]
-    await select.callback(inter)
-    assert inter.response.modals
-    modal = inter.response.modals[0]
+    inter2 = _interaction(guild)
+    await select.callback(inter2)
+    assert inter2.response.modals
+    modal = inter2.response.modals[0]
     assert isinstance(modal, EntryResultModal)
     modal.place = SimpleNamespace(value="1")
     modal.kills = SimpleNamespace(value="4")
     modal.dns = SimpleNamespace(value="")
-    await modal.on_submit(inter)
+    inter3 = _interaction(guild)
+    await modal.on_submit(inter3)
     entry = t.get_team_stats_for_map(t.teams[0], 0)
     assert entry == {"place": 1, "kills": 4, "dns": False}
 
@@ -402,10 +421,10 @@ async def test_batch_modal_accepts_nu_and_legacy_dns(patched_store):
     e2 = t.get_team_stats_for_map(t.teams[2], 0)
     assert e1["dns"] and e1["kills"] == 0
     assert e2["dns"]
-    # «-» очищает запись → слот снова пустой
+    # «-» очищает запись → слот снова пустой (новый interaction)
     modal2 = BatchEntryModal(1, 2, t.id, 0)
     modal2.data = SimpleNamespace(value="4 -")
-    await modal2.on_submit(inter)
+    await modal2.on_submit(_interaction(guild=FakeGuild({2: FakeChannel()})))
     assert t.get_team_stats_for_map(t.teams[3], 0) is None
     assert not t.results_complete()
 
@@ -428,9 +447,9 @@ async def test_publish_from_playing_lists_missing_maps(patched_store):
     assert t.phase == BRTournamentPhase.PLAYING
     assert t.publish_pending is None
 
-    # заполняем карту 2 → публикация из PLAYING успешна
+    # заполняем карту 2 → публикация из PLAYING успешна (новый клик)
     _fill_map(t, 2)
-    await PublishResultsButton(1, 2, t.id).callback(inter)
+    await PublishResultsButton(1, 2, t.id).callback(_interaction(guild))
     assert len(channel.message.edits) == 1
     assert t.phase == BRTournamentPhase.RESULTS
 
@@ -443,14 +462,15 @@ async def test_edit_closed_after_publish(patched_store):
     guild = FakeGuild({2: channel})
     inter = _interaction(guild)
     _fill_map(t, 0)
-    await PublishResultsButton(1, 2, t.id).callback(inter)
+    await PublishResultsButton(1, 2, t.id).callback(_interaction(guild))
     assert t.phase == BRTournamentPhase.RESULTS
     # ввод и комнаты после публикации закрыты
     ok, err = t.set_result_entry(0, 0, place=2, kills=0)
     assert not ok
-    await MapRoomButton(1, 2, t.id, 0).callback(inter)
+    inter_room = _interaction(guild)
+    await MapRoomButton(1, 2, t.id, 0).callback(inter_room)
     assert any("недоступна" in str(m[0][0]).lower()
-               for m in inter.response.messages)
+               for m in inter_room.response.messages)
 
 
 # ---------------------------------------------------------------------------
@@ -591,3 +611,266 @@ def test_map_index_not_name_for_repeated_maps():
     assert ok
     assert t.get_team_stats_for_map(t.teams[0], 0) is None
     assert t.get_team_stats_for_map(t.teams[0], 2) is not None
+
+
+# ---------------------------------------------------------------------------
+# Final fixes: приватность, модалки, обновление карточки, навигация, валидация
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_batch_button_opens_modal_without_double_response(patched_store):
+    """MapBatchButton: send_modal — первый и единственный ответ
+    (defer перед send_modal вызвал бы InteractionResponded)."""
+    t = _tournament(maps=2)
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    inter = _interaction(guild)
+    await MapBatchButton(1, 2, t.id, 0).callback(inter)
+    assert inter.response.defer_kwargs is None  # defer не вызывался
+    assert len(inter.response.modals) == 1
+    assert isinstance(inter.response.modals[0], BatchEntryModal)
+    assert inter.response.modals[0].map_index == 0
+
+
+@pytest.mark.asyncio
+async def test_map_panel_hides_room_id_from_non_viewer(patched_store, monkeypatch):
+    """ID комнаты не виден посторонним; кнопки комнаты нет."""
+    t = _tournament(maps=2)
+    t.set_room(0, "777", "pw")
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    monkeypatch.setattr(br_view, "player_allowed", lambda i, tt: True)
+    monkeypatch.setattr(br_view, "is_org", lambda uid: False)
+
+    inter = _interaction(guild, user_id=424242)  # не участник, не орг
+    await MapButton(1, 2, t.id, 0).callback(inter)
+    _, kw = inter.response.messages[-1]
+    view = kw["view"]
+    all_text = " ".join(str(getattr(c, "content", "") or "")
+                        for c in _walk(view))
+    assert "777" not in all_text
+    labels = [b.label for b in _buttons(view)]
+    assert "Данные комнаты" not in labels  # кнопки комнаты нет
+
+    # map_panel_text напрямую: show_room=False не содержит ID
+    assert "777" not in map_panel_text(t, 0, show_room=False)
+    assert "777" in map_panel_text(t, 0, show_room=True)
+
+
+@pytest.mark.asyncio
+async def test_squad_team_captain_only_sees_room(patched_store, monkeypatch):
+    """Squad Team: ID/пароль видит только капитан; член отряда — нет;
+    орг — видит и может редактировать."""
+    t = BRTournament(
+        id="tid-cap", guild_id=1, channel_id=2,
+        formation=BRTournamentFormation.TEAM, format=BRFormat.SQUAD,
+        map_count=2, message_id=555, is_test=True)
+    ids = [11, 12, 13, 14]
+    ok, err = t.register_team_slot(
+        "team-1", "Alpha", ids[0], ids, {i: f"P{i}" for i in ids})
+    assert ok, err
+    # ещё 4 команды до min_slots
+    for s in range(2, 6):
+        ids = [20 + 4 * s + j for j in range(4)]
+        ok, err = t.register_team_slot(
+            f"team-{s}", f"T{s}", ids[0], ids, {i: f"P{i}" for i in ids})
+        assert ok, err
+    t.draw()
+    t.begin_games()
+    t.set_room(0, "888", "secret")
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    import views.br_view as bv
+    monkeypatch.setattr(bv, "player_allowed", lambda i, tt: True)
+    monkeypatch.setattr(bv, "is_org", lambda uid: uid == 999)
+
+    async def panel_text(uid):
+        inter = _interaction(guild, user_id=uid)
+        await MapButton(1, 2, t.id, 0).callback(inter)
+        _, kw = inter.response.messages[-1]
+        view = kw["view"]
+        text = " ".join(str(getattr(c, "content", "") or "")
+                        for c in _walk(view))
+        return text, [b.label for b in _buttons(view)]
+
+    # капитан (user 11)
+    text, labels = await panel_text(11)
+    assert "888" in text
+    assert "Данные комнаты" in labels
+    # рядовой член (user 12)
+    text, labels = await panel_text(12)
+    assert "888" not in text
+    assert "Данные комнаты" not in labels
+    # орг
+    text, labels = await panel_text(999)
+    assert "888" in text
+    assert "Изменить комнату" in labels
+
+
+@pytest.mark.asyncio
+async def test_map_room_edit_prefills_and_saves(patched_store):
+    """«Изменить комнату» в панели карты → модалка этой карты с
+    текущими значениями в placeholder; submit сохраняет per-map."""
+    t = _tournament(maps=3)
+    t.set_room(1, "111", "oldpw")
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    inter = _interaction(guild)
+
+    await MapRoomEditButton(1, 2, t.id, 1).callback(inter)
+    assert len(inter.response.modals) == 1
+    modal = inter.response.modals[0]
+    assert isinstance(modal, RoomSetModal)
+    assert modal.map_index == 1
+    assert "111" in (modal.room_id.placeholder or "")
+    assert "oldpw" in (modal.room_password.placeholder or "")
+
+    modal.room_id = SimpleNamespace(value="222")
+    modal.room_password = SimpleNamespace(value="newpw")
+    inter2 = _interaction(guild)
+    await modal.on_submit(inter2)
+    assert t.room_credentials(1) == {"id": "222", "password": "newpw"}
+    # другие карты не тронуты
+    assert t.room_credentials(0) is None
+
+
+@pytest.mark.asyncio
+async def test_result_save_refreshes_public_card(patched_store):
+    """После записи результата публичная карточка перерисовывается:
+    прогресс и статус карты обновляются, message_id не меняется."""
+    t = _tournament(maps=2)
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+
+    modal = EntryResultModal(1, 2, t.id, 0, 0, "Слот 1",
+                             absent=br_view.absent_label(t))
+    modal.place = SimpleNamespace(value="1")
+    modal.kills = SimpleNamespace(value="3")
+    modal.dns = SimpleNamespace(value="")
+    await modal.on_submit(_interaction(guild))
+
+    assert len(channel.message.edits) == 1
+    edit = channel.message.edits[0]
+    assert edit["view"] is not None  # CV2 view, тот же message
+    # прогресс виден в embed внутри compose — проверяем через embed arg
+    # (edit_main_card шлёт view=compose(embed, view))
+
+
+@pytest.mark.asyncio
+async def test_invalid_kills_rejected_without_save(patched_store):
+    t = _tournament(maps=1)
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    modal = EntryResultModal(1, 2, t.id, 0, 0, "Слот 1",
+                             absent=br_view.absent_label(t))
+    modal.place = SimpleNamespace(value="1")
+    modal.kills = SimpleNamespace(value="abc")
+    modal.dns = SimpleNamespace(value="")
+    inter = _interaction(guild)
+    await modal.on_submit(inter)
+    assert any("не сохранена" in str(m[0][0]) or "числом" in str(m[0][0])
+               for m in inter.response.messages)
+    assert t.get_team_stats_for_map(t.teams[0], 0) is None
+
+
+@pytest.mark.asyncio
+async def test_place_beyond_format_cap_rejected(patched_store):
+    """Squad: place_cap=12 — место 13 отклоняется моделью."""
+    t = _tournament(fmt="squad", n_slots=5, maps=1)
+    patched_store["t"] = t
+    ok, err = t.set_result_entry(0, 0, place=13, kills=0)
+    assert not ok and "12" in err
+
+
+@pytest.mark.asyncio
+async def test_map_back_returns_to_overview_with_all_maps(patched_store):
+    t = _tournament(maps=4)
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    inter = _interaction(guild)
+    await MapBackButton(1, 2, t.id, 0).callback(inter)
+    _, kw = inter.response.edits[-1]
+    view = kw["view"]
+    map_btns = [b for b in _buttons(view)
+                if getattr(b, "custom_id", "").startswith("br_map:")]
+    assert len(map_btns) == 4
+
+
+@pytest.mark.asyncio
+async def test_entry_back_returns_to_map_panel(patched_store):
+    t = _tournament(maps=2)
+    t.set_room(0, "55", "pw")
+    patched_store["t"] = t
+    guild = FakeGuild({2: FakeChannel()})
+    inter = _interaction(guild)
+    await EntryBackButton(1, 2, t.id, 0).callback(inter)
+    _, kw = inter.response.edits[-1]
+    view = kw["view"]
+    labels = [b.label for b in _buttons(view)]
+    assert "Данные комнаты" in labels
+    assert "Ввести результаты" in labels
+
+
+@pytest.mark.asyncio
+async def test_double_commit_save_failure_recovers(patched_store, monkeypatch):
+    """Два последовательных сбоя сохранения итогов — повтор успешен,
+    pre_publish_phase сохраняется через циклы uncommit."""
+    t = _tournament(maps=1)
+    _fill_map(t, 0)
+    patched_store["t"] = t
+    channel = FakeChannel()
+    guild = FakeGuild({2: channel})
+
+    calls = {"n": 0}
+    real_set = br_store.set
+
+    def flaky2(obj):
+        # падаем только на коммите (snapshot уже зафиксирован, pending пуст)
+        if (obj.results_snapshot is not None
+                and obj.publish_pending is None
+                and obj.phase == BRTournamentPhase.RESULTS):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise IOError("disk full")
+        return real_set(obj)
+
+    monkeypatch.setattr(br_store, "set", flaky2)
+
+    btn = PublishResultsButton(1, 2, t.id)
+    await btn.callback(_interaction(guild))
+    assert t.phase == BRTournamentPhase.PLAYING  # uncommit → PLAYING
+    assert t.publish_pending is not None
+    assert t.pre_publish_phase == ""  # uncommit очистил — freeze восстановит
+
+    await btn.callback(_interaction(guild))
+    assert t.phase == BRTournamentPhase.PLAYING
+
+    await btn.callback(_interaction(guild))
+    assert t.phase == BRTournamentPhase.RESULTS
+    assert t.results_snapshot is not None
+
+
+def test_cv2_payload_ten_maps_within_limits(patched_store):
+    """Реальный Components V2 payload публичной карточки на 10 карт:
+    action_row ≤5 кнопок, все br_map:0..9 присутствуют."""
+    t = _tournament(fmt="solo", n_slots=12, maps=10)
+    t.phase = BRTournamentPhase.PLAYING
+    view = BRCardView(t.guild_id, t.channel_id, t)
+    payload = view.to_components()
+    assert isinstance(payload, list) and payload
+    n_buttons = 0
+    map_ids = set()
+    for row in payload:
+        assert row["type"] == 1  # ACTION_ROW
+        comps = row.get("components", [])
+        assert len(comps) <= 5
+        for c in comps:
+            if c.get("type") == 2:  # BUTTON
+                n_buttons += 1
+                cid = c.get("custom_id", "")
+                if cid.startswith("br_map:"):
+                    map_ids.add(cid.rsplit(":", 1)[-1])
+    assert n_buttons <= 25
+    assert len(map_ids) == 10

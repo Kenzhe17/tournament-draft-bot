@@ -759,6 +759,8 @@ class BRTournament:
 
     def set_room(self, map_index: int, room_id: str, password: str) -> None:
         """Записать ID/пароль комнаты для карты (map_index)."""
+        if not (0 <= map_index < self.map_count):
+            raise ValueError(f"Нет такой карты: {map_index}")
         self.rooms[str(map_index)] = {
             "id": str(room_id).strip(),
             "password": str(password).strip(),
@@ -1046,6 +1048,9 @@ class BRTournament:
             return False, "Турнир не готов к публикации итогов."
         if self.results_published or self.results_snapshot is not None:
             return False, "Итоги уже опубликованы."
+        # фаза до заморозки фиксируется и при повторном freeze с
+        # уже существующим pending — иначе uncommit потеряет PLAYING
+        self.pre_publish_phase = self.pre_publish_phase or self.phase.value
         if self.publish_pending is not None:
             return True, ""
         if not self.results_complete():
@@ -1058,7 +1063,6 @@ class BRTournament:
                 f"Не все записи внесены — публикация невозможна.\n{detail}"
                 if detail else "Не все записи внесены."
             )
-        self.pre_publish_phase = self.phase.value
         self.publish_pending = self.calculate_final_results()
         return True, ""
 
@@ -1073,6 +1077,8 @@ class BRTournament:
             return False
         self.results_snapshot = self.publish_pending
         self.publish_pending = None
+        # pre_publish_phase НЕ очищаем: uncommit_publish при сбое
+        # сохранения вернёт турнир именно в эту фазу.
         self.phase = BRTournamentPhase.RESULTS
         self.results_published = True
         self.published_at = datetime.now().isoformat()

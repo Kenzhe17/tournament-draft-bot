@@ -953,15 +953,25 @@ class MapButton(Button):
             await _respond(interaction,
                 "Это тестовый турнир — данные только для ведущих.", ephemeral=True)
             return
+        can_view = (is_org(interaction.user.id)
+                    or t.can_view_room(interaction.user.id))
         view = BRMapPanelView(self.guild_id, self.channel_id, self.tid,
-                              self.map_index, is_org_user=is_org(interaction.user.id))
+                              self.map_index, is_org_user=is_org(interaction.user.id),
+                              can_view_room=can_view)
         await _respond(interaction,
-            view=compose(text=map_panel_text(t, self.map_index), view=view),
+            view=compose(text=map_panel_text(t, self.map_index,
+                                             show_room=can_view), view=view),
             ephemeral=True)
 
 
-def map_panel_text(tournament: "BRTournament", map_index: int) -> str:
-    """Текст приватной панели карты (без пароля — он за кнопкой)."""
+def map_panel_text(tournament: "BRTournament", map_index: int,
+                   show_room: bool = False) -> str:
+    """Текст приватной панели карты.
+
+    ID комнаты показывается только тем, у кого есть право просмотра
+    (участники слота / капитаны squad-team / орг); посторонним —
+    нейтральная строка без реквизитов.
+    """
     ru = MAP_NAMES_RU.get(tournament.get_map_name_for_index(map_index),
                           tournament.get_map_name_for_index(map_index))
     status = MAP_STATUS_LABELS.get(
@@ -969,8 +979,13 @@ def map_panel_text(tournament: "BRTournament", map_index: int) -> str:
     filled = tournament.map_filled_count(map_index)
     total = len(tournament.teams)
     creds = tournament.room_credentials(map_index)
-    room_line = (f"Комната: ID `{creds['id']}` — пароль по кнопке "
-                 "«Данные комнаты»" if creds else "Комната: не задана")
+    if creds and show_room:
+        room_line = (f"Комната: ID `{creds['id']}` — пароль по кнопке "
+                     "«Данные комнаты»")
+    elif creds:
+        room_line = "Комната: задана — данные по кнопке «Данные комнаты»"
+    else:
+        room_line = "Комната: не задана"
     return (
         f"**Карта {map_index + 1} из {tournament.map_count} — {ru}**\n"
         f"Статус: {status}\n"
@@ -983,16 +998,20 @@ class BRMapPanelView(View):
     """Приватная панель карты: комната + (для орга) ввод результатов."""
 
     def __init__(self, guild_id: int, channel_id: int, tid: str,
-                 map_index: int, is_org_user: bool = False):
+                 map_index: int, is_org_user: bool = False,
+                 can_view_room: bool = False):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.tid = tid
         self.map_index = map_index
-        self.add_item(MapRoomButton(guild_id, channel_id, tid, map_index))
+        if can_view_room:
+            self.add_item(MapRoomButton(guild_id, channel_id, tid, map_index))
         if is_org_user:
+            self.add_item(MapRoomEditButton(guild_id, channel_id, tid, map_index))
             self.add_item(MapEntryButton(guild_id, channel_id, tid, map_index))
             self.add_item(MapBatchButton(guild_id, channel_id, tid, map_index))
+        self.add_item(MapRefreshButton(guild_id, channel_id, tid, map_index))
         self.add_item(MapBackButton(guild_id, channel_id, tid, map_index))
 
 
@@ -1018,7 +1037,8 @@ class MapRoomButton(Button):
             await _respond(interaction,
                 "Это тестовый турнир — данные только для ведущих.", ephemeral=True)
             return
-        if not t.can_view_room(interaction.user.id):
+        if not (is_org(interaction.user.id)
+                or t.can_view_room(interaction.user.id)):
             await _respond(interaction,
                 "Данные комнаты видны только участникам турнира.", ephemeral=True)
             return
@@ -1082,7 +1102,7 @@ class MapBatchButton(Button):
         self.map_index = map_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        # без defer: send_modal должен быть первым ответом на interaction
         if not is_org(interaction.user.id):
             await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
@@ -1095,8 +1115,74 @@ class MapBatchButton(Button):
                             self.map_index))
 
 
+class MapRoomEditButton(Button):
+    """Орг: изменить ID/пароль комнаты этой карты (модалка с текущими значениями)."""
+
+    def __init__(self, guild_id, channel_id, tid, map_index):
+        super().__init__(style=discord.ButtonStyle.secondary, label="Изменить комнату",
+                         custom_id=_cid("br_map_room_edit", guild_id, channel_id, tid, map_index))
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tid = tid
+        self.map_index = map_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # без defer: send_modal должен быть первым ответом
+        if not is_org(interaction.user.id):
+            await _respond(interaction,"Только владелец/админ.", ephemeral=True)
+            return
+        t = get_bound(self.guild_id, self.channel_id, self.tid)
+        if (not t or not (0 <= self.map_index < t.map_count)
+                or t.phase not in (BRTournamentPhase.DRAFT,
+                                   BRTournamentPhase.PLAYING,
+                                   BRTournamentPhase.COLLECT)):
+            await _respond(interaction,"Изменение комнаты недоступно.", ephemeral=True)
+            return
+        creds = t.room_credentials(self.map_index) or {}
+        await interaction.response.send_modal(
+            RoomSetModal(self.guild_id, self.channel_id, self.tid,
+                         self.map_index, prefill=creds))
+
+
+class MapRefreshButton(Button):
+    """Обновить текст приватной панели карты актуальными данными."""
+
+    def __init__(self, guild_id, channel_id, tid, map_index):
+        super().__init__(style=discord.ButtonStyle.secondary, label="Обновить",
+                         custom_id=_cid("br_map_refresh", guild_id, channel_id, tid, map_index))
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tid = tid
+        self.map_index = map_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # без defer: edit_message — первый ответ
+        t = get_bound(self.guild_id, self.channel_id, self.tid)
+        if not t:
+            await _respond(interaction,"Турнир не найден.", ephemeral=True)
+            return
+        can_view = (is_org(interaction.user.id)
+                    or t.can_view_room(interaction.user.id))
+        view = BRMapPanelView(self.guild_id, self.channel_id, self.tid,
+                              self.map_index, is_org_user=is_org(interaction.user.id),
+                              can_view_room=can_view)
+        await interaction.response.edit_message(
+            view=compose(text=map_panel_text(t, self.map_index,
+                                             show_room=can_view), view=view))
+
+
+class BRMapsOverviewView(View):
+    """Список всех карт с кнопками — возврат из панели/ввода."""
+
+    def __init__(self, guild_id, channel_id, tid):
+        super().__init__(timeout=None)
+        t = get_bound(guild_id, channel_id, tid)
+        for m in range(min(int(getattr(t, "map_count", 0) or 0), 10)):
+            self.add_item(MapButton(guild_id, channel_id, tid, m))
+
+
 class MapBackButton(Button):
-    """Назад — обзор всех карт со статусами."""
+    """Назад — список всех карт с кнопками перехода."""
 
     def __init__(self, guild_id, channel_id, tid, map_index):
         super().__init__(style=discord.ButtonStyle.secondary, label="Назад",
@@ -1113,9 +1199,7 @@ class MapBackButton(Button):
             await _respond(interaction,"Турнир не найден.", ephemeral=True)
             return
         sched = "\n".join(schedule_status_lines(t))
-        view = BRMapPanelView(self.guild_id, self.channel_id, self.tid,
-                              self.map_index,
-                              is_org_user=is_org(interaction.user.id))
+        view = BRMapsOverviewView(self.guild_id, self.channel_id, self.tid)
         await interaction.response.edit_message(
             view=compose(text=f"**Карты турнира:**\n{sched}", view=view))
 
@@ -1627,12 +1711,21 @@ class RoomSetModal(Modal):
     room_id = TextInput(label="ID комнаты", placeholder="123456", required=True, max_length=20)
     room_password = TextInput(label="Пароль", placeholder="123", required=True, max_length=20)
 
-    def __init__(self, guild_id, channel_id, tid, map_index):
-        super().__init__(title="Комната BR — карта")
+    def __init__(self, guild_id, channel_id, tid, map_index, prefill=None):
+        super().__init__(title=f"Комната BR — карта {map_index + 1}")
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.tid = tid
         self.map_index = map_index
+        # Discord не умеет default-значения в модалках — текущие
+        # реквизиты показываем в placeholder (модалка только для орга).
+        if prefill:
+            rid = str(prefill.get("id") or "").strip()
+            pwd = str(prefill.get("password") or "").strip()
+            if rid:
+                self.room_id.placeholder = f"сейчас: {rid}"[:100]
+            if pwd:
+                self.room_password.placeholder = f"сейчас: {pwd}"[:100]
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -1640,15 +1733,26 @@ class RoomSetModal(Modal):
             await _respond(interaction,"Только владелец/админ.", ephemeral=True)
             return
         t = get_bound(self.guild_id, self.channel_id, self.tid)
-        if not t or t.phase not in (BRTournamentPhase.DRAFT,
-                                    BRTournamentPhase.PLAYING,
-                                    BRTournamentPhase.COLLECT):
+        if (not t or not (0 <= self.map_index < t.map_count)
+                or t.phase not in (BRTournamentPhase.DRAFT,
+                                   BRTournamentPhase.PLAYING,
+                                   BRTournamentPhase.COLLECT)):
             await _respond(interaction,"Турнир не в фазе игр.", ephemeral=True)
             return
+        rid = self.room_id.value.strip()
+        pwd = self.room_password.value.strip()
+        if not rid or not pwd:
+            await _respond(interaction,"ID и пароль обязательны.", ephemeral=True)
+            return
         async with get_br_lock(t):
-            t.set_room(self.map_index,
-                       self.room_id.value.strip(),
-                       self.room_password.value.strip())
+            # перепроверяем после блокировки: фаза/карта могли измениться
+            if (t.phase not in (BRTournamentPhase.DRAFT,
+                                BRTournamentPhase.PLAYING,
+                                BRTournamentPhase.COLLECT)
+                    or not (0 <= self.map_index < t.map_count)):
+                await _respond(interaction,"Турнир не в фазе игр.", ephemeral=True)
+                return
+            t.set_room(self.map_index, rid, pwd)
             br_store.set(t)
         # публичная карточка и новых сообщений не создаём — данные
         # комнаты видны только приватно через кнопки карт.
@@ -1691,7 +1795,9 @@ class BREntryPanelView(View):
                 value=str(i)))
         if options:
             self.add_item(EntrySlotSelect(guild_id, channel_id, tid, map_index, options))
-        # навигация по картам (номера записей)
+        # навигация: назад в панель карты, обновить, листать карты
+        self.add_item(EntryBackButton(guild_id, channel_id, tid, map_index))
+        self.add_item(EntryRefreshButton(guild_id, channel_id, tid, map_index))
         self.add_item(EntryMapButton(guild_id, channel_id, tid, map_index, -1, "◀ Карта"))
         self.add_item(EntryMapButton(guild_id, channel_id, tid, map_index, +1, "Карта ▶"))
         # пакетный ввод по карте
@@ -1723,6 +1829,49 @@ class EntryMapButton(Button):
             await _respond(interaction,"Нет такой карты.", ephemeral=True)
             return
         view = BREntryPanelView(self.guild_id, self.channel_id, self.tid, new_map, 0)
+        await interaction.response.edit_message(view=view)
+
+
+class EntryBackButton(Button):
+    """Назад — приватная панель этой карты."""
+
+    def __init__(self, guild_id, channel_id, tid, map_index):
+        super().__init__(style=discord.ButtonStyle.secondary, label="← Карта",
+                         custom_id=_cid("br_entry_back", guild_id, channel_id, tid, map_index))
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tid = tid
+        self.map_index = map_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        t = get_bound(self.guild_id, self.channel_id, self.tid)
+        if not t:
+            await _respond(interaction,"Турнир не найден.", ephemeral=True)
+            return
+        can_view = (is_org(interaction.user.id)
+                    or t.can_view_room(interaction.user.id))
+        view = BRMapPanelView(self.guild_id, self.channel_id, self.tid,
+                              self.map_index, is_org_user=is_org(interaction.user.id),
+                              can_view_room=can_view)
+        await interaction.response.edit_message(
+            view=compose(text=map_panel_text(t, self.map_index,
+                                             show_room=can_view), view=view))
+
+
+class EntryRefreshButton(Button):
+    """Обновить панель ввода актуальными данными слотов."""
+
+    def __init__(self, guild_id, channel_id, tid, map_index):
+        super().__init__(style=discord.ButtonStyle.secondary, label="Обновить",
+                         custom_id=_cid("br_entry_refresh", guild_id, channel_id, tid, map_index))
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tid = tid
+        self.map_index = map_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view = BREntryPanelView(self.guild_id, self.channel_id, self.tid,
+                                self.map_index, 0)
         await interaction.response.edit_message(view=view)
 
 
@@ -1803,10 +1952,14 @@ class EntryResultModal(Modal):
             except (ValueError, AttributeError):
                 await _respond(interaction,"Укажите место, отметку неучастия или «пусто».", ephemeral=True)
                 return
+        kills_raw = (self.kills.value or "").strip()
         try:
-            kills = int(self.kills.value.strip() or "0")
+            kills = int(kills_raw) if kills_raw else 0
         except ValueError:
-            kills = 0
+            await _respond(interaction,
+                f"Киллы должны быть целым числом 0–50 (получено «{kills_raw}») — запись не сохранена.",
+                ephemeral=True)
+            return
         async with get_br_lock(t):
             ok, err = t.set_result_entry(
                 self.map_index, self.slot_index, place=place, kills=kills,
@@ -1814,6 +1967,7 @@ class EntryResultModal(Modal):
             if ok:
                 br_store.set(t)
         if ok:
+            await refresh_main_card(interaction, t)
             await _respond(interaction,
                 f"Карта {self.map_index + 1}: результат слота записан.", ephemeral=True)
         else:
@@ -2002,6 +2156,7 @@ class PublishResultsButton(Button):
                 await _respond(interaction,"Итоги уже опубликованы.", ephemeral=True)
                 return
             prev_pending = t2.publish_pending
+            prev_pre_phase = t2.pre_publish_phase
             ok, err = t2.freeze_results()
             if not ok:
                 await _respond(interaction,err, ephemeral=True)
@@ -2009,15 +2164,30 @@ class PublishResultsButton(Button):
             try:
                 br_store.set(t2)  # сохраняем pending-снимок
             except Exception as exc:
-                # откат freeze: снимок не должен остаться замороженным
-                # в памяти, если на диске его нет — повтор начнёт чисто
+                # откат freeze: все изменённые поля возвращаем — снимок
+                # не должен остаться замороженным в памяти, если на
+                # диске его нет; повтор начнёт чисто
                 t2.publish_pending = prev_pending
+                t2.pre_publish_phase = prev_pre_phase
                 logger.error("BR publish: save pending failed: %s", exc)
                 await _respond(interaction,
                     "Не удалось сохранить снимок итогов — публикация не начата.",
                     ephemeral=True)
                 return
             t = t2
+
+        # 1.5) Турнир мог быть отменён/удалён между freeze и правкой
+        # карточки — не воскрешаем финальный вид устаревшего состояния.
+        t_now = br_store.get(self.guild_id, self.channel_id)
+        if (t_now is None or str(t_now.id) != str(self.tid)
+                or t_now.phase not in (BRTournamentPhase.PLAYING,
+                                       BRTournamentPhase.COLLECT)
+                or t_now.publish_pending is None
+                or t_now.results_published):
+            await _respond(interaction,
+                "Публикация прервана: состояние турнира изменилось.",
+                ephemeral=True)
+            return
 
         # 2) Discord-карточка с финальным видом (без Комната/Управление).
         #    Сбой → состояние COLLECT+pending, повтор с тем же снимком.
@@ -2106,6 +2276,13 @@ async def resume_pending_publish(tournament: "BRTournament", client=None) -> boo
                                  BRTournamentPhase.COLLECT)
             or tournament.publish_pending is None):
         return False
+    # Актуальность до правки карточки: переданный объект мог устареть.
+    # Турнир удалён (purge) — карточку не воскрешаем. Смена фазы
+    # (отмена) обрабатывается после edit: карточка возвращается к
+    # актуальному виду в commit-стадии.
+    t_check = br_store.get(tournament.guild_id, tournament.channel_id)
+    if t_check is None or str(t_check.id) != str(tournament.id):
+        return False
     try:
         if client is not None:
             guild = client.get_guild(tournament.guild_id)
@@ -2113,7 +2290,7 @@ async def resume_pending_publish(tournament: "BRTournament", client=None) -> boo
             guild = None
         if guild is None:
             return False
-        if not await _edit_final_card(tournament, guild):
+        if not await _edit_final_card(t_check, guild):
             return False
         async with get_br_lock_key(tournament.guild_id, tournament.channel_id, tournament.id):
             t2 = br_store.get(tournament.guild_id, tournament.channel_id)
@@ -2138,11 +2315,13 @@ async def resume_pending_publish(tournament: "BRTournament", client=None) -> boo
             # Между edit финальной карточки и commit фазу сменили
             # (отмена) или турнир удалили (purge) — возвращаем карточку
             # к актуальному виду, чтобы Discord не показывал итоги
-            # отменённого/удалённого турнира.
-            try:
-                await edit_main_card(t2 or tournament, client=client)
-            except Exception as exc:
-                logger.warning("BR resume: restore card failed: %s", exc)
+            # отменённого турнира. t2 is None (purge) — карточка уже
+            # заменена заглушкой «удалён», устаревший объект не используем.
+            if t2 is not None:
+                try:
+                    await edit_main_card(t2, client=client)
+                except Exception as exc:
+                    logger.warning("BR resume: restore card failed: %s", exc)
             return False
         return False
     except Exception as exc:
