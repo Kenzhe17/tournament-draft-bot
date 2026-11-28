@@ -323,3 +323,87 @@ Components V2 (карточка, кнопки, модалки); ephemeral-при
 от владельца и отказ посторонним; ключи `events.*` в Control
 Center; дубликат предмета → компенсация с суммой из
 `events.item_dup_compensation_coins`.
+
+## Каталоги контента (Events Content Expansion)
+
+Игры `word` (Перепутанное слово) и `krokodil` (Крокодил)
+берут задания из PostgreSQL-каталогов вместо встроенных
+списков. Bundled-файлы `content/events/{words,krokodil}_ru.json`
+(по 1000 записей, content_version 1.0.1) — базовая версия,
+копируются в Docker-образ и валидируются при загрузке;
+рабочая копия живёт в `event_content_entries` (PG) и
+редактируется через Control Center → «Event Content»
+(только BOT_OWNER_ID).
+
+### Схема (аддитивная)
+
+- `event_content_entries` — записи (game, id PK; payload
+  jsonb; колонки enabled/difficulty/category для фильтров).
+- `event_content_catalog` — версия/источник каталога на игру.
+- `event_content_cycle_state` — per (game, guild): `used`
+  (jsonb-массив id текущего цикла), `cycle_count`,
+  `last_entry_id`.
+- `event_content_draws` — append-only журнал выдач.
+- `event_content_reservations` — lease на выданную запись
+  (TTL 600 c, частичный UNIQUE-индекс на активные).
+
+### Выбор задания (TZ §5)
+
+1. Уровни = difficulty среди enabled/незарезервированных/
+   разрешённых категорий.
+2. Уровень — взвешенно (`events.content_{game}_difficulty_
+   weights`, default easy=40/medium=45/hard=15); все веса
+   <=0 → равные веса (fallback).
+3. Внутри уровня — случайная запись не из `used` текущего
+   цикла; цикл исчерпан → `cycle_count++`, `used` сбрасывается,
+   немедленный повтор `last_entry_id` исключается при наличии
+   альтернативы.
+4. `used` + draw + reservation — одной транзакцией
+   (`FOR UPDATE` на cycle_state + advisory lock) —
+   параллельные выборы не пересекаются.
+5. Пустой каталог/все записи выключены → `pick()` = None →
+   тип недоступен для выбора, бот не падает.
+
+### Политика резерваций и failed send
+
+Резервирование при выборе (до публикации), подтверждение —
+сам факт резервации; `release_event(event_id)` вызывается на
+finish и на send_failed. TTL 600 c страхует от зависших
+событий: истёкшая резервация перестаёт блокировать пул, при
+повторном выборе запись сначала помечается released.
+Неопределённый результат Discord send: событие отменяется,
+резервация снимается, но запись остаётся в `used` текущего
+цикла — потенциально показанное задание не переиспользуется
+до следующего цикла. После рестарта активная игра
+восстанавливается из `spontaneous_events.config` (снимок
+задания), каталог на неё не влияет; новая ревизия каталога
+не меняет идущие события.
+
+### Ответы
+
+`answer`/`accepted`/`word` хранятся только в PG и в
+`config` события (закрытая строка БД); публичная карточка
+показывает `scrambled`/`clue`, правильный ответ раскрывается
+в финальной карточке после завершения (`_reveal_answer`).
+Control Center API `/api/event-content/*` — только
+BOT_OWNER_ID (как shop catalog); записи журнала — в
+`admin_audit_log` (`event_content.*`).
+
+### Категории и веса без redeploy
+
+- `events.content_word_difficulty_weights`,
+  `events.content_krokodil_difficulty_weights` (json);
+- `events.content_word_disabled_categories`,
+  `events.content_krokodil_disabled_categories` (json-массив).
+
+Оба scope=both (guild override → global), применяются на
+следующий выбор без рестарта.
+
+### Откат каталога
+
+Bundled JSON — базовая версия: откат рабочего каталога =
+импорт bundled-файла через Control Center (export →
+import с replace) или `DELETE` строк `event_content_entries`
++ повторный `seed_bundled` при следующем старте (сид
+не затирает существующие данные — для полного отката
+нужно предварительно очистить таблицу игры).

@@ -143,6 +143,53 @@ export const api = {
   actionStatus: (id: string) => get<Record<string, unknown>>(`/api/actions/${id}`),
 };
 
+// ---------- event content (owner only) ----------
+export interface ContentGameStat {
+  game: string; content_version: string; source: string;
+  imported_at: string; total: number; enabled: number;
+  by_difficulty: Record<string, { total: number; enabled: number }>;
+  bundled_entries: number; bundled_version: string;
+}
+export interface ContentEntry {
+  id: string; enabled: boolean; difficulty: string;
+  category: string; word?: string; answer?: string;
+  clue?: string; accepted?: string[];
+}
+export const eventContentApi = {
+  games: () => get<{ games: ContentGameStat[] }>("/api/event-content/games"),
+  entries: (game: string, params: Record<string, string | number | boolean | undefined>) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== "") q.set(k, String(v));
+    });
+    return get<{ items: ContentEntry[]; total: number }>(
+      `/api/event-content/${game}/entries?${q}`);
+  },
+  categories: (game: string) =>
+    get<{ categories: string[] }>(`/api/event-content/${game}/categories`),
+  entry: (game: string, id: string) =>
+    get<ContentEntry>(`/api/event-content/${game}/entries/${encodeURIComponent(id)}`),
+  upsert: (game: string, body: Record<string, unknown>) =>
+    post<{ id: string; status: string }>(`/api/event-content/${game}/entries`, body),
+  patch: (game: string, id: string, patch: Record<string, unknown>) =>
+    req<{ id: string; status: string }>(
+      `/api/event-content/${game}/entries/${encodeURIComponent(id)}`,
+      { method: "PATCH", body: JSON.stringify(patch) }),
+  toggle: (game: string, id: string) =>
+    post<{ id: string; enabled: boolean }>(
+      `/api/event-content/${game}/entries/${encodeURIComponent(id)}/toggle`),
+  remove: (game: string, id: string) =>
+    del<{ id: string; status: string }>(
+      `/api/event-content/${game}/entries/${encodeURIComponent(id)}`),
+  export: (game: string) =>
+    get<Record<string, unknown>>(`/api/event-content/${game}/export`),
+  importJson: (game: string, body: Record<string, unknown>) =>
+    post<Record<string, unknown>>(`/api/event-content/${game}/import`, body),
+  state: (game: string) =>
+    get<{ state: Record<string, unknown>; recent_draws: Record<string, unknown>[] }>(
+      `/api/event-content/${game}/state`),
+};
+
 export const loginUrl = "/auth/login";
 export const logoutUrl = "/auth/logout";
 

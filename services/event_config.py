@@ -39,6 +39,14 @@ _JSON_KEYS = {
     "type_weights": "events.type_weights",
     "disabled_types": "events.disabled_types",
     "item_exclude_categories": "events.item_exclude_categories",
+    "content_word_difficulty_weights":
+        "events.content_word_difficulty_weights",
+    "content_word_disabled_categories":
+        "events.content_word_disabled_categories",
+    "content_krokodil_difficulty_weights":
+        "events.content_krokodil_difficulty_weights",
+    "content_krokodil_disabled_categories":
+        "events.content_krokodil_disabled_categories",
 }
 
 

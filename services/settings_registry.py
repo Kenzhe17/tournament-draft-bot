@@ -365,6 +365,24 @@ _reg(key="events.item_dup_compensation_coins", type="int", default=100,
      permission="settings.manage",
      description="Компенсация монетами при выпадении предмета, "
                  "который уже есть у победителя (0 = без компенсации)")
+_reg(key="events.content_word_difficulty_weights", type="json",
+     default={"easy": 40, "medium": 45, "hard": 15},
+     module="events", scope="both", permission="settings.manage",
+     description="Веса сложности каталога «Перепутанное слово» "
+                 "(вероятность уровня при выборе)")
+_reg(key="events.content_word_disabled_categories", type="json",
+     default=[], module="events", scope="both",
+     permission="settings.manage",
+     description="Отключённые категории слов (JSON-массив)")
+_reg(key="events.content_krokodil_difficulty_weights", type="json",
+     default={"easy": 40, "medium": 45, "hard": 15},
+     module="events", scope="both", permission="settings.manage",
+     description="Веса сложности каталога «Крокодил»")
+_reg(key="events.content_krokodil_disabled_categories", type="json",
+     default=[], module="events", scope="both",
+     permission="settings.manage",
+     description="Отключённые категории загадок Крокодила "
+                 "(JSON-массив)")
 
 # ------------------------------------------------------------------
 # Валидация значений по реестру.

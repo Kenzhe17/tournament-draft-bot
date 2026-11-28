@@ -21,6 +21,7 @@ from control_center.auth import router as auth_router
 from control_center.routers import (
     admin_modules,
     blackjack_api,
+    event_content_api,
     games_api,
     ops_api,
     players_api,
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(players_api.router)
     app.include_router(admin_modules.router)
     app.include_router(blackjack_api.router)
+    app.include_router(event_content_api.router)
 
     missing = config.missing_required()
     if missing:
