@@ -313,8 +313,13 @@ async def _handle_close(interaction, stored, ver: int) -> None:
         await _ephemeral(
             interaction, "Эта карточка уже используется другой раздачей.")
         return
+    if fresh.status != "settled":
+        await _ephemeral(
+            interaction, "Закрыть можно только завершённую раздачу.")
+        return
     # card_closed в БД — кнопки не вернутся ни при одном sync;
-    # результат раздачи остаётся видимым.
+    # результат раздачи остаётся видимым. Bump version → sync
+    # отрендерит карточку без кнопок. Идемпотентно.
     await blackjack_store.mark_card_closed(stored.round_id)
     fresh = await blackjack_store.get_round(stored.round_id)
     if fresh is not None:
@@ -328,6 +333,11 @@ async def _handle_again(interaction, stored, *, same_stake: bool) -> None:
 
     if stored.status != "settled":
         await _ephemeral(interaction, "Новая раздача доступна после завершения текущей.")
+        return
+    if stored.card_closed:
+        # Закрытая карточка — устаревшие Again/Change не создают
+        # новую раздачу (проверка на сервере, не только в UI).
+        await _ephemeral(interaction, "Эта карточка закрыта.")
         return
     # Одна раздача = одна карточка: повторная игра ВСЕГДА создаёт
     # новое публичное сообщение — message_id не переиспользуется,

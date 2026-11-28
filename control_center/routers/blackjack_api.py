@@ -197,4 +197,11 @@ async def compensate_disputed(
         raise HTTPException(404, "round not found") from None
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
+    status = result.get("status")
+    if status == "not_compensable":
+        raise HTTPException(
+            409, "dispute already resolved or compensated")
+    if status == "cap_exceeded":
+        raise HTTPException(
+            422, "compensation would exceed safe balance cap")
     return {"round_id": round_id, **result}

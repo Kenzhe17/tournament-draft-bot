@@ -37,6 +37,7 @@ from games.blackjack_engine import BET_MAX, BET_MIN, Round
 from storage.blackjack_store import (
     ActiveGameExists,
     InsufficientFunds,
+    PayoutNotGuaranteed,
     blackjack_store,
 )
 from storage.user_balance_store import user_balance_store
@@ -234,6 +235,10 @@ async def deal_round(
         await _fail(f"Недостаточно монет. У вас: **{balance:,}**, "
                     f"ставка: **{stake:,}**.")
         return
+    except PayoutNotGuaranteed:
+        await _fail("Эта ставка не может быть гарантированно оплачена "
+                    "при текущем балансе. Ставка не списана.")
+        return
     except ActiveGameExists:
         await _fail("У вас уже есть активная раздача.")
         return
@@ -317,7 +322,11 @@ async def deal_round(
 
     if delivered:
         try:
-            await blackjack_store.mark_message(round_id, sent_id)
+            # sent_version = версия, из которой построено сообщение —
+            # card_rendered фиксирует ФАКТИЧЕСКИ отправленное,
+            # а не текущую версию БД (она могла уйти вперёд).
+            await blackjack_store.mark_message(
+                round_id, sent_id, sent_version=stored.version)
         except Exception:
             # Ответ mark_message потерян, но доставка ДОКАЗАНА sent_id:
             # фиксируем 'delivered' без message_id — refund запрещён,
@@ -482,6 +491,9 @@ async def reconcile_undelivered(client: discord.Client) -> int:
             status, msg = await check_delivery(client, stored)
             if status is DeliveryCheck.FOUND and msg is not None:
                 try:
+                    # sent_version неизвестна (сообщение отправлено
+                    # раньше) → card_rendered=-1: sync догонит
+                    # актуальное состояние карточки.
                     await blackjack_store.mark_message(
                         stored.round_id, msg.id)
                     handled += 1
@@ -529,19 +541,28 @@ async def sync_round_card(client: discord.Client, round_id: str) -> bool:
     повторит (list_needing_sync). Финансовое состояние не трогается.
     """
     from views.blackjack_view import build_game_view
+    render_op = uuid.uuid4().hex
     try:
         stored = await blackjack_store.get_round(round_id)
         if stored is None or stored.message_id is None:
             return False
         if not await blackjack_store.claim_card_render(
-                stored.round_id, stored.version):
+                stored.round_id, render_op):
+            return False
+        # Coalescing: после claim перечитываем состояние — между
+        # get_round и claim version могла уйти вперёд; рендерим
+        # самое свежее, промежуточные версии пропускаем.
+        fresh = await blackjack_store.get_round(round_id)
+        if fresh is None:
+            await blackjack_store.finish_card_render(
+                stored.round_id, render_op, False)
             return False
         try:
-            channel = client.get_channel(stored.channel_id)
+            channel = client.get_channel(fresh.channel_id)
             if channel is None:
-                channel = await client.fetch_channel(stored.channel_id)
-            msg = await channel.fetch_message(stored.message_id)
-            view, png = build_game_view(stored)
+                channel = await client.fetch_channel(fresh.channel_id)
+            msg = await channel.fetch_message(fresh.message_id)
+            view, png = build_game_view(fresh)
             kwargs = {"view": view,
                       "allowed_mentions": discord.AllowedMentions.none()}
             if png is not None:
@@ -550,7 +571,7 @@ async def sync_round_card(client: discord.Client, round_id: str) -> bool:
         except Exception:
             try:
                 await blackjack_store.finish_card_render(
-                    stored.round_id, stored.version, False)
+                    stored.round_id, render_op, False)
             except Exception:
                 logger.exception("blackjack finish_card_render(fail) %s",
                                  round_id)
@@ -559,7 +580,7 @@ async def sync_round_card(client: discord.Client, round_id: str) -> bool:
             return False
         try:
             await blackjack_store.finish_card_render(
-                stored.round_id, stored.version, True)
+                stored.round_id, render_op, True)
         except Exception:
             logger.exception("blackjack finish_card_render(ok) %s",
                              round_id)
@@ -577,11 +598,18 @@ async def render_round_card(
     публичная карточка обновляется через edit_original_response
     под claim-CAS (hit/stand/close/stale-refresh)."""
     from views.blackjack_view import build_game_view
+    render_op = uuid.uuid4().hex
     try:
         if not await blackjack_store.claim_card_render(
-                stored.round_id, stored.version):
+                stored.round_id, render_op):
             return False
-        view, f = build_game_view(stored)
+        # coalescing: рендерим самое свежее состояние после claim
+        fresh = await blackjack_store.get_round(stored.round_id)
+        if fresh is None:
+            await blackjack_store.finish_card_render(
+                stored.round_id, render_op, False)
+            return False
+        view, f = build_game_view(fresh)
         kwargs = {"view": view,
                   "allowed_mentions": discord.AllowedMentions.none()}
         if f is not None:
@@ -590,7 +618,7 @@ async def render_round_card(
     except Exception:
         try:
             await blackjack_store.finish_card_render(
-                stored.round_id, stored.version, False)
+                stored.round_id, render_op, False)
         except Exception:
             logger.exception("blackjack finish_card_render(fail) %s",
                              stored.round_id)
@@ -599,7 +627,7 @@ async def render_round_card(
         return False
     try:
         await blackjack_store.finish_card_render(
-            stored.round_id, stored.version, True)
+            stored.round_id, render_op, True)
     except Exception:
         logger.exception("blackjack finish_card_render(ok) %s",
                          stored.round_id)

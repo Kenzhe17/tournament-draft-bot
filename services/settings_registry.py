@@ -201,7 +201,10 @@ _reg(key="economy.max_bet", type="int", default=1000,
      description="Максимальная ставка (обычные игры)", consumers_pending=True)
 
 # BLACKJACK 2.0 — ставки блэкджека (виртуальная валюта).
-_reg(key="economy.blackjack_bets_enabled", type="bool", default=True,
+# По умолчанию ВЫКЛ: платный режим включается только явным
+# решением владельца (Stage 2 rollout). Ошибка чтения настроек —
+# fail-closed (_bets_enabled → False).
+_reg(key="economy.blackjack_bets_enabled", type="bool", default=False,
      module="economy", permission="economy.manage",
      description="Ставки в блэкджеке (выкл — только бесплатная игра)")
 _reg(key="economy.blackjack_min_bet", type="int", default=10,

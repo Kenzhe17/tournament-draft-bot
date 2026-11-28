@@ -17,6 +17,17 @@ DECAY_FILE = DATA_DIR / "decay_tracking.json"
 DECAY_THRESHOLD = 10000  # Balance above this gets decayed
 DECAY_PERCENT = 0.05  # 5% decay per day
 
+# Технические потолки баланса (user_balance.balance — INTEGER,
+# max 2 147 483 647). Инвариант для blackjack-выплат:
+#   balance ≤ SAFE_BALANCE_CAP после любого НЕ-гарантированного
+#   кредита (transfer, admin, daily, shop, arcade — все ограничены
+#   здесь), а ставка принимается только если balance + stake ≤
+#   SAFE_BALANCE_CAP → гарантированная выплата (≤2×stake) всегда
+#   помещается в HARD_BALANCE_LIMIT. CHECK-ограничение в БД —
+#   последний рубеж от переполнения колонки.
+SAFE_BALANCE_CAP = 2_000_000_000
+HARD_BALANCE_LIMIT = 2_100_000_000  # < INTEGER max 2 147 483 647
+
 
 def _max_balance() -> int:
     """Dynamic cap (economy.max_balance) → config fallback."""
@@ -512,6 +523,9 @@ class UserBalanceStore:
         """Set user balance to specific value."""
         if balance < 0:
             raise ValueError("Balance cannot be negative")
+        if balance > HARD_BALANCE_LIMIT:
+            raise ValueError(
+                f"Balance cannot exceed hard limit {HARD_BALANCE_LIMIT}")
 
         key = f"{guild_id}:{user_id}"
 
@@ -605,6 +619,17 @@ class UserBalanceStore:
                     else:
                         receiver_new = min(
                             receiver_balance + amount, cap)
+                    # Гарантия выплат blackjack: перевод не имеет
+                    # права вытолкнуть баланс за SAFE_BALANCE_CAP —
+                    # иначе активная раздача не смогла бы исполнить
+                    # обещанную выплату. Отклоняем перевод целиком
+                    # (tx rollback — средства не списаны).
+                    if receiver_new > SAFE_BALANCE_CAP:
+                        raise ValueError(
+                            "Transfer rejected: receiver balance cap "
+                            f"{SAFE_BALANCE_CAP} would be exceeded "
+                            f"({receiver_balance} + {amount})"
+                        )
                     await conn.execute(
                         "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
                         receiver_new, to_guild, to_user

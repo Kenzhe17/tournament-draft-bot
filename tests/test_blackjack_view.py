@@ -252,6 +252,36 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
         inter.edit_original_response.assert_not_awaited()
         inter.followup.send.assert_awaited_once()
 
+    async def test_close_rejected_for_active_round(self):
+        """§7: «Закрыть» возможно только для завершённой раздачи —
+        серверная проверка, не только отсутствие кнопки в UI."""
+        stored = _stored()  # status='active'
+        inter = _interaction(user_id=1)
+        inter.message = SimpleNamespace(id=777)
+        mark_closed = AsyncMock()
+        with patch.object(bv.blackjack_store, "get_round",
+                          AsyncMock(return_value=stored)), \
+             patch.object(bv.blackjack_store, "mark_card_closed",
+                          mark_closed):
+            await bv.handle_round_action(inter, "close", stored.round_id, 1)
+        mark_closed.assert_not_awaited()
+        inter.edit_original_response.assert_not_awaited()
+        inter.followup.send.assert_awaited_once()
+
+    async def test_again_blocked_after_close(self):
+        """§7: устаревшие Again/Change на закрытой карточке не создают
+        новую раздачу — сервер отклоняет по card_closed."""
+        stored = _stored(phase="done", outcome=OUT_WIN)
+        stored.card_closed = True
+        inter = _interaction(user_id=1)
+        with patch.object(bv.blackjack_store, "get_round",
+                          AsyncMock(return_value=stored)):
+            await bv.handle_round_action(inter, "again", stored.round_id, 1)
+            await bv.handle_round_action(inter, "change", stored.round_id, 1)
+        for call in inter.followup.send.call_args_list:
+            self.assertNotIsInstance(
+                call.kwargs.get("view"), bv.ConfirmStakeView)
+
     async def test_again_creates_confirm_for_new_round(self):
         """«Сыграть ещё» → ephemeral ConfirmStakeView; новая раздача
         получит НОВОЕ публичное сообщение (reuse упразднён)."""
