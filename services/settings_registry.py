@@ -200,6 +200,17 @@ _reg(key="economy.max_bet", type="int", default=1000,
      module="economy", min=1, max=10**12, permission="economy.manage",
      description="Максимальная ставка (обычные игры)", consumers_pending=True)
 
+# BLACKJACK 2.0 — ставки блэкджека (виртуальная валюта).
+_reg(key="economy.blackjack_bets_enabled", type="bool", default=True,
+     module="economy", permission="economy.manage",
+     description="Ставки в блэкджеке (выкл — только бесплатная игра)")
+_reg(key="economy.blackjack_min_bet", type="int", default=10,
+     module="economy", min=0, max=10**9, permission="economy.manage",
+     description="Минимальная ставка блэкджека")
+_reg(key="economy.blackjack_max_bet", type="int", default=10000,
+     module="economy", min=1, max=10**12, permission="economy.manage",
+     description="Максимальная ставка блэкджека")
+
 # ------------------------------------------------------------------
 # Reputation 2.0 — суммы и проверки (env REP_* → runtime).
 # ------------------------------------------------------------------
