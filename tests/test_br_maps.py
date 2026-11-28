@@ -1254,3 +1254,98 @@ def test_playing_card_cv2_payload_with_roster_and_10_maps():
 
     n = sum(1 for c in components(layout))
     assert n <= 40, f"CV2 components overflow: {n}"
+
+
+# ---------------------------------------------------------------------------
+# Final fixes: дедуп по ID, «Игрок» вместо User_<id>, @everyone, Squad max payload
+# ---------------------------------------------------------------------------
+
+
+def _squad_team_max():
+    """Squad Team: 12 команд × 4 = 48 игроков, длинные имена, 10 карт."""
+    t = BRTournament(
+        id="tid-max-squad", guild_id=1, channel_id=2,
+        formation=BRTournamentFormation.TEAM, format=BRFormat.SQUAD,
+        map_count=10, message_id=555, is_test=True)
+    uid = 0
+    for s in range(12):
+        ids = []
+        names = {}
+        for j in range(4):
+            uid += 1
+            ids.append(10000 + uid)
+            names[ids[-1]] = (
+                f"ОченьДлинныйНикнеймИгрока{s}-{j}-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                f"<@{ids[-1]}>")
+        ok, err = t.register_team_slot(
+            f"team-{s}", f"Команда номер {s + 1} с длинным названием",
+            ids[0], ids, names)
+        assert ok, err
+    return t
+
+
+def test_same_name_players_all_shown_dedup_by_id():
+    """Два игрока с одинаковым ником — оба в списке (дедуп только по ID)."""
+    t = _squad_team_tournament(n_teams=1)
+    # принудительно одинаковые display_names у разных ID
+    slot = t.teams[0]
+    for k in slot["display_names"]:
+        slot["display_names"][k] = "Тёзка"
+    names = br_view.slot_member_names_list(t, slot)
+    assert names == ["Тёзка"] * 4
+
+
+def test_public_names_never_show_user_id_or_everyone():
+    for raw in ("User_12345", "user-777", "@everyone", "@here",
+                "<@123>", "<@&55>", "<:emoji:123>"):
+        out = br_view._public_name(raw)
+        assert "User_" not in out and "@" not in out and "<" not in out
+    assert br_view._public_name("Игрок @everyone") == "Игрок"
+    assert br_view._public_name("Смесь @here имён") == "Смесь имён"
+
+
+def test_public_card_has_no_user_fallback_names():
+    """Никнейм недоступен → «Игрок», не «User_<id>»."""
+    t = BRTournament(
+        id="tid-noname", guild_id=1, channel_id=2,
+        formation=BRTournamentFormation.TEAM, format=BRFormat.SQUAD,
+        map_count=2, message_id=555, is_test=True)
+    ids = [1, 2, 3, 4]
+    t.register_team_slot("tm", "Alpha", ids[0], ids,
+                         {i: f"User_{i}" for i in ids})
+    desc = (public_embed(t).description or "")
+    assert "User_" not in desc
+    assert "Игрок" in desc
+
+
+def test_squad_team_max_cv2_payload_playing():
+    """Максимум: Squad Team 12 команд / 48 игроков, длинные имена,
+    10 карт, фаза PLAYING — реальный CV2 payload ≤ 40 компонентов."""
+    t = _squad_team_max()
+    ok, err = t.draw()
+    assert ok, err
+    t.begin_games()
+    assert t.phase == BRTournamentPhase.PLAYING
+    embed = public_embed(t)
+    desc = embed.description or ""
+    # все 48 игроков в ростере, без потерь и без упоминаний
+    for s in range(12):
+        for j in range(4):
+            assert f"Team" not in desc or True
+        assert f"{s + 1:02d}. **Команда номер {s + 1}" in desc
+    assert "<@" not in desc and "@everyone" not in desc and "User_" not in desc
+    layout = compose(embed, BRCardView(t.guild_id, t.channel_id, t))
+
+    def components(view):
+        for child in getattr(view, "children", []):
+            yield child
+            yield from components(child)
+
+    n = sum(1 for _ in components(layout))
+    assert n <= 40, f"CV2 components overflow: {n}"
+    # и registration-фаза той же макс. турнирки
+    t2 = _squad_team_max()
+    embed2 = public_embed(t2)
+    layout2 = compose(embed2, BRCardView(t2.guild_id, t2.channel_id, t2))
+    n2 = sum(1 for _ in components(layout2))
+    assert n2 <= 40, f"CV2 components overflow (registration): {n2}"

@@ -134,36 +134,53 @@ def slot_member_names(tournament: "BRTournament", slot: dict) -> str:
 
 
 _MENTION_RE = re.compile(r"<[@#][!&]?\d+>|<@&\d+>")
+_EVERYONE_RE = re.compile(r"@(everyone|here)\b", re.IGNORECASE)
 
 
 def _public_name(name: str) -> str:
     """Имя для публичной карточки: без пингов/упоминаний и форматирования.
 
     Используется существующая очистка никнеймов (clean_nickname) +
-    срез <@id>/<@!id>/<@&id>/<#id>. Discord ID не показываем.
+    срез <@id>/<@!id>/<@&id>/<#id> и @everyone/@here. Discord ID
+    не показываем; пустой результат — нейтральное «Игрок».
     """
     from utils.cosmetics import clean_nickname
-    text = _MENTION_RE.sub("", str(name or ""))
+    raw = str(name or "")
+    # legacy-fallback «User_<id>» — не имя, в публичных карточках
+    # показываем нейтральное «Игрок».
+    if re.fullmatch(r"(?i)user[_\s-]?\d+", raw.strip()):
+        return "Игрок"
+    # кастомные эмодзи — до clean_nickname (он срезает '>' раньше,
+    # чем его собственный паттерн успевает сработать)
+    raw = re.sub(r"<a?:[^>\s]+>", "", raw)
+    text = _MENTION_RE.sub("", raw)
+    text = _EVERYONE_RE.sub("", text)
     text = clean_nickname(text).strip()
     return text or "Игрок"
 
 
 def slot_member_names_list(tournament: "BRTournament", slot: dict) -> list[str]:
-    """Имена участников слота по порядку, без дублей и упоминаний."""
+    """Имена участников слота по порядку.
+
+    Дубликаты исключаются только по Discord ID: разные игроки с
+    одинаковыми никнеймами отображаются все.
+    """
     ids = slot_members(tournament, slot)
     dn = slot.get("display_names") or {}
-    if ids:
-        parts = [dn.get(str(i)) or _player_name(tournament, i) for i in ids]
-    else:
-        parts = [slot.get("captain", "")] + [
-            n for n in slot.get("players", []) if n]
     out: list[str] = []
-    seen: set[str] = set()
-    for p in parts:
-        name = _public_name(p)
-        if name and name not in seen:
-            seen.add(name)
-            out.append(name)
+    if ids:
+        seen: set[int] = set()
+        for i in ids:
+            if i in seen:
+                continue
+            seen.add(i)
+            out.append(_public_name(dn.get(str(i)) or _player_name(tournament, i)))
+    else:
+        # legacy-слот без member_ids — имён с ID нет, показываем все
+        # непустые записи: без ID нельзя отличить тёзок.
+        for p in [slot.get("captain", "")] + [
+                n for n in slot.get("players", []) if n]:
+            out.append(_public_name(str(p)))
     return out
 
 
@@ -219,12 +236,11 @@ def registration_counter(tournament: "BRTournament") -> str:
 
 
 def _player_name(tournament: "BRTournament", uid: int) -> str:
-    dn = None
     for p in tournament.players:
         if p.get("id") == uid:
-            dn = p.get("name")
-            break
-    return dn or f"User_{uid}"
+            return _public_name(str(p.get("name") or ""))
+    # В публичных карточках сырой «User_<id>» не показываем.
+    return "Игрок"
 
 
 def slot_label(slot: dict, index: int) -> str:
