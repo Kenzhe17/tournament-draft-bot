@@ -74,9 +74,9 @@ async def open_team_panel(interaction: discord.Interaction,
                                    notice=notice)
     itype = getattr(interaction, "type", None)
     try:
-        if itype == discord.InteractionType.MESSAGE_COMPONENT:
+        if itype == discord.InteractionType.component:
             await interaction.response.edit_message(view=view)
-        elif itype == discord.InteractionType.APPLICATION_COMMAND:
+        elif itype == discord.InteractionType.application_command:
             # slash-команда: ответ уже отложен defer'ом
             await interaction.followup.send(
                 view=view, ephemeral=True,
