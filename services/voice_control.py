@@ -34,7 +34,7 @@ from config import (
     VOICE_CONTROL_LOG_CHANNEL_ID,
     VOICE_CONTROL_PROTECTED_CHANNEL_IDS,
 )
-from storage import moderation_store as mod_db
+from storage.moderation_store import moderation_store as mod_db
 from storage.voice_control_store import voice_control_store as db
 
 log = logging.getLogger(__name__)

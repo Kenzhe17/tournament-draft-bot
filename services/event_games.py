@@ -132,7 +132,8 @@ def _math_problem(rng: random.Random) -> dict[str, Any]:
         a, b = rng.randint(2, 30), rng.randint(2, 30)
         ans = a + b
     elif op == "-":
-        a, b = rng.randint(5, 40), rng.randint(1, a)
+        a = rng.randint(5, 40)
+        b = rng.randint(1, a)
         ans = a - b
     else:
         a, b = rng.randint(2, 12), rng.randint(2, 12)
