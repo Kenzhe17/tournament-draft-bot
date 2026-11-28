@@ -62,3 +62,105 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run build
+
+  # Docker runtime smoke: реальный docker build существующего
+  # Dockerfile + запуск контейнера против PostgreSQL. Проверяет
+  # импорт bot, миграции Voice Control, загрузку cog, регистрацию
+  # /voice и /voice_emergency, startup_reconcile и sweep —
+  # при feature flag OFF и ON. Без подключения к Discord.
+  docker-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: riz3_test
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: riz3_bridge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U riz3_test -d riz3_bridge_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SMOKE_DATABASE_URL: postgresql://riz3_test:ci-test-only@127.0.0.1:5432/riz3_bridge_test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build image
+        run: docker build -t riz3-vc-smoke .
+      - name: Write smoke script
+        run: |
+          cat > /tmp/vc_smoke.py <<'PY'
+          import asyncio
+          import os
+
+          os.environ.setdefault("DISCORD_TOKEN", "ci-smoke-no-token")
+
+
+          async def main() -> None:
+              import discord
+              from discord.ext import commands
+
+              import bot  # noqa: F401 — модуль бота без исключений
+              import cogs.mod  # noqa: F401
+              import cogs.voice_control as vc_cog
+              import services.voice_control as vc
+              from storage import moderation_store as modstore
+              from storage import db as dbmod
+              from storage.voice_control_store import voice_control_store
+
+              # Миграции Voice Control + moderation на реальном PG.
+              await voice_control_store.ensure()
+              await modstore.moderation_store.ensure()
+              pool = await dbmod.get_pool()
+              async with pool.acquire() as conn:
+                  for table in ("voice_control_restrictions",
+                                "voice_control_modes",
+                                "voice_control_events",
+                                "moderation_events"):
+                      await conn.fetchval(
+                          f"SELECT count(*) FROM {table}")
+
+              # Загрузка cog и регистрация slash-команд.
+              b = commands.Bot(command_prefix="!",
+                                intents=discord.Intents.none())
+              cog = vc_cog.VoiceControlCog(b)
+              await b.add_cog(cog)
+              assert b.tree.get_command("voice"), "/voice missing"
+              assert b.tree.get_command("voice_emergency"), \
+                  "/voice_emergency missing"
+
+              # Startup reconcile + sweep без исключений.
+              class _EmptyBot:
+                  guilds = []
+
+                  def get_guild(self, _gid):
+                      return None
+
+              await vc.startup_reconcile(_EmptyBot())
+              await vc.sweep_timers(_EmptyBot())
+              await cog.cog_unload()
+
+
+          asyncio.run(main())
+          print("SMOKE OK flag=" + os.environ.get(
+              "VOICE_CONTROL_ENABLED", "0"))
+          PY
+      - name: Smoke — feature flag OFF
+        run: >-
+          docker run --rm --network host
+          -e DATABASE_URL="$SMOKE_DATABASE_URL"
+          -e DISCORD_TOKEN=ci-smoke-no-token
+          -v /tmp/vc_smoke.py:/tmp/vc_smoke.py:ro
+          riz3-vc-smoke python /tmp/vc_smoke.py
+      - name: Smoke — feature flag ON
+        run: >-
+          docker run --rm --network host
+          -e DATABASE_URL="$SMOKE_DATABASE_URL"
+          -e DISCORD_TOKEN=ci-smoke-no-token
+          -e VOICE_CONTROL_ENABLED=1
+          -v /tmp/vc_smoke.py:/tmp/vc_smoke.py:ro
+          riz3-vc-smoke python /tmp/vc_smoke.py

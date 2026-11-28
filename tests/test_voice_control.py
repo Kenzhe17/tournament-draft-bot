@@ -8,7 +8,9 @@
 """
 from __future__ import annotations
 
+import asyncio
 import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
@@ -180,7 +182,7 @@ class FakeStore:
 
     async def set_state(self, guild_id, restriction_id, state, *,
                         actor_id=0, from_states=None,
-                        expected_claim_token=None):
+                        expected_claim_token=None, delivery_state=None):
         for r in self.restrictions_rows:
             if r["guild_id"] != guild_id or r["id"] != restriction_id:
                 continue
@@ -190,6 +192,8 @@ class FakeStore:
                     and r.get("claim_token") != expected_claim_token:
                 return None
             r["state"] = state
+            if delivery_state is not None:
+                r["delivery_state"] = delivery_state
             if state in TERMINAL_STATES:
                 r["released_at"] = datetime.now(UTC)
                 r["released_by"] = actor_id
@@ -198,11 +202,16 @@ class FakeStore:
             return dict(r)
         return None
 
-    async def mark_delivery(self, guild_id, restriction_id, delivery_state):
+    async def mark_delivery(self, guild_id, restriction_id, delivery_state,
+                            *, expected_claim_token=None):
         for r in self.restrictions_rows:
             if r["guild_id"] == guild_id and r["id"] == restriction_id:
+                if expected_claim_token is not None \
+                        and r.get("claim_token") != expected_claim_token:
+                    return False
                 r["delivery_state"] = delivery_state
-                return
+                return True
+        return False
 
     async def restriction_by_id(self, guild_id, restriction_id):
         for r in self.restrictions_rows:
@@ -212,9 +221,11 @@ class FakeStore:
 
     async def claim_pending(self, state, worker, *, limit=50,
                             lease_seconds=120, after_id=0):
-        # Семантика PG: запись доступна, если claim_until истёк или
-        # пуст — переходы состояний сбрасывают claim.
+        # Семантика PG: уникальный token на КАЖДОЕ получение lease;
+        # запись доступна, если claim_until истёк или пуст —
+        # переходы состояний сбрасывают claim.
         now = datetime.now(UTC)
+        token = f"{worker}:{uuid.uuid4().hex[:16]}"
         out = []
         for r in sorted(self.restrictions_rows, key=lambda x: x["id"]):
             if r["state"] != state or r["id"] <= after_id:
@@ -225,12 +236,22 @@ class FakeStore:
                     cu = cu.replace(tzinfo=UTC)
                 if cu > now:
                     continue
-            r["claim_token"] = worker
+            r["claim_token"] = token
             r["claim_until"] = now + timedelta(seconds=lease_seconds)
             out.append(dict(r))
             if len(out) >= limit:
                 break
         return out
+
+    async def renew_claim(self, restriction_id, token, *,
+                          lease_seconds=120):
+        for r in self.restrictions_rows:
+            if r["id"] == restriction_id \
+                    and r.get("claim_token") == token:
+                r["claim_until"] = datetime.now(UTC) + timedelta(
+                    seconds=lease_seconds)
+                return True
+        return False
 
     async def release_claim(self, restriction_id, token=None):
         for r in self.restrictions_rows:
@@ -267,15 +288,14 @@ class FakeStore:
                 return dict(r)
         return None
 
-    async def expire_due_restrictions(self, limit=200):
+    async def due_restrictions(self, limit=200):
+        # Только выборка кандидатов — переход выполняет сервис
+        # под coordinator-замком через CAS (см. sweep_timers).
         now = datetime.now(UTC)
         out = []
         for r in sorted(self.restrictions_rows, key=lambda x: x["id"]):
             if (r["state"] in ("active", "pending_apply")
                     and r["expires_at"] and r["expires_at"] <= now):
-                r["state"] = "pending_release"
-                r["claim_token"] = None
-                r["claim_until"] = None
                 out.append(dict(r))
                 if len(out) >= limit:
                     break
@@ -1015,8 +1035,9 @@ async def test_release_after_leaving_and_reconnect(env):
 
 @pytest.mark.asyncio
 async def test_restart_after_apply_before_commit(env):
-    """5. Перезапуск после Discord apply, но до PG commit:
-    pending_apply + флаг уже стоит → resolve → active."""
+    """5. Перезапуск после Discord apply, но до PG commit.
+    RC3: флаг установлен + delivery не подтверждён → conflict
+    (владение недоказано, повторный mute не присваивает чужой флаг)."""
     g = env.guild
     ch = make_channel(10, g, "General")
     make_member(ACTOR_ID, g, ch)
@@ -1032,7 +1053,31 @@ async def test_restart_after_apply_before_commit(env):
     row = await vc.db.restrictions(GUILD_ID, user_id=target.id,
                                    active_only=False)
     ours = next(r for r in row if r["id"] == rec["id"])
+    assert ours["state"] == "conflict"
+    assert ours["delivery_state"] == "dispatch_started"
+    assert target.voice.mute  # флаг не тронут
+
+
+@pytest.mark.asyncio
+async def test_restart_apply_before_commit_flag_unset(env):
+    """5b. Crash после dispatch, но флаг НЕ установлен → повторное
+    применение безопасно доказывает владение → active."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch, muted=False)
+
+    rec = await vc.db.add_restriction(
+        GUILD_ID, ch.id, target.id, "server_mute", vc.ORIGIN_MANUAL,
+        created_by=ACTOR_ID, state="pending_apply",
+        delivery_state="outcome_unknown")
+    bot = NS(get_guild=lambda gid: g)
+    await vc.sweep_timers(bot)
+    row = await vc.db.restrictions(GUILD_ID, user_id=target.id,
+                                   active_only=False)
+    ours = next(r for r in row if r["id"] == rec["id"])
     assert ours["state"] == "active"
+    assert ours["delivery_state"] == "confirmed_applied"
     assert target.voice.mute
 
 
@@ -1757,3 +1802,218 @@ async def test_real_discord_components(env):
     assert rm.title and isinstance(rm, discord.ui.Modal)
     pm = ProtectModal(panel, cog, "user")
     assert pm.title and len(pm.children) == 1
+
+
+# ----------------------------------------------------------------------
+# RC3: Unknown delivery ownership, expiry↔apply race, claim fencing
+# ----------------------------------------------------------------------
+@pytest.mark.parametrize("kind,make_kwarg,flag_attr", [
+    ("server_mute", "muted", "mute"),
+    ("server_deafen", "deaf", "deaf"),
+])
+@pytest.mark.asyncio
+async def test_unknown_delivery_flag_set_conflict(env, kind, make_kwarg,
+                                                  flag_attr):
+    """RC3-1: outcome_unknown + флаг уже установлен → conflict.
+    Повторный mute/deaf=True НЕ отправляется — владение недоказано,
+    чужой флаг не присваивается. Модерация не при чём (status=none)."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch, **{make_kwarg: True})
+
+    rec = await vc.db.add_restriction(
+        GUILD_ID, ch.id, target.id, kind, vc.ORIGIN_MANUAL,
+        created_by=ACTOR_ID, state="pending_apply",
+        delivery_state="outcome_unknown")
+    await vc._resolve_pending_apply(dict(rec))
+    fresh = await vc.db.restriction_by_id(GUILD_ID, rec["id"])
+    assert fresh["state"] == "conflict"
+    assert fresh["delivery_state"] == "outcome_unknown"
+    # Никаких Discord edit-вызовов: флаг не тронут, mute=True не ушёл.
+    target.edit.assert_not_called()
+    assert getattr(target.voice, flag_attr) is True
+
+
+@pytest.mark.parametrize("kind,make_kwarg,flag_attr", [
+    ("server_mute", "muted", "mute"),
+    ("server_deafen", "deaf", "deaf"),
+])
+@pytest.mark.asyncio
+async def test_unknown_delivery_flag_set_owner_release(env, kind,
+                                                       make_kwarg, flag_attr):
+    """RC3-1b: conflict разрешается владельцем — явный release
+    администратора снимает флаг (force_unmute) и завершает запись.
+    Автоматический путь (sweep) conflict НЕ снимает."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    actor = make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch, **{make_kwarg: True})
+
+    rec = await vc.db.add_restriction(
+        GUILD_ID, ch.id, target.id, kind, vc.ORIGIN_MANUAL,
+        created_by=ACTOR_ID, state="pending_apply",
+        delivery_state="dispatch_started")
+    # Автоматический sweep — conflict, флаг сохранён.
+    bot = NS(get_guild=lambda gid: g)
+    await vc.sweep_timers(bot)
+    fresh = await vc.db.restriction_by_id(GUILD_ID, rec["id"])
+    assert fresh["state"] == "conflict"
+    assert getattr(target.voice, flag_attr) is True
+    # Явный release конфликта администратором — безопасное
+    # разрешение: флаг снимается, запись завершается.
+    await vc.release_restriction(fresh, actor=actor)
+    fresh = await vc.db.restriction_by_id(GUILD_ID, rec["id"])
+    assert fresh["state"] in ("released", "expired")
+    assert getattr(target.voice, flag_attr) is False
+
+
+@pytest.mark.parametrize("kind,make_kwarg,flag_attr", [
+    ("server_mute", "muted", "mute"),
+    ("server_deafen", "deaf", "deaf"),
+])
+@pytest.mark.asyncio
+async def test_unknown_delivery_retry_403_preserves_unknown(env, kind,
+                                                            make_kwarg,
+                                                            flag_attr):
+    """RC3-2: outcome_unknown + флаг не установлен + повторный запрос
+    403 → pending_release с delivery_state=outcome_unknown.
+    Информация о неизвестном исходе ПЕРВОГО запроса не уничтожается
+    (НЕ failed/not_dispatched)."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch)
+
+    async def deny(**kwargs):
+        if flag_attr in kwargs:
+            raise discord.Forbidden(MagicMockResponse(status=403), "no")
+
+    target.edit = AsyncMock(side_effect=deny)
+    rec = await vc.db.add_restriction(
+        GUILD_ID, ch.id, target.id, kind, vc.ORIGIN_MANUAL,
+        created_by=ACTOR_ID, state="pending_apply",
+        delivery_state="outcome_unknown")
+    await vc._resolve_pending_apply(dict(rec))
+    fresh = await vc.db.restriction_by_id(GUILD_ID, rec["id"])
+    assert fresh["state"] == "pending_release"
+    assert fresh["delivery_state"] == "outcome_unknown"
+    # Флаг не установлен → безопасная очистка завершит запись без unmute.
+    bot = NS(get_guild=lambda gid: g)
+    await vc.sweep_timers(bot)
+    fresh = await vc.db.restriction_by_id(GUILD_ID, rec["id"])
+    assert fresh["state"] in ("released", "expired")
+
+
+@pytest.mark.asyncio
+async def test_expiry_during_slow_apply_not_resurrected(env):
+    """RC3-3: таймер истекает МЕЖДУ Discord dispatch и PG commit.
+    CAS pending_apply→active проигрывает expiry → запись НЕ
+    возвращается в active; подтверждённый флаг безопасно снимается."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    actor = make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch)
+    past = datetime.now(UTC) - timedelta(seconds=1)
+
+    async def expire_mid_apply(**kwargs):
+        # Discord применил mute — а пока шёл HTTP, sweeper перевёл
+        # запись в pending_release (expiry выиграл гонку).
+        if target.voice is not None and "mute" in kwargs:
+            target.voice.mute = kwargs["mute"]
+        if kwargs.get("mute") is True:
+            rows = await vc.db.restrictions(
+                GUILD_ID, user_id=target.id, active_only=False)
+            ours = next(r for r in rows if r["user_id"] == target.id)
+            await vc.db.set_state(GUILD_ID, ours["id"], "pending_release",
+                                  from_states=("active", "pending_apply"))
+
+    target.edit = AsyncMock(side_effect=expire_mid_apply)
+    result = await vc.apply_restriction(
+        target, ch, "server_mute", vc.ORIGIN_TIMER, actor=actor,
+        expires_at=past)
+    row = await vc.db.restriction_by_id(GUILD_ID,
+                                        result["restriction"]["id"])
+    assert row["state"] in ("released", "expired")
+    assert row["state"] != "active"
+    assert target.voice.mute is False  # подтверждённый флаг снят
+
+
+@pytest.mark.asyncio
+async def test_release_during_pending_apply(env):
+    """RC3-4: release во время pending_apply → pending_release →
+    безопасная очистка по фактическому флагу."""
+    g = env.guild
+    ch = make_channel(10, g, "General")
+    actor = make_member(ACTOR_ID, g, ch)
+    target = make_member(70, g, ch, muted=True)
+
+    rec = await vc.db.add_restriction(
+        GUILD_ID, ch.id, target.id, "server_mute", vc.ORIGIN_MANUAL,
+        created_by=ACTOR_ID, state="pending_apply",
+        delivery_state="confirmed_applied")
+    await vc.release_restriction(rec, actor=actor)
+    fresh = await vc.db.restriction_by_id(GUILD_ID, rec["id"])
+    assert fresh["state"] in ("released", "expired")
+    assert target.voice.mute is False
+
+
+@pytest.mark.asyncio
+async def test_claim_token_unique_per_lease(env):
+    """RC3-5: повторный claim тем же worker'ом — НОВЫЙ уникальный
+    token; stale token не проходит fencing."""
+    rec = await vc.db.add_restriction(
+        GUILD_ID, 10, 70, "server_mute", vc.ORIGIN_MANUAL,
+        created_by=ACTOR_ID, state="pending_release")
+    b1 = await vc.db.claim_pending("pending_release", "w1", limit=10)
+    t1 = next(r["claim_token"] for r in b1 if r["id"] == rec["id"])
+    assert t1 != "w1" and ":" in t1
+    # Лиз истёк → повторный claim тем же worker'ом.
+    for r in vc.db.restrictions_rows:
+        if r["id"] == rec["id"]:
+            r["claim_until"] = datetime.now(UTC) - timedelta(seconds=1)
+    b2 = await vc.db.claim_pending("pending_release", "w1", limit=10)
+    t2 = next(r["claim_token"] for r in b2 if r["id"] == rec["id"])
+    assert t2 != t1
+    # Stale mark_delivery старым token — отклонён, delivery не меняется.
+    await vc.db.mark_delivery(GUILD_ID, rec["id"], "confirmed_applied",
+                              expected_claim_token=t1)
+    fresh = await vc.db.restriction_by_id(GUILD_ID, rec["id"])
+    assert fresh["delivery_state"] != "confirmed_applied" \
+        or fresh["delivery_state"] is None
+    assert await vc.db.mark_delivery(GUILD_ID, rec["id"],
+                                     "outcome_unknown",
+                                     expected_claim_token=t2) is True
+
+
+@pytest.mark.asyncio
+async def test_channel_switch_during_member_lock_wait(env):
+    """RC3-6: участник сменил войс, пока ждал coordinator-замок —
+    reconcile читает актуальный канал ПОД замком: ограничение
+    старого канала завершается, mute в новый канал не переносится."""
+    g = env.guild
+    ch_a = make_channel(10, g, "A")
+    ch_b = make_channel(11, g, "B")
+    make_member(ACTOR_ID, g, ch_a)
+    target = make_member(70, g, ch_a)
+
+    rec = await vc.apply_restriction(target, ch_a, "server_mute",
+                                     vc.ORIGIN_BULK_MUTE,
+                                     actor_id=ACTOR_ID)
+    assert target.voice.mute
+
+    lock = vc._member_lock(GUILD_ID, target.id)
+    await lock.acquire()
+    task = None
+    try:
+        # Участник переходит в обычный войс, пока reconcile ждёт замок.
+        await target.move_to(ch_b)
+        task = asyncio.ensure_future(vc.reconcile_member(target))
+        await asyncio.sleep(0)
+    finally:
+        lock.release()
+    await task
+    fresh = await vc.db.restriction_by_id(GUILD_ID, rec["restriction"]["id"])
+    assert fresh["state"] in ("released", "expired")
+    assert target.voice.mute is False
+    assert target.voice.channel is ch_b

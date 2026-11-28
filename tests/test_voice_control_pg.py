@@ -122,8 +122,14 @@ async def test_restriction_idempotent_and_expiry(pg_pool):
     # новой строки не создаётся.
     assert r2 is None or r2["id"] == r1["id"]
 
-    expired = await pg_pool.expire_due_restrictions()
-    assert any(r["id"] == r1["id"] for r in expired)
+    # due_restrictions — только выборка кандидатов; переход в
+    # pending_release выполняет сервис под замком через CAS.
+    due = await pg_pool.due_restrictions()
+    assert any(r["id"] == r1["id"] for r in due)
+    row = await pg_pool.set_state(
+        1, r1["id"], "pending_release",
+        from_states=("active", "pending_apply"))
+    assert row["state"] == "pending_release"
     # pending_release не входит в active_only.
     active = await pg_pool.restrictions(1, channel_id=10, user_id=71)
     assert active == []
@@ -273,23 +279,40 @@ async def test_claim_token_cas_pg(pg_pool):
         state="pending_release")
     batch = await pg_pool.claim_pending("pending_release", "w1", limit=10)
     assert any(x["id"] == r["id"] for x in batch)
-    # Неверный token — переход отклонён.
+    token1 = next(x["claim_token"] for x in batch if x["id"] == r["id"])
+    # Уникальный token на каждое получение lease: повторный claim
+    # тем же worker'ом даёт ДРУГОЙ token.
+    batch_again = await pg_pool.claim_pending("pending_apply", "w1",
+                                              limit=10)
+    token_other = next((x["claim_token"] for x in batch_again
+                        if x["id"] == r["id"]), None)
+    assert token_other != token1 or token_other is None
+    # Неверный token — переход и mark_delivery отклонены.
     assert await pg_pool.set_state(
         1, r["id"], "released", expected_claim_token="w2") is None
     assert await pg_pool.release_restriction(
         1, r["id"], expected_claim_token="w2") is None
-    # Верный token — переход проходит.
+    assert await pg_pool.mark_delivery(
+        1, r["id"], "confirmed_applied",
+        expected_claim_token="w2") is False
+    # Верный token — переход и mark_delivery проходят.
     row = await pg_pool.set_state(
         1, r["id"], "pending_apply",
         from_states=("pending_release",),
-        expected_claim_token="w1")
+        expected_claim_token=token1)
     assert row is not None and row["state"] == "pending_apply"
+    assert await pg_pool.mark_delivery(
+        1, r["id"], "dispatch_started",
+        expected_claim_token=token1) is False  # set_state сбросил claim
+    # Повторный claim — новый уникальный token.
+    batch3 = await pg_pool.claim_pending("pending_apply", "w3", limit=10)
+    token3 = next(x["claim_token"] for x in batch3 if x["id"] == r["id"])
+    assert token3 != token1 and token3.startswith("w3:")
     # release_claim чужим token не снимает claim.
-    await pg_pool.claim_pending("pending_apply", "w3", limit=10)
-    await pg_pool.release_claim(r["id"], "w1")
+    await pg_pool.release_claim(r["id"], token1)
     row = await pg_pool.restriction_by_id(1, r["id"])
-    assert row["claim_token"] == "w3"
-    await pg_pool.release_claim(r["id"], "w3")
+    assert row["claim_token"] == token3
+    await pg_pool.release_claim(r["id"], token3)
     row = await pg_pool.restriction_by_id(1, r["id"])
     assert row["claim_token"] is None
 
@@ -322,3 +345,78 @@ async def test_moderation_voice_state_survives_flood_pg(pg_pool):
     # Другой field не смешивается.
     st = await db.voice_state(1, target, "deafen")
     assert st["status"] == "none"
+
+
+@pytest.mark.asyncio
+async def test_claim_token_unique_per_lease_pg(pg_pool):
+    """RC3/P0.3: каждый lease — уникальный token; повторный claim
+    тем же worker'ом НЕ переиспользует token."""
+    r = await pg_pool.add_restriction(
+        1, 10, 110, "server_mute", "manual", created_by=2,
+        state="pending_release")
+    b1 = await pg_pool.claim_pending("pending_release", "w1",
+                                     limit=10, lease_seconds=0)
+    t1 = next(x["claim_token"] for x in b1 if x["id"] == r["id"])
+    assert t1.startswith("w1:") and len(t1) > 4
+    # lease_seconds=0 → claim_until=now → сразу доступен для re-claim.
+    b2 = await pg_pool.claim_pending("pending_release", "w1",
+                                     limit=10, lease_seconds=60)
+    t2 = next(x["claim_token"] for x in b2 if x["id"] == r["id"])
+    assert t2 != t1 and t2.startswith("w1:")
+    # Старый token не проходит fencing.
+    assert await pg_pool.set_state(
+        1, r["id"], "released", expected_claim_token=t1) is None
+    assert await pg_pool.mark_delivery(
+        1, r["id"], "confirmed_applied",
+        expected_claim_token=t1) is False
+    # renew_claim продлевает только свой lease.
+    assert await pg_pool.renew_claim(r["id"], t2, lease_seconds=300)
+    assert not await pg_pool.renew_claim(r["id"], t1)
+    row = await pg_pool.restriction_by_id(1, r["id"])
+    assert row["claim_token"] == t2
+    assert row["claim_until"] > datetime.now(UTC)
+
+
+@pytest.mark.asyncio
+async def test_set_state_atomic_delivery_pg(pg_pool):
+    """RC3/P0.2: delivery_state обновляется АТОМАРНО с lifecycle state;
+    проигранный CAS не меняет delivery."""
+    r = await pg_pool.add_restriction(
+        1, 10, 111, "server_mute", "manual", created_by=2,
+        state="pending_apply", delivery_state="dispatch_started")
+    row = await pg_pool.set_state(
+        1, r["id"], "active", from_states=("pending_apply",),
+        delivery_state="confirmed_applied")
+    assert row["state"] == "active"
+    assert row["delivery_state"] == "confirmed_applied"
+    # CAS проигран → delivery остаётся прежним.
+    row = await pg_pool.set_state(
+        1, r["id"], "pending_release",
+        from_states=("pending_apply",), delivery_state="not_dispatched")
+    assert row is None
+    fresh = await pg_pool.restriction_by_id(1, r["id"])
+    assert fresh["state"] == "active"
+    assert fresh["delivery_state"] == "confirmed_applied"
+
+
+@pytest.mark.asyncio
+async def test_due_restrictions_readonly_pg(pg_pool):
+    """RC3/P0.2: due_restrictions — только выборка кандидатов,
+    состояние не меняется (expiry под замком через CAS в сервисе)."""
+    past = datetime.now(UTC) - timedelta(seconds=5)
+    r = await pg_pool.add_restriction(
+        1, 10, 112, "server_mute", "timer", expires_at=past,
+        created_by=2, state="active")
+    due = await pg_pool.due_restrictions()
+    assert any(x["id"] == r["id"] for x in due)
+    fresh = await pg_pool.restriction_by_id(1, r["id"])
+    assert fresh["state"] == "active"  # не тронуто
+    # CAS expiry: активная → pending_release атомарно.
+    row = await pg_pool.set_state(
+        1, r["id"], "pending_release",
+        from_states=("active", "pending_apply"))
+    assert row["state"] == "pending_release"
+    # Проигранный CAS: повторный expiry не ломает pending_release.
+    assert await pg_pool.set_state(
+        1, r["id"], "pending_release",
+        from_states=("active", "pending_apply")) is None

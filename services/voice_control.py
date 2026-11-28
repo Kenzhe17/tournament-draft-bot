@@ -488,6 +488,8 @@ async def _apply_restriction(
     actor_ref = actor.id if actor else actor_id
     # dispatch_started ДО вызова API: после этой точки исход
     # считается неизвестным, пока Discord не подтвердит результат.
+    # delivery_state и lifecycle state далее меняются АТОМАРНО
+    # (set_state с delivery_state) — они не могут разойтись.
     await db.mark_delivery(guild.id, rec["id"], "dispatch_started")
     try:
         await _set_flag(member, guild.id, kind, True,
@@ -497,17 +499,17 @@ async def _apply_restriction(
         # Проверка канала упала ДО отправки запроса — Discord API
         # гарантированно не вызывался: завершаем запись без unmute,
         # чужой флаг не трогаем.
-        await db.mark_delivery(guild.id, rec["id"], "not_dispatched")
         await db.set_state(guild.id, rec["id"], "failed",
                            actor_id=actor_ref,
-                           from_states=("pending_apply",))
+                           from_states=("pending_apply",),
+                           delivery_state="not_dispatched")
         raise
     except discord.Forbidden:
         # API однозначно отклонил — флаг не применялся.
-        await db.mark_delivery(guild.id, rec["id"], "not_dispatched")
         await db.set_state(guild.id, rec["id"], "failed",
                            actor_id=actor_ref,
-                           from_states=("pending_apply",))
+                           from_states=("pending_apply",),
+                           delivery_state="not_dispatched")
         raise VoiceControlError("Discord запретил изменение голосового состояния.")
     except discord.HTTPException:
         # Неопределённый результат: delivery=outcome_unknown —
@@ -519,10 +521,27 @@ async def _apply_restriction(
         raise VoiceControlError(
             "Discord не подтвердил результат. Ограничение записано, "
             "сверка состояния будет выполнена автоматически.")
-    await db.mark_delivery(guild.id, rec["id"], "confirmed_applied")
-    rec = await db.set_state(guild.id, rec["id"], "active",
-                             actor_id=actor_ref) or rec
-    return {"restriction": rec, "skipped": None}
+    # Discord подтвердил применение. CAS pending_apply→active:
+    # истёкший во время медленного apply таймер уже перевёл запись
+    # в pending_release — просроченную запись в active не возвращаем,
+    # а подтверждённый флаг безопасно очищаем.
+    applied = await db.set_state(
+        guild.id, rec["id"], "active", actor_id=actor_ref,
+        from_states=("pending_apply",),
+        delivery_state="confirmed_applied")
+    if applied is None:
+        fresh = await db.restriction_by_id(guild.id, rec["id"]) or rec
+        if fresh.get("state") == "pending_release":
+            # Таймер истёк между dispatch и commit — Discord применение
+            # ПОДТВЕРДИЛ, фиксируем delivery и уходим в безопасную
+            # очистку (unmute подтверждённо нашего флага).
+            await db.mark_delivery(guild.id, rec["id"],
+                                   "confirmed_applied")
+            finished = await finish_pending_release(fresh, actor_id=actor_ref)
+            return {"restriction": finished, "skipped": None,
+                    "expired_during_apply": True}
+        return {"restriction": fresh, "skipped": "state_changed"}
+    return {"restriction": applied, "skipped": None}
 
 
 async def _clear_flag(member: discord.Member, guild_id: int, kind: str,
@@ -592,14 +611,20 @@ def _delivery(restriction: dict[str, Any]) -> str:
 
 async def _attempt_flag_release(member: discord.Member, restriction: dict[str, Any],
                                 *, actor_id: int = 0,
-                                claim_token: str | None = None) -> str:
+                                claim_token: str | None = None,
+                                force_unmute: bool = False) -> str:
     """Попытаться снять Discord-флаг для pending_release-ограничения.
 
     Вызывается под _member_lock(guild_id, user_id).
     Возвращает 'cleared' | 'kept_moderation' | 'kept_unknown' | 'retry'.
     Модерация имеет приоритет: активный/неопределённый модерационный
     флаг мы не снимаем и не присваиваем. При outcome_unknown владение
-    текущим флагом не присваивается — фиксируется conflict."""
+    текущим флагом не присваивается — фиксируется conflict.
+    force_unmute=True — явный запрос администратора (release через
+    панель/команду, emergency): владелец принимает решение о владении
+    и флаг снимается. Автоматические пути (sweep/reconcile/таймер)
+    вызывают с force_unmute=False и никогда не снимают флаг с
+    недоказанным владением."""
     guild_id = restriction["guild_id"]
     kind = restriction["kind"]
     mod = await _mod_state(guild_id, restriction["user_id"], kind)
@@ -652,6 +677,19 @@ async def _attempt_flag_release(member: discord.Member, restriction: dict[str, A
                                          final_state=await _final_state(restriction),
                                          expected_claim_token=claim_token)
             return "cleared"
+        if force_unmute:
+            # Явное решение администратора: снимаем флаг как свой.
+            # Модерация уже проверена выше (active/unknown → conflict).
+            ok = await _clear_flag(member, guild_id, kind,
+                                   reason="r!z3 Voice Control: "
+                                          "снятие ограничения (решение администратора)")
+            if ok:
+                await db.release_restriction(guild_id, restriction["id"],
+                                             actor_id=actor_id,
+                                             final_state=await _final_state(restriction),
+                                             expected_claim_token=claim_token)
+                return "cleared"
+            return "retry"
         await db.set_state(guild_id, restriction["id"], "conflict",
                            actor_id=actor_id,
                            expected_claim_token=claim_token)
@@ -678,7 +716,8 @@ async def _attempt_flag_release(member: discord.Member, restriction: dict[str, A
 
 async def finish_pending_release(restriction: dict[str, Any], *,
                                  actor_id: int = 0,
-                                 claim_token: str | None = None) -> dict[str, Any]:
+                                 claim_token: str | None = None,
+                                 force_unmute: bool = False) -> dict[str, Any]:
     """Завершить pending_release: модерация → не трогаем флаг;
     иначе снимаем флаг и фиксируем терминальное состояние.
 
@@ -722,9 +761,15 @@ async def finish_pending_release(restriction: dict[str, Any], *,
                 pass  # сеть — повторим позже
         # Гильдия недоступна или сетевая ошибка — оставляем pending.
         return restriction
+    # Продлеваем lease перед Discord HTTP: длинная операция не
+    # должна потерять claim посреди вызова. Не наш claim — выходим.
+    if claim_token is not None and not await db.renew_claim(
+            restriction["id"], claim_token):
+        return restriction
     result = await _attempt_flag_release(member, restriction,
                                          actor_id=actor_id,
-                                         claim_token=claim_token)
+                                         claim_token=claim_token,
+                                         force_unmute=force_unmute)
     if result == "retry":
         return restriction
     # _attempt_flag_release уже зафиксировал терминальное состояние
@@ -746,12 +791,17 @@ async def _release_restriction(restriction: dict[str, Any], *,
     actor_id = actor.id if actor else actor_id
 
     if restriction.get("state") not in ("active", "pending_apply",
-                                        "pending_release"):
+                                        "pending_release", "conflict"):
         return restriction  # уже завершено — идемпотентно
+    # 'conflict' тоже переводим в pending_release: явный запрос
+    # администратора — это и есть безопасное разрешение конфликта
+    # (force_unmute передаётся дальше и позволяет снять флаг с
+    # недоказанным владением — решение принимает владелец).
     # Переход в pending_release — durable точка «очистка запрошена».
     claimed = await db.set_state(
         guild_id, restriction["id"], "pending_release", actor_id=actor_id,
-        from_states=("active", "pending_apply", "pending_release"),
+        from_states=("active", "pending_apply", "pending_release",
+                     "conflict"),
         expected_claim_token=claim_token)
     if claimed is None:
         return restriction  # гонка: другой воркер уже обрабатывает
@@ -763,8 +813,12 @@ async def _release_restriction(restriction: dict[str, Any], *,
             guild_id, restriction["id"], actor_id=actor_id,
             final_state=await _final_state(restriction),
             expected_claim_token=claim_token) or claimed
+    # Явный запрос человека (actor/actor_id) — force_unmute;
+    # автоматические пути (sweep/reconcile, actor_id=0) — нет.
+    force = actor is not None or actor_id != 0
     return await finish_pending_release(claimed, actor_id=actor_id,
-                                        claim_token=claim_token)
+                                        claim_token=claim_token,
+                                        force_unmute=force)
 
 
 async def release_restriction(restriction: dict[str, Any], *,
@@ -785,9 +839,18 @@ async def _resolve_pending_apply(restriction: dict[str, Any], *,
     """Довести pending_apply до определённого состояния.
 
     Вызывается под _member_lock(guild_id, user_id). Учитывает
-    delivery_state: not_dispatched завершается без Discord unmute;
-    outcome_unknown повторно подтверждает применение (мы сами
-    выставляем флаг) либо переходит в безопасную очистку.
+    delivery_state:
+    - not_dispatched — API гарантированно не вызывался → failed
+      без Discord-вызовов;
+    - confirmed_applied — apply подтверждён до коммита → CAS в
+      active (или безопасная очистка, если запись уже pending_release);
+    - dispatch_started/outcome_unknown — исход ПЕРВОГО запроса
+      неизвестен. Если Discord-флаг уже установлен, владение
+      недоказано: повторный mute=True НЕ отправляется (иначе мы
+      «присвоили» бы чужой флаг), фиксируется conflict для
+      разрешения владельцем. Если флаг не установлен — повторное
+      применение безопасно и доказывает владение. Ошибка повтора
+      НЕ уничтожает outcome_unknown предыдущего запроса.
     """
     guild_id = restriction["guild_id"]
     kind = restriction["kind"]
@@ -801,7 +864,8 @@ async def _resolve_pending_apply(restriction: dict[str, Any], *,
         await db.set_state(guild_id, restriction["id"], "failed",
                            actor_id=actor_ref,
                            from_states=("pending_apply",),
-                           expected_claim_token=claim_token)
+                           expected_claim_token=claim_token,
+                           delivery_state="not_dispatched")
         return restriction
 
     guild = _bot_guild(guild_id)
@@ -816,6 +880,27 @@ async def _resolve_pending_apply(restriction: dict[str, Any], *,
                            actor_id=actor_ref,
                            expected_claim_token=claim_token)
         return restriction
+
+    # Модерационные действия ПОСЛЕ создания ограничения: mute после —
+    # конфликт (модерация могла забрать флаг); unmute после — наш
+    # pending_apply не должен восстанавливать снятый флаг.
+    mod = await _mod_state(guild_id, user_id, kind)
+    if mod.get("status") in ("active", "unknown"):
+        await db.set_state(guild_id, restriction["id"], "conflict",
+                           actor_id=actor_ref,
+                           expected_claim_token=claim_token)
+        await log_event(guild_id, actor_ref, "voice.conflict",
+                        channel_id=channel_id,
+                        detail={"user_id": user_id, "kind": kind,
+                                "reason": "moderation_owns_flag"})
+        return restriction
+    if await _mod_cleared_after(guild_id, user_id, kind,
+                                restriction.get("created_at")):
+        await db.set_state(guild_id, restriction["id"], "pending_release",
+                           actor_id=actor_ref,
+                           expected_claim_token=claim_token)
+        return restriction
+
     if not _in_expected_channel(member, channel_id):
         # Применение не подтверждено и участник уже не там:
         # безопасный путь — pending_release (снимет флаг, если он есть).
@@ -832,45 +917,109 @@ async def _resolve_pending_apply(restriction: dict[str, Any], *,
                            actor_id=actor_ref,
                            expected_claim_token=claim_token)
         return restriction
-    mod = await _mod_state(guild_id, user_id, kind)
-    if mod.get("status") in ("active", "unknown"):
-        # Модерация удерживает флаг или её исход неизвестен —
-        # владение флагом не присваиваем, помечаем конфликт.
+
+    if delivery == "confirmed_applied":
+        # Apply был подтверждён Discord API до коммита состояния —
+        # фиксируем active атомарно. CAS не вернёт запись в active,
+        # если истёкший таймер уже перевёл её в pending_release.
+        active = await db.set_state(
+            guild_id, restriction["id"], "active", actor_id=actor_ref,
+            from_states=("pending_apply",),
+            expected_claim_token=claim_token,
+            delivery_state="confirmed_applied")
+        if active is None:
+            fresh = await db.restriction_by_id(guild_id, restriction["id"]) \
+                or restriction
+            if fresh.get("state") == "pending_release":
+                return await finish_pending_release(
+                    fresh, actor_id=actor_ref, claim_token=claim_token)
+            return fresh
+        return active
+
+    # delivery in (dispatch_started, outcome_unknown): исход первого
+    # запроса неизвестен. Проверяем ФАКТИЧЕСКИЙ флаг — но только для
+    # решения, не для присвоения владения.
+    voice = getattr(member, "voice", None)
+    if voice is None or voice.channel is None:
+        # Состояние Discord проверить нельзя — сохраняем pending
+        # (повторим позже), информацию о неизвестном исходе не теряем.
+        return restriction
+    flag_set = bool(getattr(voice, FLAG_ATTR[kind], False))
+    if flag_set:
+        # Флаг установлен, но принадлежность недоказана: повторный
+        # mute=True «присвоил» бы чужой флаг нашему ограничению.
+        # Конфликт — владелец разрешает вручную (release → unmute).
         await db.set_state(guild_id, restriction["id"], "conflict",
                            actor_id=actor_ref,
                            expected_claim_token=claim_token)
         await log_event(guild_id, actor_ref, "voice.conflict",
                         channel_id=channel_id,
                         detail={"user_id": user_id, "kind": kind,
-                                "reason": "moderation_owns_flag"})
+                                "reason": "delivery_unknown_flag_set",
+                                "delivery": delivery})
         return restriction
-    # Повторное подтверждение применения: мы сами выставляем флаг,
-    # поэтому после успеха владение доказано (confirmed_applied).
-    await db.mark_delivery(guild_id, restriction["id"], "dispatch_started")
+    # Флаг не установлен: повторное применение безопасно — оно и есть
+    # цель pending_apply и доказывает владение после подтверждения.
+    # fencing: mark_delivery только если claim ещё наш.
+    fenced = await db.mark_delivery(
+        guild_id, restriction["id"], "dispatch_started",
+        expected_claim_token=claim_token)
+    if claim_token is not None and not fenced:
+        return restriction  # claim перехвачен — не interfering
+    # Продлеваем lease перед Discord HTTP повтора: длинная операция
+    # не должна потерять claim посреди вызова API.
+    if claim_token is not None and not await db.renew_claim(
+            restriction["id"], claim_token):
+        return restriction
     try:
         await _set_flag(member, guild_id, kind, True,
                         reason="r!z3 Voice Control: восстановление",
                         expected_channel_id=channel_id)
     except StaleTargetError:
+        # Этот ПОВТОРНЫЙ запрос не отправлялся, но исход ПЕРВОГО
+        # неизвестен — delivery остаётся outcome_unknown, запись
+        # уходит в безопасную очистку (проверит флаг по факту).
         await db.set_state(guild_id, restriction["id"], "pending_release",
                            actor_id=actor_ref,
-                           expected_claim_token=claim_token)
+                           from_states=("pending_apply",),
+                           expected_claim_token=claim_token,
+                           delivery_state="outcome_unknown")
         return restriction
     except discord.Forbidden:
-        await db.mark_delivery(guild_id, restriction["id"], "not_dispatched")
-        await db.set_state(guild_id, restriction["id"], "failed",
+        # Повтор отклонён, но исход первого запроса неизвестен —
+        # не «not_dispatched»: прежняя информация сохраняется.
+        await db.set_state(guild_id, restriction["id"], "pending_release",
                            actor_id=actor_ref,
                            from_states=("pending_apply",),
-                           expected_claim_token=claim_token)
+                           expected_claim_token=claim_token,
+                           delivery_state="outcome_unknown")
         return restriction
     except discord.HTTPException:
-        await db.mark_delivery(guild_id, restriction["id"], "outcome_unknown")
-        return restriction  # повторим на следующем sweep
-    await db.mark_delivery(guild_id, restriction["id"], "confirmed_applied")
-    await db.set_state(guild_id, restriction["id"], "active",
-                       actor_id=actor_ref,
-                       expected_claim_token=claim_token)
-    return restriction
+        # Сетевая ошибка повтора — delivery остаётся outcome_unknown,
+        # pending_apply сохраняется для следующего sweep.
+        await db.mark_delivery(guild_id, restriction["id"],
+                               "outcome_unknown",
+                               expected_claim_token=claim_token)
+        return restriction
+    # Повтор подтверждён — владение доказано нами.
+    active = await db.set_state(
+        guild_id, restriction["id"], "active", actor_id=actor_ref,
+        from_states=("pending_apply",),
+        expected_claim_token=claim_token,
+        delivery_state="confirmed_applied")
+    if active is None:
+        # CAS проигран (expiry/manual release успел раньше) — но
+        # повтор подтверждён: фиксируем delivery и чистим безопасно.
+        await db.mark_delivery(guild_id, restriction["id"],
+                               "confirmed_applied",
+                               expected_claim_token=claim_token)
+        fresh = await db.restriction_by_id(guild_id, restriction["id"]) \
+            or restriction
+        if fresh.get("state") == "pending_release":
+            return await finish_pending_release(
+                fresh, actor_id=actor_ref, claim_token=claim_token)
+        return fresh
+    return active
 
 
 # ----------------------------------------------------------------------
@@ -1745,13 +1894,16 @@ async def reconcile_member(member: discord.Member) -> None:
     guild = member.guild
     if member.bot:
         return
-    voice = getattr(member, "voice", None)
-    raw_channel = voice.channel if voice else None
-    current_channel = raw_channel if (
-        raw_channel is not None and _is_voice_channel(raw_channel)) else None
-    current_id = current_channel.id if current_channel else None
 
     async with _member_lock(guild.id, member.id):
+        # Актуальное voice-состояние читаем ПОД замком: участник мог
+        # сменить войс, пока ждал освобождения coordinator-замка.
+        voice = getattr(member, "voice", None)
+        raw_channel = voice.channel if voice else None
+        current_channel = raw_channel if (
+            raw_channel is not None and _is_voice_channel(raw_channel)) \
+            else None
+        current_id = current_channel.id if current_channel else None
         rows = await db.restrictions(guild.id, user_id=member.id,
                                      active_only=False, limit=300)
 
@@ -1884,12 +2036,17 @@ async def sweep_timers(bot) -> dict[str, int]:
     worker = f"sweep-{id(bot):x}"
 
     # 1. Истёкшие таймеры → pending_release → попытка очистки.
+    #    Expiry обрабатывается ПОД coordinator-замком через CAS:
+    #    expire не гонится с in-flight apply — если apply уже
+    #    подтвердил флаг, запись уходит в безопасную очистку;
+    #    просроченная запись никогда не возвращается в active
+    #    (финальный переход apply — CAS from pending_apply).
     try:
-        expired = await db.expire_due_restrictions()
+        due = await db.due_restrictions(limit=SWEEP_BATCH)
     except Exception:
-        log.exception("voice control expire_due failed")
-        expired = []
-    for r in expired:
+        log.exception("voice control due scan failed")
+        due = []
+    for r in due:
         stats["expired"] += 1
         await log_event(r["guild_id"], 0, "voice.timer_expired",
                         channel_id=r["channel_id"],
@@ -1898,10 +2055,23 @@ async def sweep_timers(bot) -> dict[str, int]:
         # безопасно и при выключенном feature flag.
         async with _member_lock(r["guild_id"], r["user_id"]):
             fresh = await db.restriction_by_id(r["guild_id"], r["id"])
-            if fresh is None or fresh["state"] != "pending_release":
+            if fresh is None or fresh["state"] not in ACTIVE_STATES:
+                continue
+            exp = fresh.get("expires_at")
+            if exp is not None:
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=UTC)
+                if exp > datetime.now(UTC):
+                    continue  # срок продлили — не истёк
+            # CAS: только из active/pending_apply — не трогаем
+            # записи, уже ушедшие в pending_release/terminal.
+            claimed = await db.set_state(
+                r["guild_id"], r["id"], "pending_release",
+                from_states=("active", "pending_apply"))
+            if claimed is None:
                 continue
             try:
-                await finish_pending_release(fresh)
+                await finish_pending_release(claimed)
             except Exception:
                 stats["errors"] += 1
                 log.exception("voice control timer release failed r=%s",

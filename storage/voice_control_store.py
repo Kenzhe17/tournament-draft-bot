@@ -7,11 +7,22 @@
 
 Схема — только добавочные миграции (CREATE TABLE IF NOT EXISTS /
 CREATE INDEX IF NOT EXISTS), вызывается из ensure().
+
+Claim fencing: claim_token уникален на каждое получение lease,
+set_state/release_restriction/mark_delivery проверяют его через
+expected_claim_token — устаревший worker не может завершить,
+освободить или перезаписать delivery_state чужого claim.
+ВАЖНО: CAS защищает только PostgreSQL-записи — он НЕ отменяет
+уже отправленный Discord HTTP-запрос. Поэтому production
+развёртывание обязано состоять из ОДНОГО экземпляра бота
+(см. docker-compose: без реплик); иначе два процесса могут
+параллельно слать Discord API по одной записи.
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from typing import Any
 
 from storage.db import get_pool
@@ -449,11 +460,14 @@ class VoiceControlStore:
                         actor_id: int = 0,
                         from_states: tuple[str, ...] | None = None,
                         expected_claim_token: str | None = None,
+                        delivery_state: str | None = None,
                         ) -> dict[str, Any] | None:
         """CAS-переход состояния. from_states=None — безусловный.
         expected_claim_token: переход разрешён только если запись
         захвачена именно этим токеном — устаревший worker не может
-        завершить или освободить claim нового worker."""
+        завершить или освободить claim нового worker.
+        delivery_state обновляется АТОМАРНО с lifecycle state —
+        delivery и состояние не могут разойтись."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -463,9 +477,13 @@ class VoiceControlStore:
                                         THEN now() ELSE released_at END,
                        released_by=CASE WHEN $3 IN ('released','expired','conflict','failed')
                                         THEN $4 ELSE released_by END,
-                       claim_token=NULL, claim_until=NULL
-                   WHERE guild_id=$1 AND id=$2"""
+                       claim_token=NULL, claim_until=NULL"""
             args: list[Any] = [guild_id, restriction_id, state, actor_id]
+            if delivery_state is not None:
+                args.append(delivery_state)
+                sql += f", delivery_state=${len(args)}"
+            sql += """
+                   WHERE guild_id=$1 AND id=$2"""
             if from_states:
                 args.append(list(from_states))
                 sql += f" AND state = ANY(${len(args)}::text[])"
@@ -476,16 +494,24 @@ class VoiceControlStore:
             return _dict(row)
 
     async def mark_delivery(self, guild_id: int, restriction_id: int,
-                            delivery_state: str) -> None:
-        """Зафиксировать стадию доставки Discord API для записи."""
+                            delivery_state: str, *,
+                            expected_claim_token: str | None = None
+                            ) -> bool:
+        """Зафиксировать стадию доставки Discord API.
+        expected_claim_token — fencing: stale worker не может
+        перезаписать delivery_state после смены claim.
+        Возвращает False, если запись не соответствует claim."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE voice_control_restrictions SET delivery_state=$3 "
-                "WHERE guild_id=$1 AND id=$2",
-                guild_id, restriction_id, delivery_state,
-            )
+            sql = ("UPDATE voice_control_restrictions SET delivery_state=$3 "
+                   "WHERE guild_id=$1 AND id=$2")
+            args: list[Any] = [guild_id, restriction_id, delivery_state]
+            if expected_claim_token is not None:
+                args.append(expected_claim_token)
+                sql += f" AND claim_token=${len(args)}"
+            result = await conn.execute(sql, *args)
+            return result.endswith(" 1")
 
     async def restriction_by_id(self, guild_id: int,
                                 restriction_id: int) -> dict[str, Any] | None:
@@ -504,11 +530,15 @@ class VoiceControlStore:
                             limit: int = 50, lease_seconds: int = 120,
                             after_id: int = 0) -> list[dict[str, Any]]:
         """Атомарно захватить записи в состоянии state (durable claim).
+        Уникальный claim_token генерируется на КАЖДОЕ получение lease:
+        повторный claim тем же worker'ом получает новый token, и
+        устаревшие проверки token/generation отсекаются.
         Лиз не держит PG-транзакцию во время Discord HTTP — claim
         короткий, обработка вне транзакции, истечение лиза возвращает
         запись в пул."""
         await self.ensure()
         pool = await get_pool()
+        token = f"{worker}:{uuid.uuid4().hex[:16]}"
         async with pool.acquire() as conn, conn.transaction():
             rows = await conn.fetch(
                 """UPDATE voice_control_restrictions
@@ -521,9 +551,25 @@ class VoiceControlStore:
                        ORDER BY id LIMIT $5
                        FOR UPDATE SKIP LOCKED)
                    RETURNING *""",
-                worker, lease_seconds, state, after_id, limit,
+                token, lease_seconds, state, after_id, limit,
             )
         return [dict(r) for r in rows]
+
+    async def renew_claim(self, restriction_id: int, token: str, *,
+                          lease_seconds: int = 120) -> bool:
+        """Продлить lease claim'а. False — claim уже не наш
+        (либо истёк и перехвачен): caller обязан прекратить
+        обработку записи."""
+        await self.ensure()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE voice_control_restrictions "
+                "SET claim_until=now() + make_interval(secs => $3) "
+                "WHERE id=$1 AND claim_token=$2",
+                restriction_id, token, lease_seconds,
+            )
+            return result.split()[-1] == "1"
 
     async def release_claim(self, restriction_id: int,
                             token: str | None = None) -> None:
@@ -580,22 +626,19 @@ class VoiceControlStore:
             row = await conn.fetchrow(sql + " RETURNING *", *args)
             return _dict(row)
 
-    async def expire_due_restrictions(self, limit: int = 200) -> list[dict[str, Any]]:
-        """Таймеры с истёкшим сроком → pending_release (очистка
-        флага подтверждается отдельно, см. сервис)."""
+    async def due_restrictions(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Кандидаты на истечение таймера: active/pending_apply с
+        expires_at<=now(). ТОЛЬКО выборка — переход в pending_release
+        выполняет сервис под coordinator-замком через CAS, чтобы
+        не гонять expire с in-flight apply."""
         await self.ensure()
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                """UPDATE voice_control_restrictions
-                   SET state='pending_release', claim_token=NULL, claim_until=NULL
-                   WHERE id IN (
-                       SELECT id FROM voice_control_restrictions
-                       WHERE state IN ('active','pending_apply')
-                         AND expires_at IS NOT NULL AND expires_at<=now()
-                       ORDER BY expires_at LIMIT $1
-                       FOR UPDATE SKIP LOCKED)
-                   RETURNING *""",
+                """SELECT * FROM voice_control_restrictions
+                   WHERE state IN ('active','pending_apply')
+                     AND expires_at IS NOT NULL AND expires_at<=now()
+                   ORDER BY expires_at LIMIT $1""",
                 limit,
             )
         return [dict(r) for r in rows]
