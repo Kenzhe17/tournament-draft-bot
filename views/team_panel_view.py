@@ -45,9 +45,30 @@ def _b(label: str, style: str, cid: str, cb) -> discord.ui.Button:
     return b
 
 
+# Discord требует value опции длиной 1..100 — пустое значение
+# («Любое») кодируем сентинелом, в callback возвращаем "".
+_ANY_VALUE = "__any__"
+
+
 def _s(options: list, cid: str, placeholder: str, cb) -> discord.ui.Select:
-    s = select(options, custom_id=cid, placeholder=placeholder)
-    s.callback = cb  # type: ignore[assignment]
+    fixed = []
+    for o in options:
+        if not o.value:
+            o = discord.SelectOption(
+                label=o.label, value=_ANY_VALUE,
+                description=o.description, emoji=o.emoji,
+                default=o.default)
+        fixed.append(o)
+    s = select(fixed, custom_id=cid, placeholder=placeholder)
+
+    async def _cb(i: discord.Interaction) -> None:
+        vals = i.data.get("values")
+        if vals:
+            i.data["values"] = [
+                "" if v == _ANY_VALUE else v for v in vals]
+        await cb(i)
+
+    s.callback = _cb  # type: ignore[assignment]
     return s
 
 
