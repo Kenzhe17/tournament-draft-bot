@@ -35,7 +35,7 @@ import random
 import re
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -174,7 +174,14 @@ async def grant_event_reward(cog, guild_id: int, user_id: int,
     event_reward_store (kind=тип награды, item_id для item).
     """
     rtype = str(prize.get("type") or "")
-    amount = int(prize.get("amount") or 0)
+    if rtype == "item":
+        # Для item amount = замороженная компенсация за дубль
+        # (dup_comp зафиксирован в призе при select_prize) —
+        # событие помнит обязательство, смена настройки позже
+        # его не меняет.
+        amount = int(prize.get("dup_comp") or 0)
+    else:
+        amount = int(prize.get("amount") or 0)
     item_id = prize.get("item_id")
 
     async def _fixate() -> str:
@@ -808,12 +815,15 @@ class CoinDropCog(commands.Cog):
 
         async with self._drop_lock:
             # Кулдаун и last_type — только после успешной публикации.
+            # Окно — ровно от зафиксированного started_ts (не от
+            # момента публикации), как и при backfill на finish.
             cooldown_s = int(session.config.get("cooldown_s")
                              or settings.get("cooldown_minutes", 15)
                              * 60)
             await event_store.mark_started(
                 gid, cid,
-                datetime.now(timezone.utc) + timedelta(seconds=cooldown_s),
+                datetime.fromtimestamp(
+                    session.start_ts + cooldown_s, timezone.utc),
                 game, event_id)
             self._register_session(session)
 
@@ -1079,6 +1089,7 @@ class CoinDropCog(commands.Cog):
         winners = [int(w) for w in outcome.get("winners") or []]
         grant_status = "none"
         obligations_ok = True
+        rewards_info: dict[str, Any] = {}
         if winners:
             # Фиксация обязательства ДО закрытия события:
             # crash между grant и finish → свипер доведёт
@@ -1096,6 +1107,22 @@ class CoinDropCog(commands.Cog):
                     logger.exception("event grant raised id=%s", eid)
                     res = "failed"
                 results.append(res)
+            # Фактический способ исполнения каждой награды
+            # (item/owned/comp:N) — для честного текста карточки.
+            reward_modes: dict[int, str] = {}
+            try:
+                for r in await event_reward_store.get_many(
+                        [f"event:{eid}:{u}" for u in winners]):
+                    uid_r = int(r.get("user_id") or 0)
+                    mode_r = r.get("result")
+                    if uid_r and mode_r:
+                        reward_modes[uid_r] = str(mode_r)
+            except Exception:
+                pass
+            rewards_info = {
+                str(u): {"status": res,
+                         "mode": reward_modes.get(u)}
+                for u, res in zip(winners, results)}
             if any(r in ("failed", "other") for r in results):
                 grant_status = "failed"
                 obligations_ok = False
@@ -1122,6 +1149,7 @@ class CoinDropCog(commands.Cog):
             "detail": outcome.get("detail"),
             "grant": grant_status,
             "outcome": outcome,
+            "rewards": rewards_info,
             "finished_ts": time.time(),
         }
         try:
@@ -1140,11 +1168,13 @@ class CoinDropCog(commands.Cog):
         # между публикацией карточки и mark_started, channel_state
         # мог не записаться. Окно считается от started_ts из
         # config — то же, что и при штатном mark_started.
+        # ensure_channel_state не перезапишет состояние более
+        # нового события (guard по last_event_id/cooldown_until).
         try:
             cooldown_s = int(session.config.get("cooldown_s")
                              or 15 * 60)
             if cooldown_s > 0:
-                await event_store.mark_started(
+                await event_store.ensure_channel_state(
                     session.guild_id, session.channel_id,
                     datetime.fromtimestamp(
                         session.start_ts + cooldown_s,
@@ -1154,7 +1184,8 @@ class CoinDropCog(commands.Cog):
             logger.warning("channel state backfill failed id=%s",
                            session.event_id)
 
-        await self._edit_final_card(session, outcome, grant_status)
+        await self._edit_final_card(session, outcome, grant_status,
+                                    rewards=rewards_info)
         self._unregister_session(session)
         logger.info("event finished id=%s game=%s reason=%s "
                     "winners=%s grant=%s",
@@ -1187,17 +1218,21 @@ class CoinDropCog(commands.Cog):
 
     async def _edit_final_card(self, session: _EventSession,
                                outcome: dict[str, Any],
-                               grant_status: str) -> None:
+                               grant_status: str,
+                               rewards: dict[str, Any] | None = None
+                               ) -> None:
         """Сериализовано с refresh через session.card_lock —
         финальный результат не может быть перезаписан
         «живым» снапшотом карточки."""
         async with session.card_lock:
             await self._edit_final_card_inner(
-                session, outcome, grant_status)
+                session, outcome, grant_status, rewards=rewards)
 
     async def _edit_final_card_inner(self, session: _EventSession,
                                      outcome: dict[str, Any],
-                                     grant_status: str) -> None:
+                                     grant_status: str,
+                                     rewards: dict[str, Any] | None = None
+                                     ) -> None:
         """Edit исходной карточки: финальный результат, кнопки
         убраны. Чужие сообщения не трогаем — только message_id
         события. Повторные попытки при сбое Discord; исход
@@ -1231,11 +1266,42 @@ class CoinDropCog(commands.Cog):
                     prize_txt = (f"**{int(outcome['payout']):,}** "
                                  f"{_PUBLIC_TYPE_LABEL.get(rtype, '')}")
                 elif prize.get("type") == "item":
-                    prize_txt = (f"**{prize.get('item_name') or 'предмет'}"
-                                 f"** — добавлен в инвентарь")
+                    # Фактический итог item-награды из
+                    # event_rewards.result (item/owned/comp:N) —
+                    # не заявляем выдачу до подтверждения.
+                    item_name = (prize.get('item_name')
+                                 or 'предмет')
+                    mode = None
+                    wstatus = None
+                    for u in winners:
+                        info = (rewards or {}).get(str(u)) or {}
+                        if info.get("mode") or info.get("status"):
+                            mode = info.get("mode")
+                            wstatus = info.get("status")
+                            break
+                    if grant_status == "queued" or \
+                            wstatus in (None, "queued", "pending",
+                                        "processing"):
+                        prize_txt = (f"**{item_name}**\n"
+                                     "*Предмет или компенсация "
+                                     "будут зафиксированы — "
+                                     "повторное начисление "
+                                     "исключено.*")
+                    elif mode and str(mode).startswith("comp:"):
+                        comp = str(mode).split(":", 1)[1]
+                        prize_txt = (f"**{item_name}** — уже был "
+                                     f"у вас, компенсация "
+                                     f"**{comp}** монет")
+                    elif mode == "owned":
+                        prize_txt = (f"**{item_name}** — уже есть "
+                                     "у вас")
+                    else:
+                        prize_txt = (f"**{item_name}** — добавлен "
+                                     "в инвентарь")
                 else:
                     prize_txt = _prize_line(prize, game)
-                if grant_status == "queued":
+                if grant_status == "queued" and \
+                        prize.get("type") != "item":
                     prize_txt += ("\n*Зачисление подтверждается — "
                                   "повторное начисление исключено.*")
                 elif prize.get("type") == "coins":
@@ -1705,8 +1771,10 @@ class CoinDropCog(commands.Cog):
                 user_name = member.display_name
         except Exception:
             pass
+        reward_result = ""
         try:
-            await event_rewards.apply_reward(row, user_name=user_name)
+            reward_result = await event_rewards.apply_reward(
+                row, user_name=user_name) or ""
         except Exception as exc:
             delay = _drop_backoff(attempts or 1)
             try:
@@ -1726,17 +1794,65 @@ class CoinDropCog(commands.Cog):
                 key, attempts, delay)
             return False
         try:
-            ok = await event_reward_store.complete(key, attempts)
+            ok = await event_reward_store.complete(
+                key, attempts, result=reward_result or None)
             if not ok:
                 logger.info(
                     "event reward complete skipped — lease lost "
                     "key=%s", key)
+            else:
+                # Карточка события могла ещё показывать
+                # «подтверждается» — после успешного (в т.ч.
+                # позднего retry) синхронизируем фактический
+                # итог.
+                asyncio.get_running_loop().create_task(
+                    self._sync_reward_card(key))
         except Exception:
             logger.exception(
                 "event reward complete failed key=%s", key)
         logger.info("event reward credited key=%s user=%s kind=%s",
                     key, row.get("user_id"), row.get("kind"))
         return True
+
+    async def _sync_reward_card(self, grant_key: str) -> None:
+        """После успешного (в т.ч. позднего retry) завершения
+        event-награды обновить финальную карточку события —
+        она могла показывать «зачисление подтверждается»."""
+        try:
+            # grant_key = event:{event_id}:{user_id}
+            parts = str(grant_key).split(":")
+            if len(parts) != 3 or parts[0] != "event":
+                return
+            eid = parts[1]
+            row = await event_store.get(eid)
+            if row is None or row.get("state") != "finished":
+                return
+            stored = _json_field(row, "result") or {}
+            outcome = stored.get("outcome")
+            if not isinstance(outcome, dict) or not outcome:
+                return
+            session = _EventSession.from_row(row)
+            # Свежие статусы/режимы наград всех победителей.
+            winners = [int(w) for w in outcome.get("winners") or []]
+            rewards: dict[str, Any] = {}
+            try:
+                for r in await event_reward_store.get_many(
+                        [f"event:{eid}:{u}" for u in winners]):
+                    rewards[str(int(r.get("user_id") or 0))] = {
+                        "status": ("credited"
+                                   if r.get("status") == "completed"
+                                   else str(r.get("status") or "")),
+                        "mode": r.get("result"),
+                    }
+            except Exception:
+                rewards = stored.get("rewards") or {}
+            await self._edit_final_card(
+                session, outcome,
+                str(stored.get("grant") or "none"),
+                rewards=rewards or None)
+        except Exception:
+            logger.exception("reward card sync failed key=%s",
+                             grant_key)
 
     async def _settle_event_pending(self, item: dict) -> str:
         """event pending-файл → PG record → claim → process."""
@@ -1835,7 +1951,10 @@ class CoinDropCog(commands.Cog):
                 session = _EventSession.from_row(row)
                 await self._edit_final_card(
                     session, outcome,
-                    str(stored.get("grant") or "none"))
+                    str(stored.get("grant") or "none"),
+                    rewards=stored.get("rewards")
+                    if isinstance(stored.get("rewards"), dict)
+                    else None)
             except Exception:
                 logger.exception("card retry failed id=%s",
                                  (row or {}).get("event_id"))

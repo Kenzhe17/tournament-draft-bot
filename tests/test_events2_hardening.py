@@ -115,6 +115,8 @@ def _no_event_db(monkeypatch):
                         AsyncMock())
     monkeypatch.setattr(coin_drop.event_store, "mark_started",
                         AsyncMock())
+    monkeypatch.setattr(coin_drop.event_store,
+                        "ensure_channel_state", AsyncMock())
     monkeypatch.setattr(coin_drop.event_store, "list_settling",
                         AsyncMock(return_value=[]))
     monkeypatch.setattr(coin_drop.event_store, "list_failed_cards",
@@ -592,8 +594,10 @@ class _FakeInv:
 
 
 def _item_env(tmp_path, monkeypatch, inv, owned=False):
-    """Подменить shop_store.get_item и INVENTORY_FILE."""
+    """Подменить shop_store.get_item, INVENTORY_FILE и
+    event_item_marks (in-memory аналог PG-таблицы)."""
     import storage.shop_store as ss
+    from storage import event_reward_store as ers
     from services import event_rewards as er
     item = SimpleNamespace(id="sword", name="Меч", is_active=True)
     monkeypatch.setattr(ss.shop_store, "get_item",
@@ -607,6 +611,21 @@ def _item_env(tmp_path, monkeypatch, inv, owned=False):
     else:
         inv_file.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(ss, "INVENTORY_FILE", inv_file)
+    marks = {}
+
+    async def _get_mark(key):
+        return marks.get(key)
+
+    async def _put_mark(key, mode, comp=0):
+        if key not in marks:
+            marks[key] = {"grant_key": key, "mode": mode,
+                          "comp_amount": comp}
+        return marks[key]
+
+    monkeypatch.setattr(ers.event_reward_store, "get_item_mark",
+                        AsyncMock(side_effect=_get_mark))
+    monkeypatch.setattr(ers.event_reward_store, "put_item_mark",
+                        AsyncMock(side_effect=_put_mark))
     return er
 
 
@@ -614,8 +633,8 @@ def _item_env(tmp_path, monkeypatch, inv, owned=False):
 async def test_item_already_in_inventory_is_compensated(tmp_path,
                                                         monkeypatch):
     """Дубль предмета: durable-файл уже содержит item_id →
-    компенсация монетами по ключу ``<grant_key>:comp``
-    (add_balance_once — свой exactly-once ledger)."""
+    mark 'comp' → компенсация монетами по ключу
+    ``<grant_key>:comp``. Предмет НЕ выдаётся повторно."""
     import storage.user_balance_store as ubs
     inv = _FakeInv()
     er = _item_env(tmp_path, monkeypatch, inv, owned=True)
@@ -623,20 +642,23 @@ async def test_item_already_in_inventory_is_compensated(tmp_path,
     monkeypatch.setattr(ubs.user_balance_store, "_use_db", True)
     monkeypatch.setattr(ubs.user_balance_store, "add_balance_once",
                         credited)
-    await er.apply_reward({"grant_key": "event:item:dup",
-                           "kind": "item", "guild_id": 1,
-                           "user_id": 42, "amount": 0,
-                           "item_id": "sword"})
+    res = await er.apply_reward({"grant_key": "event:item:dup",
+                                 "kind": "item", "guild_id": 1,
+                                 "user_id": 42, "amount": 100,
+                                 "item_id": "sword"})
+    assert res == "comp:100"
     credited.assert_awaited_once_with(
         1, 42, 100, "event:item:dup:comp")
+    # В инвентарь ничего не добавлялось — только компенсация.
+    assert inv.get_player_inventory(1, 42) == []
 
 
 @pytest.mark.asyncio
-async def test_item_dup_compensation_idempotent_and_zero(tmp_path,
-                                                         monkeypatch):
-    """Компенсация 0 (настройка) → чистый no-op без вызова
-    баланса; повторный apply_reward не дублирует компенсацию —
-    ключ ``:comp`` идемпотентен на уровне user_balance ledger."""
+async def test_item_comp_amount_frozen_in_obligation(tmp_path,
+                                                     monkeypatch):
+    """Размер компенсации заморожен в event_rewards.amount при
+    record(): смена настройки events.item_dup_compensation_
+    coins НЕ меняет существующее обязательство."""
     import storage.user_balance_store as ubs
     inv = _FakeInv()
     er = _item_env(tmp_path, monkeypatch, inv, owned=True)
@@ -644,14 +666,87 @@ async def test_item_dup_compensation_idempotent_and_zero(tmp_path,
     monkeypatch.setattr(ubs.user_balance_store, "_use_db", True)
     monkeypatch.setattr(ubs.user_balance_store, "add_balance_once",
                         credited)
+    # Настройка «изменилась» — обязано остаться 250 из amount.
     monkeypatch.setattr(
         "services.event_config._peek",
-        lambda gid, key, default: 0 if "compensation" in key
-        else default)
-    await er.apply_reward({"grant_key": "event:item:dup0",
-                           "kind": "item", "guild_id": 1,
-                           "user_id": 42, "amount": 0,
-                           "item_id": "sword"})
+        lambda gid, key, default: 9999)
+    res = await er.apply_reward({"grant_key": "event:item:frozen",
+                                 "kind": "item", "guild_id": 1,
+                                 "user_id": 42, "amount": 250,
+                                 "item_id": "sword"})
+    assert res == "comp:250"
+    credited.assert_awaited_once_with(
+        1, 42, 250, "event:item:frozen:comp")
+
+
+@pytest.mark.asyncio
+async def test_item_crash_after_save_no_double_reward(tmp_path,
+                                                      monkeypatch):
+    """Crash после записи предмета в файл, но до complete
+    ledger: retry видит mark 'item' → предмет уже наш →
+    'owned' БЕЗ компенсации. И предмет, и comp за одну
+    награду невозможны."""
+    import storage.user_balance_store as ubs
+    inv_file = tmp_path / "player_inventory.json"
+    inv_file.write_text("{}", encoding="utf-8")
+
+    class _Inv(_FakeInv):
+        def add_cosmetic(self, c):
+            r = super().add_cosmetic(c)
+            if r:
+                inv_file.write_text(json.dumps(
+                    {"1:42": [{"item_id": c.item_id}]}),
+                    encoding="utf-8")
+            return r
+
+    inv = _Inv()
+    er = _item_env(tmp_path, monkeypatch, inv)
+    credited = AsyncMock()
+    monkeypatch.setattr(ubs.user_balance_store, "_use_db", True)
+    monkeypatch.setattr(ubs.user_balance_store, "add_balance_once",
+                        credited)
+    row = {"grant_key": "event:item:crash", "kind": "item",
+           "guild_id": 1, "user_id": 42, "amount": 100,
+           "item_id": "sword"}
+    # Первая попытка: предмет выдан и подтверждён файлом,
+    # но «ledger complete» не дошёл (крах) — retry.
+    assert await er.apply_reward(row) == "item"
+    # Retry: mark 'item' уже зафиксирован → owned → без comp.
+    assert await er.apply_reward(row) == "owned"
+    credited.assert_not_awaited()
+    assert len(json.loads(
+        inv_file.read_text(encoding="utf-8"))["1:42"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_item_mark_item_mode_never_compensates(tmp_path,
+                                                      monkeypatch):
+    """mark 'item' + предмет уже в файле (записан этим grant
+    до крэша) → 'owned', компенсация не начисляется даже при
+    comp_amount>0 в обязательстве."""
+    import storage.user_balance_store as ubs
+    import storage.event_reward_store as ers
+    inv = _FakeInv()
+    er = _item_env(tmp_path, monkeypatch, inv)
+    credited = AsyncMock()
+    monkeypatch.setattr(ubs.user_balance_store, "_use_db", True)
+    monkeypatch.setattr(ubs.user_balance_store, "add_balance_once",
+                        credited)
+
+    async def _mark(key):
+        return {"grant_key": key, "mode": "item",
+                "comp_amount": 0}
+    monkeypatch.setattr(ers.event_reward_store, "get_item_mark",
+                        AsyncMock(side_effect=_mark))
+    inv_file = tmp_path / "player_inventory.json"
+    inv_file.write_text(json.dumps(
+        {"1:42": [{"item_id": "sword", "equipped": False}]}),
+        encoding="utf-8")
+    res = await er.apply_reward({"grant_key": "event:item:m",
+                                 "kind": "item", "guild_id": 1,
+                                 "user_id": 42, "amount": 100,
+                                 "item_id": "sword"})
+    assert res == "owned"
     credited.assert_not_awaited()
 
 
@@ -672,10 +767,11 @@ async def test_item_grant_confirms_durable_write(tmp_path,
 
     inv2 = _Inv2()
     er = _item_env(tmp_path, monkeypatch, inv2)
-    await er.apply_reward({"grant_key": "event:item:ok",
-                           "kind": "item", "guild_id": 1,
-                           "user_id": 42, "amount": 0,
-                           "item_id": "sword"})
+    res = await er.apply_reward({"grant_key": "event:item:ok",
+                                 "kind": "item", "guild_id": 1,
+                                 "user_id": 42, "amount": 0,
+                                 "item_id": "sword"})
+    assert res == "item"
 
 
 @pytest.mark.asyncio
@@ -888,7 +984,8 @@ async def test_guess_number_wrong_answer_consumes_attempt():
 async def test_finish_backfills_cooldown_and_last_type():
     """Крэш между публикацией карточки и mark_started: finish
     восстанавливает cooldown_until (от started_ts) и
-    last_event_type в event_channel_state."""
+    last_event_type в event_channel_state через guarded
+    ensure_channel_state (не перезаписывает более новый ивент)."""
     cog = _cog()
     start = time.time() - 5
     s = _session("speed", actions={"winner": 5},
@@ -899,7 +996,7 @@ async def test_finish_backfills_cooldown_and_last_type():
                       new=AsyncMock(return_value={"state": "f"})), \
          patch("cogs.coin_drop.grant_event_reward",
                new=AsyncMock(return_value="credited")), \
-         patch.object(coin_drop.event_store, "mark_started",
+         patch.object(coin_drop.event_store, "ensure_channel_state",
                       new=AsyncMock()) as mark:
         await cog._finish_event(s, "first_click")
     mark.assert_awaited()
@@ -996,3 +1093,147 @@ async def test_refresh_and_final_edit_serialized():
     await task
     s.message.edit.assert_awaited()
 
+
+
+# =================== Final-release: reward result UI / cooldown
+
+@pytest.mark.asyncio
+async def test_final_card_shows_compensation_amount():
+    """Item-дубль: финальная карточка показывает ФАКТИЧЕСКИЙ
+    итог — 'comp:100' → компенсация 100 монет, а не «предмет
+    добавлен»."""
+    cog = _cog()
+    s = _session(
+        "speed",
+        prize={"type": "item", "amount": 0, "item_id": "sword",
+               "item_name": "Меч", "label": "предмет"},
+        actions={"winner": 7})
+    s.message = _msg()
+    captured = {}
+
+    def _fake_compose(embed, view):
+        captured["embed"] = embed
+        return view
+
+    with patch.object(coin_drop, "compose",
+                      side_effect=_fake_compose), \
+         patch.object(coin_drop.event_store, "mark_card_edit",
+                      new=AsyncMock()):
+        await cog._edit_final_card_inner(
+            s, {"winners": [7], "reason": "first_click",
+                "payout": None, "detail": ""},
+            "credited",
+            rewards={"7": {"status": "credited",
+                           "mode": "comp:100"}})
+    desc = captured["embed"].description
+    assert "компенсация" in desc and "100" in desc
+    assert "добавлен" not in desc
+
+
+@pytest.mark.asyncio
+async def test_final_card_item_pending_not_claimed():
+    """Награда ещё queued/pending: карточка НЕ утверждает, что
+    предмет выдан — показывает 'будут зафиксированы'."""
+    cog = _cog()
+    s = _session(
+        "speed",
+        prize={"type": "item", "amount": 0, "item_id": "sword",
+               "item_name": "Меч", "label": "предмет"},
+        actions={"winner": 7})
+    s.message = _msg()
+    captured = {}
+
+    def _fake_compose(embed, view):
+        captured["embed"] = embed
+        return view
+
+    with patch.object(coin_drop, "compose",
+                      side_effect=_fake_compose), \
+         patch.object(coin_drop.event_store, "mark_card_edit",
+                      new=AsyncMock()):
+        await cog._edit_final_card_inner(
+            s, {"winners": [7], "reason": "first_click",
+                "payout": None, "detail": ""},
+            "queued",
+            rewards={"7": {"status": "queued", "mode": None}})
+    desc = captured["embed"].description
+    assert "будут зафиксированы" in desc
+    assert "добавлен" not in desc
+
+
+@pytest.mark.asyncio
+async def test_final_card_item_owned_shows_already_owned():
+    """mode='owned' — предмет уже был у игрока до grant
+    (наша прошлая выдача): карточка честно пишет 'уже есть'."""
+    cog = _cog()
+    s = _session(
+        "speed",
+        prize={"type": "item", "amount": 0, "item_id": "sword",
+               "item_name": "Меч", "label": "предмет"},
+        actions={"winner": 7})
+    s.message = _msg()
+    captured = {}
+
+    def _fake_compose(embed, view):
+        captured["embed"] = embed
+        return view
+
+    with patch.object(coin_drop, "compose",
+                      side_effect=_fake_compose), \
+         patch.object(coin_drop.event_store, "mark_card_edit",
+                      new=AsyncMock()):
+        await cog._edit_final_card_inner(
+            s, {"winners": [7], "reason": "first_click",
+                "payout": None, "detail": ""},
+            "credited",
+            rewards={"7": {"status": "credited",
+                           "mode": "owned"}})
+    desc = captured["embed"].description
+    assert "уже есть" in desc
+    assert "добавлен" not in desc
+
+
+@pytest.mark.asyncio
+async def test_reward_card_sync_after_late_retry():
+    """Поздний retry завершил награду → _sync_reward_card
+    перечитывает event_rewards.result и обновляет карточку
+    фактическим итогом."""
+    cog = _cog()
+    eid = "abcd1234"
+    row = {
+        "event_id": eid, "guild_id": 1, "channel_id": 200,
+        "game_type": "speed",
+        "prize": {"type": "item", "amount": 0, "item_id": "sword",
+                  "item_name": "Меч", "label": "предмет"},
+        "config": {"started_ts": time.time() - 100},
+        "actions": {"winner": 5},
+        "state": "finished",
+        "result": {"grant": "queued",
+                   "outcome": {"winners": [5], "reason": "x",
+                               "payout": None, "detail": ""},
+                   "rewards": {"5": {"status": "queued",
+                                     "mode": None}}},
+        "deadline_at": datetime.now(timezone.utc)
+        - timedelta(seconds=5),
+        "close_at": None, "message_id": 999,
+    }
+    edited = {}
+
+    async def _fake_edit(session, outcome, grant_status,
+                         rewards=None):
+        edited["rewards"] = rewards
+        edited["grant"] = grant_status
+
+    reward_row = {"grant_key": f"event:{eid}:5", "kind": "item",
+                  "guild_id": 1, "user_id": 5, "amount": 100,
+                  "item_id": "sword", "status": "completed",
+                  "result": "comp:100"}
+    with patch.object(coin_drop.event_store, "get",
+                      new=AsyncMock(return_value=row)), \
+         patch.object(coin_drop.event_reward_store, "get_many",
+                      new=AsyncMock(return_value=[reward_row])), \
+         patch.object(cog, "_edit_final_card",
+                      new=AsyncMock(side_effect=_fake_edit)):
+        await cog._sync_reward_card(f"event:{eid}:5")
+    assert edited["rewards"]["5"]["mode"] == "comp:100"
+    assert edited["rewards"]["5"]["status"] == "credited"

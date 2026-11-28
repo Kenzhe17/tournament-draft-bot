@@ -55,7 +55,8 @@ async def pg_pool(pg_uri, monkeypatch):
         await conn.execute(pss.XP_GRANTS_DDL)
         await conn.execute(user_balance_store._GRANT_DDL)
         for t in ("spontaneous_events", "event_channel_state",
-                  "event_rewards", "player_xp_grants",
+                  "event_rewards", "event_item_marks",
+                  "player_xp_grants",
                   "drop_coin_rewards", "match_coin_grants",
                   "user_balance", "player_stats",
                   "rep_balance", "rep_balance_grants",
@@ -167,6 +168,40 @@ async def test_event_store_cooldown_persists(pg_pool):
     past = datetime.now(timezone.utc) - timedelta(seconds=1)
     await store.mark_started(3, 301, past, "dice", "evt00021")
     assert await store.cooldown_active(3, 301) is False
+
+
+@pytest.mark.asyncio
+async def test_ensure_channel_state_never_overwrites_newer(pg_pool):
+    """Guarded backfill: старое событие не перезаписывает
+    cooldown/last_type более нового; своё — может."""
+    store = es.event_store
+    now = datetime.now(timezone.utc)
+    new_until = now + timedelta(minutes=20)
+    old_until = now + timedelta(minutes=5)
+    # «Новое» событие уже записано штатным mark_started.
+    await store.mark_started(5, 500, new_until, "dice", "new01")
+    # Backfill СТАРОГО события — не должен ничего изменить.
+    await store.ensure_channel_state(
+        5, 500, old_until, "speed", "old01")
+    # Проверяем прямым SELECT.
+    pool = await store._pool()
+    async with pool.acquire() as conn:
+        r = await conn.fetchrow(
+            "SELECT cooldown_until, last_event_type, last_event_id "
+            "FROM event_channel_state "
+            "WHERE guild_id=5 AND channel_id=500")
+    assert str(r["last_event_id"]) == "new01"
+    assert str(r["last_event_type"]) == "dice"
+    assert r["cooldown_until"] == new_until or \
+        abs((r["cooldown_until"] - new_until)
+            .total_seconds()) < 1
+    # Backfill того ЖЕ события — проходит (идемпотентен).
+    await store.ensure_channel_state(
+        5, 500, new_until, "dice", "new01")
+    # Пустой канал: INSERT создаёт запись.
+    await store.ensure_channel_state(
+        5, 501, old_until, "raffle", "old02")
+    assert await store.last_event_type(5, 501) == "raffle"
 
 
 @pytest.mark.asyncio
@@ -425,20 +460,27 @@ async def test_apply_reward_item_real_inventory_and_dup_comp(
     row = {"grant_key": "event:item:real", "kind": "item",
            "guild_id": 1, "user_id": 42, "amount": 0,
            "item_id": "sword"}
-    await event_rewards.apply_reward(row)
-    await event_rewards.apply_reward(row)  # дубль → comp +100
+    assert await event_rewards.apply_reward(row) == "item"
+    # Retry того же grant: mark 'item' + файл содержит предмет
+    # (наша выдача до крэша) → 'owned', БЕЗ компенсации.
+    assert await event_rewards.apply_reward(row) == "owned"
     data = json.loads(inv_file.read_text(encoding="utf-8"))
     assert len(data.get("1:42", [])) == 1
 
-    # Компенсация зачислена ровно один раз (ключ :comp в
-    # match_coin_grants ledger), повторные apply — без дубля.
+    # Другой grant: предмет УЖЕ был до выплаты → mark 'comp',
+    # сумма заморожена в amount=77 (не из текущей настройки).
+    row2 = {"grant_key": "event:item:real2", "kind": "item",
+            "guild_id": 1, "user_id": 42, "amount": 77,
+            "item_id": "sword"}
+    assert await event_rewards.apply_reward(row2) == "comp:77"
+    # Повтор — тот же ключ :comp, без дубля.
+    assert await event_rewards.apply_reward(row2) == "comp:77"
     async with pg_pool.acquire() as conn:
         grant = await conn.fetchrow(
             "SELECT amount FROM match_coin_grants "
-            "WHERE match_id = 'event:item:real:comp' "
+            "WHERE match_id = 'event:item:real2:comp' "
             "AND user_id = 42")
-    assert grant is not None and int(grant["amount"]) == 100
+    assert grant is not None and int(grant["amount"]) == 77
     bal = await user_balance_store.get_balance(1, 42)
-    await event_rewards.apply_reward(row)
-    await event_rewards.apply_reward(row)
+    await event_rewards.apply_reward(row2)
     assert await user_balance_store.get_balance(1, 42) == bal

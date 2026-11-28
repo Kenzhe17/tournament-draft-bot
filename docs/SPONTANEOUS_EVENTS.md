@@ -141,6 +141,23 @@ JSON-файл и сеттлится воркером. Повторный выз�
 считается успешной без подтверждения записи в файл. Ошибка
 записи JSON → исключение → retry с backoff.
 
+**Фиксация способа исполнения (event_item_marks)**: решение
+«предмет или компенсация» и размер компенсации сохраняются в
+таблице `event_item_marks` ДО побочных эффектов (INSERT
+`ON CONFLICT DO NOTHING` — первый писатель выигрывает).
+`event_rewards.amount` для item = замороженная сумма
+компенсации, зафиксированная при `record()` — смена настройки
+`events.item_dup_compensation_coins` НЕ меняет существующее
+обязательство. Retry различает «предмет, принадлежавший игроку
+до выплаты» (mark `comp` — файл уже содержал item_id на момент
+первой попытки) и «предмет, выданный этим grant» (mark `item` —
+после крэха «записан, но ledger не завершён» повтор видит
+свой предмет и возвращает `owned` БЕЗ компенсации). И предмет,
+и компенсация за одну награду невозможны. `event_rewards.result`
+хранит фактический итог (`item`/`owned`/`comp:N`) — финальная
+карточка показывает именно его; после позднего retry
+`_sync_reward_card` перечитывает результат и обновляет карточку.
+
 **PG-гарды действий** (`patch_actions`): одна UPDATE с
 `state='active'`, эффективным дедлайном `LEAST(deadline_at,
 close_at) > now()` по часам БД и `must_absent`-ключами
@@ -181,8 +198,9 @@ feature-flag. Тестовые контролы — только явные ко
 
 Аддитивные таблицы (PG, `CREATE TABLE IF NOT EXISTS`):
 `spontaneous_events`, `event_channel_state`, `event_rewards`,
-`player_xp_grants`. Откат = revert коммита: таблицы можно не
-удалять (не мешают), код возвращается к legacy coin_drop.
+`event_item_marks`, `player_xp_grants`. Откат = revert
+коммита: таблицы можно не удалять (не мешают), код
+возвращается к legacy coin_drop.
 
 ## Восстановление после рестарта
 
@@ -208,8 +226,9 @@ feature-flag. Тестовые контролы — только явные ко
 ## Откат (rollback runbook)
 
 Откат кода = revert коммитов ветки; таблицы `spontaneous_events`,
-`event_channel_state`, `event_rewards`, `player_xp_grants`
-аддитивны и могут остаться — legacy-код их не читает.
+`event_channel_state`, `event_rewards`, `event_item_marks`,
+`player_xp_grants` аддитивны и могут остаться — legacy-код их
+не читает.
 
 Безопасная последовательность при необходимости экстренного
 отключения:
@@ -234,7 +253,8 @@ feature-flag. Тестовые контролы — только явные ко
    дожидаются worker-retry; не удалять — иначе возможны
    недоплаты. `drop_coin_rewards`/legacy-pending не затрагиваются.
 5. **История и награды не удаляются**: `spontaneous_events`,
-   `event_channel_state`, `event_rewards`, `player_xp_grants`,
+   `event_channel_state`, `event_rewards`, `event_item_marks`,
+   `player_xp_grants`,
    `rep_balance_grants`, `user_balance` — append-only источники
    истины; TRUNCATE/DELETE не выполнять.
 

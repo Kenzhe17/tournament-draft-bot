@@ -11,7 +11,9 @@
 - ``kind`` хранит тип награды, а не режим ивента;
 - ``item_id`` — фиксированный ID предмета магазина для kind='item'
   (выбирается ДО публикации карточки, раскрывается в результате);
-- ``amount`` для item хранит 0.
+- ``amount`` для item хранит замороженный размер компенсации
+  монетами при дубликате (см. ``events.item_dup_compensation_coins``
+  на момент record — смена настройки не меняет обязательство).
 
 Гарантии — те же, что у drop_reward_store: grant_key PK,
 record() — единственная точка фиксации победителя, lease +
@@ -42,6 +44,7 @@ CREATE TABLE IF NOT EXISTS event_rewards (
     next_attempt_at TIMESTAMPTZ,
     locked_until TIMESTAMPTZ,
     last_error TEXT,
+    result TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_at TIMESTAMPTZ
 )
@@ -50,6 +53,23 @@ INDEX_DDL = """
 CREATE INDEX IF NOT EXISTS event_rewards_due_idx
 ON event_rewards (next_attempt_at)
 WHERE status = 'pending'
+"""
+# Аддитивная миграция для существующих таблиц.
+ALTER_DDL = """
+ALTER TABLE event_rewards
+ADD COLUMN IF NOT EXISTS result TEXT
+"""
+# Решение по item-награде (предмет vs компенсация) фиксируется
+# ДО побочных эффектов: retry после крэша «предмет записан, но
+# ledger не завершён» не спутает нашу выдачу с чужим дублем и
+# не начислит компенсацию поверх предмета.
+ITEM_MARK_DDL = """
+CREATE TABLE IF NOT EXISTS event_item_marks (
+    grant_key TEXT PRIMARY KEY,
+    mode TEXT NOT NULL,
+    comp_amount INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)
 """
 
 LEASE_SECONDS = 120
@@ -67,6 +87,8 @@ class EventRewardStore:
         if not self._ddl_done:
             await conn.execute(DDL)
             await conn.execute(INDEX_DDL)
+            await conn.execute(ALTER_DDL)
+            await conn.execute(ITEM_MARK_DDL)
             self._ddl_done = True
 
     async def record(
@@ -152,7 +174,8 @@ class EventRewardStore:
             return [dict(r) for r in rows]
 
     async def complete(self, grant_key: str,
-                       attempts: int | None = None) -> bool:
+                       attempts: int | None = None,
+                       result: str | None = None) -> bool:
         pool = await self._pool()
         async with pool.acquire() as conn:
             if attempts is None:
@@ -160,23 +183,91 @@ class EventRewardStore:
                     """
                     UPDATE event_rewards
                     SET status = 'completed', completed_at = now(),
-                        locked_until = NULL, last_error = NULL
+                        locked_until = NULL, last_error = NULL,
+                        result = COALESCE($2, result)
                     WHERE grant_key = $1 AND status = 'processing'
                     """,
-                    grant_key,
+                    grant_key, result,
                 )
             else:
                 res = await conn.execute(
                     """
                     UPDATE event_rewards
                     SET status = 'completed', completed_at = now(),
-                        locked_until = NULL, last_error = NULL
+                        locked_until = NULL, last_error = NULL,
+                        result = COALESCE($3, result)
                     WHERE grant_key = $1 AND status = 'processing'
                       AND attempts = $2
                     """,
-                    grant_key, attempts,
+                    grant_key, attempts, result,
                 )
             return res == "UPDATE 1"
+
+    async def get(self, grant_key: str) -> dict[str, Any] | None:
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_ddl(conn)
+            row = await conn.fetchrow(
+                "SELECT * FROM event_rewards WHERE grant_key = $1",
+                grant_key,
+            )
+            return dict(row) if row else None
+
+    async def get_many(self, grant_keys: list[str]
+                       ) -> list[dict[str, Any]]:
+        if not grant_keys:
+            return []
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_ddl(conn)
+            rows = await conn.fetch(
+                "SELECT * FROM event_rewards "
+                "WHERE grant_key = ANY($1::text[])",
+                list(grant_keys),
+            )
+            return [dict(r) for r in rows]
+
+    # ------------------------------------------- item marks
+
+    async def get_item_mark(self, grant_key: str
+                            ) -> dict[str, Any] | None:
+        """Решение по item-награде (mode/comp_amount), если уже
+        зафиксировано."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_ddl(conn)
+            row = await conn.fetchrow(
+                "SELECT * FROM event_item_marks WHERE grant_key = $1",
+                grant_key,
+            )
+            return dict(row) if row else None
+
+    async def put_item_mark(self, grant_key: str, mode: str,
+                            comp_amount: int = 0
+                            ) -> dict[str, Any]:
+        """Атомарно зафиксировать способ исполнения item-награды
+        ДО побочных эффектов. При гонке возвращает УЖЕ
+        существующую запись (первый писатель выигрывает)."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_ddl(conn)
+            row = await conn.fetchrow(
+                """
+                INSERT INTO event_item_marks
+                    (grant_key, mode, comp_amount)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (grant_key) DO NOTHING
+                RETURNING *
+                """,
+                grant_key, mode, int(comp_amount),
+            )
+            if row is None:
+                row = await conn.fetchrow(
+                    "SELECT * FROM event_item_marks "
+                    "WHERE grant_key = $1",
+                    grant_key,
+                )
+            return dict(row) if row else {}
 
     async def retry(self, grant_key: str, attempts: int,
                     error: str, delay_seconds: float) -> bool:

@@ -416,6 +416,44 @@ class EventStore:
                 event_type, event_id,
             )
 
+    async def ensure_channel_state(self, guild_id: int,
+                                   channel_id: int,
+                                   cooldown_until: datetime,
+                                   event_type: str, event_id: str
+                                   ) -> None:
+        """Долговечное восстановление channel_state (backfill).
+
+        В отличие от mark_started — НЕ перезаписывает состояние
+        более нового события: UPDATE применяется только если
+        записи нет, она уже указывает на это событие, или её
+        cooldown_until старше восстанавливаемого (т.е. событие
+        действительно новее). Старое событие не может затереть
+        cooldown/last_type свежего."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await self._ensure_ddl(conn)
+            await conn.execute(
+                """
+                INSERT INTO event_channel_state
+                    (guild_id, channel_id, cooldown_until,
+                     last_event_type, last_event_id, updated_at)
+                VALUES ($1, $2, $3, $4, $5, now())
+                ON CONFLICT (guild_id, channel_id) DO UPDATE SET
+                    cooldown_until = EXCLUDED.cooldown_until,
+                    last_event_type = EXCLUDED.last_event_type,
+                    last_event_id = EXCLUDED.last_event_id,
+                    updated_at = now()
+                WHERE event_channel_state.last_event_id IS NULL
+                   OR event_channel_state.last_event_id
+                      = EXCLUDED.last_event_id
+                   OR event_channel_state.cooldown_until IS NULL
+                   OR event_channel_state.cooldown_until
+                      < EXCLUDED.cooldown_until
+                """,
+                guild_id, channel_id, cooldown_until,
+                event_type, event_id,
+            )
+
     async def cooldown_active(self, guild_id: int, channel_id: int,
                               now: datetime | None = None) -> bool:
         """True — кулдаун ещё идёт (переживает рестарт)."""

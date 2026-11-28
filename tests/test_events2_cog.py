@@ -38,6 +38,8 @@ def _no_event_db(monkeypatch):
                         AsyncMock())
     monkeypatch.setattr(coin_drop.event_store, "mark_started",
                         AsyncMock())
+    monkeypatch.setattr(coin_drop.event_store,
+                        "ensure_channel_state", AsyncMock())
 
 
 # ------------------------------------------------------------ fakes

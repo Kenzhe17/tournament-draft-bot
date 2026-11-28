@@ -165,7 +165,14 @@ def select_prize(guild_id: int | None,
                  "label": f"{amount} REP"}
     elif rtype == "item":
         item = rng.choice(items)
+        # Компенсация зафиксирована В ПРИЗЕ до публикации: изменение
+        # events.item_dup_compensation_coins позже не меняет
+        # уже зафиксированное обязательство.
+        dup_comp = int(event_config._peek(
+            guild_id, "events.item_dup_compensation_coins",
+            100) or 0)
         prize = {"type": "item", "amount": 0,
+                 "dup_comp": max(0, dup_comp),
                  "item_id": str(item.id),
                  "item_name": str(item.name),
                  "label": "🎁 предмет из магазина"}
@@ -222,25 +229,16 @@ def _inventory_file_has(guild_id: int, user_id: int,
 
 async def _settle_item(guild_id: int, user_id: int,
                        item_id: str,
+                       mode: str,
                        comp_key: str | None = None,
-                       comp_amount: int = 0) -> None:
-    """Выдать предмет в инвентарь идемпотентно.
+                       comp_amount: int = 0) -> str:
+    """Исполнить item-обязательство по зафиксированному ``mode``.
 
-    Политика дублей (прозрачная): предметы магазина не стакаются —
-    если у игрока УЖЕ есть этот item_id (durable-проверка по файлу),
-    обязательство разрешается компенсацией монетами
-    ``comp_amount`` по ключу ``comp_key`` (add_balance_once —
-    своя exactly-once запись в event_rewards не нужна: ключ
-    идемпотентности живёт в user_balance ledger). Компенсация
-    настраивается ``events.item_dup_compensation_coins``; при 0 —
-    no-op «уже есть = исполнено» (осознанная политика, предмет у
-    игрока фактически есть — награда не пустая).
-
-    «Фантомный» дубль (add_cosmetic вернул False, но в файле
-    предмета нет — остаток неудачного save) лечится принудительной
-    перезагрузкой и повторной выдачей. Выдача НЕ считается
-    успешной без подтверждения записи в файле; ошибка записи
-    JSON пробрасывается → worker повторит с backoff.
+    ``mode`` приходит из ``event_item_marks`` — решение
+    «предмет или компенсация» сохранено ДО побочных эффектов,
+    поэтому retry после крэша не выдаст и предмет, и
+    компенсацию за одну награду. Возвращает ``item`` |
+    ``comp:<amount>`` | ``owned``.
     """
     from models.shop_item import PlayerCosmetic
     from storage.shop_store import inventory_store, shop_store
@@ -254,21 +252,33 @@ async def _settle_item(guild_id: int, user_id: int,
             guild_id=guild_id, user_id=user_id,
             item_id=item_id, equipped=False)
 
+    if mode == "comp":
+        if not comp_key or comp_amount <= 0:
+            return "owned"
+        from storage.user_balance_store import (
+            user_balance_store)
+        if not user_balance_store._use_db:
+            raise RuntimeError(
+                "item dup compensation requires PostgreSQL")
+        await user_balance_store.add_balance_once(
+            guild_id, user_id, comp_amount, comp_key)
+        logger.info(
+            "event item dup compensated: guild=%s user=%s "
+            "item=%s +%s coins", guild_id, user_id,
+            item_id, comp_amount)
+        return f"comp:{comp_amount}"
+
+    if mode != "item":
+        raise RuntimeError(f"unknown item mark mode: {mode}")
+
     owned = _inventory_file_has(guild_id, user_id, item_id)
     if owned is True:
-        if comp_key and comp_amount > 0:
-            from storage.user_balance_store import (
-                user_balance_store)
-            if not user_balance_store._use_db:
-                raise RuntimeError(
-                    "item dup compensation requires PostgreSQL")
-            await user_balance_store.add_balance_once(
-                guild_id, user_id, comp_amount, comp_key)
-            logger.info(
-                "event item dup compensated: guild=%s user=%s "
-                "item=%s +%s coins", guild_id, user_id,
-                item_id, comp_amount)
-        return  # дубль разрешён (компенсация или no-op-политика)
+        # Файл уже содержит предмет: либо наш прошлый grant
+        # (крэш между save и complete — НАША выдача), либо
+        # параллельный grant того же item_id — в обоих случаях
+        # предмет у игрока есть, обязательство 'item' исполнено.
+        # Компенсация не начисляется — mark 'comp' отдельный.
+        return "owned"
     if owned is None:
         raise RuntimeError("inventory file unreadable")
 
@@ -285,13 +295,13 @@ async def _settle_item(guild_id: int, user_id: int,
     if added:
         # save() отработал без исключения — подтверждаем файлом.
         if _inventory_file_has(guild_id, user_id, item_id) is True:
-            return
+            return "item"
         raise RuntimeError("item grant not durable after save")
     # added=False: либо настоящий дубль (owned=True выше — уже
     # вернулись), либо фантом в памяти. Перечитываем файл и
     # при необходимости повторяем выдачу один раз.
     if _inventory_file_has(guild_id, user_id, item_id) is True:
-        return
+        return "owned"
     try:
         inventory_store.load()  # выкинуть фантом из памяти
     except Exception:
@@ -299,14 +309,18 @@ async def _settle_item(guild_id: int, user_id: int,
     inventory_store.add_cosmetic(_cosmetic())  # исключение → retry
     if _inventory_file_has(guild_id, user_id, item_id) is not True:
         raise RuntimeError("item grant not durable after retry")
+    return "item"
 
 
 async def apply_reward(row: dict[str, Any],
-                       user_name: str = "") -> None:
+                       user_name: str = "") -> str:
     """Применить одну награду по строке event_rewards.
 
     Идемпотентно по grant_key на уровне целевого хранилища.
     Бросает исключение при сбое — worker повторит с backoff.
+    Возвращает строку фактического результата для
+    event_rewards.result (``coins``/``xp``/``rep``/``item``/
+    ``owned``/``comp:<amount>``).
     """
     kind = str(row.get("kind") or "")
     gid = int(row["guild_id"])
@@ -319,13 +333,13 @@ async def apply_reward(row: dict[str, Any],
         if not user_balance_store._use_db:
             raise RuntimeError("coin grants require PostgreSQL")
         await user_balance_store.add_balance_once(gid, uid, amount, key)
-        return
+        return "coins"
 
     if kind == "xp":
         from storage.player_stats_store import player_stats_store
         await player_stats_store.add_xp_once(
             gid, uid, amount, key, name=user_name)
-        return
+        return "xp"
 
     if kind == "rep":
         from storage.reputation_store import (
@@ -337,18 +351,33 @@ async def apply_reward(row: dict[str, Any],
             user_name=user_name)
         if res is None:
             # event_key уже был — награда выдана ранее.
-            return
-        return
+            return "rep"
+        return "rep"
 
     if kind == "item":
         item_id = row.get("item_id")
         if not item_id:
             raise RuntimeError("item reward without item_id")
-        comp = int(event_config._peek(
-            gid, "events.item_dup_compensation_coins", 100) or 0)
-        await _settle_item(gid, uid, str(item_id),
-                           comp_key=f"{key}:comp",
-                           comp_amount=max(0, comp))
-        return
+        from storage import event_reward_store as _ers
+        # Способ исполнения фиксируется ДО побочных эффектов:
+        # 'item' — предмет должен быть выдан этой наградой;
+        # 'comp' — предмет уже был у игрока → компенсация.
+        # comp_amount заморожен в event_rewards.amount при
+        # record() — смена настройки не меняет обязательство.
+        comp_amount = max(0, int(row.get("amount") or 0))
+        mark = await _ers.event_reward_store.get_item_mark(key)
+        if mark is None:
+            owned = _inventory_file_has(gid, uid, str(item_id))
+            if owned is None:
+                raise RuntimeError("inventory file unreadable")
+            mode = "comp" if owned else "item"
+            mark = await _ers.event_reward_store.put_item_mark(
+                key, mode, comp_amount if mode == "comp" else 0)
+        mode = str((mark or {}).get("mode") or "item")
+        mark_comp = int((mark or {}).get("comp_amount") or 0)
+        return await _settle_item(
+            gid, uid, str(item_id), mode,
+            comp_key=f"{key}:comp",
+            comp_amount=mark_comp or comp_amount)
 
     raise RuntimeError(f"unknown event reward kind: {kind}")
