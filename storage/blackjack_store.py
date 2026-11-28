@@ -51,12 +51,20 @@ CREATE TABLE IF NOT EXISTS blackjack_rounds (
     status TEXT NOT NULL DEFAULT 'active',
     version INTEGER NOT NULL DEFAULT 0,
     deadline TIMESTAMPTZ,
+    op_id TEXT,
+    delivery_state TEXT NOT NULL DEFAULT 'pending',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     settled_at TIMESTAMPTZ
 );
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS op_id TEXT;
+ALTER TABLE blackjack_rounds
+    ADD COLUMN IF NOT EXISTS delivery_state TEXT NOT NULL DEFAULT 'pending';
 CREATE UNIQUE INDEX IF NOT EXISTS blackjack_one_active
     ON blackjack_rounds (guild_id, user_id) WHERE status = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS blackjack_op_id
+    ON blackjack_rounds (op_id) WHERE op_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS blackjack_ledger (
     id BIGSERIAL PRIMARY KEY,
     round_id TEXT NOT NULL,
@@ -84,6 +92,14 @@ class RoundNotFound(Exception):
     pass
 
 
+class StaleVersion(Exception):
+    """Кнопка привязана к устаревшей версии состояния раздачи."""
+
+
+class _OpIdConflict(Exception):
+    """Внутренний: unique(op_id) сработал внутри tx → откат + retry."""
+
+
 @dataclass
 class StoredRound:
     round_id: str
@@ -99,6 +115,8 @@ class StoredRound:
     outcome: str | None
     reason: str | None
     payout: int | None
+    op_id: str | None = None
+    delivery_state: str = "pending"  # pending|sending|delivered|unknown|failed
     created_at: datetime | None = None
     settled_at: datetime | None = None
 
@@ -142,6 +160,9 @@ def _row_to_round(row: Any) -> StoredRound:
         outcome=row["outcome"],
         reason=row["reason"],
         payout=None,
+        # .get — устойчивость к строкам, созданным до ALTER-миграции
+        op_id=row.get("op_id"),
+        delivery_state=row.get("delivery_state") or "pending",
         created_at=row["created_at"],
         settled_at=row["settled_at"],
     )
@@ -209,9 +230,15 @@ class BlackjackStore:
         await cls._ledger(conn, round_id, "stake", stake)
 
     @staticmethod
-    async def _credit_in_tx(conn, guild_id: int, user_id: int, amount: int) -> int:
+    async def _credit_in_tx(conn, guild_id: int, user_id: int, amount: int,
+                            *, cap_exempt: bool = False) -> int:
         """Начисление с decay/cap — семантика user_balance_store.add_balance,
-        но внутри уже открытой транзакции caller'а."""
+        но внутри уже открытой транзакции caller'а.
+
+        ``cap_exempt=True`` — для settlement/refund blackjack: ставка уже
+        списана, обещанная выплата обязана исполняться полностью (ledger
+        и UI показывают gross). Иначе cap может «съесть» часть выплаты —
+        расхождение обещанного и фактического."""
         if amount <= 0:
             return await BlackjackStore._balance_in_tx(conn, guild_id, user_id)
         from storage.user_balance_store import (
@@ -226,7 +253,8 @@ class BlackjackStore:
         balance = await BlackjackStore._apply_decay_in_tx(
             conn, guild_id, user_id, row["balance"]
         )
-        add = min(amount, max(0, _max_balance() - balance))
+        cap = _max_balance() if not cap_exempt else 10**15
+        add = min(amount, max(0, cap - balance))
         new_balance = balance + add
         await conn.execute(
             "UPDATE user_balance SET balance=$1 WHERE guild_id=$2 AND user_id=$3",
@@ -262,10 +290,18 @@ class BlackjackStore:
         channel_id: int,
         stake: int,
         game: Round,
-    ) -> str:
+        op_id: str | None = None,
+    ) -> tuple[str, bool]:
         """Атомарно: условное списание ставки + INSERT round + ledger 'stake'.
 
-        Возвращает round_id. Бросает InsufficientFunds / ActiveGameExists.
+        ``op_id`` — идемпотентность подтверждения ставки: повторный вызов
+        с тем же op_id возвращает (существующий round_id, False) БЕЗ
+        повторного списания — покрывает двойной клик «Подтвердить» и
+        мгновенное завершение natural-blackjack (partial unique index
+        активных раздач такой сценарий не ловит).
+
+        Возвращает (round_id, created). Бросает InsufficientFunds /
+        ActiveGameExists.
         """
         if stake < 0:
             raise ValueError("stake must be >= 0")
@@ -276,42 +312,70 @@ class BlackjackStore:
         state = serialize_round(game)
 
         pool = await self._pool()
-        async with pool.acquire() as conn, conn.transaction():
-            await self._ensure_schema(conn)
-            if stake > 0:
-                await self._debit_in_tx(conn, guild_id, user_id, stake, round_id)
-            done = state["phase"] == "done"
-            outcome = state["outcome"] if done else None
-            reason = state["reason"] if done else None
-            if done:
-                await self._settle_in_tx(
-                    conn, round_id, guild_id, user_id, stake, outcome
-                )
-            try:
-                await conn.execute(
-                    """INSERT INTO blackjack_rounds
-                       (round_id, guild_id, user_id, channel_id, stake,
-                        rules_version, deck, player, dealer, phase,
-                        outcome, reason, status, deadline, settled_at)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)""",
-                    round_id, guild_id, user_id, channel_id, stake,
-                    game.rules_version,
-                    json.dumps(state["deck"]),
-                    json.dumps(state["player"]),
-                    json.dumps(state["dealer"]),
-                    state["phase"], outcome, reason,
-                    "settled" if done else "active",
-                    None if done else deadline,
-                    datetime.now(UTC) if done else None,
-                )
-            except Exception as exc:
-                # partial unique index → активная игра уже есть
-                if "blackjack_one_active" in str(exc) or "unique" in str(exc).lower():
-                    raise ActiveGameExists() from exc
-                raise
-        return round_id
+        try:
+            async with pool.acquire() as conn, conn.transaction():
+                await self._ensure_schema(conn)
+                if op_id is not None:
+                    existing = await conn.fetchrow(
+                        "SELECT round_id FROM blackjack_rounds WHERE op_id=$1",
+                        op_id,
+                    )
+                    if existing is not None:
+                        return existing["round_id"], False
+                if stake > 0:
+                    await self._debit_in_tx(conn, guild_id, user_id, stake, round_id)
+                done = state["phase"] == "done"
+                outcome = state["outcome"] if done else None
+                reason = state["reason"] if done else None
+                if done:
+                    await self._settle_in_tx(
+                        conn, round_id, guild_id, user_id, stake, outcome
+                    )
+                try:
+                    await conn.execute(
+                        """INSERT INTO blackjack_rounds
+                           (round_id, guild_id, user_id, channel_id, stake,
+                            rules_version, deck, player, dealer, phase,
+                            outcome, reason, status, deadline, settled_at,
+                            op_id, delivery_state)
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)""",
+                        round_id, guild_id, user_id, channel_id, stake,
+                        game.rules_version,
+                        json.dumps(state["deck"]),
+                        json.dumps(state["player"]),
+                        json.dumps(state["dealer"]),
+                        state["phase"], outcome, reason,
+                        "settled" if done else "active",
+                        None if done else deadline,
+                        datetime.now(UTC) if done else None,
+                        op_id, "pending",
+                    )
+                except Exception as exc:
+                    msg = str(exc).lower()
+                    if op_id is not None and "blackjack_op_id" in msg:
+                        # гонка двух подтверждений: откат (включая debit)
+                        # и идемпотентный повтор снаружи транзакции
+                        raise _OpIdConflict(op_id) from exc
+                    # partial unique index → активная игра уже есть
+                    if "blackjack_one_active" in msg or "unique" in msg:
+                        raise ActiveGameExists() from exc
+                    raise
+        except _OpIdConflict:
+            resolved = await self._resolve_op_conflict(op_id)  # type: ignore[arg-type]
+            if resolved is not None:
+                return resolved
+            raise
+        return round_id, True
 
     # ---------------- чтение ----------------
+
+    async def get_by_op_id(self, op_id: str) -> StoredRound | None:
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM blackjack_rounds WHERE op_id=$1", op_id
+            )
+            return _row_to_round(row) if row else None
 
     async def get_round(self, round_id: str) -> StoredRound | None:
         pool = await self._pool()
@@ -352,12 +416,25 @@ class BlackjackStore:
 
     # ---------------- ходы ----------------
 
-    async def apply_action(self, round_id: str, action: str) -> StoredRound:
+    async def apply_action(
+        self,
+        round_id: str,
+        action: str,
+        expected_version: int | None = None,
+    ) -> StoredRound:
         """'hit' | 'stand' | 'auto_stand'. Row-lock + version CAS.
 
+        ``expected_version`` — версия, которую видел игрок на кнопке.
+        Расхождение → StaleVersion, состояние не меняется: исключает
+        гонки Hit/Hit, Hit/Stand, двойные клики по устаревшей кнопке.
+
+        Deadline проверяется ВНУТРИ транзакции: если время хода истекло,
+        любой запрос игрока превращается в auto_stand (раздача
+        завершается детерминированно, без гонки со sweeper'ом).
+
         Возвращает обновлённый StoredRound. Бросает RoundNotActive /
-        RoundNotFound. При завершении раздачи settlement выполняется
-        в той же транзакции.
+        RoundNotFound / StaleVersion. При завершении раздачи settlement
+        выполняется в той же транзакции.
         """
         pool = await self._pool()
         async with pool.acquire() as conn, conn.transaction():
@@ -370,18 +447,27 @@ class BlackjackStore:
                 raise RoundNotFound(round_id)
             if row["status"] != "active" or row["phase"] != "player":
                 raise RoundNotActive(round_id)
-            if action == "auto_stand" and row["deadline"] is not None:
-                # deadline мог быть продлён свежим ходом игрока между
-                # выборкой expire_due и захватом lock — не закрываем раньше.
-                dl = row["deadline"]
+            if (
+                expected_version is not None
+                and int(row["version"]) != int(expected_version)
+            ):
+                raise StaleVersion(round_id)
+            expired = False
+            dl = row["deadline"]
+            if dl is not None:
                 if dl.tzinfo is None:
                     dl = dl.replace(tzinfo=UTC)
-                if dl > datetime.now(UTC):
-                    raise RoundNotActive(round_id)
+                expired = dl <= datetime.now(UTC)
+            if action == "auto_stand" and not expired:
+                # sweeper вызван досрочно — deadline ещё не наступил
+                raise RoundNotActive(round_id)
             stored = _row_to_round(row)
-            if action == "hit":
+            if expired or action == "auto_stand":
+                # ход после истечения deadline → авто-Stand
+                new_game = stored.game.stand()
+            elif action == "hit":
                 new_game = stored.game.hit()
-            else:  # stand / auto_stand
+            else:
                 new_game = stored.game.stand()
             new_version = int(row["version"]) + 1
             new_deadline = datetime.now(UTC) + timedelta(
@@ -437,19 +523,58 @@ class BlackjackStore:
             # Уже рассчитано (защита от повторного входа)
             return gross
         if gross > 0:
-            await self._credit_in_tx(conn, guild_id, user_id, gross)
+            # cap_exempt: обещанная выплата исполняется полностью —
+            # stake уже списан, ledger и UI показывают gross.
+            await self._credit_in_tx(
+                conn, guild_id, user_id, gross, cap_exempt=True
+            )
         return gross
 
     # ---------------- служебные ----------------
 
     async def mark_message(self, round_id: str, message_id: int) -> None:
+        """Доставка подтверждена: message_id + delivery_state='delivered'."""
         pool = await self._pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                """UPDATE blackjack_rounds SET message_id=$2, updated_at=now()
+                """UPDATE blackjack_rounds
+                   SET message_id=$2, delivery_state='delivered',
+                       updated_at=now()
                    WHERE round_id=$1 AND message_id IS NULL""",
                 round_id, message_id,
             )
+
+    async def mark_delivery(self, round_id: str, state: str) -> None:
+        """Фиксация состояния доставки: sending | unknown | failed."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE blackjack_rounds SET delivery_state=$2,
+                       updated_at=now()
+                   WHERE round_id=$1 AND delivery_state <> 'delivered'""",
+                round_id, state,
+            )
+
+    async def list_undelivered(
+        self, older_than: datetime, limit: int = 50
+    ) -> list[StoredRound]:
+        """Раздачи без подтверждённой доставки старше ``older_than``:
+        message_id IS NULL и delivery_state IN
+        (pending, sending, unknown, failed, delivered) —
+        'delivered' без message_id = отправка подтверждена, но id
+        не записался → тоже кандидат на поиск по маркеру."""
+        pool = await self._pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM blackjack_rounds
+                   WHERE message_id IS NULL
+                     AND delivery_state IN
+                         ('pending','sending','unknown','failed','delivered')
+                     AND created_at < $1
+                   ORDER BY created_at LIMIT $2""",
+                older_than, limit,
+            )
+            return [_row_to_round(r) for r in rows]
 
     async def expire_due(self, now: datetime | None = None) -> list[StoredRound]:
         """Активные раздачи с истёкшим deadline → авто-Stand + settle.
@@ -479,11 +604,17 @@ class BlackjackStore:
         return settled
 
     async def refund_undelivered(self, round_id: str) -> bool:
-        """Idempotent refund: только если ставка списана, раздача не
-        доставлена (message_id IS NULL) и нет payout/refund в ledger.
+        """Idempotent refund ТОЛЬКО при доказанном отсутствии доставки.
 
-        'Неоднозначная доставка' (message_id уже есть) → False,
-        раздача остаётся до тайм-аута.
+        Условия (все внутри FOR UPDATE):
+        - status='active' — settled/void/refunded не трогаем
+          (natural-blackjack уже рассчитан — выплата стоит);
+        - message_id IS NULL;
+        - delivery_state IN ('pending','failed') — HTTP к Discord
+          либо не вызывался ('pending' — крах до send, 'failed' —
+          reconcile доказал отсутствие сообщения маркером).
+          'sending'/'unknown'/'delivered' → False: неоднозначная
+          доставка НЕ рефандится автоматически.
         """
         pool = await self._pool()
         async with pool.acquire() as conn, conn.transaction():
@@ -493,7 +624,11 @@ class BlackjackStore:
             )
             if row is None:
                 return False
-            if row["status"] != "active" or row["message_id"] is not None:
+            if (
+                row["status"] != "active"
+                or row["message_id"] is not None
+                or row["delivery_state"] not in ("pending", "failed")
+            ):
                 return False
             stake = int(row["stake"])
             if stake <= 0:
@@ -505,7 +640,10 @@ class BlackjackStore:
             inserted = await self._ledger(conn, round_id, "refund", stake)
             if not inserted:
                 return False
-            await self._credit_in_tx(conn, int(row["guild_id"]), int(row["user_id"]), stake)
+            await self._credit_in_tx(
+                conn, int(row["guild_id"]), int(row["user_id"]), stake,
+                cap_exempt=True,
+            )
             await conn.execute(
                 "UPDATE blackjack_rounds SET status='refunded', settled_at=now(), updated_at=now() WHERE round_id=$1",
                 round_id,

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import logging
+import uuid
 from datetime import UTC, datetime
 
 import discord
@@ -23,6 +24,7 @@ from games.blackjack_engine import (
 )
 from storage.blackjack_store import (
     RoundNotActive,
+    StaleVersion,
     blackjack_store,
 )
 from utils.blackjack_render import render_round
@@ -30,7 +32,10 @@ from utils.design import DesignView
 
 logger = logging.getLogger(__name__)
 
-_ACTION_RE = r"bj2:(?P<action>hit|stand|again|change|close):(?P<rid>[0-9a-f]{32})"
+_ACTION_RE = (
+    r"bj2:(?P<action>hit|stand|again|change|close)"
+    r":(?P<rid>[0-9a-f]{32}):v(?P<ver>\d+)"
+)
 
 RULES_TEXT = (
     "**Правила (v" + RULES_VERSION + ")**\n"
@@ -47,8 +52,8 @@ RULES_TEXT = (
 )
 
 
-def _cid(action: str, round_id: str) -> str:
-    return f"bj2:{action}:{round_id}"
+def _cid(action: str, round_id: str, version: int) -> str:
+    return f"bj2:{action}:{round_id}:v{version}"
 
 
 # ------------------------------------------------------------------
@@ -128,6 +133,9 @@ def build_game_view(stored) -> tuple[DesignView, discord.File | None]:
         "",
         money,
         f"-# правила v{game.rules_version or RULES_VERSION}",
+        # маркер доставки: recovery/reconcile находит сообщение
+        # по этой строке в history канала (Components V2 content)
+        f"-# ref {stored.round_id}",
     ]
     if not done and stored.deadline:
         now = datetime.now(UTC)
@@ -144,16 +152,17 @@ def build_game_view(stored) -> tuple[DesignView, discord.File | None]:
         )
 
     rid = stored.round_id
+    ver = stored.version
     if done:
         view.row(
-            _btn("Сыграть ещё", "success", _cid("again", rid)),
-            _btn("Изменить ставку", "secondary", _cid("change", rid)),
-            _btn("Закрыть", "danger", _cid("close", rid)),
+            _btn("Сыграть ещё", "success", _cid("again", rid, ver)),
+            _btn("Изменить ставку", "secondary", _cid("change", rid, ver)),
+            _btn("Закрыть", "danger", _cid("close", rid, ver)),
         )
     else:
         view.row(
-            _btn("Взять карту", "primary", _cid("hit", rid)),
-            _btn("Стоп", "secondary", _cid("stand", rid)),
+            _btn("Взять карту", "primary", _cid("hit", rid, ver)),
+            _btn("Стоп", "secondary", _cid("stand", rid, ver)),
         )
     return view, file
 
@@ -179,6 +188,7 @@ class BlackjackActionButton(
     async def from_custom_id(cls, interaction, item, match):
         action = match.group("action")
         rid = match.group("rid")
+        ver = int(match.group("ver"))
         labels = {
             "hit": ("Взять карту", discord.ButtonStyle.primary),
             "stand": ("Стоп", discord.ButtonStyle.secondary),
@@ -192,16 +202,20 @@ class BlackjackActionButton(
         )
 
         async def callback(inter: discord.Interaction) -> None:
-            await handle_round_action(inter, action, rid)
+            await handle_round_action(inter, action, rid, ver)
 
         button.callback = callback
         return cls(button)
 
 
 async def _ephemeral(interaction: discord.Interaction, text: str) -> None:
-    await interaction.response.send_message(
-        text, ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
-    )
+    """Ephemeral-ответ: response если ещё не отвечали, иначе followup."""
+    kwargs = {"ephemeral": True,
+              "allowed_mentions": discord.AllowedMentions.none()}
+    if interaction.response.is_done():
+        await interaction.followup.send(text, **kwargs)
+    else:
+        await interaction.response.send_message(text, **kwargs)
 
 
 async def _owned_round(interaction: discord.Interaction, rid: str):
@@ -217,14 +231,22 @@ async def _owned_round(interaction: discord.Interaction, rid: str):
 
 
 async def handle_round_action(
-    interaction: discord.Interaction, action: str, rid: str
+    interaction: discord.Interaction, action: str, rid: str, ver: int
 ) -> None:
+    # PG + PNG + Discord edit могут превысить 3с — defer сразу,
+    # публичная карточка редактируется через edit_original_response
+    # (стандартный deferred-update для component interaction).
+    if not interaction.response.is_done():
+        try:
+            await interaction.response.defer()
+        except discord.InteractionResponded:
+            pass
     stored = await _owned_round(interaction, rid)
     if stored is None:
-        return
+        return  # _owned_round уже ответил ephemeral
 
     if action in ("hit", "stand"):
-        await _handle_play(interaction, stored, action)
+        await _handle_play(interaction, stored, action, ver)
     elif action == "close":
         await _handle_close(interaction, stored)
     elif action == "again":
@@ -233,41 +255,50 @@ async def handle_round_action(
         await _handle_again(interaction, stored, same_stake=False)
 
 
-async def _handle_play(interaction, stored, action: str) -> None:
+async def _refresh_public(interaction, stored) -> None:
+    """Перерисовать публичную карточку после stale/ошибки (deferred ctx)."""
+    try:
+        fresh = await blackjack_store.get_round(stored.round_id)
+        if fresh is None or fresh.message_id is None:
+            return
+        channel = interaction.client.get_channel(fresh.channel_id)
+        if channel is None:
+            channel = await interaction.client.fetch_channel(fresh.channel_id)
+        msg = await channel.fetch_message(fresh.message_id)
+        view, f = build_game_view(fresh)
+        kwargs = {"view": view,
+                  "allowed_mentions": discord.AllowedMentions.none()}
+        if f is not None:
+            kwargs["attachments"] = [f]
+        await msg.edit(**kwargs)
+    except Exception:
+        logger.info("blackjack stale-refresh edit failed",
+                    exc_info=True)
+
+
+async def _handle_play(interaction, stored, action: str, ver: int) -> None:
     if not stored.awaiting_player:
         await _ephemeral(interaction, "Эта раздача уже завершена.")
         return
     try:
-        updated = await blackjack_store.apply_action(stored.round_id, action)
-    except RoundNotActive:
-        await _ephemeral(interaction, "Кто-то уже сходил — состояние обновлено.")
-        # попробуем показать актуальное состояние
-        fresh = await blackjack_store.get_round(stored.round_id)
-        if fresh is not None and fresh.message_id:
-            view, f = build_game_view(fresh)
-            try:
-                channel = interaction.client.get_channel(fresh.channel_id)
-                msg = await channel.fetch_message(fresh.message_id)
-                kwargs = {"view": view,
-                          "allowed_mentions": discord.AllowedMentions.none()}
-                if f is not None:
-                    kwargs["attachments"] = [f]
-                await msg.edit(**kwargs)
-            except Exception:
-                logger.info("blackjack stale-refresh edit failed",
-                            exc_info=True)
+        updated = await blackjack_store.apply_action(
+            stored.round_id, action, expected_version=ver)
+    except (RoundNotActive, StaleVersion):
+        await _ephemeral(
+            interaction, "Кто-то уже сходил — состояние обновлено.")
+        await _refresh_public(interaction, stored)
         return
     view, f = build_game_view(updated)
     kwargs = {"view": view, "allowed_mentions": discord.AllowedMentions.none()}
     if f is not None:
         kwargs["attachments"] = [f]
-    await interaction.response.edit_message(**kwargs)
+    await interaction.edit_original_response(**kwargs)
 
 
 async def _handle_close(interaction, stored) -> None:
     view = DesignView(title="BLACKJACK", timeout=None)
     view.lines("Раздача закрыта. Спасибо за игру!")
-    await interaction.response.edit_message(
+    await interaction.edit_original_response(
         view=view, attachments=[], allowed_mentions=discord.AllowedMentions.none()
     )
 
@@ -279,16 +310,16 @@ async def _handle_again(interaction, stored, *, same_stake: bool) -> None:
     if stored.status != "settled":
         await _ephemeral(interaction, "Новая раздача доступна после завершения текущей.")
         return
+    # interaction уже deferred → ephemeral через followup
+    kwargs = {"ephemeral": True,
+              "allowed_mentions": discord.AllowedMentions.none()}
     if same_stake:
         stake = stored.stake
         view = ConfirmStakeView(
             interaction.guild_id, interaction.user.id, stored.channel_id,
             stake, reuse=(stored.channel_id, stored.message_id),
         )
-        await interaction.response.send_message(
-            view=view, ephemeral=True,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
+        await interaction.followup.send(view=view, **kwargs)
     else:
         await show_bet_menu(
             interaction, guild_id=interaction.guild_id,
@@ -394,13 +425,17 @@ class BetModal(discord.ui.Modal, title="Своя ставка"):
 class ConfirmStakeView(DesignView):
     """Финальное подтверждение: отдельное нажатие + новая проверка баланса."""
 
-    def __init__(self, guild_id, user_id, channel_id, stake, reuse=None):
+    def __init__(self, guild_id, user_id, channel_id, stake, reuse=None,
+                 op_id: str | None = None):
         super().__init__(title="Подтверждение ставки", timeout=120)
         self.guild_id = guild_id
         self.user_id = user_id
         self.channel_id = channel_id
         self.stake = stake
         self.reuse = reuse
+        # идемпотентность подтверждения: один op_id на экземпляр
+        # подтверждения → двойной клик/повтор не спишет ставку дважды
+        self.op_id = op_id or uuid.uuid4().hex
         payout = 2 * stake if stake else 0
         self.lines(
             f"Ставка: **{stake:,}**" if stake else "Режим: **без ставки**",
@@ -438,4 +473,5 @@ class ConfirmStakeView(DesignView):
         from games.blackjack import deal_round
         await deal_round(
             interaction, guild_id=self.guild_id, user_id=self.user_id,
-            channel_id=self.channel_id, stake=self.stake, reuse=self.reuse)
+            channel_id=self.channel_id, stake=self.stake, reuse=self.reuse,
+            op_id=self.op_id)

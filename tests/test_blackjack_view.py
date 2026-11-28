@@ -6,7 +6,7 @@
 import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
@@ -16,6 +16,11 @@ from views import blackjack_view as bv
 
 
 def _interaction(user_id=1, guild_id=42, channel_id=10):
+    state = {"done": False}
+
+    async def _defer(**_kw):
+        state["done"] = True
+
     return SimpleNamespace(
         user=SimpleNamespace(id=user_id),
         guild_id=guild_id,
@@ -25,7 +30,8 @@ def _interaction(user_id=1, guild_id=42, channel_id=10):
         response=SimpleNamespace(
             send_message=AsyncMock(),
             edit_message=AsyncMock(),
-            defer=AsyncMock(),
+            defer=AsyncMock(side_effect=_defer),
+            is_done=Mock(side_effect=lambda: state["done"]),
         ),
         edit_original_response=AsyncMock(),
         followup=SimpleNamespace(send=AsyncMock()),
@@ -83,11 +89,11 @@ class BuildViewTests(unittest.TestCase):
         self.assertIn("Взять карту", text)
         self.assertIn("Стоп", text)
         self.assertIn("авто-Stand", text)
-        # кастомные id кнопок содержат round_id
+        # кастомные id кнопок содержат round_id и версию состояния
         ids = [getattr(c, "custom_id", "") for row in view.container.children
                for c in getattr(row, "children", [])]
-        self.assertIn(f"bj2:hit:{stored.round_id}", ids)
-        self.assertIn(f"bj2:stand:{stored.round_id}", ids)
+        self.assertIn(f"bj2:hit:{stored.round_id}:v{stored.version}", ids)
+        self.assertIn(f"bj2:stand:{stored.round_id}:v{stored.version}", ids)
         # PNG прилагается
         self.assertIsNotNone(file)
         self.assertTrue(any(
@@ -105,8 +111,8 @@ class BuildViewTests(unittest.TestCase):
         self.assertIn("Закрыть", text)
         ids = [getattr(c, "custom_id", "") for row in view.container.children
                for c in getattr(row, "children", [])]
-        self.assertIn(f"bj2:again:{stored.round_id}", ids)
-        self.assertIn(f"bj2:close:{stored.round_id}", ids)
+        self.assertIn(f"bj2:again:{stored.round_id}:v{stored.version}", ids)
+        self.assertIn(f"bj2:close:{stored.round_id}:v{stored.version}", ids)
 
     def test_hidden_dealer_card(self):
         stored = _stored()
@@ -121,13 +127,15 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
         import re
         rx = re.compile(bv._ACTION_RE)
         for action in ("hit", "stand", "again", "change", "close"):
-            cid = f"bj2:{action}:{'a' * 32}"
+            cid = f"bj2:{action}:{'a' * 32}:v3"
             m = rx.fullmatch(cid)
             self.assertIsNotNone(m)
             self.assertEqual(m.group("action"), action)
             self.assertEqual(m.group("rid"), "a" * 32)
+            self.assertEqual(m.group("ver"), "3")
         self.assertIsNone(rx.fullmatch("bj2:hit:short"))
-        self.assertIsNone(rx.fullmatch("other:x:" + "a" * 32))
+        self.assertIsNone(rx.fullmatch("bj2:hit:" + "a" * 32))  # без версии
+        self.assertIsNone(rx.fullmatch("other:x:" + "a" * 32 + ":v1"))
 
     async def test_stranger_gets_ephemeral_no_state_change(self):
         stored = _stored()
@@ -136,10 +144,10 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
                           AsyncMock(return_value=stored)), \
              patch.object(bv.blackjack_store, "apply_action",
                           AsyncMock()) as ap:
-            await bv.handle_round_action(inter, "hit", stored.round_id)
-        inter.response.send_message.assert_awaited_once()
+            await bv.handle_round_action(inter, "hit", stored.round_id, 1)
+        inter.followup.send.assert_awaited_once()  # deferred → followup
         self.assertTrue(
-            inter.response.send_message.call_args.kwargs["ephemeral"])
+            inter.followup.send.call_args.kwargs["ephemeral"])
         ap.assert_not_awaited()
 
     async def test_owner_hit_updates_message(self):
@@ -150,12 +158,28 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(bv.blackjack_store, "get_round",
                           AsyncMock(return_value=stored)), \
              patch.object(bv.blackjack_store, "apply_action", apply):
-            await bv.handle_round_action(inter, "hit", stored.round_id)
-            apply.assert_awaited_once_with(stored.round_id, "hit")
-        inter.response.edit_message.assert_awaited_once()
-        kwargs = inter.response.edit_message.call_args.kwargs
+            await bv.handle_round_action(inter, "hit", stored.round_id, 1)
+            apply.assert_awaited_once_with(
+                stored.round_id, "hit", expected_version=1)
+        inter.edit_original_response.assert_awaited_once()
+        kwargs = inter.edit_original_response.call_args.kwargs
         self.assertIn("view", kwargs)
         self.assertIn("attachments", kwargs)  # PNG прикреплён
+
+    async def test_stale_version_button_rejected(self):
+        """Кнопка со старой версией → StaleVersion → ephemeral + refresh,
+        состояние не меняется."""
+        stored = _stored()
+        inter = _interaction(user_id=1)
+        apply = AsyncMock(side_effect=bv.StaleVersion("x"))
+        with patch.object(bv.blackjack_store, "get_round",
+                          AsyncMock(return_value=stored)), \
+             patch.object(bv.blackjack_store, "apply_action", apply):
+            await bv.handle_round_action(inter, "hit", stored.round_id, 0)
+            apply.assert_awaited_once_with(
+                stored.round_id, "hit", expected_version=0)
+        inter.followup.send.assert_awaited_once()
+        inter.edit_original_response.assert_not_awaited()
 
     async def test_stale_button_after_finish(self):
         stored = _stored()  # awaiting_player False? status settled
@@ -167,18 +191,18 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
                           AsyncMock(return_value=stored)), \
              patch.object(bv.blackjack_store, "apply_action",
                           AsyncMock(side_effect=bv.RoundNotActive("x"))):
-            await bv.handle_round_action(inter, "hit", stored.round_id)
-        inter.response.send_message.assert_awaited_once()
+            await bv.handle_round_action(inter, "hit", stored.round_id, 1)
+        inter.followup.send.assert_awaited_once()
         self.assertTrue(
-            inter.response.send_message.call_args.kwargs["ephemeral"])
+            inter.followup.send.call_args.kwargs["ephemeral"])
 
     async def test_close_edits_message_without_state_change(self):
         stored = _stored(phase="done", outcome=OUT_WIN)
         inter = _interaction(user_id=1)
         with patch.object(bv.blackjack_store, "get_round",
                           AsyncMock(return_value=stored)):
-            await bv.handle_round_action(inter, "close", stored.round_id)
-        inter.response.edit_message.assert_awaited_once()
+            await bv.handle_round_action(inter, "close", stored.round_id, 1)
+        inter.edit_original_response.assert_awaited_once()
 
 
 class MenuTests(unittest.IsolatedAsyncioTestCase):
