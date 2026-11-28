@@ -2,7 +2,7 @@
 
 Release candidate: PR #54
 `feat/classic-squad-hub-v2` → base `feat/classic-riz3-cv2` @ `feb8daa`
-Rollback: `rollback/squad-hub-compat` @ `d4276397c4f8a1df12287b94a63d9f338b15a25b`
+Rollback: `rollback/squad-hub-compat` @ `e34f1db82b59d0c286a974a13d056d1686b2f6fc`
 
 Выполнять **до** деплоя, read-only. Production не изменять.
 Существующие команды не сбрасывать.
@@ -168,7 +168,7 @@ SELECT COUNT(*) FROM shop_items;
 
 ## 6. Проверенный rollback SHA
 
-`rollback/squad-hub-compat` @ `d4276397c4f8a1df12287b94a63d9f338b15a25b`
+`rollback/squad-hub-compat` @ `e34f1db82b59d0c286a974a13d056d1686b2f6fc`
 (поверх `feat/classic-riz3-cv2` @ `feb8daa`):
 
 - `password_hash` читается/пишется, PBKDF2-совместим с Squad Hub;
@@ -181,7 +181,7 @@ SELECT COUNT(*) FROM shop_items;
   сохраняется;
 - squad-таблицы старый код игнорирует (аддитивны).
 
-Действия отката: переключить деплой на SHA `d427639`, схему
+Действия отката: переключить деплой на SHA `e34f1db`, схему
 БД **не** откатывать. См. `docs/SQUAD_HUB_ROLLBACK.md`.
 
 ## 7. Сохранность соседних подсистем
@@ -209,6 +209,6 @@ GO только если:
 - [ ] конфликтов legacy-данных нет ИЛИ есть утверждённый план;
 - [ ] pg_dump + Volume-снапшот сняты, проверены, копия вне
       Railway Volume;
-- [ ] rollback SHA `d427639` подтверждён;
+- [ ] rollback SHA `e34f1db` подтверждён;
 - [ ] CI на финальном HEAD зелёный;
 - [ ] получено отдельное разрешение владельца на merge/deploy.
