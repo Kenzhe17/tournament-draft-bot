@@ -343,3 +343,8 @@ async def _refresh_card(interaction: discord.Interaction, tournament) -> None:
         await message.edit(view=compose(embed, BRCardView(tournament.guild_id, tournament.channel_id, tournament)))
     except Exception as exc:
         logger.warning("BR refresh card failed: %s", exc)
+
+
+async def setup(bot: "TournamentBot") -> None:
+    """Entry point расширения для bot.load_extension("cogs.br")."""
+    await bot.add_cog(BRCog(bot))
