@@ -508,10 +508,14 @@ class TournamentBot(commands.Bot):
         # и архивные с итогами — для пагинации «По картам»).
         try:
             from storage.br_store import br_store
-            from views.br_view import BRCardView, sync_public_card
+            from views.br_view import (BRCardView, sync_public_card,
+                                       resume_pending_publish)
             for brt in list(br_store.all()) + br_store.history():
                 self._register_view(BRCardView(brt.guild_id, brt.channel_id, brt))
             for brt in br_store.all():
+                # сначала доводим отложенную публикацию итогов до конца
+                # (тот же снимок), затем синхронизируем карточку
+                await resume_pending_publish(brt, self)
                 await sync_public_card(brt, self)
         except Exception as exc:
             logger.warning("BR views restore failed: %s", exc)

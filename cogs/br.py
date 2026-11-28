@@ -170,7 +170,8 @@ class BRCog(commands.Cog):
         if tournament.is_active:
             # подтверждение через кнопку + причина уже получена аргументом
             view = CancelConfirmView(
-                interaction.guild_id, interaction.channel_id, reason[:200])
+                interaction.guild_id, interaction.channel_id,
+                tournament.id, reason[:200])
             await interaction.response.send_message(
                 f"Отменить BR турнир?\nПричина: {reason[:200]}",
                 view=view, ephemeral=True)

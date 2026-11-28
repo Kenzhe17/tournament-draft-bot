@@ -295,6 +295,118 @@ class TestResults:
         assert t.results_complete()
 
 
+class TestPublishSnapshot:
+    def _collect(self, fmt="squad", n_slots=5, maps=2):
+        t = make(fmt, "random", maps=maps)
+        add_players(t, n_slots * t.slot_size)
+        t.draw()
+        if t.phase == BRTournamentPhase.DRAFT:
+            t.begin_games()
+        t.finish_games()
+        for si in range(n_slots):
+            for m in range(maps):
+                ok, err = t.set_result_entry(m, si, place=si + 1, kills=m)
+                assert ok, err
+        return t
+
+    def test_freeze_blocks_edits_and_commit_uses_snapshot(self):
+        t = self._collect(maps=1)
+        # снимок до правки: слот 0 = место 1 + 0 киллов → 12 очков
+        ok, err = t.freeze_results()
+        assert ok, err
+        snap_points = t.calculate_final_results()[0]["total_points"]
+        # параллельная правка отклоняется — в архив не попадёт 20
+        ok, err = t.set_result_entry(0, 0, place=1, kills=50)
+        assert not ok and "зафиксированы" in err
+        ok, errs = t.set_results_batch(0, [{"slot": 0, "place": 1, "kills": 50}])
+        assert not ok and errs
+        # коммит: снимок становится опубликованным итогом
+        assert t.commit_publish()
+        assert t.phase == BRTournamentPhase.RESULTS
+        assert t.results_snapshot is not None
+        res = t.calculate_final_results()
+        assert res[0]["total_points"] == snap_points  # не 20+
+        # правки после публикации тоже закрыты
+        assert not t.set_result_entry(0, 0, place=2, kills=0)[0]
+
+    def test_freeze_idempotent_same_snapshot(self):
+        t = self._collect(maps=1)
+        assert t.freeze_results()[0]
+        first = [dict(r) for r in t.publish_pending]
+        assert t.freeze_results()[0]  # повтор — тот же снимок
+        assert t.publish_pending == first
+
+    def test_freeze_requires_complete(self):
+        t = make("squad", "random", maps=1)
+        add_players(t, 20)
+        t.draw()
+        t.begin_games()
+        t.finish_games()
+        ok, err = t.freeze_results()
+        assert not ok and "Не все записи" in err
+
+    def test_pending_survives_roundtrip(self):
+        t = self._collect(maps=1)
+        t.freeze_results()
+        t2 = BRTournament.from_dict(t.to_dict())
+        assert t2.publish_pending is not None
+        assert t2.phase == BRTournamentPhase.COLLECT
+        assert t2.commit_publish()
+        assert t2.results_snapshot is not None
+        t3 = BRTournament.from_dict(t2.to_dict())
+        assert t3.results_snapshot is not None
+        assert t3.phase == BRTournamentPhase.RESULTS
+
+
+class TestStatKeyMigration:
+    def _with_stats(self, maps, stats):
+        t = make("squad", "random", maps=maps)
+        add_players(t, 20)
+        t.draw()
+        t.teams[0]["stats"] = dict(stats)
+        return BRTournament.from_dict(t.to_dict())
+
+    def test_unique_name_key_migrates_to_map_n(self):
+        t = self._with_stats(1, {"bermuda": {"place": 1, "kills": 3, "dns": False}})
+        stats = t.teams[0]["stats"]
+        assert stats["map_0"] == {"place": 1, "kills": 3, "dns": False}
+        # исходная запись сохранена, map_N в приоритете
+        assert stats["bermuda"]["place"] == 1
+        assert t.get_team_stats_for_map(t.teams[0], 0)["place"] == 1
+        assert t.migration_notes == []
+
+    def test_repeated_name_not_copied_and_noted(self):
+        t = self._with_stats(4, {"bermuda": {"place": 1, "kills": 3, "dns": False},
+                                 "purgatory": {"place": 2, "kills": 1, "dns": False}})
+        stats = t.teams[0]["stats"]
+        # purgatory уникально → map_1; bermuda повторяется → остаётся как есть
+        assert stats["map_1"]["place"] == 2
+        assert "map_0" not in stats and "map_3" not in stats
+        assert stats["bermuda"]["place"] == 1
+        assert t.get_team_stats_for_map(t.teams[0], 0) is None
+        assert t.get_team_stats_for_map(t.teams[0], 3) is None
+        assert any("не привязан" in n for n in t.migration_notes)
+
+    def test_explicit_map_n_has_priority(self):
+        t = self._with_stats(3, {"map_0": {"place": 4, "kills": 0, "dns": False},
+                                 "bermuda": {"place": 1, "kills": 9, "dns": False}})
+        stats = t.teams[0]["stats"]
+        # map_0 не перезаписан именем; bermuda→map_0 пропущен (цель занята)
+        assert stats["map_0"]["place"] == 4
+        assert t.get_team_stats_for_map(t.teams[0], 0)["place"] == 4
+
+    def test_migration_idempotent_and_status_consistent(self):
+        t = self._with_stats(3, {"bermuda": {"place": 1, "kills": 3, "dns": False},
+                                 "kalahari": {"place": 2, "kills": 1, "dns": False}})
+        filled, expected = t.results_status()
+        # до fill всех слотов — считаем только этот слот: 2 записи из 5*3
+        assert filled == 2 and expected == 15
+        t2 = BRTournament.from_dict(t.to_dict())
+        assert t2.teams[0]["stats"].get("map_0", {}).get("place") == 1
+        assert t2.teams[0]["stats"].get("map_2", {}).get("place") == 2
+        assert t2.migration_notes == []
+
+
 class TestLegacy:
     def test_old_json_reads_as_squad(self):
         data = {

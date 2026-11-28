@@ -10,7 +10,6 @@
 
 import asyncio
 import logging
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 import discord
@@ -310,17 +309,15 @@ def final_embed(tournament: "BRTournament", page: int | None = None) -> discord.
     # страница по картам: page = индекс карты (номер записи, не фаза)
     map_idx = page
     map_ru = MAP_NAMES_RU.get(tournament.get_map_name_for_index(map_idx), "")
-    key = tournament.get_stats_key(map_idx)
-    from models.br_tournament import normalize_entry
     rows = []
-    for slot in tournament.teams:
-        ne = normalize_entry((slot.get("stats") or {}).get(key))
+    for i, slot in enumerate(tournament.teams):
+        ne = tournament.get_team_stats_for_map(slot, map_idx)
         if ne is None:
-            rows.append((999, f"— {slot_label(slot, slot.get('index', 0))} — нет данных"))
+            rows.append((999, f"— {slot_label(slot, i)} — нет данных"))
         elif ne["dns"]:
-            rows.append((500, f"DNS {slot_label(slot, slot.get('index', 0))} (0:{ne['kills']})"))
+            rows.append((500, f"DNS {slot_label(slot, i)} (0:{ne['kills']})"))
         else:
-            rows.append((ne["place"], f"{ne['place']}. {slot_label(slot, slot.get('index', 0))} — {ne['kills']} киллов"))
+            rows.append((ne["place"], f"{ne['place']}. {slot_label(slot, i)} — {ne['kills']} киллов"))
     rows.sort(key=lambda x: x[0])
     body = "\n".join(r[1] for r in rows)
     if len(body) > 3800:
@@ -467,7 +464,8 @@ class BRCardView(View):
     """Публичная карточка BR турнира (persistent, единая на весь турнир)."""
 
     def __init__(self, guild_id: int, channel_id: int,
-                 tournament: "BRTournament" = None):
+                 tournament: "BRTournament" = None,
+                 as_phase: "BRTournamentPhase | None" = None):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -475,7 +473,9 @@ class BRCardView(View):
         gid, cid = guild_id, channel_id
         tid = tournament.id if tournament else ""
 
-        phase = tournament.phase if tournament else BRTournamentPhase.REGISTRATION
+        # as_phase — переопределение фазы для кнопок (публикация итогов
+        # рендерит финальный вид до коммита фазы в хранилище).
+        phase = as_phase or (tournament.phase if tournament else BRTournamentPhase.REGISTRATION)
         mode = tournament.mode if tournament else "random"
         fmt = tournament.format if tournament else BRFormat.SQUAD
 
@@ -1304,6 +1304,7 @@ class CancelConfirmButton(Button):
             t.phase = BRTournamentPhase.CANCELLED
             t.cancel_reason = self.reason
             t.cancelled_by = interaction.user.id
+            t.publish_pending = None  # отмена снимает замороженный снимок
             br_store.set(t)  # архивирует
         try:
             await strip_tournament_roles(interaction.guild, t)
@@ -1387,11 +1388,15 @@ class EntryPanelButton(Button):
                 "Ввод доступен только после «Завершить игры».", ephemeral=True)
             return
         filled, expected = t.results_status()
+        notes = ""
+        if getattr(t, "migration_notes", None):
+            notes = ("\n\n**Замечания миграции (сверьте вручную):**\n"
+                     + "\n".join(f"• {n}" for n in t.migration_notes[:10]))
         view = BREntryPanelView(self.guild_id, self.channel_id, self.tid, map_index=0, page=0)
         await interaction.response.send_message(
             view=compose(
                 text=f"Панель ввода результатов (приватно). Заполнено: {filled}/{expected}. "
-                     "Номера карт — для записи результатов, не игровые фазы.",
+                     "Номера карт — для записи результатов, не игровые фазы." + notes,
                 view=view), ephemeral=True)
 
 
@@ -1663,6 +1668,10 @@ class PreviewResultsButton(Button):
             lines.append(f"{r['rank']}. {r['name']} — {r['total_points']} очк.")
         if len(results) > 15:
             lines.append(f"… и ещё {len(results) - 15}")
+        if getattr(t, "migration_notes", None):
+            lines.append("")
+            lines.append("**Замечания миграции (сверьте вручную):**")
+            lines.extend(f"• {n}" for n in t.migration_notes[:10])
         view = PublishResultsView(self.guild_id, self.channel_id, self.tid)
         await interaction.response.send_message(
             "**Приватный предпросмотр итогов:**\n" + "\n".join(lines),
@@ -1676,11 +1685,14 @@ class PublishResultsView(View):
 
 
 class PublishResultsButton(Button):
-    """Публикация итогов — восстанавливаемая после сбоя Discord.
+    """Публикация итогов — восстановимая после сбоя Discord/рестарта.
 
-    Фаза меняется на RESULTS только ПОСЛЕ успешного редактирования
-    публичной карточки: при ошибке Discord состояние не коммитится и
-    повторный клик безопасно повторяет публикацию.
+    Поток: под блокировкой заморозить снимок (publish_pending, правки
+    закрываются) → отредактировать карточку финальным embed+кнопками
+    → под блокировкой закоммитить снимок в RESULTS/архив. При ошибке
+    Discord состояние остаётся COLLECT+pending — повтор использует тот
+    же снимок; после рестарта resume_pending_publish доводит публикацию
+    до конца. Второго сообщения не создаётся — правится message_id.
     """
 
     def __init__(self, guild_id, channel_id, tid):
@@ -1705,30 +1717,8 @@ class PublishResultsButton(Button):
             await interaction.response.send_message(
                 "Итоги уже опубликованы или турнир не готов.", ephemeral=True)
             return
-        if not t.results_complete():
-            filled, expected = t.results_status()
-            await interaction.response.send_message(
-                f"Не все записи заполнены: {filled}/{expected}. "
-                "Пустые слоты должны быть помечены DNS.", ephemeral=True)
-            return
 
-        # 1) Discord-карточка — до коммита состояния. При ошибке
-        #    состояние остаётся COLLECT, повторная публикация возможна.
-        embed = final_embed(t)
-        try:
-            channel = interaction.guild.get_channel(t.channel_id) if interaction.guild else None
-            message = await channel.fetch_message(t.message_id) if channel else None
-            if message is None:
-                raise RuntimeError("BR card message not found")
-            await message.edit(view=compose(embed, BRCardView(t.guild_id, t.channel_id, t)))
-        except Exception as exc:
-            logger.warning("BR publish: Discord edit failed: %s", exc)
-            await interaction.response.send_message(
-                "Не удалось обновить карточку в Discord — итоги НЕ опубликованы. "
-                "Состояние сохранено, повторите «Опубликовать итоги».", ephemeral=True)
-            return
-
-        # 2) Коммит под блокировкой с перепроверкой фазы/ID.
+        # 1) Под блокировкой: свежий объект, проверка ID/фазы, снимок.
         async with get_br_lock_key(self.guild_id, self.channel_id, self.tid):
             t2 = br_store.get(self.guild_id, self.channel_id)
             if t2 is None or str(t2.id) != str(self.tid):
@@ -1737,17 +1727,117 @@ class PublishResultsButton(Button):
             if t2.phase != BRTournamentPhase.COLLECT or t2.results_published:
                 await interaction.response.send_message("Итоги уже опубликованы.", ephemeral=True)
                 return
-            t2.phase = BRTournamentPhase.RESULTS
-            t2.results_published = True
-            t2.published_at = datetime.now().isoformat()
-            t2.view_page = -1
-            br_store.set(t2)  # архивирует в историю
+            ok, err = t2.freeze_results()
+            if not ok:
+                await interaction.response.send_message(err, ephemeral=True)
+                return
+            try:
+                br_store.set(t2)  # сохраняем pending-снимок
+            except Exception as exc:
+                logger.error("BR publish: save pending failed: %s", exc)
+                await interaction.response.send_message(
+                    "Не удалось сохранить снимок итогов — публикация не начата.",
+                    ephemeral=True)
+                return
             t = t2
+
+        # 2) Discord-карточка с финальным видом (без Комната/Управление).
+        #    Сбой → состояние COLLECT+pending, повтор с тем же снимком.
+        edited = await _edit_final_card(t, interaction.guild)
+        if not edited:
+            await interaction.response.send_message(
+                "Не удалось обновить карточку в Discord — итоги НЕ опубликованы. "
+                "Снимок сохранён, повторите «Опубликовать итоги» или перезапустите бота.",
+                ephemeral=True)
+            return
+
+        # 3) Коммит под блокировкой: снимок → RESULTS → архив.
+        try:
+            async with get_br_lock_key(self.guild_id, self.channel_id, self.tid):
+                t3 = br_store.get(self.guild_id, self.channel_id)
+                if t3 is None or str(t3.id) != str(self.tid):
+                    await interaction.response.send_message(STALE_MSG, ephemeral=True)
+                    return
+                if t3.phase == BRTournamentPhase.COLLECT and t3.publish_pending is not None:
+                    t3.commit_publish()
+                    br_store.set(t3)  # архивирует в историю
+                    t = t3
+                elif t3.phase in (BRTournamentPhase.RESULTS, BRTournamentPhase.COMPLETE):
+                    # параллельный клик уже закоммитил — идемпотентно
+                    t = t3
+                else:
+                    # фазу сменили (например, отмена) — возвращаем карточку
+                    await refresh_main_card(interaction, t3)
+                    await interaction.response.send_message(
+                        "Публикация прервана: фаза турнира изменилась.", ephemeral=True)
+                    return
+        except Exception as exc:
+            logger.error("BR publish: commit failed: %s", exc)
+            await interaction.response.send_message(
+                "Карточка обновлена, но сохранение не удалось — повторите "
+                "«Опубликовать итоги» (снимок не изменится).", ephemeral=True)
+            return
         try:
             await strip_tournament_roles(interaction.guild, t)
         except Exception as exc:
             logger.warning("BR publish strip roles: %s", exc)
         await interaction.response.send_message("Итоги опубликованы.", ephemeral=True)
+
+
+async def _edit_final_card(t: "BRTournament", guild) -> bool:
+    """Отредактировать единую карточку финальным embed и финальными
+    кнопками (результаты по картам + «Мой слот», без Комната/Управление).
+    True — Discord edit прошёл."""
+    try:
+        if not t.message_id or guild is None:
+            return False
+        channel = guild.get_channel(t.channel_id)
+        if channel is None:
+            return False
+        message = await channel.fetch_message(t.message_id)
+        embed = final_embed(t)  # calculate_final_results → снимок
+        view = BRCardView(t.guild_id, t.channel_id, t,
+                          as_phase=BRTournamentPhase.RESULTS)
+        await message.edit(view=compose(embed, view))
+        return True
+    except Exception as exc:
+        logger.warning("BR publish: Discord edit failed: %s", exc)
+        return False
+
+
+async def resume_pending_publish(tournament: "BRTournament", client=None) -> bool:
+    """Довести отложенную публикацию до конца (после сбоя/рестарта).
+
+    Если турнир в COLLECT с publish_pending — повторяет тот же снимок:
+    edit карточки финальным видом, затем commit в архив. Идемпотентно.
+    """
+    if tournament.phase != BRTournamentPhase.COLLECT or tournament.publish_pending is None:
+        return False
+    try:
+        if client is not None:
+            guild = client.get_guild(tournament.guild_id)
+        else:
+            guild = None
+        if guild is None:
+            return False
+        if not await _edit_final_card(tournament, guild):
+            return False
+        async with get_br_lock_key(tournament.guild_id, tournament.channel_id, tournament.id):
+            t2 = br_store.get(tournament.guild_id, tournament.channel_id)
+            if (t2 is not None and str(t2.id) == str(tournament.id)
+                    and t2.phase == BRTournamentPhase.COLLECT
+                    and t2.publish_pending is not None):
+                t2.commit_publish()
+                br_store.set(t2)
+                try:
+                    await strip_tournament_roles(guild, t2)
+                except Exception as exc:
+                    logger.warning("BR resume strip roles: %s", exc)
+                return True
+        return False
+    except Exception as exc:
+        logger.warning("BR resume_pending_publish failed: %s", exc)
+        return False
 
 
 # ---------- совместимость ----------

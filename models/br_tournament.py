@@ -175,6 +175,13 @@ class BRTournament:
     results_published: bool = False
     published_at: str = ""
     games_finished_at: str = ""
+    # Неизменяемый снимок итогов: publish_pending — заморожен для
+    # публикации (редактирование закрыто), results_snapshot —
+    # опубликованный/архивный результат (Discord и HoF читают его).
+    publish_pending: list[dict] | None = None
+    results_snapshot: list[dict] | None = None
+    # Замечания миграции legacy-статистики для ведущего.
+    migration_notes: list[str] = field(default_factory=list)
     view_page: int = -1  # страница публичной карточки итогов (-1 = сводка)
     cancel_reason: str = ""
     cancelled_by: int = 0
@@ -744,6 +751,8 @@ class BRTournament:
         """
         if self.phase != BRTournamentPhase.COLLECT:
             return False, "Ввод результатов доступен только после последней карты."
+        if self.publish_pending is not None or self.results_snapshot is not None:
+            return False, "Итоги зафиксированы для публикации — правки закрыты."
         if not (0 <= map_index < self.map_count):
             return False, "Нет такой карты."
         if not (0 <= slot_index < len(self.teams)):
@@ -802,6 +811,10 @@ class BRTournament:
         Returns:
             (ok, errors) — при ошибке ничего не сохраняется.
         """
+        if self.phase != BRTournamentPhase.COLLECT:
+            return False, ["Ввод результатов доступен только после завершения игр."]
+        if self.publish_pending is not None or self.results_snapshot is not None:
+            return False, ["Итоги зафиксированы для публикации — правки закрыты."]
         errors: list[str] = []
         seen_slots: set[int] = set()
         seen_places: dict[int, int] = {}
@@ -895,9 +908,8 @@ class BRTournament:
         expected = len(self.teams) * self.map_count
         filled = 0
         for slot in self.teams:
-            stats = slot.get("stats") or {}
             for i in range(self.map_count):
-                if normalize_entry(stats.get(self.get_stats_key(i))) is not None:
+                if self.get_team_stats_for_map(slot, i) is not None:
                     filled += 1
         return filled, expected
 
@@ -934,13 +946,53 @@ class BRTournament:
             return self.place_cap + 1
         return e["place"]
 
+    def freeze_results(self) -> tuple[bool, str]:
+        """Зафиксировать неизменяемый снимок итогов для публикации.
+
+        Вызывается под блокировкой в фазе COLLECT. После фиксации
+        правки результатов закрыты; повторный вызов возвращает тот же
+        снимок (безопасный повтор/двойной клик).
+        """
+        if self.phase != BRTournamentPhase.COLLECT:
+            return False, "Турнир не в фазе сбора результатов."
+        if self.results_published or self.results_snapshot is not None:
+            return False, "Итоги уже опубликованы."
+        if self.publish_pending is not None:
+            return True, ""
+        if not self.results_complete():
+            filled, expected = self.results_status()
+            return False, f"Не все записи заполнены: {filled}/{expected}."
+        self.publish_pending = self.calculate_final_results()
+        return True, ""
+
+    def commit_publish(self) -> bool:
+        """Зафиксировать снимок как опубликованный итог (→ RESULTS).
+
+        Идемпотентно: без publish_pending или не в COLLECT — False.
+        """
+        if self.phase != BRTournamentPhase.COLLECT or self.publish_pending is None:
+            return False
+        self.results_snapshot = self.publish_pending
+        self.publish_pending = None
+        self.phase = BRTournamentPhase.RESULTS
+        self.results_published = True
+        self.published_at = datetime.now().isoformat()
+        self.view_page = -1
+        return True
+
     def calculate_final_results(self) -> list[dict]:
         """Итоговая таблица.
 
+        Если есть зафиксированный снимок (pending или published) —
+        возвращается именно он: Discord, архив и Hall of Fame читают
+        одни и те же данные. Иначе считается из статистики.
         Новые BR: очки → тай-брейк (Booyah → киллы → место последней
-        карты → исходный слот). Legacy-результаты: историческая сортировка
-        по очкам.
+        карты → исходный слот). Legacy-результаты: историческая
+        сортировка по очкам.
         """
+        snap = self.results_snapshot or self.publish_pending
+        if snap is not None:
+            return [dict(r) for r in snap]
         results = []
         for i, slot in enumerate(self.teams):
             total = sum(self._slot_points(slot, m) for m in range(self.map_count))
@@ -1030,6 +1082,9 @@ class BRTournament:
             "results_published": self.results_published,
             "published_at": self.published_at,
             "games_finished_at": self.games_finished_at,
+            "publish_pending": self.publish_pending,
+            "results_snapshot": self.results_snapshot,
+            "migration_notes": self.migration_notes,
             "view_page": self.view_page,
             "cancel_reason": self.cancel_reason,
             "cancelled_by": self.cancelled_by,
@@ -1109,6 +1164,9 @@ class BRTournament:
                 phase in (BRTournamentPhase.RESULTS, BRTournamentPhase.COMPLETE))),
             published_at=data.get("published_at", ""),
             games_finished_at=data.get("games_finished_at", ""),
+            publish_pending=data.get("publish_pending"),
+            results_snapshot=data.get("results_snapshot"),
+            migration_notes=list(data.get("migration_notes") or []),
             view_page=(int(data["view_page"]) if data.get("view_page") is not None else -1),
             cancel_reason=data.get("cancel_reason", ""),
             cancelled_by=data.get("cancelled_by", 0),
@@ -1123,7 +1181,44 @@ class BRTournament:
         # legacy: достроить member_ids из имён, где возможно
         if not has_new_schema:
             t._backfill_member_ids()
+        t._migrate_stat_keys()
         return t
+
+    def _migrate_stat_keys(self) -> None:
+        """Миграция статистики с ключей по имени карты на map_N.
+
+        - Явный map_N всегда в приоритете — имя-ключ его не перекрывает.
+        - Имя, встречающееся в расписании ровно один раз, мигрирует
+          в map_N (исходная запись сохраняется, map_N читается первым).
+        - Неоднозначный/вне-расписания ключ НЕ копируется: исходная
+          запись остаётся, ведущему показывается замечание для сверки.
+        Идемпотентно: после миграции map_N существует и повторный
+        прогон ничего не меняет.
+        """
+        seq = self.get_map_sequence()
+        notes: list[str] = []
+        for slot in self.teams:
+            stats = slot.get("stats") or {}
+            if not isinstance(stats, dict):
+                continue
+            label = self.slot_display_name(slot)
+            for name in MAP_ROTATION:
+                if name not in stats:
+                    continue
+                idxs = [i for i, m in enumerate(seq) if m == name]
+                if len(idxs) == 1:
+                    target = self.get_stats_key(idxs[0])
+                    if target not in stats:
+                        stats[target] = stats[name]
+                else:
+                    times = "не встречается" if not idxs else f"встречается {len(idxs)} раз(а)"
+                    notes.append(
+                        f"Слот «{label}»: результат «{MAP_NAMES_RU.get(name, name)}» "
+                        f"({name}) не привязан к карте — имя {times} в расписании "
+                        f"из {self.map_count}; сверьте и введите вручную."
+                    )
+        if notes:
+            self.migration_notes = notes
 
     def _backfill_member_ids(self) -> None:
         """Legacy-слоты: восстановить member_ids по именам из players."""
